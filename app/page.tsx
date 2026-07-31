@@ -23,15 +23,21 @@ export default function Home() {
         <div className="flex flex-col sm:flex-row gap-4 justify-center">
           <a 
             href="/dashboard" 
-            className="px-8 py-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-lg font-semibold"
+            className="px-8 py-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition text-lg font-semibold min-w-[200px] text-center"
           >
-            🛩️ Go to Dashboard
+            🛩️ Dashboard
           </a>
           <a 
             href="/dashboard/schedule" 
-            className="px-8 py-4 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition text-lg font-semibold"
+            className="px-8 py-4 bg-slate-700 text-white rounded-lg hover:bg-slate-600 transition text-lg font-semibold min-w-[200px] text-center"
           >
-            📅 View Schedule
+            📅 Schedule
+          </a>
+          <a 
+            href="/login" 
+            className="px-8 py-4 bg-green-500 text-white rounded-lg hover:bg-green-600 transition text-lg font-semibold min-w-[200px] text-center"
+          >
+            🔐 Login
           </a>
         </div>
         
