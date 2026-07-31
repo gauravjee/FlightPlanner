@@ -189,3 +189,16 @@ export interface MaintenanceRecord {
   isOverdue?: boolean;
   daysUntilDue?: number;
 }
+
+// Instructor record from database
+export interface Instructor {
+  id: string;
+  name: string;
+  initials: string;
+  licenseNumber: string;
+  ratings: string;
+  maxDailyHours: number;
+  email: string;
+  phone: string;
+  status: 'AVAILABLE' | 'FLYING' | 'OFF_DUTY';
+}

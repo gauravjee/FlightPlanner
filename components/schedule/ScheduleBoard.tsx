@@ -55,24 +55,38 @@ export default function ScheduleBoard() {
   const [showBookingForm, setShowBookingForm] = useState(false);  // Toggle booking modal
   const [successMessage, setSuccessMessage] = useState('');        // Green toast message
   
-  // ----- Global State (from Zustand store) -----
-  const store = useFlightStore();
-  const aircraft = store.aircraft;                          // Fleet data
-  const schedule = store.schedule;                          // Mock schedule (legacy)
-  const instructors = store.instructors;                    // Instructor list
-  const students = store.students;                          // Student list
-  const selectedSlot = store.selectedSlot;                  // Currently clicked slot for modal
-  const hoveredSlot = store.hoveredSlot;                    // Currently hovered slot for highlight
-  const setSelectedSlot = store.setSelectedSlot;            // Open/close detail modal
-  const setHoveredSlot = store.setHoveredSlot;              // Track hover state
-  const getSlotsForAircraft = store.getSlotsForAircraft;    // Get mock slots (legacy)
-  const loadScheduledFlights = store.loadScheduledFlights;  // Load real bookings from DB
-  const scheduledFlights = store.scheduledFlights;          // Real booked flights
+// ----- Global State (from Zustand store) -----
+const store = useFlightStore();
+
+// Data collections
+const aircraft = store.aircraft;
+const schedule = store.schedule;
+const instructors = store.instructors;
+const students = store.students;
+const scheduledFlights = store.scheduledFlights;
+
+// UI State
+const selectedSlot = store.selectedSlot;
+const hoveredSlot = store.hoveredSlot;
+
+// Actions
+const setSelectedSlot = store.setSelectedSlot;
+const setHoveredSlot = store.setHoveredSlot;
+const getSlotsForAircraft = store.getSlotsForAircraft;
+
+// Data loaders - fetch from Supabase
+const loadScheduledFlights = store.loadScheduledFlights;
+const loadInstructors = store.loadInstructors;
+const loadStudents = store.loadStudents;
+const loadAircraft = store.loadAircraft;
   
   // ----- Load data when component mounts -----
-  useEffect(() => {
-    loadScheduledFlights();  // Fetch real bookings from Supabase
-  }, [loadScheduledFlights]);
+useEffect(() => {
+  loadScheduledFlights();
+  loadInstructors();
+  loadStudents();
+  loadAircraft();
+}, [loadScheduledFlights, loadInstructors, loadStudents, loadAircraft]);
   
   // ----- Chart Configuration -----
   const HOURS = Array.from({ length: 14 }, (_, i) => i + 6); // 06:00 to 19:00 (14 hours displayed)

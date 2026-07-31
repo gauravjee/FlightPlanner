@@ -1,30 +1,34 @@
 // app/dashboard/page.tsx - MAIN DASHBOARD
 'use client';
 
+import { useState, useEffect } from 'react';
+import Header from '@/components/ui/Header';
+
+// Live digital clock showing Indian Standard Time
+function LiveClock() {
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return (
+    <div className="text-right">
+      <p className="text-lg font-bold text-white font-mono">
+        {time.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata', hour12: false })}
+        <span className="text-xs text-slate-400 ml-1">IST</span>
+      </p>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       {/* Header */}
-      <header className="border-b border-slate-700 bg-slate-800/50 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <span className="text-2xl">✈️</span>
-              <div>
-                <h1 className="text-xl font-bold text-white">FlightPro Manager</h1>
-                <p className="text-xs text-slate-400">Horizon Flight Training Academy</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="text-right">
-                <p className="text-sm text-white">Wednesday, 15 Jan 2024</p>
-                <p className="text-xs text-slate-400">VOBL - Bangalore</p>
-              </div>
-              <a href="/" className="text-sm text-slate-400 hover:text-white">← Home</a>
-            </div>
-          </div>
-        </div>
-      </header>
+        <Header title="FlightPro Manager" subtitle="Horizon Flight Training Academy" backUrl="/" />
+
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Stats Cards */}
@@ -163,6 +167,10 @@ export default function DashboardPage() {
                 <a href="/dashboard/maintenance" className="bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
                   <p className="text-xl mb-1">🔧</p>
                   <p className="text-xs">Maintenance</p>
+                </a>
+                <a href="/dashboard/instructors" className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
+                  <p className="text-xl mb-1">👨‍🏫</p>
+                  <p className="text-xs">Instructors</p>
                 </a>
               </div>
             </div>

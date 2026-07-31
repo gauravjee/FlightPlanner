@@ -1,5 +1,6 @@
 // app/dashboard/fuel/page.tsx
 'use client';
+import Header from '@/components/ui/Header';
 
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
@@ -23,26 +24,15 @@ export default function FuelPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-      <header className="border-b border-slate-700 bg-slate-800/50 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Link href="/dashboard" className="text-slate-400 hover:text-white transition">← Back</Link>
-              <div className="flex items-center space-x-3">
-                <span className="text-2xl">⛽</span>
-                <div>
-                  <h1 className="text-xl font-bold text-white">Fuel Management</h1>
-                  <p className="text-xs text-slate-400">Track refueling & consumption</p>
-                </div>
-              </div>
-            </div>
-            <button onClick={() => setShowForm(true)}
-              className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition cursor-pointer font-bold">
-              ⛽ Log Refueling
-            </button>
-          </div>
-        </div>
-      </header>
+      <Header 
+        title="Fuel Management" 
+        subtitle="Track refueling & consumption" 
+        action={
+          <button onClick={() => setShowForm(true)} className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition cursor-pointer font-bold">
+            ⛽ Log Refueling
+          </button>
+        }
+      />
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

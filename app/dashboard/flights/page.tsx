@@ -1,6 +1,7 @@
 // app/dashboard/flights/page.tsx
 // Flight Records & Digital Logbook page
 'use client';
+import Header from '@/components/ui/Header';
 
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
@@ -31,24 +32,15 @@ export default function FlightsPage() {
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-      <header className="border-b border-slate-700 bg-slate-800/50 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4">
-              <Link href="/dashboard" className="text-slate-400 hover:text-white transition">← Back</Link>
-              <span className="text-2xl">📝</span>
-              <div>
-                <h1 className="text-xl font-bold text-white">Flight Records</h1>
-                <p className="text-xs text-slate-400">Digital Logbook</p>
-              </div>
-            </div>
-            <button onClick={() => setShowForm(true)}
-              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition cursor-pointer font-bold">
-              📝 Log Flight
-            </button>
-          </div>
-        </div>
-      </header>
+      <Header 
+        title="Flight Records" 
+        subtitle="Digital Logbook" 
+        action={
+          <button onClick={() => setShowForm(true)} className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition cursor-pointer font-bold">
+            📝 Log Flight
+          </button>
+        }
+      />
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Stats */}
