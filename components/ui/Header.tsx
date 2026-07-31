@@ -5,6 +5,7 @@
 
 import { useState, useEffect, ReactNode } from 'react';
 import Link from 'next/link';
+import { signOut, useSession } from 'next-auth/react';
 
 // ============================================================
 // LIVE CLOCK COMPONENT
@@ -65,6 +66,31 @@ function LiveClock() {
 }
 
 // ============================================================
+// USER MENU - Shows logged-in user and logout button
+// ============================================================
+function UserMenu() {
+  const { data: session } = useSession();
+
+  if (!session?.user) return null;
+
+  return (
+    <div className="flex items-center space-x-2">
+      <div className="text-right hidden md:block">
+        <p className="text-xs text-slate-400">
+          {session.user.role === 'admin' ? '👑' : '👨‍🏫'} {session.user.name}
+        </p>
+      </div>
+      <button
+        onClick={() => signOut({ callbackUrl: '/login' })}
+        className="px-3 py-1.5 bg-red-500/20 text-red-400 rounded-lg text-xs hover:bg-red-500/30 transition cursor-pointer"
+      >
+        🚪 Logout
+      </button>
+    </div>
+  );
+}
+
+// ============================================================
 // SHARED HEADER COMPONENT
 // Props:
 //   title      - Page title (e.g., "Aircraft Fleet")
@@ -101,19 +127,22 @@ export default function Header({ title, subtitle, backUrl = '/dashboard', action
             </div>
           </div>
           
-          {/* ===== RIGHT SECTION: Action Button + Live Clock + Airport ===== */}
-          <div className="flex items-center space-x-4">
-            {/* Optional action button (Add Aircraft, Book Slot, Log Fuel, etc.) */}
-            {action && action}
-            
-            {/* Live clock and airport */}
+          {/* ===== RIGHT SECTION: User Info + Live Clock + Airport ===== */}
             <div className="flex items-center space-x-4">
-              <LiveClock />
-              <div className="text-right">
-                <p className="text-xs text-slate-500">VOBL - Bangalore</p>
+              {/* Optional action button (Add Aircraft, Book Slot, etc.) */}
+              {action && action}
+              
+              {/* User info & logout */}
+              <UserMenu />
+              
+              {/* Live clock and airport */}
+              <div className="flex items-center space-x-4">
+                <LiveClock />
+                <div className="text-right">
+                  <p className="text-xs text-slate-500">VOBL - Bangalore</p>
+                </div>
               </div>
             </div>
-          </div>
           
         </div>
       </div>

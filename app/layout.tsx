@@ -9,6 +9,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';  // Import global CSS styles
+import AuthProvider from '@/components/ui/AuthProvider';
 
 // ----- Font Configuration -----
 // Load Inter font with Latin subset for performance
@@ -33,7 +34,9 @@ export default function RootLayout({
     <html lang="en">
       {/* Apply Inter font to entire body */}
       <body className={inter.className}>
-        {children}
+          <AuthProvider>
+            {children}
+          </AuthProvider>
       </body>
     </html>
   );
