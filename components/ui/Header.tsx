@@ -9,19 +9,38 @@ import Link from 'next/link';
 // ============================================================
 // LIVE CLOCK COMPONENT
 // Shows current time in IST, updates every second
+// Uses useEffect + useState to avoid hydration mismatch
 // ============================================================
 function LiveClock() {
-  const [time, setTime] = useState(new Date());
+  // Start with empty state to avoid server/client mismatch
+  const [time, setTime] = useState<Date | null>(null);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    // Mark as mounted (client-side only)
+    setMounted(true);
+    setTime(new Date());
+    
     // Update clock every second
     const timer = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(timer); // Cleanup on unmount
+    return () => clearInterval(timer);
   }, []);
+
+  // Don't render anything until client-side mounted (avoids hydration error)
+  if (!mounted || !time) {
+    return (
+      <div className="text-right">
+        <p className="text-lg font-bold text-white font-mono tracking-wider">
+          --:--:--
+          <span className="text-xs text-slate-400 ml-1 font-normal">IST</span>
+        </p>
+        <p className="text-xs text-slate-500">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="text-right">
-      {/* Time in 24-hour format (aviation standard) */}
       <p className="text-lg font-bold text-white font-mono tracking-wider">
         {time.toLocaleTimeString('en-IN', {
           hour: '2-digit',
@@ -32,7 +51,6 @@ function LiveClock() {
         })}
         <span className="text-xs text-slate-400 ml-1 font-normal">IST</span>
       </p>
-      {/* Current date */}
       <p className="text-xs text-slate-500">
         {time.toLocaleDateString('en-IN', {
           weekday: 'long',

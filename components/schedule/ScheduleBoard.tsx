@@ -14,6 +14,7 @@ import { useFlightStore } from '@/lib/store';
 import { FlightSlot, ScheduledFlight } from '@/types';
 import FlightDetailModal from './FlightDetailModal';
 import BookingForm from './BookingForm';
+import { generateDailyOpsSheet } from '@/lib/pdf';
 
 // ============================================================
 // CONSTANTS - Color and label mappings for sortie types
@@ -64,6 +65,7 @@ const schedule = store.schedule;
 const instructors = store.instructors;
 const students = store.students;
 const scheduledFlights = store.scheduledFlights;
+const weather = store.weather;
 
 // UI State
 const selectedSlot = store.selectedSlot;
@@ -215,6 +217,15 @@ useEffect(() => {
               className="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg text-sm hover:bg-slate-600 transition cursor-pointer"
             >
               🖨️ Print Schedule
+            </button>
+            <button 
+              onClick={() => {
+                const today = new Date().toISOString().split('T')[0];
+                generateDailyOpsSheet(today, scheduledFlights, aircraft, weather?.metar || '');
+              }}
+              className="px-4 py-2 bg-red-500/20 text-red-400 rounded-lg text-sm hover:bg-red-500/30 transition cursor-pointer"
+            >
+              📄 Export PDF
             </button>
             <button 
               onClick={() => setShowBookingForm(true)}

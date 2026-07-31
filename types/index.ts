@@ -202,3 +202,23 @@ export interface Instructor {
   phone: string;
   status: 'AVAILABLE' | 'FLYING' | 'OFF_DUTY';
 }
+
+// Weather data from AVWX API
+export interface WeatherData {
+  metar: string;           // Raw METAR string
+  taf: string;             // Raw TAF string
+  temperature: number;     // Celsius
+  windDirection: number;   // Degrees
+  windSpeed: number;       // Knots
+  visibility: number;      // Meters
+  ceiling: number;         // Feet (lowest cloud base)
+  qnh: number;             // hPa
+  flightRules: string;     // VFR, MVFR, IFR, LIFR
+  warnings: string[];      // Weather warnings
+  dewpoint: number;        // Celsius
+  altimeter: number;       // inHg
+  time: string;            // Observation time
+  station: string;         // ICAO station code
+  isLoading: boolean;      // Loading state
+  error: string | null;    // Error message if API fails
+}

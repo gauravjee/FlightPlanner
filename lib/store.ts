@@ -8,6 +8,7 @@
 // 4. Maps database columns (snake_case) to TypeScript (camelCase)
 // 5. Handles conflict detection for flight scheduling
 // 6. Calculates derived values (overdue, costs, flight hours)
+// 7. Fetches REAL weather data from AVWX API
 //
 // MODULES (all from Supabase):
 //   1. Aircraft Fleet      - Registration, type, fuel, status, maintenance dates
@@ -17,10 +18,11 @@
 //   5. Schedule/Booking    - Flight slot booking with time conflict detection
 //   6. Maintenance         - Scheduled/completed records with overdue alerts
 //   7. Instructors         - Name, license, ratings, daily hour limits
+//   8. Weather             - LIVE METAR/TAF from AVWX API (with fallback)
 //
 // HOW TO USE IN COMPONENTS:
 //   import { useFlightStore } from '@/lib/store';
-//   const { aircraft, loadAircraft, addAircraft } = useFlightStore();
+//   const { aircraft, loadAircraft, fetchWeather } = useFlightStore();
 // ============================================================
 
 'use client';
@@ -31,7 +33,7 @@ import {
   WeatherData, NOTAM, FuelRecord, FlightRecord, 
   ScheduledFlight, TimeConflict, MaintenanceRecord 
 } from '@/types';
-import { generateSchedule, weatherData, notamData } from './data';
+import { generateSchedule, notamData } from './data';
 import { supabase } from './supabase';
 
 // ============================================================
@@ -47,10 +49,10 @@ interface FlightStore {
   maintenanceRecords: MaintenanceRecord[];
   instructors: Instructor[];
   
-  // Static/Mock Data
-  schedule: FlightSlot[];
-  weather: WeatherData;
-  notams: NOTAM[];
+  // Live Data
+  weather: WeatherData;      // LIVE weather from AVWX API (with fallback)
+  notams: NOTAM[];           // Active NOTAMs (mock for now)
+  schedule: FlightSlot[];    // Today's schedule (generated)
   
   // UI State
   selectedSlot: FlightSlot | null;
@@ -107,6 +109,9 @@ interface FlightStore {
   updateInstructor: (id: string, updates: Partial<Instructor>) => Promise<void>;
   removeInstructor: (id: string) => Promise<void>;
   
+  // Weather Actions
+  fetchWeather: (station?: string) => Promise<void>;  // Fetch LIVE weather from AVWX API
+  
   // UI Actions
   setSelectedSlot: (slot: FlightSlot | null) => void;
   setHoveredSlot: (id: string | null) => void;
@@ -117,7 +122,9 @@ interface FlightStore {
 // STORE CREATION
 // ============================================================
 export const useFlightStore = create<FlightStore>((set, get) => ({
-  // Initial State
+  // ==========================================
+  // INITIAL STATE
+  // ==========================================
   aircraft: [],
   students: [],
   flightRecords: [],
@@ -125,9 +132,30 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   scheduledFlights: [],
   maintenanceRecords: [],
   instructors: [],
-  schedule: generateSchedule(),
-  weather: weatherData,
+  
+  // Weather starts as loading - will be replaced by live API data
+  weather: {
+    metar: 'Loading weather data...',
+    taf: 'Loading forecast...',
+    temperature: 0,
+    dewpoint: 0,
+    windDirection: 0,
+    windSpeed: 0,
+    visibility: 0,
+    ceiling: 0,
+    qnh: 0,
+    altimeter: 0,
+    flightRules: 'VFR',
+    warnings: [],
+    time: '',
+    station: 'VOBL',
+    isLoading: true,
+    error: null,
+  },
+  
   notams: notamData,
+  schedule: generateSchedule(),
+  
   selectedSlot: null,
   hoveredSlot: null,
   loadingAircraft: false,
@@ -144,15 +172,11 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   
   /**
    * Load all aircraft from Supabase
-   * Maps database snake_case columns to camelCase TypeScript properties
+   * Maps: hobbs_time→hobbsTime, fuel_capacity→fuelCapacity, current_fuel→currentFuel
    */
   loadAircraft: async () => {
     set({ loadingAircraft: true });
-    const { data, error } = await supabase
-      .from('aircraft')
-      .select('*')
-      .order('created_at', { ascending: true });
-    
+    const { data, error } = await supabase.from('aircraft').select('*').order('created_at', { ascending: true });
     if (data && !error) {
       set({
         aircraft: data.map((row: Record<string, unknown>) => ({
@@ -179,26 +203,13 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
    * Add new aircraft to Supabase and local state
    */
   addAircraft: async (aircraft) => {
-    const { data, error } = await supabase
-      .from('aircraft')
-      .insert({
-        registration: aircraft.registration,
-        type: aircraft.type,
-        model: aircraft.model,
-        year: aircraft.year,
-        hobbs_time: aircraft.hobbsTime,
-        fuel_capacity: aircraft.fuelCapacity,
-        current_fuel: aircraft.currentFuel,
-        status: aircraft.status,
-        next_maintenance: aircraft.nextMaintenance,
-      })
-      .select()
-      .single();
-    
+    const { data, error } = await supabase.from('aircraft').insert({
+      registration: aircraft.registration, type: aircraft.type, model: aircraft.model,
+      year: aircraft.year, hobbs_time: aircraft.hobbsTime, fuel_capacity: aircraft.fuelCapacity,
+      current_fuel: aircraft.currentFuel, status: aircraft.status, next_maintenance: aircraft.nextMaintenance,
+    }).select().single();
     if (data && !error) {
-      set(state => ({
-        aircraft: [...state.aircraft, { ...aircraft, id: String(data.id) }]
-      }));
+      set(state => ({ aircraft: [...state.aircraft, { ...aircraft, id: String(data.id) }] }));
     }
   },
   
@@ -216,16 +227,9 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (updates.currentFuel !== undefined) dbUpdates.current_fuel = updates.currentFuel;
     if (updates.status !== undefined) dbUpdates.status = updates.status;
     if (updates.nextMaintenance !== undefined) dbUpdates.next_maintenance = updates.nextMaintenance;
-    
-    const { error } = await supabase
-      .from('aircraft')
-      .update(dbUpdates)
-      .eq('id', id);
-    
+    const { error } = await supabase.from('aircraft').update(dbUpdates).eq('id', id);
     if (!error) {
-      set(state => ({
-        aircraft: state.aircraft.map(a => a.id === id ? { ...a, ...updates } : a)
-      }));
+      set(state => ({ aircraft: state.aircraft.map(a => a.id === id ? { ...a, ...updates } : a) }));
     }
   },
   
@@ -233,22 +237,12 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
    * Delete aircraft from Supabase and local state
    */
   removeAircraft: async (id) => {
-    const { error } = await supabase
-      .from('aircraft')
-      .delete()
-      .eq('id', id);
-    
-    if (!error) {
-      set(state => ({
-        aircraft: state.aircraft.filter(a => a.id !== id)
-      }));
-    }
+    const { error } = await supabase.from('aircraft').delete().eq('id', id);
+    if (!error) set(state => ({ aircraft: state.aircraft.filter(a => a.id !== id) }));
   },
   
   getAircraftById: (id) => get().aircraft.find(a => a.id === id),
-  
-  getSlotsForAircraft: (aircraftId) => 
-    get().schedule.filter(s => s.aircraftId === aircraftId),
+  getSlotsForAircraft: (aircraftId) => get().schedule.filter(s => s.aircraftId === aircraftId),
   
   // ============================================================
   // 2. STUDENT FUNCTIONS
@@ -256,16 +250,10 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   
   /**
    * Load all students from Supabase
-   * Maps: enrollment_id→enrollmentId, training_stage→trainingStage, etc.
    */
   loadStudents: async () => {
     set({ loadingStudents: true });
-    
-    const { data, error } = await supabase
-      .from('students')
-      .select('*')
-      .order('created_at', { ascending: true });
-    
+    const { data, error } = await supabase.from('students').select('*').order('created_at', { ascending: true });
     if (data && !error) {
       set({
         students: data.map((row: Record<string, unknown>) => ({
@@ -291,36 +279,22 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
   
   /**
-   * Add new student to Supabase and local state
+   * Add new student to Supabase
    */
   addStudent: async (student) => {
-    const { data, error } = await supabase
-      .from('students')
-      .insert({
-        enrollment_id: student.enrollmentId,
-        name: student.name,
-        initials: student.initials,
-        training_stage: student.trainingStage,
-        total_hours: student.totalHours,
-        medical_expiry: student.medicalExpiry,
-        email: student.email,
-        phone: student.phone,
-        date_of_birth: student.dateOfBirth,
-        joined_date: student.joinedDate,
-        status: student.status,
-      })
-      .select()
-      .single();
-    
+    const { data, error } = await supabase.from('students').insert({
+      enrollment_id: student.enrollmentId, name: student.name, initials: student.initials,
+      training_stage: student.trainingStage, total_hours: student.totalHours,
+      medical_expiry: student.medicalExpiry, email: student.email, phone: student.phone,
+      date_of_birth: student.dateOfBirth, joined_date: student.joinedDate, status: student.status,
+    }).select().single();
     if (data && !error) {
-      set(state => ({
-        students: [...state.students, { ...student, id: String(data.id) }]
-      }));
+      set(state => ({ students: [...state.students, { ...student, id: String(data.id) }] }));
     }
   },
   
   /**
-   * Update student details - only sends changed fields
+   * Update student - only sends changed fields
    */
   updateStudent: async (id, updates) => {
     const dbUpdates: Record<string, unknown> = {};
@@ -332,33 +306,18 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (updates.email !== undefined) dbUpdates.email = updates.email;
     if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
     if (updates.status !== undefined) dbUpdates.status = updates.status;
-    
-    const { error } = await supabase
-      .from('students')
-      .update(dbUpdates)
-      .eq('id', id);
-    
+    const { error } = await supabase.from('students').update(dbUpdates).eq('id', id);
     if (!error) {
-      set(state => ({
-        students: state.students.map(s => s.id === id ? { ...s, ...updates } : s)
-      }));
+      set(state => ({ students: state.students.map(s => s.id === id ? { ...s, ...updates } : s) }));
     }
   },
   
   /**
-   * Delete student from Supabase and local state
+   * Delete student from Supabase
    */
   removeStudent: async (id) => {
-    const { error } = await supabase
-      .from('students')
-      .delete()
-      .eq('id', id);
-    
-    if (!error) {
-      set(state => ({
-        students: state.students.filter(s => s.id !== id)
-      }));
-    }
+    const { error } = await supabase.from('students').delete().eq('id', id);
+    if (!error) set(state => ({ students: state.students.filter(s => s.id !== id) }));
   },
   
   getStudentById: (id) => get().students.find(s => s.id === id),
@@ -368,62 +327,38 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // ============================================================
   
   /**
-   * Load all flight records with student, aircraft, and instructor names
+   * Load all flight records with student/aircraft/instructor names
    * Calculates total hours from departure/arrival times if not stored
    */
   loadFlightRecords: async () => {
     set({ loadingFlights: true });
-    
-    const { data, error } = await supabase
-      .from('flight_records')
-      .select('*')
-      .order('flight_date', { ascending: false })
-      .limit(100);
-    
+    const { data, error } = await supabase.from('flight_records').select('*').order('flight_date', { ascending: false }).limit(100);
     if (data && !error) {
       const students = get().students;
       const aircraft = get().aircraft;
       const instructors = get().instructors;
-      
       set({
         flightRecords: data.map((row: Record<string, unknown>) => {
-          // Find related records for display names
           const student = students.find(s => String(s.id) === String(row.student_id));
           const ac = aircraft.find(a => String(a.id) === String(row.aircraft_id));
           const inst = instructors.find(i => i.id === String(row.instructor_id));
-          
-          // Calculate flight hours from departure/arrival times
           const calcHours = (): number => {
             if (row.total_hours) return row.total_hours as number;
-            const arr = row.arrival_time as string;
-            const dep = row.departure_time as string;
+            const arr = row.arrival_time as string; const dep = row.departure_time as string;
             if (!arr || !dep) return 0;
-            const [ah, am] = arr.split(':').map(Number);
-            const [dh, dm] = dep.split(':').map(Number);
+            const [ah, am] = arr.split(':').map(Number); const [dh, dm] = dep.split(':').map(Number);
             return Math.round(((ah * 60 + am) - (dh * 60 + dm)) / 6) / 10;
           };
-          
           return {
-            id: String(row.id),
-            studentId: String(row.student_id),
-            aircraftId: String(row.aircraft_id),
-            instructorId: String(row.instructor_id),
-            flightDate: row.flight_date as string,
-            departureTime: row.departure_time as string,
-            arrivalTime: row.arrival_time as string,
-            hobbsStart: row.hobbs_start as number,
-            hobbsEnd: row.hobbs_end as number,
-            totalHours: calcHours(),
-            landings: row.landings as number,
-            flightType: row.flight_type as string,
-            sortieType: row.sortie_type as string,
-            maneuvers: row.maneuvers as string,
-            instructorNotes: row.instructor_notes as string,
-            studentPerformance: row.student_performance as number,
-            weatherConditions: row.weather_conditions as string,
-            studentName: student?.name || 'Unknown',
-            aircraftReg: ac?.registration || 'Unknown',
-            instructorName: inst?.name || 'Unknown',
+            id: String(row.id), studentId: String(row.student_id), aircraftId: String(row.aircraft_id),
+            instructorId: String(row.instructor_id), flightDate: row.flight_date as string,
+            departureTime: row.departure_time as string, arrivalTime: row.arrival_time as string,
+            hobbsStart: row.hobbs_start as number, hobbsEnd: row.hobbs_end as number,
+            totalHours: calcHours(), landings: row.landings as number,
+            flightType: row.flight_type as string, sortieType: row.sortie_type as string,
+            maneuvers: row.maneuvers as string, instructorNotes: row.instructor_notes as string,
+            studentPerformance: row.student_performance as number, weatherConditions: row.weather_conditions as string,
+            studentName: student?.name || 'Unknown', aircraftReg: ac?.registration || 'Unknown', instructorName: inst?.name || 'Unknown',
           };
         }),
         loadingFlights: false,
@@ -439,55 +374,31 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
    */
   loadStudentFlightRecords: async (studentId: string) => {
     set({ loadingFlights: true });
-    
-    const { data, error } = await supabase
-      .from('flight_records')
-      .select('*')
-      .eq('student_id', studentId)
-      .order('flight_date', { ascending: false });
-    
+    const { data, error } = await supabase.from('flight_records').select('*').eq('student_id', studentId).order('flight_date', { ascending: false });
     if (data && !error) {
-      const students = get().students;
-      const aircraft = get().aircraft;
-      const instructors = get().instructors;
-      
+      const students = get().students; const aircraft = get().aircraft; const instructors = get().instructors;
       set({
         flightRecords: data.map((row: Record<string, unknown>) => {
           const student = students.find(s => String(s.id) === String(row.student_id));
           const ac = aircraft.find(a => String(a.id) === String(row.aircraft_id));
           const inst = instructors.find(i => i.id === String(row.instructor_id));
-          
           const calcHours = (): number => {
             if (row.total_hours) return row.total_hours as number;
-            const arr = row.arrival_time as string;
-            const dep = row.departure_time as string;
+            const arr = row.arrival_time as string; const dep = row.departure_time as string;
             if (!arr || !dep) return 0;
-            const [ah, am] = arr.split(':').map(Number);
-            const [dh, dm] = dep.split(':').map(Number);
+            const [ah, am] = arr.split(':').map(Number); const [dh, dm] = dep.split(':').map(Number);
             return Math.round(((ah * 60 + am) - (dh * 60 + dm)) / 6) / 10;
           };
-          
           return {
-            id: String(row.id),
-            studentId: String(row.student_id),
-            aircraftId: String(row.aircraft_id),
-            instructorId: String(row.instructor_id),
-            flightDate: row.flight_date as string,
-            departureTime: row.departure_time as string,
-            arrivalTime: row.arrival_time as string,
-            hobbsStart: row.hobbs_start as number,
-            hobbsEnd: row.hobbs_end as number,
-            totalHours: calcHours(),
-            landings: row.landings as number,
-            flightType: row.flight_type as string,
-            sortieType: row.sortie_type as string,
-            maneuvers: row.maneuvers as string,
-            instructorNotes: row.instructor_notes as string,
-            studentPerformance: row.student_performance as number,
-            weatherConditions: row.weather_conditions as string,
-            studentName: student?.name || 'Unknown',
-            aircraftReg: ac?.registration || 'Unknown',
-            instructorName: inst?.name || 'Unknown',
+            id: String(row.id), studentId: String(row.student_id), aircraftId: String(row.aircraft_id),
+            instructorId: String(row.instructor_id), flightDate: row.flight_date as string,
+            departureTime: row.departure_time as string, arrivalTime: row.arrival_time as string,
+            hobbsStart: row.hobbs_start as number, hobbsEnd: row.hobbs_end as number,
+            totalHours: calcHours(), landings: row.landings as number,
+            flightType: row.flight_type as string, sortieType: row.sortie_type as string,
+            maneuvers: row.maneuvers as string, instructorNotes: row.instructor_notes as string,
+            studentPerformance: row.student_performance as number, weatherConditions: row.weather_conditions as string,
+            studentName: student?.name || 'Unknown', aircraftReg: ac?.registration || 'Unknown', instructorName: inst?.name || 'Unknown',
           };
         }),
         loadingFlights: false,
@@ -499,40 +410,21 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
   
   /**
-   * Add a new flight record and update student's total hours
+   * Add flight record and update student's total hours
    */
   addFlightRecord: async (record) => {
-    const { error } = await supabase
-      .from('flight_records')
-      .insert({
-        student_id: record.studentId,
-        aircraft_id: record.aircraftId,
-        instructor_id: record.instructorId,
-        flight_date: record.flightDate,
-        departure_time: record.departureTime,
-        arrival_time: record.arrivalTime,
-        hobbs_start: record.hobbsStart,
-        hobbs_end: record.hobbsEnd,
-        landings: record.landings,
-        flight_type: record.flightType,
-        sortie_type: record.sortieType,
-        maneuvers: record.maneuvers,
-        instructor_notes: record.instructorNotes,
-        student_performance: record.studentPerformance,
-        weather_conditions: record.weatherConditions,
-      });
-    
+    const { error } = await supabase.from('flight_records').insert({
+      student_id: record.studentId, aircraft_id: record.aircraftId, instructor_id: record.instructorId,
+      flight_date: record.flightDate, departure_time: record.departureTime, arrival_time: record.arrivalTime,
+      hobbs_start: record.hobbsStart, hobbs_end: record.hobbsEnd, landings: record.landings,
+      flight_type: record.flightType, sortie_type: record.sortieType, maneuvers: record.maneuvers,
+      instructor_notes: record.instructorNotes, student_performance: record.studentPerformance,
+      weather_conditions: record.weatherConditions,
+    });
     if (!error) {
-      // Calculate and update student's total flight hours
       const student = get().students.find(s => s.id === record.studentId);
       const newTotalHours = (student?.totalHours || 0) + record.totalHours;
-      
-      await supabase
-        .from('students')
-        .update({ total_hours: newTotalHours })
-        .eq('id', record.studentId);
-      
-      // Reload both datasets to reflect changes
+      await supabase.from('students').update({ total_hours: newTotalHours }).eq('id', record.studentId);
       await get().loadStudents();
       await get().loadFlightRecords();
     }
@@ -544,38 +436,23 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   
   /**
    * Load fuel records with aircraft registration lookup
-   * Calculates total cost as fuel_added_liters × fuel_cost_per_liter
    */
   loadFuelRecords: async () => {
     set({ loadingFuel: true });
-    
-    const { data, error } = await supabase
-      .from('fuel_records')
-      .select('*')
-      .order('refueling_date', { ascending: false })
-      .limit(50);
-    
+    const { data, error } = await supabase.from('fuel_records').select('*').order('refueling_date', { ascending: false }).limit(50);
     if (data && !error) {
       const aircraftList = get().aircraft;
-      
       set({
         fuelRecords: data.map((row: Record<string, unknown>) => {
-          // Find matching aircraft for registration display
           const ac = aircraftList.find(a => String(a.id) === String(row.aircraft_id));
           return {
-            id: String(row.id),
-            aircraftId: String(row.aircraft_id),
-            refuelingDate: row.refueling_date as string,
-            fuelAddedLiters: row.fuel_added_liters as number,
+            id: String(row.id), aircraftId: String(row.aircraft_id),
+            refuelingDate: row.refueling_date as string, fuelAddedLiters: row.fuel_added_liters as number,
             fuelCostPerLiter: row.fuel_cost_per_liter as number,
             totalCost: (row.fuel_added_liters as number) * (row.fuel_cost_per_liter as number),
-            fuelLevelBefore: row.fuel_level_before as number,
-            fuelLevelAfter: row.fuel_level_after as number,
-            fuelType: row.fuel_type as string,
-            refueledBy: row.refueled_by as string,
-            notes: row.notes as string,
-            aircraftReg: ac?.registration || 'Unknown',
-            aircraftType: ac?.type || '',
+            fuelLevelBefore: row.fuel_level_before as number, fuelLevelAfter: row.fuel_level_after as number,
+            fuelType: row.fuel_type as string, refueledBy: row.refueled_by as string, notes: row.notes as string,
+            aircraftReg: ac?.registration || 'Unknown', aircraftType: ac?.type || '',
           };
         }),
         loadingFuel: false,
@@ -587,87 +464,51 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
   
   /**
-   * Log a new refueling and update aircraft's current fuel level
+   * Log refueling and update aircraft fuel level
    */
   addFuelRecord: async (record) => {
-    const { error } = await supabase
-      .from('fuel_records')
-      .insert({
-        aircraft_id: record.aircraftId,
-        fuel_added_liters: record.fuelAddedLiters,
-        fuel_cost_per_liter: record.fuelCostPerLiter,
-        fuel_level_before: record.fuelLevelBefore,
-        fuel_level_after: record.fuelLevelAfter,
-        fuel_type: record.fuelType,
-        refueled_by: record.refueledBy,
-        notes: record.notes,
-      });
-    
+    const { error } = await supabase.from('fuel_records').insert({
+      aircraft_id: record.aircraftId, fuel_added_liters: record.fuelAddedLiters,
+      fuel_cost_per_liter: record.fuelCostPerLiter, fuel_level_before: record.fuelLevelBefore,
+      fuel_level_after: record.fuelLevelAfter, fuel_type: record.fuelType,
+      refueled_by: record.refueledBy, notes: record.notes,
+    });
     if (!error) {
-      // Update aircraft's current fuel to reflect the refueling
-      await supabase
-        .from('aircraft')
-        .update({ current_fuel: record.fuelLevelAfter })
-        .eq('id', record.aircraftId);
-      
-      // Reload both datasets
+      await supabase.from('aircraft').update({ current_fuel: record.fuelLevelAfter }).eq('id', record.aircraftId);
       await get().loadAircraft();
       await get().loadFuelRecords();
     }
   },
   
-  getFuelRecordsForAircraft: (aircraftId) => 
-    get().fuelRecords.filter(r => r.aircraftId === aircraftId),
+  getFuelRecordsForAircraft: (aircraftId) => get().fuelRecords.filter(r => r.aircraftId === aircraftId),
   
   // ============================================================
   // 5. SCHEDULED FLIGHTS / BOOKING FUNCTIONS
   // ============================================================
   
   /**
-   * Load all scheduled flights with aircraft, student, and instructor names
-   * Calculates flight duration from start and end times
+   * Load scheduled flights with names and calculated duration
    */
   loadScheduledFlights: async () => {
     set({ loadingSchedule: true });
-    
-    const { data, error } = await supabase
-      .from('scheduled_flights')
-      .select('*')
-      .order('start_time', { ascending: true });
-    
+    const { data, error } = await supabase.from('scheduled_flights').select('*').order('start_time', { ascending: true });
     if (data && !error) {
-      const aircraftList = get().aircraft;
-      const studentsList = get().students;
-      const instructorsList = get().instructors;
-      
+      const aircraftList = get().aircraft; const studentsList = get().students; const instructorsList = get().instructors;
       set({
         scheduledFlights: data.map((row: Record<string, unknown>) => {
-          // Find related records for display names
           const ac = aircraftList.find(a => String(a.id) === String(row.aircraft_id));
           const student = studentsList.find(s => String(s.id) === String(row.student_id));
           const inst = instructorsList.find(i => i.id === String(row.instructor_id));
-          
-          // Calculate flight duration in hours
-          const startTime = new Date(row.start_time as string);
-          const endTime = new Date(row.end_time as string);
-          const durationHours = (endTime.getTime() - startTime.getTime()) / 3600000;
-          
+          const startTime = new Date(row.start_time as string); const endTime = new Date(row.end_time as string);
           return {
-            id: String(row.id),
-            aircraftId: String(row.aircraft_id),
-            instructorId: String(row.instructor_id),
+            id: String(row.id), aircraftId: String(row.aircraft_id), instructorId: String(row.instructor_id),
             studentId: row.student_id ? String(row.student_id) : undefined,
-            startTime: row.start_time as string,
-            endTime: row.end_time as string,
-            sortieType: row.sortie_type as string,
-            status: row.status as string,
-            weatherBriefed: row.weather_briefed as boolean,
-            notamBriefed: row.notam_briefed as boolean,
-            notes: row.notes as string,
-            aircraftReg: ac?.registration || 'Unknown',
-            studentName: student?.name || 'None',
-            instructorName: inst?.name || 'Unknown',
-            duration: Math.round(durationHours * 10) / 10,
+            startTime: row.start_time as string, endTime: row.end_time as string,
+            sortieType: row.sortie_type as string, status: row.status as string,
+            weatherBriefed: row.weather_briefed as boolean, notamBriefed: row.notam_briefed as boolean,
+            notes: row.notes as string, aircraftReg: ac?.registration || 'Unknown',
+            studentName: student?.name || 'None', instructorName: inst?.name || 'Unknown',
+            duration: Math.round((endTime.getTime() - startTime.getTime()) / 360000) / 10,
           };
         }),
         loadingSchedule: false,
@@ -679,161 +520,81 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
   
   /**
-   * Check for time conflicts on the same aircraft
-   * A conflict exists when existing flight overlaps with requested time
+   * Check for time conflicts on same aircraft
    */
-  checkConflicts: async (aircraftId: string, startTime: string, endTime: string, excludeId?: string) => {
-    let query = supabase
-      .from('scheduled_flights')
-      .select('*')
-      .eq('aircraft_id', aircraftId)
-      .neq('status', 'CANCELLED')
-      .lt('start_time', endTime)
-      .gt('end_time', startTime);
-    
-    if (excludeId) {
-      query = query.neq('id', excludeId);
-    }
-    
+  checkConflicts: async (aircraftId, startTime, endTime, excludeId?) => {
+    let query = supabase.from('scheduled_flights').select('*')
+      .eq('aircraft_id', aircraftId).neq('status', 'CANCELLED')
+      .lt('start_time', endTime).gt('end_time', startTime);
+    if (excludeId) query = query.neq('id', excludeId);
     const { data, error } = await query;
-    
-    if (error) {
-      console.error('Error checking conflicts:', error);
-      return { hasConflict: false, conflictingFlights: [] };
-    }
-    
+    if (error) return { hasConflict: false, conflictingFlights: [] };
     return {
       hasConflict: (data?.length || 0) > 0,
       conflictingFlights: (data || []).map(row => ({
-        id: String(row.id),
-        aircraftId: String(row.aircraft_id),
-        instructorId: String(row.instructor_id),
-        startTime: row.start_time as string,
-        endTime: row.end_time as string,
-        sortieType: row.sortie_type as string,
-        status: row.status as string,
-        weatherBriefed: false,
-        notamBriefed: false,
-        notes: '',
+        id: String(row.id), aircraftId: String(row.aircraft_id), instructorId: String(row.instructor_id),
+        startTime: row.start_time as string, endTime: row.end_time as string,
+        sortieType: row.sortie_type as string, status: row.status as string,
+        weatherBriefed: false, notamBriefed: false, notes: '',
       })),
     };
   },
   
   /**
-   * Book a new flight slot
-   * Checks for conflicts first, then saves if clear
+   * Book a new flight slot with conflict detection
    */
   bookFlight: async (booking) => {
-    // Check for conflicts before booking
-    const conflict = await get().checkConflicts(
-      booking.aircraftId,
-      booking.startTime,
-      booking.endTime
-    );
-    
+    const conflict = await get().checkConflicts(booking.aircraftId, booking.startTime, booking.endTime);
     if (conflict.hasConflict) {
       const cf = conflict.conflictingFlights[0];
-      const conflictStart = new Date(cf.startTime).toLocaleTimeString([], { 
-        hour: '2-digit', minute: '2-digit' 
-      });
-      const conflictEnd = new Date(cf.endTime).toLocaleTimeString([], { 
-        hour: '2-digit', minute: '2-digit' 
-      });
-      
-      return {
-        success: false,
-        message: `⚠️ Time conflict! Aircraft already booked ${conflictStart} to ${conflictEnd} (${cf.sortieType.replace(/_/g, ' ')}). Please choose a different time.`,
-      };
+      const conflictStart = new Date(cf.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const conflictEnd = new Date(cf.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return { success: false, message: `⚠️ Time conflict! Already booked ${conflictStart} to ${conflictEnd} (${cf.sortieType.replace(/_/g, ' ')}).` };
     }
-    
-    // No conflicts - save the booking
-    const { error } = await supabase
-      .from('scheduled_flights')
-      .insert({
-        aircraft_id: booking.aircraftId,
-        instructor_id: booking.instructorId,
-        student_id: booking.studentId || null,
-        start_time: booking.startTime,
-        end_time: booking.endTime,
-        sortie_type: booking.sortieType,
-        status: booking.status || 'SCHEDULED',
-        weather_briefed: booking.weatherBriefed || false,
-        notam_briefed: booking.notamBriefed || false,
-        notes: booking.notes || '',
-      });
-    
-    if (!error) {
-      await get().loadScheduledFlights();
-      return { success: true, message: '✅ Flight booked successfully!' };
-    }
-    
-    return { success: false, message: '❌ Failed to book flight. Please try again.' };
+    const { error } = await supabase.from('scheduled_flights').insert({
+      aircraft_id: booking.aircraftId, instructor_id: booking.instructorId,
+      student_id: booking.studentId || null, start_time: booking.startTime, end_time: booking.endTime,
+      sortie_type: booking.sortieType, status: booking.status || 'SCHEDULED',
+      weather_briefed: booking.weatherBriefed || false, notam_briefed: booking.notamBriefed || false,
+      notes: booking.notes || '',
+    });
+    if (!error) { await get().loadScheduledFlights(); return { success: true, message: '✅ Flight booked!' }; }
+    return { success: false, message: '❌ Failed to book flight.' };
   },
   
   /**
-   * Cancel a scheduled flight (soft delete - keeps the record)
+   * Cancel a flight (soft delete)
    */
   cancelFlight: async (id) => {
-    const { error } = await supabase
-      .from('scheduled_flights')
-      .update({ status: 'CANCELLED' })
-      .eq('id', id);
-    
-    if (!error) {
-      set(state => ({
-        scheduledFlights: state.scheduledFlights.map(f =>
-          f.id === id ? { ...f, status: 'CANCELLED' } : f
-        )
-      }));
-    }
+    const { error } = await supabase.from('scheduled_flights').update({ status: 'CANCELLED' }).eq('id', id);
+    if (!error) set(state => ({ scheduledFlights: state.scheduledFlights.map(f => f.id === id ? { ...f, status: 'CANCELLED' } : f) }));
   },
   
   // ============================================================
-  // 6. MAINTENANCE RECORDS FUNCTIONS
+  // 6. MAINTENANCE FUNCTIONS
   // ============================================================
   
   /**
-   * Load all maintenance records with aircraft registration
-   * Calculates overdue status and days until due
+   * Load maintenance records with overdue calculation
    */
   loadMaintenanceRecords: async () => {
     set({ loadingMaintenance: true });
-    
-    const { data, error } = await supabase
-      .from('maintenance_records')
-      .select('*')
-      .order('scheduled_date', { ascending: true });
-    
+    const { data, error } = await supabase.from('maintenance_records').select('*').order('scheduled_date', { ascending: true });
     if (data && !error) {
-      const aircraftList = get().aircraft;
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      
+      const aircraftList = get().aircraft; const today = new Date(); today.setHours(0, 0, 0, 0);
       set({
         maintenanceRecords: data.map((row: Record<string, unknown>) => {
           const ac = aircraftList.find(a => String(a.id) === String(row.aircraft_id));
           const scheduledDate = new Date(row.scheduled_date as string);
-          const daysUntilDue = Math.ceil(
-            (scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-          );
-          
+          const daysUntilDue = Math.ceil((scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
           return {
-            id: String(row.id),
-            aircraftId: String(row.aircraft_id),
-            maintenanceType: row.maintenance_type as string,
-            description: row.description as string,
-            scheduledDate: row.scheduled_date as string,
-            completedDate: row.completed_date as string || null,
-            status: row.status as MaintenanceRecord['status'],
-            cost: row.cost as number,
-            performedBy: row.performed_by as string,
-            notes: row.notes as string,
-            aircraftReg: ac?.registration || 'Unknown',
-            aircraftType: ac?.type || '',
-            isOverdue: daysUntilDue < 0 && 
-                       row.status !== 'COMPLETED' && 
-                       row.status !== 'CANCELLED',
-            daysUntilDue,
+            id: String(row.id), aircraftId: String(row.aircraft_id),
+            maintenanceType: row.maintenance_type as string, description: row.description as string,
+            scheduledDate: row.scheduled_date as string, completedDate: row.completed_date as string || null,
+            status: row.status as MaintenanceRecord['status'], cost: row.cost as number,
+            performedBy: row.performed_by as string, notes: row.notes as string,
+            aircraftReg: ac?.registration || 'Unknown', aircraftType: ac?.type || '',
+            isOverdue: daysUntilDue < 0 && row.status !== 'COMPLETED' && row.status !== 'CANCELLED', daysUntilDue,
           };
         }),
         loadingMaintenance: false,
@@ -845,30 +606,20 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
   
   /**
-   * Add a new maintenance record
+   * Add maintenance record
    */
   addMaintenanceRecord: async (record) => {
-    const { error } = await supabase
-      .from('maintenance_records')
-      .insert({
-        aircraft_id: record.aircraftId,
-        maintenance_type: record.maintenanceType,
-        description: record.description,
-        scheduled_date: record.scheduledDate,
-        completed_date: record.completedDate,
-        status: record.status,
-        cost: record.cost,
-        performed_by: record.performedBy,
-        notes: record.notes,
-      });
-    
-    if (!error) {
-      await get().loadMaintenanceRecords();
-    }
+    const { error } = await supabase.from('maintenance_records').insert({
+      aircraft_id: record.aircraftId, maintenance_type: record.maintenanceType,
+      description: record.description, scheduled_date: record.scheduledDate,
+      completed_date: record.completedDate, status: record.status, cost: record.cost,
+      performed_by: record.performedBy, notes: record.notes,
+    });
+    if (!error) await get().loadMaintenanceRecords();
   },
   
   /**
-   * Update a maintenance record (mark complete, change dates, etc.)
+   * Update maintenance record (mark complete, etc.)
    */
   updateMaintenanceRecord: async (id, updates) => {
     const dbUpdates: Record<string, unknown> = {};
@@ -879,68 +630,39 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
     if (updates.description !== undefined) dbUpdates.description = updates.description;
     if (updates.scheduledDate !== undefined) dbUpdates.scheduled_date = updates.scheduledDate;
-    
-    const { error } = await supabase
-      .from('maintenance_records')
-      .update(dbUpdates)
-      .eq('id', id);
-    
+    const { error } = await supabase.from('maintenance_records').update(dbUpdates).eq('id', id);
     if (!error) {
-      set(state => ({
-        maintenanceRecords: state.maintenanceRecords.map(m =>
-          m.id === id ? { ...m, ...updates } : m
-        )
-      }));
+      set(state => ({ maintenanceRecords: state.maintenanceRecords.map(m => m.id === id ? { ...m, ...updates } : m) }));
     }
   },
   
   /**
-   * Delete a maintenance record
+   * Delete maintenance record
    */
   removeMaintenanceRecord: async (id) => {
-    const { error } = await supabase
-      .from('maintenance_records')
-      .delete()
-      .eq('id', id);
-    
-    if (!error) {
-      set(state => ({
-        maintenanceRecords: state.maintenanceRecords.filter(m => m.id !== id)
-      }));
-    }
+    const { error } = await supabase.from('maintenance_records').delete().eq('id', id);
+    if (!error) set(state => ({ maintenanceRecords: state.maintenanceRecords.filter(m => m.id !== id) }));
   },
   
-  getMaintenanceForAircraft: (aircraftId) =>
-    get().maintenanceRecords.filter(m => m.aircraftId === aircraftId),
+  getMaintenanceForAircraft: (aircraftId) => get().maintenanceRecords.filter(m => m.aircraftId === aircraftId),
   
   // ============================================================
-  // 7. INSTRUCTOR FUNCTIONS (FROM DATABASE)
+  // 7. INSTRUCTOR FUNCTIONS
   // ============================================================
   
   /**
-   * Load all instructors from Supabase
-   * Replaces old mock data with real database records
+   * Load instructors from Supabase
    */
   loadInstructors: async () => {
     set({ loadingInstructors: true });
-    
-    const { data, error } = await supabase
-      .from('instructors')
-      .select('*')
-      .order('name', { ascending: true });
-    
+    const { data, error } = await supabase.from('instructors').select('*').order('name', { ascending: true });
     if (data && !error) {
       set({
         instructors: data.map((row: Record<string, unknown>) => ({
-          id: String(row.id),
-          name: row.name as string,
-          initials: row.initials as string,
-          licenseNumber: row.license_number as string,
-          ratings: row.ratings as string,
-          maxDailyHours: row.max_daily_hours as number,
-          email: (row.email as string) || '',
-          phone: (row.phone as string) || '',
-          status: row.status as Instructor['status'],
+          id: String(row.id), name: row.name as string, initials: row.initials as string,
+          licenseNumber: row.license_number as string, ratings: row.ratings as string,
+          maxDailyHours: row.max_daily_hours as number, email: (row.email as string) || '',
+          phone: (row.phone as string) || '', status: row.status as Instructor['status'],
         })),
         loadingInstructors: false,
       });
@@ -951,33 +673,21 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
   
   /**
-   * Add a new instructor to database
+   * Add new instructor
    */
   addInstructor: async (instructor) => {
-    const { data, error } = await supabase
-      .from('instructors')
-      .insert({
-        name: instructor.name,
-        initials: instructor.initials,
-        license_number: instructor.licenseNumber,
-        ratings: instructor.ratings,
-        max_daily_hours: instructor.maxDailyHours,
-        email: instructor.email,
-        phone: instructor.phone,
-        status: instructor.status,
-      })
-      .select()
-      .single();
-    
+    const { data, error } = await supabase.from('instructors').insert({
+      name: instructor.name, initials: instructor.initials, license_number: instructor.licenseNumber,
+      ratings: instructor.ratings, max_daily_hours: instructor.maxDailyHours,
+      email: instructor.email, phone: instructor.phone, status: instructor.status,
+    }).select().single();
     if (data && !error) {
-      set(state => ({
-        instructors: [...state.instructors, { ...instructor, id: String(data.id) }]
-      }));
+      set(state => ({ instructors: [...state.instructors, { ...instructor, id: String(data.id) }] }));
     }
   },
   
   /**
-   * Update instructor details
+   * Update instructor
    */
   updateInstructor: async (id, updates) => {
     const dbUpdates: Record<string, unknown> = {};
@@ -989,35 +699,34 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (updates.email !== undefined) dbUpdates.email = updates.email;
     if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
     if (updates.status !== undefined) dbUpdates.status = updates.status;
-    
-    const { error } = await supabase
-      .from('instructors')
-      .update(dbUpdates)
-      .eq('id', id);
-    
+    const { error } = await supabase.from('instructors').update(dbUpdates).eq('id', id);
     if (!error) {
-      set(state => ({
-        instructors: state.instructors.map(i =>
-          i.id === id ? { ...i, ...updates } : i
-        )
-      }));
+      set(state => ({ instructors: state.instructors.map(i => i.id === id ? { ...i, ...updates } : i) }));
     }
   },
   
   /**
-   * Remove an instructor from database
+   * Remove instructor
    */
   removeInstructor: async (id) => {
-    const { error } = await supabase
-      .from('instructors')
-      .delete()
-      .eq('id', id);
-    
-    if (!error) {
-      set(state => ({
-        instructors: state.instructors.filter(i => i.id !== id)
-      }));
-    }
+    const { error } = await supabase.from('instructors').delete().eq('id', id);
+    if (!error) set(state => ({ instructors: state.instructors.filter(i => i.id !== id) }));
+  },
+  
+  // ============================================================
+  // 8. WEATHER - LIVE DATA FROM AVWX API
+  // ============================================================
+  
+  /**
+   * Fetch real-time weather data from AVWX API
+   * Includes 5-minute caching and automatic fallback to mock data
+   * @param station - ICAO airport code (default: 'VOBL' for Bangalore)
+   */
+  fetchWeather: async (station = 'VOBL') => {
+    // Dynamic import to avoid circular dependency
+    const { fetchWeather } = await import('./weather');
+    const data = await fetchWeather(station);
+    set({ weather: data });
   },
   
   // ============================================================

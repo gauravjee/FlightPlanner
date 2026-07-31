@@ -3,6 +3,8 @@
 'use client';
 import Header from '@/components/ui/Header';
 
+import { generateStudentLogbook } from '@/lib/pdf';
+
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import FlightRecordForm from '@/components/flights/FlightRecordForm';
@@ -36,11 +38,37 @@ export default function FlightsPage() {
         title="Flight Records" 
         subtitle="Digital Logbook" 
         action={
-          <button onClick={() => setShowForm(true)} className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition cursor-pointer font-bold">
-            📝 Log Flight
-          </button>
+          <div className="flex space-x-2">
+           {selectedStudent === 'ALL' ? (
+            <span className="px-3 py-2 bg-slate-700/50 text-slate-500 rounded-lg text-xs cursor-not-allowed flex items-center space-x-1"
+              title="Select a specific student to export their logbook">
+              📄 Export Logbook
+              <span className="text-[10px] text-slate-600">(select student)</span>
+            </span>
+          ) : (
+            <button 
+              onClick={() => {
+                const student = students.find(s => s.id === selectedStudent);
+                const studentFlights = flightRecords.filter(r => r.studentId === selectedStudent);
+                if (student && studentFlights.length > 0) {
+                  generateStudentLogbook(student, studentFlights);
+                }
+              }}
+              className="px-3 py-2 bg-red-500/20 text-red-400 rounded-lg text-xs hover:bg-red-500/30 transition cursor-pointer"
+            >
+              📄 Export Logbook
+            </button>
+          )}
+            <button 
+              onClick={() => setShowForm(true)}
+              className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition cursor-pointer font-bold"
+            >
+              📝 Log Flight
+            </button>
+          </div>
         }
       />
+
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Stats */}
