@@ -12,15 +12,6 @@ export interface Aircraft {
   nextMaintenance: string;
 }
 
-export interface Instructor {
-  id: string;
-  name: string;
-  initials: string;
-  licenseNumber: string;
-  ratings: string[];
-  maxDailyHours: number;
-  status: 'AVAILABLE' | 'FLYING' | 'OFF_DUTY';
-}
 
 export interface Student {
   id: string;
@@ -196,7 +187,7 @@ export interface Instructor {
   name: string;
   initials: string;
   licenseNumber: string;
-  ratings: string;
+  ratings: string;        // Comma-separated from DB (e.g., "CFI, CFII, MEI")
   maxDailyHours: number;
   email: string;
   phone: string;
