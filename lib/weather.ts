@@ -84,31 +84,35 @@ export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherDat
   }
 }
 
-function getCeiling(clouds: Array<{ code: string; altitude: number }> | undefined): number {
+function getCeiling(clouds: any): number {
   if (!clouds || clouds.length === 0) return 99999;
-  const ceilingClouds = clouds.filter(c => c.code === 'BKN' || c.code === 'OVC');
+  const ceilingClouds = clouds.filter((c: any) => c.code === 'BKN' || c.code === 'OVC');
   if (ceilingClouds.length === 0) return 99999;
-  return Math.min(...ceilingClouds.map(c => c.altitude * 100));
+  return Math.min(...ceilingClouds.map((c: any) => c.altitude * 100));
 }
 
-function getWarnings(metarData: Record<string, unknown>, tafData: Record<string, unknown> | null): string[] {
+function getWarnings(metarData: any, tafData: any): string[] {
   const warnings: string[] = [];
-  const vis = metarData.visibility?.value as number;
+  
+  const vis = metarData?.visibility?.value;
   if (vis && vis < 5000) warnings.push('⚠️ Reduced visibility');
   if (vis && vis < 1500) warnings.push('🔴 Low visibility');
-  const windSpeed = metarData.wind_speed?.value as number;
+  
+  const windSpeed = metarData?.wind_speed?.value;
   if (windSpeed && windSpeed > 20) warnings.push('💨 Strong winds');
-  const flightRules = metarData.flight_rules as string;
+  
+  const flightRules = metarData?.flight_rules;
   if (flightRules === 'IFR') warnings.push('🔴 IFR Conditions');
   if (flightRules === 'LIFR') warnings.push('🔴 Low IFR');
   if (flightRules === 'MVFR') warnings.push('🟡 Marginal VFR');
-  const tafRaw = tafData?.raw as string;
+  
+  const tafRaw = tafData?.raw;
   if (tafRaw && (tafRaw.includes('TS') || tafRaw.includes('CB'))) {
     warnings.push('⛈️ Thunderstorm risk');
   }
+  
   return warnings;
 }
-
 function getMockWeather(station: string): WeatherData {
   return {
     metar: `${station} N/A - API key not configured`,
