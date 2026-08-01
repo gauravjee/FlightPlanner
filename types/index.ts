@@ -222,3 +222,19 @@ export interface WeatherData {
   isLoading: boolean;      // Loading state
   error: string | null;    // Error message if API fails
 }
+
+// Student record from database
+export interface StudentRecord {
+  id: string;
+  enrollmentId: string;
+  name: string;
+  initials: string;
+  trainingStage: string;
+  totalHours: number;
+  medicalExpiry: string;
+  email?: string;
+  phone?: string;
+  dateOfBirth?: string;
+  joinedDate?: string;
+  status: string;
+}
