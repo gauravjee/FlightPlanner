@@ -83,7 +83,7 @@ interface FlightStore {
   // Flight Record Actions
   loadFlightRecords: () => Promise<void>;
   loadStudentFlightRecords: (studentId: string) => Promise<void>;
-  addFlightRecord: (record: Omit<FlightRecord, 'id' | 'totalHours' | 'studentName' | 'aircraftReg' | 'instructorName'>) => Promise<void>;
+  addFlightRecord: (record: Omit<FlightRecord, 'id' | 'studentName' | 'aircraftReg' | 'instructorName'>) => Promise<void>;
   
   // Fuel Actions
   loadFuelRecords: () => Promise<void>;
