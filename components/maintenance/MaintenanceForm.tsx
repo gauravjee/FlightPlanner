@@ -82,7 +82,7 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
             </div>
             <div>
               <label className="block text-xs text-slate-400 mb-1">Status</label>
-              <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value }))}
+              <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value as MaintenanceRecord['status'] }))}
                 className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white">
                 <option value="SCHEDULED">Scheduled</option>
                 <option value="IN_PROGRESS">In Progress</option>
