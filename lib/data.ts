@@ -46,7 +46,25 @@ export function generateSchedule(): FlightSlot[] {
   ];
 }
 
-export const weatherData: WeatherData = { metar: 'VOBL 150730Z 27005KT 8000 FEW020 SCT100 22/15 Q1013 NOSIG', taf: 'VOBL 150600Z 1506/1606 27008KT 8000 FEW020 SCT100 TEMPO 1512/1518 5000 TSRA', temperature: 22, windDirection: 270, windSpeed: 5, visibility: 8000, ceiling: 2000, qnh: 1013, flightRules: 'VFR', warnings: [] };
+export const weatherData: WeatherData = {
+  metar: 'VOBL 150730Z 27005KT 8000 FEW020 SCT100 22/15 Q1013 NOSIG',
+  taf: 'VOBL 150600Z 1506/1606 27008KT 8000 FEW020 SCT100 TEMPO 1512/1518 5000 TSRA',
+  temperature: 22,
+  dewpoint: 15,
+  windDirection: 270,
+  windSpeed: 5,
+  visibility: 8000,
+  ceiling: 2000,
+  qnh: 1013,
+  altimeter: 29.92,
+  flightRules: 'VFR',
+  warnings: [],
+  time: new Date().toISOString(),
+  station: 'VOBL',
+  isLoading: false,
+  error: null,
+};
+
 export const notamData: NOTAM[] = [
   { id: 'n1', number: 'A1234/24', text: 'TWY B CLOSED. Use TWY A.', startTime: '2024-01-15T07:00', endTime: '2024-01-15T18:00', priority: 'HIGH', category: 'RUNWAY' },
   { id: 'n2', number: 'A1235/24', text: 'Bird activity vicinity AD.', startTime: '2024-01-15T00:00', endTime: '2024-01-15T23:59', priority: 'MODERATE', category: 'OTHER' },
