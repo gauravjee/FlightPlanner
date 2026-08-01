@@ -28,7 +28,7 @@ export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherDat
     console.log('✅ Live weather received!');
     const weather: WeatherData = {
       metar: metar.rawOb || 'METAR unavailable',
-      taf: taf?.rawOb || 'TAF not available for this station',
+      taf: taf?.rawTAF || 'TAF not available for this station',
       temperature: metar.temp || 0,
       dewpoint: metar.dewp || 0,
       windDirection: metar.wdir || 0,
