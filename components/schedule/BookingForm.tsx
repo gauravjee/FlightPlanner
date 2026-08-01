@@ -293,6 +293,9 @@ export default function BookingForm({ onClose, onSuccess }: Props) {
       endTime: endTimeUTC,      // Store as UTC
       sortieType: form.sortieType,
       notes: form.notes,
+      status: 'SCHEDULED',          
+      weatherBriefed: false,          
+      notamBriefed: false,            
     });
     
     setLoading(false);
