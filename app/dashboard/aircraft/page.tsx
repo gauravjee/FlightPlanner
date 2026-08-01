@@ -77,7 +77,7 @@ export default function AircraftPage() {
 />
 
       <div className="max-w-7xl mx-auto px-4 py-6">
-        {loading ? (
+        {loadingAircraft ? (
           <div className="text-center py-20">
             <p className="text-slate-400 text-lg">Loading aircraft...</p>
           </div>
