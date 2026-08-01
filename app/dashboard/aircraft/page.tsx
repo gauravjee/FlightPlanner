@@ -10,7 +10,7 @@ import AircraftFormModal from '@/components/aircraft/AircraftFormModal';
 import Link from 'next/link';
 
 export default function AircraftPage() {
-  const { aircraft, loading, loadAircraft, addAircraft, updateAircraft, removeAircraft } = useFlightStore();
+  const { aircraft, loadingAircraft, loadAircraft, addAircraft, updateAircraft, removeAircraft } = useFlightStore();
   const [showForm, setShowForm] = useState(false);
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
