@@ -65,8 +65,3 @@ export const weatherData: WeatherData = {
   error: null,
 };
 
-export const notamData: NOTAM[] = [
-  { id: 'n1', number: 'A1234/24', text: 'TWY B CLOSED. Use TWY A.', startTime: '2024-01-15T07:00', endTime: '2024-01-15T18:00', priority: 'HIGH', category: 'RUNWAY' },
-  { id: 'n2', number: 'A1235/24', text: 'Bird activity vicinity AD.', startTime: '2024-01-15T00:00', endTime: '2024-01-15T23:59', priority: 'MODERATE', category: 'OTHER' },
-  { id: 'n3', number: 'A1236/24', text: 'NDB BL 342kHz U/S.', startTime: '2024-01-15T06:00', endTime: '2024-01-16T06:00', priority: 'LOW', category: 'NAVIGATION' },
-];

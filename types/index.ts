@@ -61,14 +61,17 @@ export interface WeatherData {
   warnings: string[];
 }
 
+// NOTAM from FAA API via our proxy
 export interface NOTAM {
   id: string;
-  number: string;
-  text: string;
-  startTime: string;
-  endTime: string;
+  notamNumber: string;          // The NOTAM identification number
+  airportCode: string;
+  text: string;                 // Full NOTAM text
   priority: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
   category: string;
+  startTime: string;
+  endTime: string;
+  isActive: boolean;
 }
 
 export interface FuelRecord {

@@ -138,7 +138,7 @@ export default function FlightDetailModal({ slot, onClose }: Props) {
               <p className="text-xs text-yellow-400 font-medium mb-2">⚠️ ACTIVE NOTAMS</p>
               {notams.slice(0, 3).map(n => (
                 <p key={n.id} className="text-xs text-yellow-300/80 mt-1">
-                  <span className="font-medium">{n.number}</span>: {n.text}
+                  <span className="font-medium">{n.notamNumber}</span>: {n.text}
                 </p>
               ))}
             </div>
