@@ -488,7 +488,7 @@ export default function BookingForm({ onClose, onSuccess }: Props) {
               <option value="">Select Instructor</option>
               {instructors.map(i => (
                 <option key={i.id} value={i.id}>
-                  {i.name} ({i.initials}) - {i.ratings.join(', ')}
+                  {i.name} ({i.initials}) - {String(i.ratings)}
                 </option>
               ))}
             </select>
