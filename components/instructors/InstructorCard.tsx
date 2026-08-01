@@ -11,10 +11,8 @@ interface Props {
 }
 
 export default function InstructorCard({ instructor, onEdit, onDelete }: Props) {
-  // Parse ratings string into array for display
-  const ratingsList = typeof instructor.ratings === 'string' 
-  ? instructor.ratings.split(',').map(r => r.trim())
-  : instructor.ratings;
+  // Parse ratings - stored as comma-separated string in database
+  const ratingsList = (instructor.ratings as string).split(',').map(r => r.trim());
   
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-5 hover:border-slate-600 transition-all">
