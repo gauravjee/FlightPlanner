@@ -10,10 +10,10 @@ export const aircraftData: Aircraft[] = [
 ];
 
 export const instructorData: Instructor[] = [
-  { id: 'inst1', name: 'Sarah Mitchell', initials: 'SM', licenseNumber: 'CFI-12345', ratings: ['CFI', 'CFII', 'MEI'], maxDailyHours: 8, status: 'AVAILABLE' },
-  { id: 'inst2', name: 'Michael Kim', initials: 'MK', licenseNumber: 'CFI-12346', ratings: ['CFI', 'CFII'], maxDailyHours: 8, status: 'AVAILABLE' },
-  { id: 'inst3', name: 'Robert Chen', initials: 'RC', licenseNumber: 'CFI-12347', ratings: ['CFI', 'MEI'], maxDailyHours: 8, status: 'AVAILABLE' },
-  { id: 'inst4', name: 'Anna Baker', initials: 'AB', licenseNumber: 'CFI-12348', ratings: ['CFI'], maxDailyHours: 6, status: 'AVAILABLE' },
+  { id: 'inst1', name: 'Sarah Mitchell', initials: 'SM', licenseNumber: 'CFI-12345', ratings: 'CFI, CFII, MEI', maxDailyHours: 8, status: 'AVAILABLE' },
+  { id: 'inst2', name: 'Michael Kim', initials: 'MK', licenseNumber: 'CFI-12346', ratings: 'CFI', 'CFII', maxDailyHours: 8, status: 'AVAILABLE' },
+  { id: 'inst3', name: 'Robert Chen', initials: 'RC', licenseNumber: 'CFI-12347', ratings: 'CFI', 'MEI', maxDailyHours: 8, status: 'AVAILABLE' },
+  { id: 'inst4', name: 'Anna Baker', initials: 'AB', licenseNumber: 'CFI-12348', ratings: 'CFI', maxDailyHours: 6, status: 'AVAILABLE' },
 ];
 
 export const studentData: Student[] = [
