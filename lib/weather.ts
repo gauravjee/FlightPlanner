@@ -1,18 +1,21 @@
 // lib/weather.ts
-// Real-time aviation weather service using AVWX API
-// Fetches METAR and TAF for a given ICAO airport code
+// Real-time aviation weather service using FAA Aviation Weather Center API
+// Completely FREE - no API key required!
+// Fetches METAR and TAF for any ICAO airport code
 
 import { WeatherData } from '@/types';
 
-// Cache weather data to avoid exceeding API rate limits
+// Cache weather data to avoid excessive API calls
 const weatherCache: Map<string, { data: WeatherData; timestamp: number }> = new Map();
-// const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
-const CACHE_DURATION = 29 * 60 * 1000; // 29 minutes - just before next METAR
+const CACHE_DURATION = 29 * 60 * 1000; // 29 minutes
 
 /**
- * Fetch live weather data from AVWX API
- * Uses caching to reduce API calls (5-minute cache)
+ * Fetch live weather data from aviationweather.gov
+ * Completely free, no API key needed
  * Falls back to mock data if API fails
+ * 
+ * @param station - ICAO airport code (e.g., 'VOBL' for Bangalore)
+ * @returns WeatherData object with METAR, TAF, and parsed parameters
  */
 export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherData> {
   
@@ -23,51 +26,43 @@ export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherDat
     return cached.data;
   }
 
-  const apiKey = process.env.NEXT_PUBLIC_AVWX_API_KEY;
-  
-  // If no API key, use mock data
-  if (!apiKey || apiKey.includes('your-avwx-api-key')) {
-    console.warn('⚠️ No AVWX API key found. Using mock weather data.');
-    return getMockWeather(station);
-  }
-
   try {
-    console.log('🌤️ Fetching live weather for', station);
+    console.log('🌤️ Fetching live weather for', station, 'from aviationweather.gov');
     
-    // Fetch METAR and TAF in parallel
+    // Fetch METAR and TAF from FAA Aviation Weather Center
+    // Format: https://aviationweather.gov/api/data/metar?ids=VOBL
     const [metarRes, tafRes] = await Promise.all([
-      fetch(`https://avwx.rest/api/metar/${station}`, {
-        headers: { 'Authorization': `BEARER ${apiKey}` },
-      }),
-      fetch(`https://avwx.rest/api/taf/${station}`, {
-        headers: { 'Authorization': `BEARER ${apiKey}` },
-      }),
+      fetch(`https://aviationweather.gov/api/data/metar?ids=${station}&format=json`),
+      fetch(`https://aviationweather.gov/api/data/taf?ids=${station}&format=json`),
     ]);
 
     if (!metarRes.ok) {
-      console.warn('⚠️ AVWX API error:', metarRes.status);
+      console.warn('⚠️ AviationWeather API error. Using mock data.');
       return getMockWeather(station);
     }
 
     const metarData = await metarRes.json();
     const tafData = tafRes.ok ? await tafRes.json() : null;
 
-    console.log('✅ Live weather fetched successfully!');
+    // Parse the METAR data
+    const metar = metarData[0] || {};
+    
+    console.log('✅ Live weather fetched successfully from FAA!');
 
     const weather: WeatherData = {
-      metar: metarData.raw || 'METAR unavailable',
-      taf: tafData?.raw || 'TAF unavailable',
-      temperature: metarData.temperature?.value || 0,
-      dewpoint: metarData.dewpoint?.value || 0,
-      windDirection: metarData.wind_direction?.value || 0,
-      windSpeed: metarData.wind_speed?.value || 0,
-      visibility: metarData.visibility?.value || 9999,
-      ceiling: getCeiling(metarData.clouds),
-      qnh: metarData.altimeter?.value || 1013,
-      altimeter: metarData.altimeter?.value || 29.92,
-      flightRules: metarData.flight_rules || 'VFR',
-      warnings: getWarnings(metarData, tafData),
-      time: metarData.time?.dt || new Date().toISOString(),
+      metar: metar.rawOb || 'METAR unavailable',
+      taf: tafData?.[0]?.rawOb || 'TAF unavailable',
+      temperature: metar.temp || 0,
+      dewpoint: metar.dewp || 0,
+      windDirection: metar.wdir || 0,
+      windSpeed: metar.wspd || 0,
+      visibility: metar.visib ? metar.visib * 1609.34 : 9999, // Convert miles to meters
+      ceiling: getCeiling(metar.clouds),
+      qnh: metar.altim || 1013,
+      altimeter: metar.altim || 29.92,
+      flightRules: metar.fltcat || 'VFR',
+      warnings: getWarnings(metar, tafData?.[0]),
+      time: metar.obsTime || new Date().toISOString(),
       station: station,
       isLoading: false,
       error: null,
@@ -84,68 +79,88 @@ export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherDat
   }
 }
 
+/**
+ * Extract ceiling from cloud layers
+ * AviationWeather API provides clouds as array of { cover, base }
+ */
 function getCeiling(clouds: any): number {
-  if (!clouds || clouds.length === 0) return 99999;
-  const ceilingClouds = clouds.filter((c: any) => c.code === 'BKN' || c.code === 'OVC');
+  if (!clouds || !Array.isArray(clouds) || clouds.length === 0) return 99999;
+  
+  const ceilingClouds = clouds.filter((c: any) => 
+    c.cover === 'BKN' || c.cover === 'OVC' || c.cover === 'OVX'
+  );
+  
   if (ceilingClouds.length === 0) return 99999;
-  return Math.min(...ceilingClouds.map((c: any) => c.altitude * 100));
+  
+  // Find the lowest ceiling
+  const bases = ceilingClouds
+    .map((c: any) => c.base * 100) // Convert hundreds of feet to feet
+    .filter((b: number) => b > 0);
+  
+  return bases.length > 0 ? Math.min(...bases) : 99999;
 }
 
-function getWarnings(metarData: any, tafData: any): string[] {
+/**
+ * Generate weather warnings based on conditions
+ */
+function getWarnings(metar: any, taf: any): string[] {
   const warnings: string[] = [];
   
-  const vis = metarData?.visibility?.value;
-  if (vis && vis < 5000) warnings.push('⚠️ Reduced visibility');
-  if (vis && vis < 1500) warnings.push('🔴 Low visibility');
+  // Visibility warnings
+  const visMeters = metar.visib ? metar.visib * 1609.34 : 99999;
+  if (visMeters < 5000) warnings.push('⚠️ Reduced visibility');
+  if (visMeters < 1500) warnings.push('🔴 Low visibility operations');
   
-  const windSpeed = metarData?.wind_speed?.value;
-  if (windSpeed && windSpeed > 20) warnings.push('💨 Strong winds');
+  // Wind warnings
+  if (metar.wspd > 20) warnings.push('💨 Strong winds');
+  if (metar.wspd > 30) warnings.push('🔴 High winds - Caution advised');
   
-  const flightRules = metarData?.flight_rules;
-  if (flightRules === 'IFR') warnings.push('🔴 IFR Conditions');
-  if (flightRules === 'LIFR') warnings.push('🔴 Low IFR');
-  if (flightRules === 'MVFR') warnings.push('🟡 Marginal VFR');
+  // Flight rules warning
+  if (metar.fltcat === 'IFR') warnings.push('🔴 IFR Conditions');
+  if (metar.fltcat === 'LIFR') warnings.push('🔴 Low IFR - VFR not permitted');
+  if (metar.fltcat === 'MVFR') warnings.push('🟡 Marginal VFR');
   
-  const tafRaw = tafData?.raw;
-  if (tafRaw && (tafRaw.includes('TS') || tafRaw.includes('CB'))) {
-    warnings.push('⛈️ Thunderstorm risk');
+  // Thunderstorm check
+  if (metar.rawOb?.includes('TS') || metar.rawOb?.includes('CB')) {
+    warnings.push('⛈️ Thunderstorm in vicinity');
   }
   
   return warnings;
 }
+
+/**
+ * Mock weather data for fallback
+ */
 function getMockWeather(station: string): WeatherData {
   return {
-    metar: `${station} N/A - API key not configured`,
-    taf: 'TAF unavailable - Add AVWX API key to .env.local',
+    metar: `${station} N/A - Unable to fetch weather`,
+    taf: 'TAF unavailable',
     temperature: 0, dewpoint: 0,
     windDirection: 0, windSpeed: 0,
-    visibility: 0, ceiling: 0,
-    qnh: 0, altimeter: 0,
-    flightRules: 'N/A',
-    warnings: ['⚠️ Using mock data - API key not configured'],
+    visibility: 0, ceiling: 99999,
+    qnh: 1013, altimeter: 29.92,
+    flightRules: 'VFR',
+    warnings: ['⚠️ Using mock data - Check internet connection'],
     time: new Date().toISOString(),
     station: station,
     isLoading: false,
-    error: 'API key not configured',
+    error: 'Failed to fetch from API',
   };
 }
+
 /**
- * Calculate milliseconds until next METAR issuance time
- * METAR is typically issued at :20 and :50 past each hour UTC
- * Returns milliseconds to wait until next issuance
+ * Calculate milliseconds until next METAR issuance
+ * METAR is typically issued at :20 and :50 past each hour
  */
 export function getTimeUntilNextMetar(): number {
   const now = new Date();
   const utcMinutes = now.getUTCMinutes();
   const utcSeconds = now.getUTCSeconds();
   
-  // Next issuance times: :20 and :50 past the hour
   const issuanceMinutes = [20, 50];
   
-  // Find the next issuance minute
   let nextMinute = issuanceMinutes.find(m => m > utcMinutes);
   if (nextMinute === undefined) {
-    // Past :50, next is :20 of next hour
     nextMinute = issuanceMinutes[0];
     const minutesUntil = (60 - utcMinutes) + nextMinute;
     return (minutesUntil * 60 - utcSeconds) * 1000;
