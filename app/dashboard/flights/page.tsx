@@ -9,6 +9,7 @@ import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import FlightRecordForm from '@/components/flights/FlightRecordForm';
 import Link from 'next/link';
+import ProtectedRoute from '@/components/ui/ProtectedRoute';
 
 export default function FlightsPage() {
   const { flightRecords, students, loadingFlights, loadFlightRecords, loadStudents } = useFlightStore();
@@ -33,6 +34,7 @@ export default function FlightsPage() {
   };
 
   return (
+    <ProtectedRoute>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       <Header 
         title="Flight Records" 
@@ -148,5 +150,6 @@ export default function FlightsPage() {
 
       {showForm && <FlightRecordForm onClose={() => setShowForm(false)} />}
     </main>
+    </ProtectedRoute>
   );
 }

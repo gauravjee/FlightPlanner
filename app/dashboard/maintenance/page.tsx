@@ -3,7 +3,7 @@
 'use client';
 
 import Header from '@/components/ui/Header';
-
+import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { MaintenanceRecord } from '@/types';
@@ -74,6 +74,7 @@ export default function MaintenancePage() {
   };
 
   return (
+    <ProtectedRoute>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       <Header 
         title="Maintenance Tracking" 
@@ -192,5 +193,6 @@ export default function MaintenancePage() {
         />
       )}
     </main>
+    </ProtectedRoute>
   );
 }

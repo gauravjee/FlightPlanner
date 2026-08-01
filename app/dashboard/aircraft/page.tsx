@@ -1,6 +1,6 @@
 // app/dashboard/aircraft/page.tsx
 'use client';
-
+import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import Header from '@/components/ui/Header';
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
@@ -64,6 +64,7 @@ export default function AircraftPage() {
   };
 
   return (
+    <ProtectedRoute>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
 <Header 
   title="Aircraft Fleet" 
@@ -151,5 +152,6 @@ export default function AircraftPage() {
         />
       )}
     </main>
+    </ProtectedRoute>
   );
 }

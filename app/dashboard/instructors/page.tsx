@@ -9,6 +9,7 @@ import InstructorCard from '@/components/instructors/InstructorCard';
 import InstructorFormModal from '@/components/instructors/InstructorFormModal';
 import Link from 'next/link';
 import Header from '@/components/ui/Header';
+import ProtectedRoute from '@/components/ui/ProtectedRoute';
 
 export default function InstructorsPage() {
   const { instructors, loadInstructors, addInstructor, updateInstructor, removeInstructor } = useFlightStore();
@@ -65,6 +66,7 @@ export default function InstructorsPage() {
   };
 
   return (
+    <ProtectedRoute>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       <Header 
       title="Instructors" 
@@ -126,5 +128,6 @@ export default function InstructorsPage() {
           onClose={() => { setShowForm(false); setEditingInstructor(null); }} />
       )}
     </main>
+    </ProtectedRoute>
   );
 }

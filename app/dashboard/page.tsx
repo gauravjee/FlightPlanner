@@ -13,6 +13,8 @@
 
 'use client';
 
+import ProtectedRoute from '@/components/ui/ProtectedRoute';
+
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import Header from '@/components/ui/Header';
@@ -49,6 +51,7 @@ export default function DashboardPage() {
   }, [fetchWeather]);
   
   return (
+    <ProtectedRoute>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       
       {/* Shared Header with live clock */}
@@ -287,5 +290,6 @@ export default function DashboardPage() {
         </div>
       </div>
     </main>
+    </ProtectedRoute>
   );
 }

@@ -1,6 +1,7 @@
 // app/dashboard/fuel/page.tsx
 'use client';
 import Header from '@/components/ui/Header';
+import ProtectedRoute from '@/components/ui/ProtectedRoute';
 
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
@@ -23,6 +24,7 @@ export default function FuelPage() {
   const totalCapacity = aircraft.reduce((sum, a) => sum + a.fuelCapacity, 0);
 
   return (
+    <ProtectedRoute>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       <Header 
         title="Fuel Management" 
@@ -115,5 +117,6 @@ export default function FuelPage() {
 
       {showForm && <FuelLogForm onClose={() => setShowForm(false)} />}
     </main>
+    </ProtectedRoute>
   );
 }

@@ -15,7 +15,12 @@ const handler = NextAuth({
         if (!credentials?.email || !credentials?.password) return null;
         const user = await verifyCredentials(credentials.email, credentials.password);
         if (user) {
-          return { id: user.id, email: user.email, name: user.name, role: user.role };
+          return { 
+            id: user.id, 
+            email: user.email, 
+            name: user.name, 
+            role: user.role 
+          } as any; // Type assertion to bypass strict typing
         }
         return null;
       },
