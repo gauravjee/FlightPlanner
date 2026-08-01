@@ -28,12 +28,12 @@ export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherDat
     console.log('✅ Live weather received!');
     const weather: WeatherData = {
       metar: metar.rawOb || 'METAR unavailable',
-      taf: taf?.rawOb || 'TAF unavailable',
+      taf: taf?.rawOb || 'TAF not available for this station',
       temperature: metar.temp || 0,
       dewpoint: metar.dewp || 0,
       windDirection: metar.wdir || 0,
       windSpeed: metar.wspd || 0,
-      visibility: metar.visib ? metar.visib * 1609.34 : 9999,
+      visibility: metar.visib ? Math.round(metar.visib * 1609.34) : 9999,
       ceiling: getCeiling(metar.clouds),
       qnh: metar.altim || 1013,
       altimeter: metar.altim || 29.92,
