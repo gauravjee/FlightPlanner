@@ -1,4 +1,5 @@
 // app/api/auth/[...nextauth]/route.ts
+// NextAuth API route handler for App Router
 import NextAuth from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { verifyCredentials } from '@/lib/auth';
@@ -15,12 +16,11 @@ const handler = NextAuth({
         if (!credentials?.email || !credentials?.password) return null;
         const user = await verifyCredentials(credentials.email, credentials.password);
         if (user) {
-          return { 
-            id: user.id, 
-            email: user.email, 
-            name: user.name, 
-            role: user.role 
-          } as any; // Type assertion to bypass strict typing
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+          };
         }
         return null;
       },
@@ -29,11 +29,17 @@ const handler = NextAuth({
   session: { strategy: 'jwt' },
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.role = user.role;
+      // Store role in token - using type assertion to avoid TS error
+      if (user) {
+        (token as any).role = (user as any).role || 'instructor';
+      }
       return token;
     },
     async session({ session, token }) {
-      if (session.user) session.user.role = token.role as string;
+      // Pass role from token to session
+      if (session.user) {
+        (session.user as any).role = (token as any).role || 'instructor';
+      }
       return session;
     },
   },

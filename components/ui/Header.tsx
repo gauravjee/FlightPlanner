@@ -77,7 +77,7 @@ function UserMenu() {
     <div className="flex items-center space-x-2">
       <div className="text-right hidden md:block">
         <p className="text-xs text-slate-400">
-          {session.user.role === 'admin' ? '👑' : '👨‍🏫'} {session.user.name}
+          {(session.user as any).role === 'admin' ? '👑' : '👨‍🏫'} {session.user.name}
         </p>
       </div>
       <button
@@ -89,6 +89,7 @@ function UserMenu() {
     </div>
   );
 }
+
 
 // ============================================================
 // SHARED HEADER COMPONENT
