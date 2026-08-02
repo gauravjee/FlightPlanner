@@ -232,3 +232,20 @@ export interface StudentRecord {
   joinedDate?: string;
   status: string;
 }
+
+// Availability / Leave record
+export interface AvailabilityRecord {
+  id: string;
+  personType: 'instructor' | 'student';
+  personId: string;
+  leaveType: string;
+  startDate: string;
+  endDate: string;
+  startTime?: string;
+  endTime?: string;
+  reason: string;
+  status: string;
+  createdBy: string;
+  personName?: string;      // For display
+  personInitials?: string;  // For display
+}

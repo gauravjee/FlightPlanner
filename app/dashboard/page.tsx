@@ -55,7 +55,7 @@ export default function DashboardPage() {
   useEffect(() => {
     loadNOTAMs('VOBL');
   }, [loadNOTAMs]);
-  
+
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
@@ -269,6 +269,9 @@ export default function DashboardPage() {
                   </a>
                   <a href="/dashboard/instructors" className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
                     <p className="text-xl mb-1">👨‍🏫</p><p className="text-xs">Instructors</p>
+                  </a>
+                  <a href="/dashboard/availability" className="bg-teal-500/10 text-teal-400 border border-teal-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
+                    <p className="text-xl mb-1">🏖️</p><p className="text-xs">Availability</p>
                   </a>
                 </div>
               </div>
