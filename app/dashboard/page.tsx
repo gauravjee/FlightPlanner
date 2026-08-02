@@ -14,26 +14,35 @@
 'use client';
 
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
-
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import Header from '@/components/ui/Header';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 
 export default function DashboardPage() {
-  // ----- Get data and actions from store -----
   const store = useFlightStore();
   const weather = store.weather;
   const aircraft = store.aircraft;
   const fetchWeather = store.fetchWeather;
-  const notams = store.notams;                  // ← Live NOTAMs
-  const loadNOTAMs = store.loadNOTAMs;          // ← Load NOTAMs function
+  const notams = store.notams;
+  const loadNOTAMs = store.loadNOTAMs;
 
-  // ----- Fetch live weather on page load -----
+  const { data: session } = useSession();
+  const router = useRouter();
+
+  // Redirect students to their own dashboard
+  useEffect(() => {
+    if (session?.user && (session.user as any).role === 'student') {
+      router.push('/dashboard/student');
+    }
+  }, [session, router]);
+
+  // Fetch live weather on page load
   useEffect(() => {
     import('@/lib/weather').then(({ getTimeUntilNextMetar }) => {
       fetchWeather('VOBL');
       const timeUntil = getTimeUntilNextMetar();
-      console.log(`⏰ Next METAR in ${Math.round(timeUntil / 60000)} minutes`);
       const timeout = setTimeout(() => {
         fetchWeather('VOBL');
         setInterval(() => fetchWeather('VOBL'), 30 * 60 * 1000);
@@ -42,11 +51,11 @@ export default function DashboardPage() {
     });
   }, [fetchWeather]);
 
-  // ----- Fetch live NOTAMs on page load -----
+  // Fetch live NOTAMs
   useEffect(() => {
     loadNOTAMs('VOBL');
   }, [loadNOTAMs]);
-
+  
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">

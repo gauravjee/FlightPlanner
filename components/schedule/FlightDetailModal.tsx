@@ -7,33 +7,43 @@ import { FlightSlot } from '@/types';
 interface Props {
   slot: FlightSlot;
   onClose: () => void;
+  onEdit?: (slot: FlightSlot) => void;   // new prop for editing
 }
 
-export default function FlightDetailModal({ slot, onClose }: Props) {
-  const { getAircraftById, getInstructorById, getStudentById, weather, notams } = useFlightStore();
-  
+export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
+  const { getAircraftById, getInstructorById, getStudentById, weather, notams, cancelFlight, loadScheduledFlights } = useFlightStore();
+
   const aircraft = getAircraftById(slot.aircraftId);
   const instructor = getInstructorById(slot.instructorId);
   const student = slot.studentId ? getStudentById(slot.studentId) : undefined;
-  
+
   const duration = (new Date(slot.endTime).getTime() - new Date(slot.startTime).getTime()) / 3600000;
 
+  
+const handleCancel = async () => {
+  if (window.confirm('Cancel this flight?')) {
+    await cancelFlight(slot.id);
+    await loadScheduledFlights();   // ← Refresh the schedule data
+    onClose();
+  }
+};
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleEdit = () => {
+    if (onEdit) onEdit(slot);
+    onClose();
+  };
+
   return (
-    <div 
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" 
-      onClick={onClose}
-    >
-      <div 
-        className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" 
-        onClick={e => e.stopPropagation()}
-      >
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 rounded-t-xl">
           <h3 className="text-lg font-semibold text-white">✈️ Flight Details</h3>
-          <button 
-            onClick={onClose} 
-            className="p-2 hover:bg-slate-700 rounded-lg transition cursor-pointer"
-          >
+          <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg cursor-pointer">
             <span className="text-slate-400 text-xl">✕</span>
           </button>
         </div>
@@ -171,16 +181,18 @@ export default function FlightDetailModal({ slot, onClose }: Props) {
 
         {/* Actions */}
         <div className="flex items-center justify-end space-x-2 p-4 border-t border-slate-700 sticky bottom-0 bg-slate-800 rounded-b-xl">
-          <button 
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-400 hover:text-white transition cursor-pointer"
-          >
+          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition cursor-pointer">
             Close
           </button>
-          <button className="px-4 py-2 text-sm bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
+          {onEdit && (
+            <button onClick={handleEdit} className="px-4 py-2 text-sm bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition cursor-pointer">
+              ✏️ Edit
+            </button>
+          )}
+          <button onClick={handleCancel} className="px-4 py-2 text-sm bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
             Cancel Flight
           </button>
-          <button className="px-4 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer">
+          <button onClick={handlePrint} className="px-4 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer">
             📋 Print Brief
           </button>
         </div>
