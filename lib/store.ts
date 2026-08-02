@@ -40,6 +40,7 @@ import {
 import { generateSchedule } from './data';
 import { supabase } from './supabase';
 
+
 // ============================================================
 // TYPE DEFINITION
 // ============================================================
@@ -118,6 +119,9 @@ interface FlightStore {
 
   // NOTAM Actions
   loadNOTAMs: (station?: string) => Promise<void>;
+
+  // UPDATE: SCHEDULED FLIGHTS WITH PROGRESS
+  updateScheduledFlight: (id: string, updates: Partial<ScheduledFlight>) => Promise<void>;
 
   // Availability/Leave Actions
   loadAvailability: () => Promise<void>;
@@ -616,6 +620,35 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     const data = await fetchNOTAMs(station);
     set({ notams: data, loadingNotams: false });
   },
+
+    // ============================================================
+    // 10. UPDATE FLIGHT SCHEDULE FUNCTIONS
+    // ============================================================
+
+
+
+// Add to the store functions:
+updateScheduledFlight: async (id, updates) => {
+  const dbUpdates: Record<string, unknown> = {};
+  if (updates.status !== undefined) dbUpdates.status = updates.status;
+  if (updates.aircraftId !== undefined) dbUpdates.aircraft_id = updates.aircraftId;
+  if (updates.instructorId !== undefined) dbUpdates.instructor_id = updates.instructorId;
+  if (updates.studentId !== undefined) dbUpdates.student_id = updates.studentId;
+  if (updates.startTime !== undefined) dbUpdates.start_time = updates.startTime;
+  if (updates.endTime !== undefined) dbUpdates.end_time = updates.endTime;
+  if (updates.sortieType !== undefined) dbUpdates.sortie_type = updates.sortieType;
+  if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+  if (updates.weatherBriefed !== undefined) dbUpdates.weather_briefed = updates.weatherBriefed;
+  if (updates.notamBriefed !== undefined) dbUpdates.notam_briefed = updates.notamBriefed;
+
+  const { error } = await supabase.from('scheduled_flights').update(dbUpdates).eq('id', id);
+  if (!error) {
+    set(state => ({
+      scheduledFlights: state.scheduledFlights.map(f => f.id === id ? { ...f, ...updates } : f)
+    }));
+  }
+},
+
 
   // ============================================================
   // 10. AVAILABILITY / LEAVE FUNCTIONS

@@ -11,7 +11,7 @@ interface Props {
 }
 
 export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
-  const { getAircraftById, getInstructorById, getStudentById, weather, notams, cancelFlight, loadScheduledFlights } = useFlightStore();
+  const { getAircraftById, getInstructorById, getStudentById, weather, notams, cancelFlight, loadScheduledFlights, updateScheduledFlight } = useFlightStore();
 
   const aircraft = getAircraftById(slot.aircraftId);
   const instructor = getInstructorById(slot.instructorId);
@@ -195,6 +195,33 @@ const handleCancel = async () => {
           <button onClick={handlePrint} className="px-4 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer">
             📋 Print Brief
           </button>
+          {/* Check-In Button (only for SCHEDULED flights) */}
+            {slot.status === 'SCHEDULED' && (
+              <button 
+                onClick={async () => {
+                  await updateScheduledFlight(slot.id, { status: 'IN_PROGRESS' });
+                  await loadScheduledFlights();
+                  onClose();
+                }}
+                className="px-4 py-2 text-sm bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition cursor-pointer"
+              >
+                ✅ Check-In
+              </button>
+            )}
+
+            {/* Check-Out Button (only for IN_PROGRESS flights) */}
+            {slot.status === 'IN_PROGRESS' && (
+              <button 
+                onClick={() => {
+                  onClose();
+                  // Open debrief form - you'll need to pass a callback
+                  if (onCheckOut) onCheckOut(slot);
+                }}
+                className="px-4 py-2 text-sm bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition cursor-pointer"
+              >
+                📝 Check-Out / Debrief
+              </button>
+            )}
         </div>
       </div>
     </div>

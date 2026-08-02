@@ -19,6 +19,7 @@ import { useFlightStore } from '@/lib/store';
 import Header from '@/components/ui/Header';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import StudentProgressWidget from '@/components/dashboard/StudentProgressWidget';
 
 export default function DashboardPage() {
   const store = useFlightStore();
@@ -212,11 +213,16 @@ export default function DashboardPage() {
                           </td>
                         </tr>
                       ))}
+                      
                     </tbody>
                   </table>
                 </div>
               </div>
+              {/* ----- STUDENT PROGRESS WIDGET ----- */}
+              <StudentProgressWidget />
             </div>
+
+            
 
             {/* ===== RIGHT COLUMN ===== */}
             <div className="space-y-6">
