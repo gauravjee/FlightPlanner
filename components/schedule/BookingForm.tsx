@@ -13,8 +13,10 @@
 //   - End times before start are disabled
 //   - Duration calculator
 //   - Edit mode when `existingFlight` prop is provided
-//   - Solo flights → Instructor disabled, Student required
-//   - Check Ride → Student disabled
+//   - Sortie Types: DUAL, SOLO, MAINTENANCE
+//   - Exercise field (FTO-specific) – shown for DUAL & SOLO
+//   - MAINTENANCE: Instructor enabled, Student & Exercise disabled
+//   - SOLO: Instructor disabled, Student & Exercise required
 //   - Conflict warnings shown near Instructor/Student dropdowns
 //   - Aircraft fuel info displayed when aircraft selected
 
@@ -50,6 +52,39 @@ const generateTimeSlots = (): { value: string; label: string }[] => {
 
 const TIME_SLOTS = generateTimeSlots();
 const todayLocal = new Date().toLocaleDateString('en-CA');   // local date in YYYY-MM-DD
+
+// ============================================================
+// FTO EXERCISE LIST
+// ============================================================
+const EXERCISES = [
+  '120NM - 120NM Xcty Check',
+  '250NM - 250NM Xcty Check',
+  '300NM - 300 Nm Cross-Country',
+  'AIREX - Air Experience',
+  'C&D - Climb & Descend',
+  'CCTS - Circuits & Landings',
+  'CHK - Check',
+  'CRTV - Corrective',
+  'CT&DT - Climbing turn & Descending turn',
+  'EMGCY - Emergencies',
+  'EOC - Effect of Controls',
+  'FAM - Familiarisation',
+  'GF - General Flying',
+  'GFT.D - General Flying Test DAY',
+  'GFT.N - General Flying Test NIGHT',
+  'IF - Instrument Flying',
+  'IRT - Instrument Rating Test',
+  'PC - Progress Check',
+  'PPC - Pilot Proficiency Check',
+  'RRT - Recurrent Training',
+  'S&L - Straight & Level',
+  'SIDE/FRDW SLIP - SLIP',
+  'ST.TRN - Steep Turns',
+  'ST&RE - Stall & Recovery',
+  'TO & Climb - TO & Climb',
+  'TRN - Turns',
+  'X-CTY - Cross-Country',
+];
 
 // ============================================================
 // MAIN COMPONENT
@@ -101,7 +136,8 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
     date: todayLocal,
     startTime: formatTime(defaultStart),
     endTime: formatTime(defaultEnd),
-    sortieType: 'CIRCUIT_DUAL',
+    sortieType: 'DUAL',          // DUAL | SOLO | MAINTENANCE
+    exercise: '',                 // Exercise code (for DUAL & SOLO only)
     notes: '',
   });
 
@@ -116,12 +152,13 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
       const endDate = new Date(existingFlight.endTime);
       setForm({
         aircraftId: existingFlight.aircraftId,
-        instructorId: existingFlight.instructorId,
+        instructorId: existingFlight.instructorId || '',
         studentId: existingFlight.studentId || '',
         date: startDate.toLocaleDateString('en-CA'),
         startTime: formatTime(startDate),
         endTime: formatTime(endDate),
-        sortieType: existingFlight.sortieType,
+        sortieType: existingFlight.sortieType || 'DUAL',
+        exercise: (existingFlight as any).exercise || '',
         notes: existingFlight.notes || '',
       });
     }
@@ -131,28 +168,31 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
   // DERIVED STATE
   // ============================================================
 
-  // Is this a solo flight?
-  const isSoloFlight = useMemo(
-    () => form.sortieType?.toUpperCase().includes('SOLO'),
-    [form.sortieType]
-  );
+  // Sortie type helpers
+  const isDual = form.sortieType === 'DUAL';
+  const isSolo = form.sortieType === 'SOLO';
+  const isMaintenance = form.sortieType === 'MAINTENANCE';
 
-  // Is this a check ride?
-  const isCheckRide = form.sortieType === 'CHECK_RIDE';
-
-  // Clear instructor when switching to solo
+  // Clear instructor when switching to Solo
   useEffect(() => {
-    if (isSoloFlight && form.instructorId) {
+    if (isSolo && form.instructorId) {
       setForm(prev => ({ ...prev, instructorId: '' }));
     }
-  }, [isSoloFlight]);
+  }, [isSolo]);
 
-  // Clear student when switching to check ride
+  // Clear student when switching to Maintenance
   useEffect(() => {
-    if (isCheckRide && form.studentId) {
+    if (isMaintenance && form.studentId) {
       setForm(prev => ({ ...prev, studentId: '' }));
     }
-  }, [isCheckRide]);
+  }, [isMaintenance]);
+
+  // Clear exercise when switching to Maintenance
+  useEffect(() => {
+    if (isMaintenance && form.exercise) {
+      setForm(prev => ({ ...prev, exercise: '' }));
+    }
+  }, [isMaintenance]);
 
   // Selected aircraft object for fuel display
   const selectedAircraft = aircraft.find(a => String(a.id) === String(form.aircraftId));
@@ -189,7 +229,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
 
   // Student must have a valid medical
   const validateStudentMedical = (studentId: string): string => {
-    if (!studentId || isCheckRide) return '';
+    if (!studentId || isMaintenance) return '';
     const student = students.find(s => s.id === studentId);
     if (!student || !student.medicalExpiry) return '';
     const medicalDate = new Date(student.medicalExpiry);
@@ -237,7 +277,8 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
     if (!form.date || !form.startTime || !form.endTime) return '';
     const slotStart = new Date(`${form.date}T${form.startTime}:00+05:30`);
     const slotEnd = new Date(`${form.date}T${form.endTime}:00+05:30`);
-    if (form.studentId && !isCheckRide) {
+    // Student conflict (not for maintenance)
+    if (form.studentId && !isMaintenance) {
       const conflict = scheduledFlights.some(flight => {
         if (existingFlight && flight.id === existingFlight.id) return false;
         if (flight.studentId !== form.studentId) return false;
@@ -246,7 +287,8 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
       });
       if (conflict) return `❌ This student is already booked at this time.`;
     }
-    if (form.instructorId && !isSoloFlight) {
+    // Instructor conflict (not for solo)
+    if (form.instructorId && !isSolo) {
       const conflict = scheduledFlights.some(flight => {
         if (existingFlight && flight.id === existingFlight.id) return false;
         if (flight.instructorId !== form.instructorId) return false;
@@ -261,7 +303,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
   // ============================================================
   // FIELD CHANGE HANDLER
   // ============================================================
-const handleFieldChange = (field: string, value: string) => {
+  const handleFieldChange = (field: string, value: string) => {
     setError('');
     setConflictWarning('');
     setForm(prev => {
@@ -272,19 +314,17 @@ const handleFieldChange = (field: string, value: string) => {
         updated.endTime = addHoursToTime(value, 1);
       }
 
-      // Validate date/time – use the UPDATED values
+      // Clear exercise when switching to Maintenance
+      if (field === 'sortieType' && value === 'MAINTENANCE') {
+        updated.exercise = '';
+      }
+
+      // Validate date/time
       if (field === 'date' || field === 'startTime' || field === 'endTime') {
-        if (field === 'date') { 
-          const e = validateDate(value); 
-          if (e) setError(e); 
-        }
-        
-        // Use updated values for validation (not prev)
+        if (field === 'date') { const e = validateDate(value); if (e) setError(e); }
         const startT = updated.startTime;
         const endT = updated.endTime;
-        const e = validateTimes(startT, endT); 
-        if (e) setError(e);
-        
+        const e = validateTimes(startT, endT); if (e) setError(e);
         if (updated.date && updated.startTime) {
           const pe = validateNotPast(updated.date, updated.startTime);
           if (pe) setError(pe);
@@ -310,8 +350,9 @@ const handleFieldChange = (field: string, value: string) => {
 
     // Required field checks
     if (!form.aircraftId) { setError('❌ Please select an aircraft.'); return; }
-    if (!isSoloFlight && !form.instructorId) { setError('❌ Please select an instructor.'); return; }
-    if (!isCheckRide && !form.studentId) { setError('❌ Please select a student.'); return; }
+    if (!isSolo && !form.instructorId) { setError('❌ Please select an instructor.'); return; }
+    if (!isMaintenance && !form.studentId) { setError('❌ Please select a student.'); return; }
+    if (!isMaintenance && !form.exercise) { setError('❌ Please select an exercise.'); return; }
 
     // Date/time validation
     const d = validateDate(form.date); if (d) { setError(d); return; }
@@ -319,7 +360,9 @@ const handleFieldChange = (field: string, value: string) => {
     const p = validateNotPast(form.date, form.startTime); if (p) { setError(p); return; }
 
     // Student medical check
-    const med = validateStudentMedical(form.studentId); if (med) { setError(med); return; }
+    if (!isMaintenance) {
+      const med = validateStudentMedical(form.studentId); if (med) { setError(med); return; }
+    }
 
     // Person conflict check
     const personConflict = checkPersonConflict(); if (personConflict) { setError(personConflict); return; }
@@ -333,11 +376,12 @@ const handleFieldChange = (field: string, value: string) => {
     if (existingFlight) {
       await updateScheduledFlight(existingFlight.id, {
         aircraftId: form.aircraftId,
-        instructorId: isSoloFlight ? '' : form.instructorId,
-        studentId: form.studentId || undefined,
+        instructorId: isSolo ? '' : form.instructorId,
+        studentId: isMaintenance ? undefined : form.studentId,
         startTime: startIST.toISOString(),
         endTime: endIST.toISOString(),
         sortieType: form.sortieType,
+        exercise: isMaintenance ? '' : form.exercise,
         notes: form.notes,
       });
       onSuccess('✅ Flight updated!');
@@ -345,11 +389,12 @@ const handleFieldChange = (field: string, value: string) => {
     } else {
       const result = await bookFlight({
         aircraftId: form.aircraftId,
-        instructorId: isSoloFlight ? '' : form.instructorId,
-        studentId: form.studentId || undefined,
+        instructorId: isSolo ? '' : form.instructorId,
+        studentId: isMaintenance ? undefined : form.studentId,
         startTime: startIST.toISOString(),
         endTime: endIST.toISOString(),
         sortieType: form.sortieType,
+        exercise: isMaintenance ? '' : form.exercise,
         notes: form.notes,
       });
       setLoading(false);
@@ -421,25 +466,15 @@ const handleFieldChange = (field: string, value: string) => {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-400 mb-1">🕐 Start Time *</label>
-              <select
-                value={form.startTime}
-                onChange={e => handleFieldChange('startTime', e.target.value)}
-                required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
-              >
-                {TIME_SLOTS.map(slot => (
-                  <option key={slot.value} value={slot.value}>{slot.label}</option>
-                ))}
+              <select value={form.startTime} onChange={e => handleFieldChange('startTime', e.target.value)} required
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+                {TIME_SLOTS.map(slot => <option key={slot.value} value={slot.value}>{slot.label}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm text-slate-400 mb-1">🕑 End Time *</label>
-              <select
-                value={form.endTime}
-                onChange={e => handleFieldChange('endTime', e.target.value)}
-                required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
-              >
+              <select value={form.endTime} onChange={e => handleFieldChange('endTime', e.target.value)} required
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
                 {TIME_SLOTS.map(slot => {
                   const [sh, sm] = (form.startTime || '06:00').split(':').map(Number);
                   const [eh, em] = slot.value.split(':').map(Number);
@@ -464,43 +499,45 @@ const handleFieldChange = (field: string, value: string) => {
           {/* ===== SORTIE TYPE ===== */}
           <div>
             <label className="block text-sm text-slate-400 mb-1">🎯 Sortie Type</label>
-            <select
-              value={form.sortieType}
-              onChange={e => handleFieldChange('sortieType', e.target.value)}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
-            >
-              <option value="CIRCUIT_DUAL">Circuit (Dual)</option>
-              <option value="CIRCUIT_SOLO">Circuit (Solo)</option>
-              <option value="NAVIGATION">Navigation</option>
-              <option value="INSTRUMENT">Instrument</option>
-              <option value="STALL_RECOVERY">Stall & Recovery</option>
-              <option value="EMERGENCY_PROCEDURES">Emergency Procedures</option>
-              <option value="CROSS_COUNTRY">Cross Country</option>
-              <option value="SOLO_CONSOLIDATION">Solo Consolidation</option>
-              <option value="CHECK_RIDE">Check Ride</option>
-              <option value="NIGHT_FLIGHT">Night Flight</option>
+            <select value={form.sortieType} onChange={e => handleFieldChange('sortieType', e.target.value)}
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+              <option value="DUAL">Dual</option>
+              <option value="SOLO">Solo</option>
+              <option value="MAINTENANCE">Maintenance Flight</option>
             </select>
           </div>
+
+          {/* ===== EXERCISE (Dual & Solo only) ===== */}
+          {!isMaintenance && (
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">📋 Exercise *</label>
+              <select value={form.exercise} onChange={e => handleFieldChange('exercise', e.target.value)}
+                required={!isMaintenance}
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+                <option value="">Select Exercise</option>
+                {EXERCISES.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+              </select>
+            </div>
+          )}
 
           {/* ===== INSTRUCTOR ===== */}
           <div>
             <label className="block text-sm text-slate-400 mb-1">
-              👨‍🏫 Instructor {!isSoloFlight && '*'}
+              👨‍🏫 Instructor {!isSolo && '*'}
             </label>
             <select
-              value={isSoloFlight ? '' : form.instructorId}
+              value={isSolo ? '' : form.instructorId}
               onChange={e => handleFieldChange('instructorId', e.target.value)}
-              required={!isSoloFlight}
-              disabled={isSoloFlight}
-              className={`w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white ${isSoloFlight ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <option value="">{isSoloFlight ? 'N/A – Solo Flight' : 'Select Instructor'}</option>
-              {!isSoloFlight && instructors.map(i => (
-                <option key={i.id} value={i.id}>{i.name} ({i.initials})</option>
-              ))}
+              required={!isSolo}
+              disabled={isSolo}
+              className={`w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white ${isSolo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <option value="">
+                {isSolo ? 'N/A – Solo Flight' : 'Select Instructor'}
+              </option>
+              {!isSolo && instructors.map(i => <option key={i.id} value={i.id}>{i.name} ({i.initials})</option>)}
             </select>
             {/* Instructor conflict warning */}
-            {form.instructorId && !isSoloFlight && checkPersonConflict().includes('instructor') && (
+            {form.instructorId && !isSolo && checkPersonConflict().includes('instructor') && (
               <p className="text-xs text-red-400 mt-1">⚠️ This instructor is already booked at this time</p>
             )}
           </div>
@@ -513,31 +550,21 @@ const handleFieldChange = (field: string, value: string) => {
                 <span className="text-xs text-green-400 ml-1">({availableAircraft.length} available)</span>
               )}
             </label>
-            <select
-              value={form.aircraftId}
-              onChange={e => handleFieldChange('aircraftId', e.target.value)}
-              required
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
-            >
+            <select value={form.aircraftId} onChange={e => handleFieldChange('aircraftId', e.target.value)} required
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
               <option value="">Select Aircraft</option>
               {availableAircraft.length > 0 && (
                 <optgroup label="✅ AVAILABLE">
-                  {availableAircraft.map(a => (
-                    <option key={a.id} value={a.id}>{a.registration} ({a.type}) — {a.currentFuel}L</option>
-                  ))}
+                  {availableAircraft.map(a => <option key={a.id} value={a.id}>{a.registration} ({a.type}) — {a.currentFuel}L</option>)}
                 </optgroup>
               )}
               {bookedAircraft.length > 0 && (
                 <optgroup label="🔴 ALREADY BOOKED">
-                  {bookedAircraft.map(a => (
-                    <option key={a.id} value={a.id} disabled className="text-red-400">{a.registration} ({a.type}) — BOOKED</option>
-                  ))}
+                  {bookedAircraft.map(a => <option key={a.id} value={a.id} disabled className="text-red-400">{a.registration} ({a.type}) — BOOKED</option>)}
                 </optgroup>
               )}
             </select>
-            {bookedAircraft.length > 0 && (
-              <p className="text-xs text-yellow-400 mt-1">🔴 {bookedAircraft.length} aircraft booked (30‑min buffer)</p>
-            )}
+            {bookedAircraft.length > 0 && <p className="text-xs text-yellow-400 mt-1">🔴 {bookedAircraft.length} aircraft booked (30‑min buffer)</p>}
           </div>
 
           {/* ===== AIRCRAFT FUEL INFO ===== */}
@@ -552,17 +579,16 @@ const handleFieldChange = (field: string, value: string) => {
           {/* ===== STUDENT ===== */}
           <div>
             <label className="block text-sm text-slate-400 mb-1">
-              👨‍✈️ Student {!isCheckRide && '*'}
+              👨‍✈️ Student {!isMaintenance && '*'}
             </label>
             <select
-              value={isCheckRide ? '' : form.studentId}
+              value={isMaintenance ? '' : form.studentId}
               onChange={e => handleFieldChange('studentId', e.target.value)}
-              disabled={isCheckRide}
-              required={!isCheckRide}
-              className={`w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white ${isCheckRide ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <option value="">{isCheckRide ? 'N/A – Check Ride / Maintenance' : 'Select Student'}</option>
-              {!isCheckRide && students.filter(s => s.status === 'ACTIVE').map(s => {
+              disabled={isMaintenance}
+              required={!isMaintenance}
+              className={`w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white ${isMaintenance ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <option value="">{isMaintenance ? 'N/A – Maintenance Flight' : 'Select Student'}</option>
+              {!isMaintenance && students.filter(s => s.status === 'ACTIVE').map(s => {
                 const medicalDate = s.medicalExpiry ? new Date(s.medicalExpiry) : null;
                 const today = new Date(); today.setHours(0, 0, 0, 0);
                 const isExpired = medicalDate && medicalDate < today;
@@ -574,7 +600,7 @@ const handleFieldChange = (field: string, value: string) => {
               })}
             </select>
             {/* Student conflict warning */}
-            {form.studentId && !isCheckRide && checkPersonConflict().includes('student') && (
+            {form.studentId && !isMaintenance && checkPersonConflict().includes('student') && (
               <p className="text-xs text-red-400 mt-1">⚠️ This student is already booked at this time</p>
             )}
           </div>
@@ -582,21 +608,19 @@ const handleFieldChange = (field: string, value: string) => {
           {/* ===== NOTES ===== */}
           <div>
             <label className="block text-sm text-slate-400 mb-1">📝 Notes</label>
-            <textarea
-              value={form.notes}
-              onChange={e => handleFieldChange('notes', e.target.value)}
-              rows={2}
-              placeholder="Any special instructions…"
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
-            />
+            <textarea value={form.notes} onChange={e => handleFieldChange('notes', e.target.value)}
+              rows={2} placeholder="Any special instructions…"
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white" />
           </div>
 
           {/* ===== BUTTONS ===== */}
           <div className="flex space-x-3 pt-4 border-t border-slate-700">
-            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition cursor-pointer">
+            <button type="button" onClick={onClose}
+              className="flex-1 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition cursor-pointer">
               Cancel
             </button>
-            <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold disabled:opacity-50">
+            <button type="submit" disabled={loading}
+              className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold disabled:opacity-50">
               {loading ? 'Saving…' : existingFlight ? '💾 Update Flight' : '📅 Book Flight'}
             </button>
           </div>

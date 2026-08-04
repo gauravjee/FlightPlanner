@@ -12,20 +12,20 @@
 // 8. Fetches LIVE NOTAMs from FAA API
 //
 // MODULES (all from Supabase unless noted):
-//   1. Aircraft Fleet        - Registration, type, fuel, status, maintenance dates
-//   2. Student Records       - Enrollment, training stage, medical expiry, hours
-//   3. Flight Records        - Digital logbook with maneuvers and performance
+//   1. Aircraft Fleet        - Registration, type, fuel, status
+//   2. Student Records       - Enrollment, training stage, medical
+//   3. Flight Records        - Digital logbook
 //   4. Fuel Management       - Refueling log with cost tracking
-//   5. Schedule/Booking      - Flight slot booking with time conflict detection
-//   6. Maintenance           - Scheduled/completed records with overdue alerts
-//   7. Instructors           - Name, license, ratings, daily hour limits
-//   8. Weather               - LIVE METAR/TAF from aviationweather.gov (free)
-//   9. NOTAMs                - LIVE NOTAMs from aviationweather.gov (free)
-//  10. Availability/Leave    - Instructor & student leave/vacation tracking
+//   5. Schedule/Booking      - Flight slot booking with conflicts
+//   6. Maintenance           - Records with overdue alerts
+//   7. Instructors           - Name, license, ratings
+//   8. Weather               - LIVE METAR/TAF from FAA (free)
+//   9. NOTAMs                - LIVE NOTAMs from FAA (free)
+//  10. Availability/Leave    - Instructor & student leave tracking
 //
 // HOW TO USE IN COMPONENTS:
 //   import { useFlightStore } from '@/lib/store';
-//   const { aircraft, loadAircraft, fetchWeather } = useFlightStore();
+//   const { aircraft, loadAircraft } = useFlightStore();
 // ============================================================
 
 'use client';
@@ -40,9 +40,8 @@ import {
 import { generateSchedule } from './data';
 import { supabase } from './supabase';
 
-
 // ============================================================
-// TYPE DEFINITION
+// TYPE DEFINITION - All state properties and actions
 // ============================================================
 interface FlightStore {
   // Data Collections
@@ -100,6 +99,7 @@ interface FlightStore {
   bookFlight: (booking: Omit<ScheduledFlight, 'id' | 'aircraftReg' | 'studentName' | 'instructorName' | 'duration'>) => Promise<{success: boolean; message: string}>;
   checkConflicts: (aircraftId: string, startTime: string, endTime: string, excludeId?: string) => Promise<TimeConflict>;
   cancelFlight: (id: string) => Promise<void>;
+  updateScheduledFlight: (id: string, updates: Partial<ScheduledFlight>) => Promise<void>;
 
   // Maintenance Actions
   loadMaintenanceRecords: () => Promise<void>;
@@ -119,9 +119,6 @@ interface FlightStore {
 
   // NOTAM Actions
   loadNOTAMs: (station?: string) => Promise<void>;
-
-  // UPDATE: SCHEDULED FLIGHTS WITH PROGRESS
-  updateScheduledFlight: (id: string, updates: Partial<ScheduledFlight>) => Promise<void>;
 
   // Availability/Leave Actions
   loadAvailability: () => Promise<void>;
@@ -430,21 +427,32 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     set({ loadingSchedule: true });
     const { data, error } = await supabase.from('scheduled_flights').select('*').order('start_time', { ascending: true });
     if (data && !error) {
-      const aircraftList = get().aircraft; const studentsList = get().students; const instructorsList = get().instructors;
+      const aircraftList = get().aircraft;
+      const studentsList = get().students;
+      const instructorsList = get().instructors;
       set({
         scheduledFlights: data.map((row: Record<string, unknown>) => {
           const ac = aircraftList.find(a => String(a.id) === String(row.aircraft_id));
           const student = studentsList.find(s => String(s.id) === String(row.student_id));
           const inst = instructorsList.find(i => i.id === String(row.instructor_id));
-          const startTime = new Date(row.start_time as string); const endTime = new Date(row.end_time as string);
+          const startTime = new Date(row.start_time as string);
+          const endTime = new Date(row.end_time as string);
           return {
-            id: String(row.id), aircraftId: String(row.aircraft_id), instructorId: String(row.instructor_id),
+            id: String(row.id),
+            aircraftId: String(row.aircraft_id),
+            instructorId: String(row.instructor_id),
             studentId: row.student_id ? String(row.student_id) : undefined,
-            startTime: row.start_time as string, endTime: row.end_time as string,
-            sortieType: row.sortie_type as string, status: row.status as string,
-            weatherBriefed: row.weather_briefed as boolean, notamBriefed: row.notam_briefed as boolean,
-            notes: row.notes as string, aircraftReg: ac?.registration || 'Unknown',
-            studentName: student?.name || 'None', instructorName: inst?.name || 'Unknown',
+            startTime: row.start_time as string,
+            endTime: row.end_time as string,
+            sortieType: row.sortie_type as string,
+            status: row.status as string,
+            exercise: (row as any).exercise || '',
+            weatherBriefed: row.weather_briefed as boolean,
+            notamBriefed: row.notam_briefed as boolean,
+            notes: row.notes as string,
+            aircraftReg: ac?.registration || 'Unknown',
+            studentName: student?.name || 'None',
+            instructorName: inst?.name || 'Unknown',
             duration: Math.round((endTime.getTime() - startTime.getTime()) / 360000) / 10,
           };
         }),
@@ -454,47 +462,117 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   checkConflicts: async (aircraftId, startTime, endTime, excludeId?) => {
-    const bufferedStart = new Date(startTime); bufferedStart.setMinutes(bufferedStart.getMinutes() - 30);
-    const bufferedEnd = new Date(endTime); bufferedEnd.setMinutes(bufferedEnd.getMinutes() + 30);
-    let query = supabase.from('scheduled_flights').select('*')
+    const bufferedStart = new Date(startTime);
+    bufferedStart.setMinutes(bufferedStart.getMinutes() - 30);
+    const bufferedEnd = new Date(endTime);
+    bufferedEnd.setMinutes(bufferedEnd.getMinutes() + 30);
+
+    let query = supabase
+      .from('scheduled_flights')
+      .select('*')
       .eq('aircraft_id', aircraftId)
       .lt('start_time', bufferedEnd.toISOString())
       .gt('end_time', bufferedStart.toISOString());
+
     if (excludeId) query = query.neq('id', excludeId);
+
     const { data, error } = await query;
+
     if (error) return { hasConflict: false, conflictingFlights: [] };
-    const conflicts = excludeId ? (data || []).filter(f => String(f.id) !== String(excludeId)) : (data || []);
+
+    const conflicts = excludeId
+      ? (data || []).filter(f => String(f.id) !== String(excludeId))
+      : (data || []);
+
     return {
       hasConflict: conflicts.length > 0,
       conflictingFlights: conflicts.map(row => ({
-        id: String(row.id), aircraftId: String(row.aircraft_id), instructorId: String(row.instructor_id),
-        startTime: row.start_time as string, endTime: row.end_time as string,
-        sortieType: row.sortie_type as string, status: row.status as string,
-        weatherBriefed: false, notamBriefed: false, notes: '',
+        id: String(row.id),
+        aircraftId: String(row.aircraft_id),
+        instructorId: String(row.instructor_id),
+        startTime: row.start_time as string,
+        endTime: row.end_time as string,
+        sortieType: row.sortie_type as string,
+        status: row.status as string,
+        weatherBriefed: false,
+        notamBriefed: false,
+        notes: '',
+        exercise: '',
       })),
     };
   },
 
   bookFlight: async (booking) => {
-    const conflict = await get().checkConflicts(booking.aircraftId, booking.startTime, booking.endTime);
+    const conflict = await get().checkConflicts(
+      booking.aircraftId,
+      booking.startTime,
+      booking.endTime
+    );
+
     if (conflict.hasConflict) {
-      const cf = conflict.conflictingFlights[0];
-      return { success: false, message: `⚠️ Time conflict with 30‑min buffer.` };
+      return {
+        success: false,
+        message: '⚠️ Time conflict with 30‑min buffer. Please choose a different time.',
+      };
     }
+
     const { error } = await supabase.from('scheduled_flights').insert({
-      aircraft_id: booking.aircraftId, instructor_id: booking.instructorId,
-      student_id: booking.studentId || null, start_time: booking.startTime, end_time: booking.endTime,
-      sortie_type: booking.sortieType, status: booking.status || 'SCHEDULED',
-      weather_briefed: booking.weatherBriefed || false, notam_briefed: booking.notamBriefed || false,
+      aircraft_id: booking.aircraftId,
+      instructor_id: booking.instructorId,
+      student_id: booking.studentId || null,
+      start_time: booking.startTime,
+      end_time: booking.endTime,
+      sortie_type: booking.sortieType,
+      exercise: (booking as any).exercise || '',
+      status: booking.status || 'SCHEDULED',
+      weather_briefed: booking.weatherBriefed || false,
+      notam_briefed: booking.notamBriefed || false,
       notes: booking.notes || '',
     });
-    if (!error) { await get().loadScheduledFlights(); return { success: true, message: '✅ Flight booked!' }; }
-    return { success: false, message: '❌ Failed to book flight.' };
+
+    if (!error) {
+      await get().loadScheduledFlights();
+      return { success: true, message: '✅ Flight booked successfully!' };
+    }
+
+    return { success: false, message: '❌ Failed to book flight. Please try again.' };
   },
 
   cancelFlight: async (id) => {
     const { error } = await supabase.from('scheduled_flights').delete().eq('id', id);
-    if (!error) set(state => ({ scheduledFlights: state.scheduledFlights.filter(f => f.id !== id) }));
+    if (!error) {
+      set(state => ({
+        scheduledFlights: state.scheduledFlights.filter(f => f.id !== id)
+      }));
+    }
+  },
+
+  updateScheduledFlight: async (id, updates) => {
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.aircraftId !== undefined) dbUpdates.aircraft_id = updates.aircraftId;
+    if (updates.instructorId !== undefined) dbUpdates.instructor_id = updates.instructorId;
+    if (updates.studentId !== undefined) dbUpdates.student_id = updates.studentId;
+    if (updates.startTime !== undefined) dbUpdates.start_time = updates.startTime;
+    if (updates.endTime !== undefined) dbUpdates.end_time = updates.endTime;
+    if (updates.sortieType !== undefined) dbUpdates.sortie_type = updates.sortieType;
+    if ((updates as any).exercise !== undefined) dbUpdates.exercise = (updates as any).exercise;
+    if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+    if (updates.weatherBriefed !== undefined) dbUpdates.weather_briefed = updates.weatherBriefed;
+    if (updates.notamBriefed !== undefined) dbUpdates.notam_briefed = updates.notamBriefed;
+
+    const { error } = await supabase
+      .from('scheduled_flights')
+      .update(dbUpdates)
+      .eq('id', id);
+
+    if (!error) {
+      set(state => ({
+        scheduledFlights: state.scheduledFlights.map(f =>
+          f.id === id ? { ...f, ...updates } : f
+        )
+      }));
+    }
   },
 
   // ============================================================
@@ -504,20 +582,29 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     set({ loadingMaintenance: true });
     const { data, error } = await supabase.from('maintenance_records').select('*').order('scheduled_date', { ascending: true });
     if (data && !error) {
-      const aircraftList = get().aircraft; const today = new Date(); today.setHours(0, 0, 0, 0);
+      const aircraftList = get().aircraft;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
       set({
         maintenanceRecords: data.map((row: Record<string, unknown>) => {
           const ac = aircraftList.find(a => String(a.id) === String(row.aircraft_id));
           const scheduledDate = new Date(row.scheduled_date as string);
           const daysUntilDue = Math.ceil((scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
           return {
-            id: String(row.id), aircraftId: String(row.aircraft_id),
-            maintenanceType: row.maintenance_type as string, description: row.description as string,
-            scheduledDate: row.scheduled_date as string, completedDate: row.completed_date as string || null,
-            status: row.status as MaintenanceRecord['status'], cost: row.cost as number,
-            performedBy: row.performed_by as string, notes: row.notes as string,
-            aircraftReg: ac?.registration || 'Unknown', aircraftType: ac?.type || '',
-            isOverdue: daysUntilDue < 0 && row.status !== 'COMPLETED' && row.status !== 'CANCELLED', daysUntilDue,
+            id: String(row.id),
+            aircraftId: String(row.aircraft_id),
+            maintenanceType: row.maintenance_type as string,
+            description: row.description as string,
+            scheduledDate: row.scheduled_date as string,
+            completedDate: row.completed_date as string || null,
+            status: row.status as MaintenanceRecord['status'],
+            cost: row.cost as number,
+            performedBy: row.performed_by as string,
+            notes: row.notes as string,
+            aircraftReg: ac?.registration || 'Unknown',
+            aircraftType: ac?.type || '',
+            isOverdue: daysUntilDue < 0 && row.status !== 'COMPLETED' && row.status !== 'CANCELLED',
+            daysUntilDue,
           };
         }),
         loadingMaintenance: false,
@@ -527,10 +614,15 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
 
   addMaintenanceRecord: async (record) => {
     const { error } = await supabase.from('maintenance_records').insert({
-      aircraft_id: record.aircraftId, maintenance_type: record.maintenanceType,
-      description: record.description, scheduled_date: record.scheduledDate,
-      completed_date: record.completedDate, status: record.status, cost: record.cost,
-      performed_by: record.performedBy, notes: record.notes,
+      aircraft_id: record.aircraftId,
+      maintenance_type: record.maintenanceType,
+      description: record.description,
+      scheduled_date: record.scheduledDate,
+      completed_date: record.completedDate,
+      status: record.status,
+      cost: record.cost,
+      performed_by: record.performedBy,
+      notes: record.notes,
     });
     if (!error) await get().loadMaintenanceRecords();
   },
@@ -545,15 +637,26 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (updates.description !== undefined) dbUpdates.description = updates.description;
     if (updates.scheduledDate !== undefined) dbUpdates.scheduled_date = updates.scheduledDate;
     const { error } = await supabase.from('maintenance_records').update(dbUpdates).eq('id', id);
-    if (!error) set(state => ({ maintenanceRecords: state.maintenanceRecords.map(m => m.id === id ? { ...m, ...updates } : m) }));
+    if (!error) {
+      set(state => ({
+        maintenanceRecords: state.maintenanceRecords.map(m =>
+          m.id === id ? { ...m, ...updates } : m
+        )
+      }));
+    }
   },
 
   removeMaintenanceRecord: async (id) => {
     const { error } = await supabase.from('maintenance_records').delete().eq('id', id);
-    if (!error) set(state => ({ maintenanceRecords: state.maintenanceRecords.filter(m => m.id !== id) }));
+    if (!error) {
+      set(state => ({
+        maintenanceRecords: state.maintenanceRecords.filter(m => m.id !== id)
+      }));
+    }
   },
 
-  getMaintenanceForAircraft: (aircraftId) => get().maintenanceRecords.filter(m => m.aircraftId === aircraftId),
+  getMaintenanceForAircraft: (aircraftId) =>
+    get().maintenanceRecords.filter(m => m.aircraftId === aircraftId),
 
   // ============================================================
   // 7. INSTRUCTOR FUNCTIONS
@@ -564,10 +667,15 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (data && !error) {
       set({
         instructors: data.map((row: Record<string, unknown>) => ({
-          id: String(row.id), name: row.name as string, initials: row.initials as string,
-          licenseNumber: row.license_number as string, ratings: row.ratings as string,
-          maxDailyHours: row.max_daily_hours as number, email: (row.email as string) || '',
-          phone: (row.phone as string) || '', status: row.status as Instructor['status'],
+          id: String(row.id),
+          name: row.name as string,
+          initials: row.initials as string,
+          licenseNumber: row.license_number as string,
+          ratings: row.ratings as string,
+          maxDailyHours: row.max_daily_hours as number,
+          email: (row.email as string) || '',
+          phone: (row.phone as string) || '',
+          status: row.status as Instructor['status'],
         })),
         loadingInstructors: false,
       });
@@ -576,11 +684,20 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
 
   addInstructor: async (instructor) => {
     const { data, error } = await supabase.from('instructors').insert({
-      name: instructor.name, initials: instructor.initials, license_number: instructor.licenseNumber,
-      ratings: instructor.ratings, max_daily_hours: instructor.maxDailyHours,
-      email: instructor.email, phone: instructor.phone, status: instructor.status,
+      name: instructor.name,
+      initials: instructor.initials,
+      license_number: instructor.licenseNumber,
+      ratings: instructor.ratings,
+      max_daily_hours: instructor.maxDailyHours,
+      email: instructor.email,
+      phone: instructor.phone,
+      status: instructor.status,
     }).select().single();
-    if (data && !error) set(state => ({ instructors: [...state.instructors, { ...instructor, id: String(data.id) }] }));
+    if (data && !error) {
+      set(state => ({
+        instructors: [...state.instructors, { ...instructor, id: String(data.id) }]
+      }));
+    }
   },
 
   updateInstructor: async (id, updates) => {
@@ -594,12 +711,22 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
     if (updates.status !== undefined) dbUpdates.status = updates.status;
     const { error } = await supabase.from('instructors').update(dbUpdates).eq('id', id);
-    if (!error) set(state => ({ instructors: state.instructors.map(i => i.id === id ? { ...i, ...updates } : i) }));
+    if (!error) {
+      set(state => ({
+        instructors: state.instructors.map(i =>
+          i.id === id ? { ...i, ...updates } : i
+        )
+      }));
+    }
   },
 
   removeInstructor: async (id) => {
     const { error } = await supabase.from('instructors').delete().eq('id', id);
-    if (!error) set(state => ({ instructors: state.instructors.filter(i => i.id !== id) }));
+    if (!error) {
+      set(state => ({
+        instructors: state.instructors.filter(i => i.id !== id)
+      }));
+    }
   },
 
   // ============================================================
@@ -621,61 +748,26 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     set({ notams: data, loadingNotams: false });
   },
 
-    // ============================================================
-    // 10. UPDATE FLIGHT SCHEDULE FUNCTIONS
-    // ============================================================
-
-
-
-// Add to the store functions:
-updateScheduledFlight: async (id, updates) => {
-  const dbUpdates: Record<string, unknown> = {};
-  if (updates.status !== undefined) dbUpdates.status = updates.status;
-  if (updates.aircraftId !== undefined) dbUpdates.aircraft_id = updates.aircraftId;
-  if (updates.instructorId !== undefined) dbUpdates.instructor_id = updates.instructorId;
-  if (updates.studentId !== undefined) dbUpdates.student_id = updates.studentId;
-  if (updates.startTime !== undefined) dbUpdates.start_time = updates.startTime;
-  if (updates.endTime !== undefined) dbUpdates.end_time = updates.endTime;
-  if (updates.sortieType !== undefined) dbUpdates.sortie_type = updates.sortieType;
-  if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
-  if (updates.weatherBriefed !== undefined) dbUpdates.weather_briefed = updates.weatherBriefed;
-  if (updates.notamBriefed !== undefined) dbUpdates.notam_briefed = updates.notamBriefed;
-
-  const { error } = await supabase.from('scheduled_flights').update(dbUpdates).eq('id', id);
-  if (!error) {
-    set(state => ({
-      scheduledFlights: state.scheduledFlights.map(f => f.id === id ? { ...f, ...updates } : f)
-    }));
-  }
-},
-
-
   // ============================================================
   // 10. AVAILABILITY / LEAVE FUNCTIONS
   // ============================================================
-
-  /**
-   * Load all availability/leave records from Supabase
-   * Matches person IDs to names and initials for display
-   */
   loadAvailability: async () => {
     set({ loadingAvailability: true });
     const { data, error } = await supabase
       .from('availability')
       .select('*')
       .order('start_date', { ascending: true });
-    
+
     if (data && !error) {
       const instructors = get().instructors;
       const students = get().students;
-      
+
       set({
         availabilityRecords: data.map((row: Record<string, unknown>) => {
-          // Find the person's name and initials for display
           const person = row.person_type === 'instructor'
             ? instructors.find(i => i.id === String(row.person_id))
             : students.find(s => s.id === String(row.person_id));
-          
+
           return {
             id: String(row.id),
             personType: row.person_type as 'instructor' | 'student',
@@ -700,9 +792,6 @@ updateScheduledFlight: async (id, updates) => {
     }
   },
 
-  /**
-   * Add a new availability/leave record
-   */
   addAvailability: async (record) => {
     const { error } = await supabase.from('availability').insert({
       person_type: record.personType,
@@ -719,9 +808,6 @@ updateScheduledFlight: async (id, updates) => {
     if (!error) await get().loadAvailability();
   },
 
-  /**
-   * Update an availability record
-   */
   updateAvailability: async (id, updates) => {
     const dbUpdates: Record<string, unknown> = {};
     if (updates.leaveType !== undefined) dbUpdates.leave_type = updates.leaveType;
@@ -729,20 +815,21 @@ updateScheduledFlight: async (id, updates) => {
     if (updates.endDate !== undefined) dbUpdates.end_date = updates.endDate;
     if (updates.reason !== undefined) dbUpdates.reason = updates.reason;
     if (updates.status !== undefined) dbUpdates.status = updates.status;
-    
-    const { error } = await supabase.from('availability').update(dbUpdates).eq('id', id);
+
+    const { error } = await supabase
+      .from('availability')
+      .update(dbUpdates)
+      .eq('id', id);
+
     if (!error) {
       set(state => ({
-        availabilityRecords: state.availabilityRecords.map(a => 
+        availabilityRecords: state.availabilityRecords.map(a =>
           a.id === id ? { ...a, ...updates } : a
         )
       }));
     }
   },
 
-  /**
-   * Remove an availability record
-   */
   removeAvailability: async (id) => {
     const { error } = await supabase.from('availability').delete().eq('id', id);
     if (!error) {
@@ -752,10 +839,6 @@ updateScheduledFlight: async (id, updates) => {
     }
   },
 
-  /**
-   * Check if a person is available on a specific date
-   * Returns true if available, false if on leave
-   */
   checkAvailability: async (personType: string, personId: string, date: string) => {
     const { data } = await supabase
       .from('availability')
@@ -766,8 +849,8 @@ updateScheduledFlight: async (id, updates) => {
       .gte('end_date', date)
       .eq('status', 'APPROVED')
       .limit(1);
-    
-    return !data || data.length === 0;  // true = available, false = on leave
+
+    return !data || data.length === 0;
   },
 
   // ============================================================
