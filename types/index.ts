@@ -148,6 +148,7 @@ export interface ScheduledFlight {
   endTime: string;
   sortieType: string;
   status: string;
+  exercise?: string;  
   weatherBriefed: boolean;
   notamBriefed: boolean;
   notes: string;

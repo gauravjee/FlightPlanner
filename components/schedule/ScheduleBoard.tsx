@@ -17,11 +17,12 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { FlightSlot, ScheduledFlight } from '@/types';
 import FlightDetailModal from './FlightDetailModal';
 import BookingForm from './BookingForm';
+
 
 // ============================================================
 // CONSTANTS – Sortie type colors and labels (used for legend)
@@ -742,7 +743,7 @@ export default function ScheduleBoard() {
               <tbody className="text-slate-300">
                 {(() => {
                   const entries = Object.entries(EXERCISE_SHORT_CODES);
-                  const rows: JSX.Element[] = [];
+                  const rows: React.ReactElement[] = [];
                   for (let i = 0; i < entries.length; i += 3) {
                     const col1 = entries[i];
                     const col2 = entries[i + 1];

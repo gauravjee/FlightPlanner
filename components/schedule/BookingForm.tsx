@@ -396,6 +396,9 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
         sortieType: form.sortieType,
         exercise: isMaintenance ? '' : form.exercise,
         notes: form.notes,
+        status: 'SCHEDULED',           
+        weatherBriefed: false,         
+        notamBriefed: false,           
       });
       setLoading(false);
       if (result.success) { onSuccess(result.message); } else { setError(result.message); }
@@ -593,7 +596,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
                 const today = new Date(); today.setHours(0, 0, 0, 0);
                 const isExpired = medicalDate && medicalDate < today;
                 return (
-                  <option key={s.id} value={s.id} disabled={isExpired}>
+                  <option key={s.id} value={s.id} disabled={!!isExpired}>
                     {s.name} ({s.initials}) — {s.trainingStage} | {s.totalHours}h{isExpired ? ' ⚠️ MEDICAL EXPIRED' : ''}
                   </option>
                 );

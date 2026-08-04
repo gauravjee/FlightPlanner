@@ -214,8 +214,7 @@ const handleCancel = async () => {
               <button 
                 onClick={() => {
                   onClose();
-                  // Open debrief form - you'll need to pass a callback
-                  if (onCheckOut) onCheckOut(slot);
+                  // The Check-Out is handled by the Schedule Board's edit functionality
                 }}
                 className="px-4 py-2 text-sm bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition cursor-pointer"
               >

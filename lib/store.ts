@@ -87,7 +87,7 @@ interface FlightStore {
   // Flight Record Actions
   loadFlightRecords: () => Promise<void>;
   loadStudentFlightRecords: (studentId: string) => Promise<void>;
-  addFlightRecord: (record: Omit<FlightRecord, 'id' | 'totalHours' | 'studentName' | 'aircraftReg' | 'instructorName'>) => Promise<void>;
+  addFlightRecord: (record: Omit<FlightRecord, 'id' | 'studentName' | 'aircraftReg' | 'instructorName'>) => Promise<void>;
 
   // Fuel Actions
   loadFuelRecords: () => Promise<void>;
@@ -360,8 +360,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     } else { console.error('Error loading student flight records:', error); set({ loadingFlights: false }); }
   },
 
-  addFlightRecord: async (record) => {
-    const { error } = await supabase.from('flight_records').insert({
+    addFlightRecord: async (record) => {
+      const { error } = await supabase.from('flight_records').insert({
       student_id: record.studentId, aircraft_id: record.aircraftId, instructor_id: record.instructorId,
       flight_date: record.flightDate, departure_time: record.departureTime, arrival_time: record.arrivalTime,
       hobbs_start: record.hobbsStart, hobbs_end: record.hobbsEnd, landings: record.landings,
@@ -369,7 +369,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       instructor_notes: record.instructorNotes, student_performance: record.studentPerformance,
       weather_conditions: record.weatherConditions,
     });
-    if (!error) {
+       if (!error) {
       const student = get().students.find(s => s.id === record.studentId);
       const newTotalHours = (student?.totalHours || 0) + record.totalHours;
       await supabase.from('students').update({ total_hours: newTotalHours }).eq('id', record.studentId);
