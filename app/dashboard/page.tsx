@@ -14,26 +14,36 @@
 'use client';
 
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
-
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import Header from '@/components/ui/Header';
+import { useSession } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import StudentProgressWidget from '@/components/dashboard/StudentProgressWidget';
 
 export default function DashboardPage() {
-  // ----- Get data and actions from store -----
   const store = useFlightStore();
   const weather = store.weather;
   const aircraft = store.aircraft;
   const fetchWeather = store.fetchWeather;
-  const notams = store.notams;                  // ← Live NOTAMs
-  const loadNOTAMs = store.loadNOTAMs;          // ← Load NOTAMs function
+  const notams = store.notams;
+  const loadNOTAMs = store.loadNOTAMs;
 
-  // ----- Fetch live weather on page load -----
+  const { data: session } = useSession();
+  const router = useRouter();
+
+  // Redirect students to their own dashboard
+  useEffect(() => {
+    if (session?.user && (session.user as any).role === 'student') {
+      router.push('/dashboard/student');
+    }
+  }, [session, router]);
+
+  // Fetch live weather on page load
   useEffect(() => {
     import('@/lib/weather').then(({ getTimeUntilNextMetar }) => {
       fetchWeather('VOBL');
       const timeUntil = getTimeUntilNextMetar();
-      console.log(`⏰ Next METAR in ${Math.round(timeUntil / 60000)} minutes`);
       const timeout = setTimeout(() => {
         fetchWeather('VOBL');
         setInterval(() => fetchWeather('VOBL'), 30 * 60 * 1000);
@@ -42,7 +52,7 @@ export default function DashboardPage() {
     });
   }, [fetchWeather]);
 
-  // ----- Fetch live NOTAMs on page load -----
+  // Fetch live NOTAMs
   useEffect(() => {
     loadNOTAMs('VOBL');
   }, [loadNOTAMs]);
@@ -203,11 +213,16 @@ export default function DashboardPage() {
                           </td>
                         </tr>
                       ))}
+                      
                     </tbody>
                   </table>
                 </div>
               </div>
+              {/* ----- STUDENT PROGRESS WIDGET ----- */}
+              <StudentProgressWidget />
             </div>
+
+            
 
             {/* ===== RIGHT COLUMN ===== */}
             <div className="space-y-6">
@@ -260,6 +275,13 @@ export default function DashboardPage() {
                   </a>
                   <a href="/dashboard/instructors" className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
                     <p className="text-xl mb-1">👨‍🏫</p><p className="text-xs">Instructors</p>
+                  </a>
+                  <a href="/dashboard/availability" className="bg-teal-500/10 text-teal-400 border border-teal-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
+                    <p className="text-xl mb-1">🏖️</p><p className="text-xs">Availability</p>
+                  </a>
+                  <a href="/dashboard/progress" className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
+                    <p className="text-xl mb-1">📊</p>
+                    <p className="text-xs">Progress</p>
                   </a>
                 </div>
               </div>

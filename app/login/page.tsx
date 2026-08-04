@@ -1,9 +1,10 @@
 // app/login/page.tsx
-// Login page for FlightPro Manager
+// Login page – authenticates users and redirects based on role
+
 'use client';
 
 import { useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { signIn, getSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
@@ -29,8 +30,15 @@ export default function LoginPage() {
     if (result?.error) {
       setError('Invalid email or password. Please try again.');
     } else {
-      router.push('/dashboard');
-      router.refresh();
+      // Get the session to check the user's role
+      const session = await getSession();
+      const role = (session?.user as any)?.role;
+      // Redirect to the appropriate dashboard
+      if (role === 'student') {
+        router.push('/dashboard/student');
+      } else {
+        router.push('/dashboard');
+      }
     }
   };
 

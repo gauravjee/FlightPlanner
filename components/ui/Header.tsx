@@ -1,6 +1,5 @@
 // components/ui/Header.tsx
-// Shared header component with live IST clock and optional action button
-// Used on all dashboard pages for consistent navigation
+// Shared header component with live IST clock, optional action button, and user menu
 'use client';
 
 import { useState, useEffect, ReactNode } from 'react';
@@ -9,25 +8,18 @@ import { signOut, useSession } from 'next-auth/react';
 
 // ============================================================
 // LIVE CLOCK COMPONENT
-// Shows current time in IST, updates every second
-// Uses useEffect + useState to avoid hydration mismatch
 // ============================================================
 function LiveClock() {
-  // Start with empty state to avoid server/client mismatch
   const [time, setTime] = useState<Date | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    // Mark as mounted (client-side only)
     setMounted(true);
     setTime(new Date());
-    
-    // Update clock every second
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Don't render anything until client-side mounted (avoids hydration error)
   if (!mounted || !time) {
     return (
       <div className="text-right">
@@ -66,20 +58,30 @@ function LiveClock() {
 }
 
 // ============================================================
-// USER MENU - Shows logged-in user and logout button
+// USER MENU – shows logged‑in user and logout button
 // ============================================================
 function UserMenu() {
   const { data: session } = useSession();
 
   if (!session?.user) return null;
 
+  const role = (session.user as any).role;
+  const dashboardUrl = role === 'student' ? '/dashboard/student' : '/dashboard';
+
   return (
     <div className="flex items-center space-x-2">
       <div className="text-right hidden md:block">
         <p className="text-xs text-slate-400">
-          {(session.user as any).role === 'admin' ? '👑' : '👨‍🏫'} {session.user.name}
+          {role === 'admin' ? '👑' : role === 'instructor' ? '👨‍🏫' : '👨‍✈️'}{' '}
+          {session.user.name}
         </p>
       </div>
+      <Link
+        href={dashboardUrl}
+        className="text-xs text-blue-400 hover:text-blue-300"
+      >
+        Dashboard
+      </Link>
       <button
         onClick={() => signOut({ callbackUrl: '/login' })}
         className="px-3 py-1.5 bg-red-500/20 text-red-400 rounded-lg text-xs hover:bg-red-500/30 transition cursor-pointer"
@@ -90,20 +92,14 @@ function UserMenu() {
   );
 }
 
-
 // ============================================================
 // SHARED HEADER COMPONENT
-// Props:
-//   title      - Page title (e.g., "Aircraft Fleet")
-//   subtitle   - Optional subtitle below title
-//   backUrl    - URL for the back button (default: /dashboard)
-//   action     - Optional action button/component on the right
 // ============================================================
 interface HeaderProps {
   title: string;
   subtitle?: string;
   backUrl?: string;
-  action?: ReactNode;  // Optional action button (Add, Book, Log, etc.)
+  action?: ReactNode;
 }
 
 export default function Header({ title, subtitle, backUrl = '/dashboard', action }: HeaderProps) {
@@ -111,8 +107,7 @@ export default function Header({ title, subtitle, backUrl = '/dashboard', action
     <header className="border-b border-slate-700 bg-slate-800/50 backdrop-blur-sm">
       <div className="max-w-7xl mx-auto px-4 py-4">
         <div className="flex items-center justify-between">
-          
-          {/* ===== LEFT SECTION: Back button + Icon + Title ===== */}
+          {/* Left section */}
           <div className="flex items-center space-x-4">
             <Link href={backUrl} className="text-slate-400 hover:text-white transition text-sm">
               ← Back
@@ -127,24 +122,18 @@ export default function Header({ title, subtitle, backUrl = '/dashboard', action
               </div>
             </div>
           </div>
-          
-          {/* ===== RIGHT SECTION: User Info + Live Clock + Airport ===== */}
+
+          {/* Right section */}
+          <div className="flex items-center space-x-4">
+            {action && action}
+            <UserMenu />
             <div className="flex items-center space-x-4">
-              {/* Optional action button (Add Aircraft, Book Slot, etc.) */}
-              {action && action}
-              
-              {/* User info & logout */}
-              <UserMenu />
-              
-              {/* Live clock and airport */}
-              <div className="flex items-center space-x-4">
-                <LiveClock />
-                <div className="text-right">
-                  <p className="text-xs text-slate-500">VOBL - Bangalore</p>
-                </div>
+              <LiveClock />
+              <div className="text-right">
+                <p className="text-xs text-slate-500">VOBL - Bangalore</p>
               </div>
             </div>
-          
+          </div>
         </div>
       </div>
     </header>

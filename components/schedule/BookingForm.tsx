@@ -1,315 +1,412 @@
 // components/schedule/BookingForm.tsx
-// Modal form for booking new flight slots
-// Features: 
-//   - IST timezone support (stores UTC, displays IST)
-//   - Real-time conflict detection with available/booked aircraft grouping
-//   - Date/time validation (no past dates, end must be after start)
-//   - Auto-clears aircraft selection if it becomes unavailable
+// Modal form for booking new flight slots or editing existing ones.
+//
+// Features:
+//   - IST → UTC conversion for storage
+//   - Date validation (no past dates)
+//   - 30‑minute buffer between flights on same aircraft
+//   - Real‑time conflict detection with available/booked aircraft grouping
+//   - Person conflict detection (student/instructor can't be double‑booked)
+//   - Student medical expiry check – blocks expired students
+//   - Dropdown time pickers (30‑min increments)
+//   - Auto‑set end time = start + 1 hour
+//   - End times before start are disabled
 //   - Duration calculator
+//   - Edit mode when `existingFlight` prop is provided
+//   - Sortie Types: DUAL, SOLO, MAINTENANCE
+//   - Exercise field (FTO-specific) – shown for DUAL & SOLO
+//   - MAINTENANCE: Instructor enabled, Student & Exercise disabled
+//   - SOLO: Instructor disabled, Student & Exercise required
+//   - Conflict warnings shown near Instructor/Student dropdowns
+//   - Aircraft fuel info displayed when aircraft selected
+
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
 import { useFlightStore } from '@/lib/store';
+import { ScheduledFlight } from '@/types';
 
-// Props interface for the booking form modal
+// ============================================================
+// PROPS
+// ============================================================
 interface Props {
-  onClose: () => void;                           // Close the modal
-  onSuccess: (message: string) => void;          // Callback when booking succeeds
+  onClose: () => void;
+  onSuccess: (message: string) => void;
+  existingFlight?: ScheduledFlight | null;   // non‑null → edit mode
 }
 
-export default function BookingForm({ onClose, onSuccess }: Props) {
-  // ============================================================
-  // STORE DATA - Get data and actions from Zustand
-  // ============================================================
-  const { 
-    aircraft,                  // All aircraft in fleet
-    students,                  // All active students
-    instructors,               // All instructors
-    scheduledFlights,          // Currently booked flights (for conflict detection)
-    bookFlight,                // Action to create a new booking
-    loadAircraft,              // Load aircraft if store is empty
-    loadStudents,              // Load students if store is empty
-    loadScheduledFlights       // Load bookings for conflict checking
+// ============================================================
+// TIME SLOTS – 30‑minute increments from 06:00 to 22:00 IST
+// ============================================================
+const generateTimeSlots = (): { value: string; label: string }[] => {
+  const slots: { value: string; label: string }[] = [];
+  for (let h = 6; h <= 22; h++) {
+    for (let m = 0; m < 60; m += 30) {
+      const hour = h.toString().padStart(2, '0');
+      const minute = m.toString().padStart(2, '0');
+      slots.push({ value: `${hour}:${minute}`, label: `${hour}:${minute} IST` });
+    }
+  }
+  return slots;
+};
+
+const TIME_SLOTS = generateTimeSlots();
+const todayLocal = new Date().toLocaleDateString('en-CA');   // local date in YYYY-MM-DD
+
+// ============================================================
+// FTO EXERCISE LIST
+// ============================================================
+const EXERCISES = [
+  '120NM - 120NM Xcty Check',
+  '250NM - 250NM Xcty Check',
+  '300NM - 300 Nm Cross-Country',
+  'AIREX - Air Experience',
+  'C&D - Climb & Descend',
+  'CCTS - Circuits & Landings',
+  'CHK - Check',
+  'CRTV - Corrective',
+  'CT&DT - Climbing turn & Descending turn',
+  'EMGCY - Emergencies',
+  'EOC - Effect of Controls',
+  'FAM - Familiarisation',
+  'GF - General Flying',
+  'GFT.D - General Flying Test DAY',
+  'GFT.N - General Flying Test NIGHT',
+  'IF - Instrument Flying',
+  'IRT - Instrument Rating Test',
+  'PC - Progress Check',
+  'PPC - Pilot Proficiency Check',
+  'RRT - Recurrent Training',
+  'S&L - Straight & Level',
+  'SIDE/FRDW SLIP - SLIP',
+  'ST.TRN - Steep Turns',
+  'ST&RE - Stall & Recovery',
+  'TO & Climb - TO & Climb',
+  'TRN - Turns',
+  'X-CTY - Cross-Country',
+];
+
+// ============================================================
+// MAIN COMPONENT
+// ============================================================
+export default function BookingForm({ onClose, onSuccess, existingFlight }: Props) {
+
+  // ----- Store -----
+  const {
+    aircraft, students, instructors, scheduledFlights,
+    bookFlight, loadAircraft, loadStudents, loadScheduledFlights,
+    updateScheduledFlight
   } = useFlightStore();
-  
-  // ============================================================
-  // INITIAL DATA LOAD
-  // ============================================================
+
+  // ----- Initial data load -----
   useEffect(() => {
-    if (aircraft.length === 0) loadAircraft();     // Load fleet data
-    if (students.length === 0) loadStudents();     // Load student data
-    loadScheduledFlights();                         // Load existing bookings
+    if (aircraft.length === 0) loadAircraft();
+    if (students.length === 0) loadStudents();
+    loadScheduledFlights();
   }, []);
-  
-  // ============================================================
-  // DEFAULT TIMES - Set to next full hour in IST
-  // ============================================================
+
+  // ----- Default times (next full hour) -----
   const now = new Date();
   const defaultStart = new Date(now);
-  defaultStart.setHours(now.getHours() + 1, 0, 0, 0); // Next full hour
+  defaultStart.setHours(now.getHours() + 1, 0, 0, 0);
   const defaultEnd = new Date(defaultStart);
-  defaultEnd.setHours(defaultStart.getHours() + 2);     // 2-hour block by default
-  
-  // Format Date object to HH:MM string for time inputs
+  defaultEnd.setHours(defaultStart.getHours() + 2);
+
+  // Helper to format a Date to HH:MM (rounded to nearest 30 min)
   const formatTime = (date: Date): string => {
-    return `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+    const h = date.getHours().toString().padStart(2, '0');
+    const m = date.getMinutes() >= 30 ? '30' : '00';
+    return `${h}:${m}`;
   };
-  
-  // ============================================================
-  // FORM STATE
-  // ============================================================
+
+  // Helper to add hours to a time string
+  const addHoursToTime = (timeStr: string, hoursToAdd: number): string => {
+    const [h, m] = timeStr.split(':').map(Number);
+    const totalMinutes = h * 60 + m + hoursToAdd * 60;
+    const newH = Math.floor(totalMinutes / 60) % 24;
+    const newM = totalMinutes % 60 >= 30 ? 30 : 0;
+    return `${newH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')}`;
+  };
+
+  // ----- Form state -----
   const [form, setForm] = useState({
-    aircraftId: '',                                                    // Selected aircraft ID
-    instructorId: '',                                                  // Selected instructor ID
-    studentId: '',                                                     // Selected student ID (optional)
-    date: defaultStart.toISOString().split('T')[0],                   // Date in YYYY-MM-DD format
-    startTime: formatTime(defaultStart),                              // Start time HH:MM
-    endTime: formatTime(defaultEnd),                                  // End time HH:MM
-    sortieType: 'CIRCUIT_DUAL' as string,                             // Type of training flight
-    notes: '',                                                         // Optional notes
+    aircraftId: '',
+    instructorId: '',
+    studentId: '',
+    date: todayLocal,
+    startTime: formatTime(defaultStart),
+    endTime: formatTime(defaultEnd),
+    sortieType: 'DUAL',          // DUAL | SOLO | MAINTENANCE
+    exercise: '',                 // Exercise code (for DUAL & SOLO only)
+    notes: '',
   });
-  
-  const [loading, setLoading] = useState(false);          // Submit button loading state
-  const [error, setError] = useState('');                  // Red error message
-  const [conflictWarning, setConflictWarning] = useState(''); // Yellow conflict warning
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [conflictWarning, setConflictWarning] = useState('');
+
+  // ----- Populate form when editing an existing flight -----
+  useEffect(() => {
+    if (existingFlight) {
+      const startDate = new Date(existingFlight.startTime);
+      const endDate = new Date(existingFlight.endTime);
+      setForm({
+        aircraftId: existingFlight.aircraftId,
+        instructorId: existingFlight.instructorId || '',
+        studentId: existingFlight.studentId || '',
+        date: startDate.toLocaleDateString('en-CA'),
+        startTime: formatTime(startDate),
+        endTime: formatTime(endDate),
+        sortieType: existingFlight.sortieType || 'DUAL',
+        exercise: (existingFlight as any).exercise || '',
+        notes: existingFlight.notes || '',
+      });
+    }
+  }, [existingFlight]);
+
+  // ============================================================
+  // DERIVED STATE
+  // ============================================================
+
+  // Sortie type helpers
+  const isDual = form.sortieType === 'DUAL';
+  const isSolo = form.sortieType === 'SOLO';
+  const isMaintenance = form.sortieType === 'MAINTENANCE';
+
+  // Clear instructor when switching to Solo
+  useEffect(() => {
+    if (isSolo && form.instructorId) {
+      setForm(prev => ({ ...prev, instructorId: '' }));
+    }
+  }, [isSolo]);
+
+  // Clear student when switching to Maintenance
+  useEffect(() => {
+    if (isMaintenance && form.studentId) {
+      setForm(prev => ({ ...prev, studentId: '' }));
+    }
+  }, [isMaintenance]);
+
+  // Clear exercise when switching to Maintenance
+  useEffect(() => {
+    if (isMaintenance && form.exercise) {
+      setForm(prev => ({ ...prev, exercise: '' }));
+    }
+  }, [isMaintenance]);
+
+  // Selected aircraft object for fuel display
+  const selectedAircraft = aircraft.find(a => String(a.id) === String(form.aircraftId));
 
   // ============================================================
   // VALIDATION FUNCTIONS
   // ============================================================
-  
-  /**
-   * Check if selected date is in the past
-   * Prevents booking flights on days that have already passed
-   */
+
+  // Date must not be in the past
   const validateDate = (dateStr: string): string => {
     const selected = new Date(dateStr + 'T00:00:00');
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Compare dates only, ignore time
-    
-    if (selected < today) {
-      return '❌ Cannot book flights in the past. Please select today or a future date.';
-    }
+    today.setHours(0, 0, 0, 0);
+    if (selected < today) return '❌ Cannot book flights in the past.';
     return '';
   };
-  
-  /**
-   * Check if end time is after start time
-   * Ensures the booking has a positive duration
-   */
+
+  // End time must be after start time, minimum 30 min duration
   const validateTimes = (startTime: string, endTime: string): string => {
     if (!startTime || !endTime) return '';
-    
     const [sh, sm] = startTime.split(':').map(Number);
     const [eh, em] = endTime.split(':').map(Number);
-    const startMinutes = sh * 60 + sm;
-    const endMinutes = eh * 60 + em;
-    
-    if (endMinutes <= startMinutes) {
-      return '❌ End time must be after start time.';
-    }
+    if (eh * 60 + em <= sh * 60 + sm) return '❌ End time must be after start time.';
+    if ((eh * 60 + em) - (sh * 60 + sm) < 30) return '❌ Minimum flight duration is 30 minutes.';
     return '';
   };
-  
-  /**
-   * Check if the selected time has already passed today
-   * Only relevant when booking for today's date
-   */
+
+  // Start time must not be in the past (for today's date)
   const validateNotPast = (dateStr: string, timeStr: string): string => {
     const selected = new Date(`${dateStr}T${timeStr}:00`);
-    const now = new Date();
-    
-    if (selected < now) {
-      return '❌ Cannot book a time slot that has already passed.';
+    if (selected < new Date()) return '❌ Cannot book a time slot in the past.';
+    return '';
+  };
+
+  // Student must have a valid medical
+  const validateStudentMedical = (studentId: string): string => {
+    if (!studentId || isMaintenance) return '';
+    const student = students.find(s => s.id === studentId);
+    if (!student || !student.medicalExpiry) return '';
+    const medicalDate = new Date(student.medicalExpiry);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (medicalDate < today) {
+      return `❌ ${student.name}'s medical expired on ${student.medicalExpiry}. Cannot book flight.`;
     }
     return '';
   };
-  
-  /**
-   * Find which aircraft are already booked during the selected time slot
-   * Uses UTC timestamps for accurate comparison with database
-   * Returns array of booked aircraft IDs
-   */
-  const getBookedAircraftIds = useMemo((): string[] => {
-    if (!form.date || !form.startTime || !form.endTime) return [];
-    
-    // Create IST dates and convert to UTC timestamps for comparison
-    // IST is UTC+5:30, so we parse the date+time as IST
-    const slotStartIST = new Date(`${form.date}T${form.startTime}:00+05:30`);
-    const slotEndIST = new Date(`${form.date}T${form.endTime}:00+05:30`);
-    const slotStart = slotStartIST.getTime(); // UTC timestamp
-    const slotEnd = slotEndIST.getTime();      // UTC timestamp
-    
-    // Filter scheduled flights that overlap with our selected time
-    return scheduledFlights
-      .filter(flight => {
-        if (flight.status === 'CANCELLED') return false; // Ignore cancelled
-        const flightStart = new Date(flight.startTime).getTime();
-        const flightEnd = new Date(flight.endTime).getTime();
-        // Overlap condition: existing flight starts before new ends AND ends after new starts
-        return flightStart < slotEnd && flightEnd > slotStart;
-      })
-      .map(flight => flight.aircraftId);
-  }, [form.date, form.startTime, form.endTime, scheduledFlights]);
-  
-  /**
-   * Get list of available aircraft (NOT booked during selected time)
-   * Only includes ACTIVE aircraft
-   */
-  const availableAircraft = useMemo(() => {
-    return aircraft.filter(ac => 
-      ac.status === 'ACTIVE' && !getBookedAircraftIds.includes(String(ac.id))
-    );
-  }, [aircraft, getBookedAircraftIds]);
-  
-  /**
-   * Get list of already booked aircraft (for display as disabled options)
-   */
-  const bookedAircraft = useMemo(() => {
-    return aircraft.filter(ac => 
-      ac.status === 'ACTIVE' && getBookedAircraftIds.includes(String(ac.id))
-    );
-  }, [aircraft, getBookedAircraftIds]);
 
   // ============================================================
-  // FORM HANDLERS
+  // CONFLICT DETECTION
   // ============================================================
-  
-  /**
-   * Handle any form field change
-   * Runs validation and updates conflict warnings automatically
-   * Clears aircraft selection if it becomes unavailable
-   */
+
+  // Aircraft conflict – with 30‑minute buffer
+  const getBookedAircraftIds = useMemo((): string[] => {
+    if (!form.date || !form.startTime || !form.endTime) return [];
+    const slotStart = new Date(`${form.date}T${form.startTime}:00+05:30`);
+    const slotEnd = new Date(`${form.date}T${form.endTime}:00+05:30`);
+    const bufferedStart = new Date(slotStart); bufferedStart.setMinutes(bufferedStart.getMinutes() - 30);
+    const bufferedEnd = new Date(slotEnd); bufferedEnd.setMinutes(bufferedEnd.getMinutes() + 30);
+    return scheduledFlights
+      .filter(flight => {
+        if (existingFlight && flight.id === existingFlight.id) return false;
+        const fs = new Date(flight.startTime);
+        const fe = new Date(flight.endTime);
+        return fs < bufferedEnd && fe > bufferedStart;
+      })
+      .map(flight => flight.aircraftId);
+  }, [form.date, form.startTime, form.endTime, scheduledFlights, existingFlight]);
+
+  const availableAircraft = useMemo(
+    () => aircraft.filter(ac => ac.status === 'ACTIVE' && !getBookedAircraftIds.includes(String(ac.id))),
+    [aircraft, getBookedAircraftIds]
+  );
+
+  const bookedAircraft = useMemo(
+    () => aircraft.filter(ac => ac.status === 'ACTIVE' && getBookedAircraftIds.includes(String(ac.id))),
+    [aircraft, getBookedAircraftIds]
+  );
+
+  // Person conflict check (student or instructor already booked at this time)
+  const checkPersonConflict = (): string => {
+    if (!form.date || !form.startTime || !form.endTime) return '';
+    const slotStart = new Date(`${form.date}T${form.startTime}:00+05:30`);
+    const slotEnd = new Date(`${form.date}T${form.endTime}:00+05:30`);
+    // Student conflict (not for maintenance)
+    if (form.studentId && !isMaintenance) {
+      const conflict = scheduledFlights.some(flight => {
+        if (existingFlight && flight.id === existingFlight.id) return false;
+        if (flight.studentId !== form.studentId) return false;
+        const fs = new Date(flight.startTime); const fe = new Date(flight.endTime);
+        return fs < slotEnd && fe > slotStart;
+      });
+      if (conflict) return `❌ This student is already booked at this time.`;
+    }
+    // Instructor conflict (not for solo)
+    if (form.instructorId && !isSolo) {
+      const conflict = scheduledFlights.some(flight => {
+        if (existingFlight && flight.id === existingFlight.id) return false;
+        if (flight.instructorId !== form.instructorId) return false;
+        const fs = new Date(flight.startTime); const fe = new Date(flight.endTime);
+        return fs < slotEnd && fe > slotStart;
+      });
+      if (conflict) return `❌ This instructor is already booked at this time.`;
+    }
+    return '';
+  };
+
+  // ============================================================
+  // FIELD CHANGE HANDLER
+  // ============================================================
   const handleFieldChange = (field: string, value: string) => {
-    setError('');           // Clear previous error
-    setConflictWarning(''); // Clear previous warning
-    
+    setError('');
+    setConflictWarning('');
     setForm(prev => {
       const updated = { ...prev, [field]: value };
-      
-      // When date or time changes, re-validate everything
+
+      // Auto‑set end time = start + 1 hour when start time changes
+      if (field === 'startTime' && value) {
+        updated.endTime = addHoursToTime(value, 1);
+      }
+
+      // Clear exercise when switching to Maintenance
+      if (field === 'sortieType' && value === 'MAINTENANCE') {
+        updated.exercise = '';
+      }
+
+      // Validate date/time
       if (field === 'date' || field === 'startTime' || field === 'endTime') {
-        
-        // Validate date is not in past
-        if (field === 'date') {
-          const dateError = validateDate(value);
-          if (dateError) setError(dateError);
-        }
-        
-        // Validate end time is after start time
-        const startT = field === 'startTime' ? value : prev.startTime;
-        const endT = field === 'endTime' ? value : prev.endTime;
-        const timeError = validateTimes(startT, endT);
-        if (timeError) setError(timeError);
-        
-        // Check if the currently selected aircraft is still available
-        // If not, clear the selection and show a warning
-        if (prev.aircraftId && updated.date && updated.startTime && updated.endTime) {
-          const slotStart = new Date(`${updated.date}T${updated.startTime}:00+05:30`).getTime();
-          const slotEnd = new Date(`${updated.date}T${updated.endTime}:00+05:30`).getTime();
-          
-          const isBooked = scheduledFlights.some(flight => {
-            if (flight.status === 'CANCELLED') return false;
-            if (String(flight.aircraftId) !== prev.aircraftId) return false;
-            const flightStart = new Date(flight.startTime).getTime();
-            const flightEnd = new Date(flight.endTime).getTime();
-            return flightStart < slotEnd && flightEnd > slotStart;
-          });
-          
-          if (isBooked) {
-            updated.aircraftId = ''; // Clear the now-unavailable selection
-            const acReg = aircraft.find(a => String(a.id) === prev.aircraftId)?.registration || 'Selected aircraft';
-            setConflictWarning(`⚠️ ${acReg} is already booked for this time slot. Please select another aircraft.`);
-          }
-        }
-        
-        // Validate the time hasn't already passed (for today's date)
+        if (field === 'date') { const e = validateDate(value); if (e) setError(e); }
+        const startT = updated.startTime;
+        const endT = updated.endTime;
+        const e = validateTimes(startT, endT); if (e) setError(e);
         if (updated.date && updated.startTime) {
-          const pastError = validateNotPast(updated.date, updated.startTime);
-          if (pastError) setError(pastError);
+          const pe = validateNotPast(updated.date, updated.startTime);
+          if (pe) setError(pe);
         }
       }
-      
+
+      // Check medical expiry when student changes
+      if (field === 'studentId' && value) {
+        const medError = validateStudentMedical(value);
+        if (medError) setError(medError);
+      }
+
       return updated;
     });
   };
 
-  /**
-   * Handle form submission
-   * Converts IST time to UTC for database storage
-   * Calls bookFlight which also runs server-side conflict check
-   */
+  // ============================================================
+  // SUBMIT HANDLER
+  // ============================================================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    setConflictWarning('');
-    
-    // ===== CLIENT-SIDE VALIDATION =====
-    if (!form.aircraftId) {
-      setError('❌ Please select an aircraft.');
-      return;
+
+    // Required field checks
+    if (!form.aircraftId) { setError('❌ Please select an aircraft.'); return; }
+    if (!isSolo && !form.instructorId) { setError('❌ Please select an instructor.'); return; }
+    if (!isMaintenance && !form.studentId) { setError('❌ Please select a student.'); return; }
+    if (!isMaintenance && !form.exercise) { setError('❌ Please select an exercise.'); return; }
+
+    // Date/time validation
+    const d = validateDate(form.date); if (d) { setError(d); return; }
+    const t = validateTimes(form.startTime, form.endTime); if (t) { setError(t); return; }
+    const p = validateNotPast(form.date, form.startTime); if (p) { setError(p); return; }
+
+    // Student medical check
+    if (!isMaintenance) {
+      const med = validateStudentMedical(form.studentId); if (med) { setError(med); return; }
     }
-    if (!form.instructorId) {
-      setError('❌ Please select an instructor.');
-      return;
-    }
-    
-    const dateError = validateDate(form.date);
-    if (dateError) { setError(dateError); return; }
-    
-    const timeError = validateTimes(form.startTime, form.endTime);
-    if (timeError) { setError(timeError); return; }
-    
-    const pastError = validateNotPast(form.date, form.startTime);
-    if (pastError) { setError(pastError); return; }
-    
+
+    // Person conflict check
+    const personConflict = checkPersonConflict(); if (personConflict) { setError(personConflict); return; }
+
     setLoading(true);
-    
-    // ===== TIMEZONE CONVERSION: IST → UTC =====
-    // User selects times in IST (Indian Standard Time = UTC+5:30)
-    // Database stores times in UTC
-    // We add +05:30 to the ISO string so JavaScript correctly parses it as IST
+
+    // Convert IST → UTC
     const startIST = new Date(`${form.date}T${form.startTime}:00+05:30`);
     const endIST = new Date(`${form.date}T${form.endTime}:00+05:30`);
-    
-    // .toISOString() converts to UTC automatically
-    const startTimeUTC = startIST.toISOString();
-    const endTimeUTC = endIST.toISOString();
-    
-    // Log for debugging
-    console.log('📅 Booking Times:', {
-      date: form.date,
-      startIST: `${form.startTime} IST`,
-      startUTC: startTimeUTC,
-      endIST: `${form.endTime} IST`,
-      endUTC: endTimeUTC,
-    });
-    
-    // ===== SAVE TO DATABASE =====
-    const result = await bookFlight({
-      aircraftId: form.aircraftId,
-      instructorId: form.instructorId,
-      studentId: form.studentId || undefined,
-      startTime: startTimeUTC,  // Store as UTC
-      endTime: endTimeUTC,      // Store as UTC
-      sortieType: form.sortieType,
-      notes: form.notes,
-      status: 'SCHEDULED',          
-      weatherBriefed: false,          
-      notamBriefed: false,            
-    });
-    
-    setLoading(false);
-    
-    if (result.success) {
-      onSuccess(result.message); // Show green toast
-      onClose();                 // Close modal
+
+    if (existingFlight) {
+      await updateScheduledFlight(existingFlight.id, {
+        aircraftId: form.aircraftId,
+        instructorId: isSolo ? '' : form.instructorId,
+        studentId: isMaintenance ? undefined : form.studentId,
+        startTime: startIST.toISOString(),
+        endTime: endIST.toISOString(),
+        sortieType: form.sortieType,
+        exercise: isMaintenance ? '' : form.exercise,
+        notes: form.notes,
+      });
+      onSuccess('✅ Flight updated!');
+      onClose();
     } else {
-      setError(result.message);  // Show red error
+      const result = await bookFlight({
+        aircraftId: form.aircraftId,
+        instructorId: isSolo ? '' : form.instructorId,
+        studentId: isMaintenance ? undefined : form.studentId,
+        startTime: startIST.toISOString(),
+        endTime: endIST.toISOString(),
+        sortieType: form.sortieType,
+        exercise: isMaintenance ? '' : form.exercise,
+        notes: form.notes,
+        status: 'SCHEDULED',           
+        weatherBriefed: false,         
+        notamBriefed: false,           
+      });
+      setLoading(false);
+      if (result.success) { onSuccess(result.message); } else { setError(result.message); }
     }
   };
 
   // ============================================================
-  // HELPER: Calculate flight duration for display
+  // DURATION HELPER
   // ============================================================
   const getDuration = (): string => {
     if (!form.startTime || !form.endTime) return '--';
@@ -317,250 +414,217 @@ export default function BookingForm({ onClose, onSuccess }: Props) {
     const [eh, em] = form.endTime.split(':').map(Number);
     const mins = (eh * 60 + em) - (sh * 60 + sm);
     if (mins <= 0) return '--';
-    const hours = Math.floor(mins / 60);
-    const minutes = mins % 60;
-    return `${hours}h ${minutes > 0 ? `${minutes}m` : ''}`;
+    return `${Math.floor(mins / 60)}h${mins % 60 > 0 ? ` ${mins % 60}m` : ''}`;
   };
 
   // ============================================================
   // RENDER
   // ============================================================
   return (
-    // Modal backdrop - click outside to close
-    <div 
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" 
-      onClick={onClose}
-    >
-      {/* Modal content - stop click propagation to prevent closing */}
-      <div 
-        className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" 
-        onClick={e => e.stopPropagation()}
-      >
-        
-        {/* ===== MODAL HEADER ===== */}
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+
+        {/* ===== HEADER ===== */}
         <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 z-10 rounded-t-xl">
-          <h3 className="text-lg font-semibold text-white">📅 Book Flight Slot</h3>
+          <h3 className="text-lg font-semibold text-white">
+            {existingFlight ? '✏️ Edit Flight' : '📅 Book Flight Slot'}
+          </h3>
           <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg cursor-pointer">
             <span className="text-slate-400 text-xl">✕</span>
           </button>
         </div>
 
-        {/* ===== BOOKING FORM ===== */}
+        {/* ===== FORM ===== */}
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          
-          {/* ----- ERROR MESSAGE (Red) ----- */}
+
+          {/* Error message */}
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 animate-pulse">
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
               <p className="text-sm text-red-400">{error}</p>
             </div>
           )}
-          
-          {/* ----- CONFLICT WARNING (Yellow) ----- */}
+
+          {/* Conflict warning */}
           {conflictWarning && (
             <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
               <p className="text-sm text-yellow-400">{conflictWarning}</p>
             </div>
           )}
 
-          {/* ===== DATE FIELD ===== */}
-          {/* Placed first because date determines available slots */}
+          {/* ===== DATE ===== */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">
-              📅 Date <span className="text-red-400">*</span>
-            </label>
-            <input 
-              type="date" 
-              value={form.date} 
+            <label className="block text-sm text-slate-400 mb-1">📅 Date *</label>
+            <input
+              type="date"
+              value={form.date}
               onChange={e => handleFieldChange('date', e.target.value)}
-              min={new Date().toISOString().split('T')[0]} // Cannot select past dates in date picker
+              min={todayLocal}
               required
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" 
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
             />
-            <p className="text-xs text-slate-500 mt-1">
-              All times are in IST (Indian Standard Time, UTC+5:30)
-            </p>
+            <p className="text-xs text-slate-500 mt-1">All times are in IST (Indian Standard Time, UTC+5:30)</p>
           </div>
 
           {/* ===== START & END TIME ===== */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-400 mb-1">
-                🕐 Start Time <span className="text-red-400">*</span>
-              </label>
-              <input 
-                type="time" 
-                value={form.startTime} 
-                onChange={e => handleFieldChange('startTime', e.target.value)}
-                required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" 
-              />
+              <label className="block text-sm text-slate-400 mb-1">🕐 Start Time *</label>
+              <select value={form.startTime} onChange={e => handleFieldChange('startTime', e.target.value)} required
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+                {TIME_SLOTS.map(slot => <option key={slot.value} value={slot.value}>{slot.label}</option>)}
+              </select>
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1">
-                🕑 End Time <span className="text-red-400">*</span>
-              </label>
-              <input 
-                type="time" 
-                value={form.endTime} 
-                onChange={e => handleFieldChange('endTime', e.target.value)}
-                required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" 
-              />
+              <label className="block text-sm text-slate-400 mb-1">🕑 End Time *</label>
+              <select value={form.endTime} onChange={e => handleFieldChange('endTime', e.target.value)} required
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+                {TIME_SLOTS.map(slot => {
+                  const [sh, sm] = (form.startTime || '06:00').split(':').map(Number);
+                  const [eh, em] = slot.value.split(':').map(Number);
+                  const isBeforeStart = (eh * 60 + em) <= (sh * 60 + sm);
+                  return (
+                    <option key={slot.value} value={slot.value} disabled={isBeforeStart}>
+                      {slot.label}{isBeforeStart ? ' (before start)' : ''}
+                    </option>
+                  );
+                })}
+              </select>
             </div>
           </div>
-          
-          {/* ----- FLIGHT DURATION DISPLAY ----- */}
+
+          {/* ===== DURATION ===== */}
           {form.startTime && form.endTime && getDuration() !== '--' && (
             <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-2 text-center">
-              <p className="text-sm text-blue-400">
-                ⏱ Flight Duration: <span className="font-bold">{getDuration()}</span>
-              </p>
+              <p className="text-sm text-blue-400">⏱ Duration: <span className="font-bold">{getDuration()}</span></p>
             </div>
           )}
-
-          {/* ===== AIRCRAFT SELECTION (with availability grouping) ===== */}
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">
-              🛩️ Aircraft <span className="text-red-400">*</span>
-              {form.date && form.startTime && form.endTime && (
-                <span className="text-xs text-green-400 ml-1">
-                  ({availableAircraft.length} available)
-                </span>
-              )}
-            </label>
-            <select 
-              value={form.aircraftId} 
-              onChange={e => handleFieldChange('aircraftId', e.target.value)}
-              required
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="">-- Select Available Aircraft --</option>
-              
-              {/* ✅ AVAILABLE aircraft group - can be selected */}
-              {availableAircraft.length > 0 && (
-                <optgroup label="✅ AVAILABLE">
-                  {availableAircraft.map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.registration} ({a.type}) - Fuel: {a.currentFuel}L / {a.fuelCapacity}L
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              
-              {/* 🔴 BOOKED aircraft group - disabled, cannot be selected */}
-              {bookedAircraft.length > 0 && (
-                <optgroup label="🔴 ALREADY BOOKED FOR THIS SLOT">
-                  {bookedAircraft.map(a => (
-                    <option key={a.id} value={a.id} disabled className="text-red-400">
-                      {a.registration} ({a.type}) - BOOKED
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-            
-            {/* Info message about booked aircraft */}
-            {bookedAircraft.length > 0 && (
-              <p className="text-xs text-yellow-400 mt-1">
-                🔴 {bookedAircraft.length} aircraft already booked for this time slot
-              </p>
-            )}
-            
-            {/* Info message about non-active aircraft */}
-            {aircraft.filter(a => a.status !== 'ACTIVE').length > 0 && (
-              <p className="text-xs text-slate-500 mt-1">
-                ⚠ {aircraft.filter(a => a.status !== 'ACTIVE').length} aircraft not available (Maintenance/Grounded)
-              </p>
-            )}
-          </div>
-
-          {/* ===== INSTRUCTOR SELECTION ===== */}
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">
-              👨‍🏫 Instructor <span className="text-red-400">*</span>
-            </label>
-            <select 
-              value={form.instructorId} 
-              onChange={e => handleFieldChange('instructorId', e.target.value)}
-              required
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="">Select Instructor</option>
-              {instructors.map(i => (
-                <option key={i.id} value={i.id}>
-                  {i.name} ({i.initials}) - {String(i.ratings)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* ===== STUDENT SELECTION (Optional) ===== */}
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">
-              👨‍✈️ Student <span className="text-slate-500">(optional)</span>
-            </label>
-            <select 
-              value={form.studentId} 
-              onChange={e => handleFieldChange('studentId', e.target.value)}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="">No Student (Check Ride / Maintenance Flight)</option>
-              {students.filter(s => s.status === 'ACTIVE').map(s => (
-                <option key={s.id} value={s.id}>
-                  {s.name} ({s.initials}) - {s.trainingStage} | {s.totalHours}h
-                </option>
-              ))}
-            </select>
-          </div>
 
           {/* ===== SORTIE TYPE ===== */}
           <div>
             <label className="block text-sm text-slate-400 mb-1">🎯 Sortie Type</label>
-            <select 
-              value={form.sortieType} 
-              onChange={e => handleFieldChange('sortieType', e.target.value)}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="CIRCUIT_DUAL">Circuit (Dual)</option>
-              <option value="CIRCUIT_SOLO">Circuit (Solo)</option>
-              <option value="NAVIGATION">Navigation</option>
-              <option value="INSTRUMENT">Instrument</option>
-              <option value="STALL_RECOVERY">Stall & Recovery</option>
-              <option value="EMERGENCY_PROCEDURES">Emergency Procedures</option>
-              <option value="CROSS_COUNTRY">Cross Country</option>
-              <option value="SOLO_CONSOLIDATION">Solo Consolidation</option>
-              <option value="CHECK_RIDE">Check Ride</option>
-              <option value="NIGHT_FLIGHT">Night Flight</option>
+            <select value={form.sortieType} onChange={e => handleFieldChange('sortieType', e.target.value)}
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+              <option value="DUAL">Dual</option>
+              <option value="SOLO">Solo</option>
+              <option value="MAINTENANCE">Maintenance Flight</option>
             </select>
+          </div>
+
+          {/* ===== EXERCISE (Dual & Solo only) ===== */}
+          {!isMaintenance && (
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">📋 Exercise *</label>
+              <select value={form.exercise} onChange={e => handleFieldChange('exercise', e.target.value)}
+                required={!isMaintenance}
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+                <option value="">Select Exercise</option>
+                {EXERCISES.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* ===== INSTRUCTOR ===== */}
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">
+              👨‍🏫 Instructor {!isSolo && '*'}
+            </label>
+            <select
+              value={isSolo ? '' : form.instructorId}
+              onChange={e => handleFieldChange('instructorId', e.target.value)}
+              required={!isSolo}
+              disabled={isSolo}
+              className={`w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white ${isSolo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <option value="">
+                {isSolo ? 'N/A – Solo Flight' : 'Select Instructor'}
+              </option>
+              {!isSolo && instructors.map(i => <option key={i.id} value={i.id}>{i.name} ({i.initials})</option>)}
+            </select>
+            {/* Instructor conflict warning */}
+            {form.instructorId && !isSolo && checkPersonConflict().includes('instructor') && (
+              <p className="text-xs text-red-400 mt-1">⚠️ This instructor is already booked at this time</p>
+            )}
+          </div>
+
+          {/* ===== AIRCRAFT ===== */}
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">
+              🛩️ Aircraft *
+              {form.date && form.startTime && form.endTime && (
+                <span className="text-xs text-green-400 ml-1">({availableAircraft.length} available)</span>
+              )}
+            </label>
+            <select value={form.aircraftId} onChange={e => handleFieldChange('aircraftId', e.target.value)} required
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+              <option value="">Select Aircraft</option>
+              {availableAircraft.length > 0 && (
+                <optgroup label="✅ AVAILABLE">
+                  {availableAircraft.map(a => <option key={a.id} value={a.id}>{a.registration} ({a.type}) — {a.currentFuel}L</option>)}
+                </optgroup>
+              )}
+              {bookedAircraft.length > 0 && (
+                <optgroup label="🔴 ALREADY BOOKED">
+                  {bookedAircraft.map(a => <option key={a.id} value={a.id} disabled className="text-red-400">{a.registration} ({a.type}) — BOOKED</option>)}
+                </optgroup>
+              )}
+            </select>
+            {bookedAircraft.length > 0 && <p className="text-xs text-yellow-400 mt-1">🔴 {bookedAircraft.length} aircraft booked (30‑min buffer)</p>}
+          </div>
+
+          {/* ===== AIRCRAFT FUEL INFO ===== */}
+          {selectedAircraft && (
+            <div className="bg-slate-700/50 rounded-lg p-3 text-center">
+              <p className="text-xs text-slate-400">Current Fuel Level</p>
+              <p className="text-2xl font-bold text-white">{selectedAircraft.currentFuel}L</p>
+              <p className="text-xs text-slate-500">Capacity: {selectedAircraft.fuelCapacity}L</p>
+            </div>
+          )}
+
+          {/* ===== STUDENT ===== */}
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">
+              👨‍✈️ Student {!isMaintenance && '*'}
+            </label>
+            <select
+              value={isMaintenance ? '' : form.studentId}
+              onChange={e => handleFieldChange('studentId', e.target.value)}
+              disabled={isMaintenance}
+              required={!isMaintenance}
+              className={`w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white ${isMaintenance ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <option value="">{isMaintenance ? 'N/A – Maintenance Flight' : 'Select Student'}</option>
+              {!isMaintenance && students.filter(s => s.status === 'ACTIVE').map(s => {
+                const medicalDate = s.medicalExpiry ? new Date(s.medicalExpiry) : null;
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                const isExpired = medicalDate && medicalDate < today;
+                return (
+                  <option key={s.id} value={s.id} disabled={!!isExpired}>
+                    {s.name} ({s.initials}) — {s.trainingStage} | {s.totalHours}h{isExpired ? ' ⚠️ MEDICAL EXPIRED' : ''}
+                  </option>
+                );
+              })}
+            </select>
+            {/* Student conflict warning */}
+            {form.studentId && !isMaintenance && checkPersonConflict().includes('student') && (
+              <p className="text-xs text-red-400 mt-1">⚠️ This student is already booked at this time</p>
+            )}
           </div>
 
           {/* ===== NOTES ===== */}
           <div>
             <label className="block text-sm text-slate-400 mb-1">📝 Notes</label>
-            <textarea 
-              value={form.notes} 
-              onChange={e => handleFieldChange('notes', e.target.value)}
-              rows={2} 
-              placeholder="Any special instructions, route details, or remarks..."
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" 
-            />
+            <textarea value={form.notes} onChange={e => handleFieldChange('notes', e.target.value)}
+              rows={2} placeholder="Any special instructions…"
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white" />
           </div>
 
-          {/* ===== ACTION BUTTONS ===== */}
+          {/* ===== BUTTONS ===== */}
           <div className="flex space-x-3 pt-4 border-t border-slate-700">
-            <button 
-              type="button" 
-              onClick={onClose}
-              className="flex-1 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition cursor-pointer"
-            >
+            <button type="button" onClick={onClose}
+              className="flex-1 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition cursor-pointer">
               Cancel
             </button>
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? '⏳ Booking...' : '📅 Book Flight'}
+            <button type="submit" disabled={loading}
+              className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold disabled:opacity-50">
+              {loading ? 'Saving…' : existingFlight ? '💾 Update Flight' : '📅 Book Flight'}
             </button>
           </div>
         </form>

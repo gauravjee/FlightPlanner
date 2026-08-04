@@ -1,0 +1,6 @@
+import bcrypt from 'bcryptjs';
+async function main() {
+  const hash = await bcrypt.hash('FlightPro@2024', 10);
+  console.log('Hash:', hash);
+}
+main();
