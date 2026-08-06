@@ -9,6 +9,7 @@ import { AvailabilityRecord } from '@/types';
 import Header from '@/components/ui/Header';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import AvailabilityForm from '@/components/availability/AvailabilityForm';
+import RoleGate from '@/components/ui/RoleGate';
 
 // ============================================================
 // COLOR MAPS for leave types
@@ -97,6 +98,7 @@ export default function AvailabilityPage() {
 
   return (
     <ProtectedRoute>
+      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
       <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
         <Header
           title="Availability & Leave"
@@ -239,6 +241,7 @@ export default function AvailabilityPage() {
           />
         )}
       </main>
+      </RoleGate>
     </ProtectedRoute>
   );
 }

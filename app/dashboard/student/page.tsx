@@ -10,6 +10,7 @@ import { useEffect, useState, useMemo } from 'react';
 import Header from '@/components/ui/Header';
 import RoleGate from '@/components/ui/RoleGate';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
+import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist';
 
 // ============================================================
 // PROGRESS BAR COLOR HELPER
@@ -238,7 +239,14 @@ export default function StudentDashboardPage() {
                 </div>
               ))}
             </div>
-
+            {/* ============================================================ */}
+            {/* STUDENT REQUIREMENTS CHECKLIST */}
+            {/* ============================================================ */}
+            {studentId && (
+              <div className="mb-6">
+                <RequirementsChecklist studentId={studentId} />
+              </div>
+            )}
             {/* ============================================================ */}
             {/* TWO COLUMN: UPCOMING FLIGHTS + RECENT DEBRIEFS */}
             {/* ============================================================ */}

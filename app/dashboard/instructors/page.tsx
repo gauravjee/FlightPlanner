@@ -10,6 +10,7 @@ import InstructorFormModal from '@/components/instructors/InstructorFormModal';
 import Link from 'next/link';
 import Header from '@/components/ui/Header';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
+import RoleGate from '@/components/ui/RoleGate';
 
 export default function InstructorsPage() {
   const { instructors, loadInstructors, addInstructor, updateInstructor, removeInstructor } = useFlightStore();
@@ -67,6 +68,7 @@ export default function InstructorsPage() {
 
   return (
     <ProtectedRoute>
+      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       <Header 
       title="Instructors" 
@@ -128,6 +130,7 @@ export default function InstructorsPage() {
           onClose={() => { setShowForm(false); setEditingInstructor(null); }} />
       )}
     </main>
+    </RoleGate>
     </ProtectedRoute>
   );
 }

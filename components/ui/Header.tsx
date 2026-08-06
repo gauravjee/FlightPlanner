@@ -5,6 +5,8 @@
 import { useState, useEffect, ReactNode } from 'react';
 import Link from 'next/link';
 import { signOut, useSession } from 'next-auth/react';
+import { useFlightStore } from '@/lib/store';
+
 
 // ============================================================
 // LIVE CLOCK COMPONENT
@@ -72,16 +74,19 @@ function UserMenu() {
     <div className="flex items-center space-x-2">
       <div className="text-right hidden md:block">
         <p className="text-xs text-slate-400">
-          {role === 'admin' ? '👑' : role === 'instructor' ? '👨‍🏫' : '👨‍✈️'}{' '}
+          {role === 'super_admin' ? '🔧' : role === 'admin' ? '👑' : role === 'instructor' ? '👨‍🏫' : '👨‍✈️'}{' '}
           {session.user.name}
         </p>
       </div>
-      <Link
-        href={dashboardUrl}
-        className="text-xs text-blue-400 hover:text-blue-300"
-      >
+      <Link href={dashboardUrl} className="text-xs text-blue-400 hover:text-blue-300">
         Dashboard
       </Link>
+      {/* Super Admin Setup Link */}
+      {role === 'super_admin' && (
+        <Link href="/dashboard/admin/setup" className="text-xs text-yellow-400 hover:text-yellow-300">
+          🔧 Setup
+        </Link>
+      )}
       <button
         onClick={() => signOut({ callbackUrl: '/login' })}
         className="px-3 py-1.5 bg-red-500/20 text-red-400 rounded-lg text-xs hover:bg-red-500/30 transition cursor-pointer"
@@ -103,7 +108,9 @@ interface HeaderProps {
 }
 
 export default function Header({ title, subtitle, backUrl = '/dashboard', action }: HeaderProps) {
-  return (
+  const store = useFlightStore();
+  const ftoSettings = store.ftoSettings;
+    return (
     <header className="border-b border-slate-700 bg-slate-800/50 backdrop-blur-sm">
       <div className="max-w-7xl mx-auto px-4 py-4">
         <div className="flex items-center justify-between">
@@ -113,7 +120,20 @@ export default function Header({ title, subtitle, backUrl = '/dashboard', action
               ← Back
             </Link>
             <div className="flex items-center space-x-3">
-              <span className="text-2xl">✈️</span>
+              
+
+              {/* Logo - Custom from FTO Settings or Default */}
+              {ftoSettings?.logo_url && ftoSettings?.show_logo === 'true' ? (
+                <img 
+                  src={ftoSettings.logo_url} 
+                  alt="FTO Logo" 
+                  className="h-8 w-auto object-contain"
+                />
+              ) : (
+                <span className="text-2xl">✈️</span>
+              )}
+              {/* Hidden fallback for broken logo */}
+              <span id="header-logo-fallback" style={{ display: 'none' }} className="text-2xl">✈️</span>
               <div>
                 <h1 className="text-xl font-bold text-white">{title}</h1>
                 {subtitle && (

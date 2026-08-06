@@ -8,6 +8,7 @@ import { Aircraft } from '@/types';
 import AircraftCard from '@/components/aircraft/AircraftCard';
 import AircraftFormModal from '@/components/aircraft/AircraftFormModal';
 import Link from 'next/link';
+import RoleGate from '@/components/ui/RoleGate';
 
 export default function AircraftPage() {
   const { aircraft, loadingAircraft, loadAircraft, addAircraft, updateAircraft, removeAircraft } = useFlightStore();
@@ -65,16 +66,17 @@ export default function AircraftPage() {
 
   return (
     <ProtectedRoute>
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-<Header 
-  title="Aircraft Fleet" 
-  subtitle="Manage your aircraft" 
-  action={
-    <button onClick={handleAdd} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold">
-      ➕ Add Aircraft
-    </button>
-  }
-/>
+      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
+        <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+          <Header 
+            title="Aircraft Fleet" 
+            subtitle="Manage your aircraft" 
+            action={
+              <button onClick={handleAdd} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold">
+                ➕ Add Aircraft
+              </button>
+            }
+          />
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {loadingAircraft ? (
@@ -141,17 +143,18 @@ export default function AircraftPage() {
         )}
       </div>
 
-      {showForm && (
-        <AircraftFormModal
-          aircraft={editingAircraft}
-          onSave={handleSave}
-          onClose={() => {
-            setShowForm(false);
-            setEditingAircraft(null);
-          }}
-        />
-      )}
+        {showForm && (
+          <AircraftFormModal
+            aircraft={editingAircraft}
+            onSave={handleSave}
+            onClose={() => {
+              setShowForm(false);
+              setEditingAircraft(null);
+            }}
+          />
+        )}
     </main>
-    </ProtectedRoute>
+  </RoleGate>
+</ProtectedRoute>
   );
 }

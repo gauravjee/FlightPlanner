@@ -9,6 +9,7 @@ import { useFlightStore } from '@/lib/store';
 import { StudentRecord, FlightRecord } from '@/types';
 import Header from '@/components/ui/Header';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
+import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist';
 
 // ============================================================
 // TRAINING STAGE REQUIREMENTS (DGCA/CAA typical minimums)
@@ -244,6 +245,12 @@ export default function ProgressPage() {
                       <p className="text-xs text-slate-400">Total Flight Hours</p>
                     </div>
                   </div>
+                </div>
+              )}
+                {/* Student Progress Checklist */}
+              {selectedStudentId && (
+                <div className="mb-6">
+                  <RequirementsChecklist studentId={selectedStudentId} />
                 </div>
               )}
 
