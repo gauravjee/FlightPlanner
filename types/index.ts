@@ -250,3 +250,16 @@ export interface AvailabilityRecord {
   personName?: string;      // For display
   personInitials?: string;  // For display
 }
+
+// Training requirement checklist item
+export interface TrainingRequirement {
+  id: string;
+  studentId: string;
+  requirementName: string;
+  requirementCategory: string;
+  isCompleted: boolean;
+  completedDate?: string;
+  completedBy?: string;
+  notes?: string;
+  sortOrder: number;
+}
