@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import FuelLogForm from '@/components/fuel/FuelLogForm';
 import Link from 'next/link';
+import RoleGate from '@/components/ui/RoleGate';
 
 export default function FuelPage() {
   const { aircraft, fuelRecords, loadingFuel, loadFuelRecords, loadAircraft } = useFlightStore();
@@ -25,6 +26,7 @@ export default function FuelPage() {
 
   return (
     <ProtectedRoute>
+      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       <Header 
         title="Fuel Management" 
@@ -117,6 +119,7 @@ export default function FuelPage() {
 
       {showForm && <FuelLogForm onClose={() => setShowForm(false)} />}
     </main>
+    </RoleGate>
     </ProtectedRoute>
   );
 }

@@ -57,6 +57,16 @@ export default function DashboardPage() {
     loadNOTAMs('VOBL');
   }, [loadNOTAMs]);
 
+
+  // Fetch FTO settings on page load
+  const { ftoSettings, loadFTOSettings } = useFlightStore();
+
+  useEffect(() => {
+    loadFTOSettings();
+  }, [loadFTOSettings]);
+
+
+
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">

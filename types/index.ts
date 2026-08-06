@@ -263,3 +263,20 @@ export interface TrainingRequirement {
   notes?: string;
   sortOrder: number;
 }
+
+export interface TrainingRequirement {
+  id: string;
+  studentId: string;
+  requirementName: string;
+  requirementCategory: string;
+  isCompleted: boolean;
+  completedDate?: string;
+  completedBy?: string;
+  notes?: string;
+  sortOrder: number;
+  validityYears?: number;
+  requiredBeforeHours?: number;
+  blocksSolo?: boolean;          
+  blocksAllFlights?: boolean;    
+  programCode?: string;
+}

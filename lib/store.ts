@@ -10,23 +10,25 @@
 // 6. Calculates derived values (overdue, costs, flight hours)
 // 7. Fetches LIVE weather from FAA API
 // 8. Fetches LIVE NOTAMs from FAA API
+// 9. Loads FTO settings (school name, logo, timezone, etc.)
 //
-// MODULES (all from Supabase unless noted):
-//   1. Aircraft Fleet        - Registration, type, fuel, status, maintenance dates
-//   2. Student Records       - Enrollment, training stage, medical expiry, hours
+// MODULES:
+//   1. Aircraft Fleet        - Registration, type, fuel, status, maintenance
+//   2. Student Records       - Enrollment, training stage, medical expiry
 //   3. Flight Records        - Digital logbook with maneuvers and performance
 //   4. Fuel Management       - Refueling log with cost tracking
-//   5. Schedule/Booking      - Flight slot booking with time conflict detection
-//   6. Maintenance           - Scheduled/completed records with overdue alerts
+//   5. Schedule/Booking      - Flight slot booking with conflict detection
+//   6. Maintenance           - Records with overdue alerts
 //   7. Instructors           - Name, license, ratings, daily hour limits
-//   8. Weather               - LIVE METAR/TAF from aviationweather.gov (free)
-//   9. NOTAMs                - LIVE NOTAMs from aviationweather.gov (free)
-//  10. Availability/Leave    - Instructor & student leave/vacation tracking
-//  11. Training Requirements - Checklist for student training milestones
+//   8. Weather               - LIVE METAR/TAF from FAA (free)
+//   9. NOTAMs                - LIVE NOTAMs from FAA (free)
+//  10. Availability/Leave    - Instructor & student leave tracking
+//  11. Training Requirements - Checklist for student milestones
+//  12. FTO Settings          - School name, logo, timezone, time slots
 //
-// HOW TO USE IN COMPONENTS:
+// HOW TO USE:
 //   import { useFlightStore } from '@/lib/store';
-//   const { aircraft, loadAircraft, toggleRequirement } = useFlightStore();
+//   const { aircraft, loadAircraft, ftoSettings } = useFlightStore();
 // ============================================================
 
 'use client';
@@ -42,7 +44,7 @@ import { generateSchedule } from './data';
 import { supabase } from './supabase';
 
 // ============================================================
-// TYPE DEFINITION - All state properties and actions
+// TYPE DEFINITION
 // ============================================================
 interface FlightStore {
   // ==========================================
@@ -60,6 +62,7 @@ interface FlightStore {
   schedule: FlightSlot[];
   availabilityRecords: AvailabilityRecord[];
   trainingRequirements: TrainingRequirement[];
+  ftoSettings: Record<string, string>;      // FTO settings as key-value pairs
 
   // ==========================================
   // UI STATE
@@ -96,7 +99,7 @@ interface FlightStore {
   getStudentById: (id: string) => StudentRecord | undefined;
 
   // ==========================================
-  // 3. FLIGHT RECORD / LOGBOOK ACTIONS
+  // 3. FLIGHT RECORD ACTIONS
   // ==========================================
   loadFlightRecords: () => Promise<void>;
   loadStudentFlightRecords: (studentId: string) => Promise<void>;
@@ -164,7 +167,13 @@ interface FlightStore {
   getRequirementsForStudent: (studentId: string) => TrainingRequirement[];
 
   // ==========================================
-  // UI STATE ACTIONS
+  // 12. FTO SETTINGS ACTIONS
+  // ==========================================
+  loadFTOSettings: () => Promise<void>;
+  getFTOSetting: (key: string) => string;
+
+  // ==========================================
+  // UI ACTIONS
   // ==========================================
   setSelectedSlot: (slot: FlightSlot | null) => void;
   setHoveredSlot: (id: string | null) => void;
@@ -202,6 +211,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   schedule: generateSchedule(),
   availabilityRecords: [],
   trainingRequirements: [],
+  ftoSettings: {},          // Start empty, loaded from database
   selectedSlot: null,
   hoveredSlot: null,
   loadingAircraft: false,
@@ -516,7 +526,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   bookFlight: async (booking) => {
     const conflict = await get().checkConflicts(booking.aircraftId, booking.startTime, booking.endTime);
     if (conflict.hasConflict) {
-      return { success: false, message: '⚠️ Time conflict with 30‑min buffer. Please choose a different time.' };
+      return { success: false, message: '⚠️ Time conflict with 30‑min buffer.' };
     }
     const { error } = await supabase.from('scheduled_flights').insert({
       aircraft_id: booking.aircraftId, instructor_id: booking.instructorId,
@@ -743,130 +753,98 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // ============================================================
   // 11. TRAINING REQUIREMENTS FUNCTIONS
   // ============================================================
-
-  /**
-   * Load training requirements for all students or a specific student
-   * @param studentId - Optional: filter by student ID
-   */
   loadTrainingRequirements: async (studentId?: string) => {
     set({ loadingRequirements: true });
-    let query = supabase
-      .from('training_requirements')
-      .select('*')
-      .order('sort_order', { ascending: true });
-
-    if (studentId) {
-      query = query.eq('student_id', studentId);
-    }
-
+    let query = supabase.from('training_requirements').select('*').order('sort_order', { ascending: true });
+    if (studentId) query = query.eq('student_id', studentId);
     const { data, error } = await query;
-
     if (data && !error) {
       set({
         trainingRequirements: data.map((row: Record<string, unknown>) => ({
-          id: String(row.id),
-          studentId: String(row.student_id),
-          requirementName: row.requirement_name as string,
-          requirementCategory: row.requirement_category as string,
-          isCompleted: row.is_completed as boolean,
-          completedDate: row.completed_date as string || undefined,
-          completedBy: row.completed_by as string || undefined,
-          notes: row.notes as string || undefined,
-          sortOrder: row.sort_order as number,
+          id: String(row.id), studentId: String(row.student_id),
+          requirementName: row.requirement_name as string, requirementCategory: row.requirement_category as string,
+          isCompleted: row.is_completed as boolean, completedDate: row.completed_date as string || undefined,
+          completedBy: row.completed_by as string || undefined, notes: row.notes as string || undefined,
+          sortOrder: row.sort_order as number, validityYears: row.validity_years as number || undefined,
+          requiredBeforeHours: row.required_before_hours as number || undefined,
+          blocksSolo: row.blocks_solo as boolean, blocksAllFlights: row.blocks_all_flights as boolean,
+          programCode: row.program_code as string,
         })),
         loadingRequirements: false,
       });
-    } else {
-      console.error('Error loading training requirements:', error);
-      set({ loadingRequirements: false });
-    }
+    } else { console.error('Error loading training requirements:', error); set({ loadingRequirements: false }); }
   },
 
-  /**
-   * Toggle a training requirement between completed/incomplete
-   * Auto-sets completion date and who completed it
-   * @param id - Requirement ID
-   * @param isCompleted - New completion status
-   * @param completedBy - Name of person who marked it complete
-   */
   toggleRequirement: async (id, isCompleted, completedBy) => {
-    const updates: Record<string, unknown> = {
-      is_completed: isCompleted,
-    };
-
-    if (isCompleted) {
-      updates.completed_date = new Date().toISOString().split('T')[0];
-      if (completedBy) updates.completed_by = completedBy;
-    } else {
-      updates.completed_date = null;
-      updates.completed_by = null;
-    }
-
-    await supabase
-      .from('training_requirements')
-      .update(updates)
-      .eq('id', id);
-
+    const updates: Record<string, unknown> = { is_completed: isCompleted };
+    if (isCompleted) { updates.completed_date = new Date().toISOString().split('T')[0]; if (completedBy) updates.completed_by = completedBy; }
+    else { updates.completed_date = null; updates.completed_by = null; }
+    await supabase.from('training_requirements').update(updates).eq('id', id);
     set(state => ({
       trainingRequirements: state.trainingRequirements.map(r =>
-        r.id === id
-          ? {
-              ...r,
-              isCompleted,
-              completedDate: isCompleted ? new Date().toISOString().split('T')[0] : undefined,
-              completedBy: isCompleted ? completedBy : undefined,
-            }
-          : r
-      ),
+        r.id === id ? { ...r, isCompleted, completedDate: isCompleted ? new Date().toISOString().split('T')[0] : undefined, completedBy: isCompleted ? completedBy : undefined } : r
+      )
     }));
   },
 
-  /**
-   * Add a new training requirement for a student
-   * @param requirement - Requirement data (without ID)
-   */
   addRequirement: async (requirement) => {
-    const { data, error } = await supabase
-      .from('training_requirements')
-      .insert({
-        student_id: requirement.studentId,
-        requirement_name: requirement.requirementName,
-        requirement_category: requirement.requirementCategory,
-        is_completed: false,
-        sort_order: requirement.sortOrder || 99,
-        notes: requirement.notes || '',
-      })
-      .select()
-      .single();
-
+    const { data, error } = await supabase.from('training_requirements').insert({
+      student_id: requirement.studentId || null, requirement_name: requirement.requirementName,
+      requirement_category: requirement.requirementCategory, is_completed: false,
+      sort_order: requirement.sortOrder || 99, notes: requirement.notes || '',
+      validity_years: requirement.validityYears, required_before_hours: requirement.requiredBeforeHours,
+      blocks_solo: requirement.blocksSolo || false, blocks_all_flights: requirement.blocksAllFlights || false,
+      program_code: requirement.programCode,
+    }).select().single();
     if (data && !error) {
       set(state => ({
-        trainingRequirements: [
-          ...state.trainingRequirements,
-          { ...requirement, id: String(data.id), isCompleted: false },
-        ],
+        trainingRequirements: [...state.trainingRequirements, { ...requirement, id: String(data.id), isCompleted: false }]
       }));
     }
   },
 
-  /**
-   * Remove a training requirement
-   * @param id - Requirement ID to delete
-   */
   removeRequirement: async (id) => {
     await supabase.from('training_requirements').delete().eq('id', id);
-    set(state => ({
-      trainingRequirements: state.trainingRequirements.filter(r => r.id !== id),
-    }));
+    set(state => ({ trainingRequirements: state.trainingRequirements.filter(r => r.id !== id) }));
+  },
+
+  getRequirementsForStudent: (studentId) => get().trainingRequirements.filter(r => r.studentId === studentId),
+
+  // ============================================================
+  // 12. FTO SETTINGS FUNCTIONS
+  // ============================================================
+
+  /**
+   * Load all FTO settings from the database
+   * Stores as key-value pairs for easy access throughout the app
+   * Settings include: school_name, logo_url, timezone, time slots, buffer
+   */
+  loadFTOSettings: async () => {
+    console.log('📋 Loading FTO settings...');
+    const { data, error } = await supabase
+      .from('fto_settings')
+      .select('*');
+
+    if (data && !error) {
+      const settings: Record<string, string> = {};
+      data.forEach((row: Record<string, unknown>) => {
+        settings[row.setting_key as string] = row.setting_value as string;
+      });
+      console.log('✅ FTO settings loaded:', Object.keys(settings).length, 'settings');
+      set({ ftoSettings: settings });
+    } else {
+      console.error('❌ Error loading FTO settings:', error);
+    }
   },
 
   /**
-   * Get all training requirements for a specific student
-   * @param studentId - Student ID to filter by
-   * @returns Array of requirements for that student
+   * Get a specific FTO setting by key
+   * @param key - The setting key (e.g., 'school_name', 'logo_url', 'timezone')
+   * @returns The setting value or empty string if not found
    */
-  getRequirementsForStudent: (studentId) =>
-    get().trainingRequirements.filter(r => r.studentId === studentId),
+  getFTOSetting: (key: string) => {
+    return get().ftoSettings[key] || '';
+  },
 
   // ============================================================
   // UI STATE FUNCTIONS

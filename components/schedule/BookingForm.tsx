@@ -95,7 +95,9 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
   const {
     aircraft, students, instructors, scheduledFlights,
     bookFlight, loadAircraft, loadStudents, loadScheduledFlights,
-    updateScheduledFlight
+    updateScheduledFlight,
+    loadTrainingRequirements,           
+    getRequirementsForStudent,         
   } = useFlightStore();
 
   // ----- Initial data load -----
@@ -337,6 +339,28 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
         if (medError) setError(medError);
       }
 
+      const checkStudentRequirements = async (studentId: string): Promise<string> => {
+        // Load requirements for this student
+        await loadTrainingRequirements(studentId);
+        const reqs = getRequirementsForStudent(studentId);
+        
+        // Check for mandatory FRTOL(R) – required for solo
+        if (form.sortieType === 'SOLO') {
+          const frtol = reqs.find(r => r.requirementName.includes('FRTOL(R)'));
+          if (frtol && !frtol.isCompleted) {
+            return '❌ Student cannot fly solo without a valid FRTOL(R).';
+          }
+        }
+        
+        // Check SPL – required for any flying
+        const spl = reqs.find(r => r.requirementName.includes('Student Pilot License'));
+        if (spl && !spl.isCompleted) {
+          return '❌ Student cannot fly without a valid Student Pilot License (SPL).';
+        }
+        
+        return ''; // all good
+      };
+
       return updated;
     });
   };
@@ -368,6 +392,34 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
     const personConflict = checkPersonConflict(); if (personConflict) { setError(personConflict); return; }
 
     setLoading(true);
+
+    // Student Requirements check
+        // ===== CHECK STUDENT REQUIREMENTS (CPL Ground Classes, SPL, FRTOL) =====
+    if (!isMaintenance && form.studentId) {
+      // Load requirements for this student
+      await loadTrainingRequirements(form.studentId);
+      const studentReqs = getRequirementsForStudent(form.studentId);
+      
+      // Check SPL - required for any flying
+      const spl = studentReqs.find(r => 
+        r.requirementName.includes('Student Pilot License')
+      );
+      if (spl && !spl.isCompleted) {
+        setError('❌ Student cannot fly without a valid Student Pilot License (SPL).');
+        return;
+      }
+      
+      // Check FRTOL(R) - required for solo flying
+      if (isSolo) {
+        const frtol = studentReqs.find(r => 
+          r.requirementName.includes('FRTOL(R)')
+        );
+        if (frtol && !frtol.isCompleted) {
+          setError('❌ Student cannot fly solo without a valid FRTOL(R).');
+          return;
+        }
+      }
+    }
 
     // Convert IST → UTC
     const startIST = new Date(`${form.date}T${form.startTime}:00+05:30`);

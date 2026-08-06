@@ -10,6 +10,7 @@ import { StudentRecord } from '@/types';
 import StudentCard from '@/components/students/StudentCard';
 import StudentFormModal from '@/components/students/StudentFormModal';
 import Link from 'next/link';
+import RoleGate from '@/components/ui/RoleGate';
 
 export default function StudentsPage() {
   const { students, loadingStudents, loadStudents, addStudent, updateStudent, removeStudent } = useFlightStore();
@@ -65,6 +66,7 @@ export default function StudentsPage() {
 
   return (
     <ProtectedRoute>
+    <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       <Header 
         title="Student Records" 
@@ -133,6 +135,7 @@ export default function StudentsPage() {
           onClose={() => { setShowForm(false); setEditingStudent(null); }} />
       )}
     </main>
+    </RoleGate>
     </ProtectedRoute>
   );
 }

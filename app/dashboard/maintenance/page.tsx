@@ -9,6 +9,7 @@ import { useFlightStore } from '@/lib/store';
 import { MaintenanceRecord } from '@/types';
 import MaintenanceForm from '@/components/maintenance/MaintenanceForm';
 import Link from 'next/link';
+import RoleGate from '@/components/ui/RoleGate';
 
 export default function MaintenancePage() {
   const { 
@@ -75,6 +76,7 @@ export default function MaintenancePage() {
 
   return (
     <ProtectedRoute>
+      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       <Header 
         title="Maintenance Tracking" 
@@ -193,6 +195,7 @@ export default function MaintenancePage() {
         />
       )}
     </main>
+    </RoleGate>
     </ProtectedRoute>
   );
 }
