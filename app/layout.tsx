@@ -19,6 +19,9 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata: Metadata = {
   title: 'FlightPro Manager',  // Browser tab title
   description: 'Flight Training Organization Management System',  // SEO description
+   icons: {
+    icon: '/flightpro-favicon.ico',
+  },
 };
 
 // ============================================================
