@@ -70,18 +70,25 @@ function UserMenu() {
   const role = (session.user as any).role;
   const dashboardUrl = role === 'student' ? '/dashboard/student' : '/dashboard';
 
+  // Role-specific emoji
+  const roleEmoji = 
+    role === 'super_admin' ? '🔧' :
+    role === 'admin' ? '👑' :
+    role === 'instructor' ? '👨‍🏫' :
+    role === 'maintenance' ? '🔧' :
+    role === 'operations' ? '📋' :
+    '👨‍✈️';
+
   return (
     <div className="flex items-center space-x-2">
       <div className="text-right hidden md:block">
         <p className="text-xs text-slate-400">
-          {role === 'super_admin' ? '🔧' : role === 'admin' ? '👑' : role === 'instructor' ? '👨‍🏫' : '👨‍✈️'}{' '}
-          {session.user.name}
+          {roleEmoji} {session.user.name}
         </p>
       </div>
       <Link href={dashboardUrl} className="text-xs text-blue-400 hover:text-blue-300">
         Dashboard
       </Link>
-      {/* Super Admin Setup Link */}
       {role === 'super_admin' && (
         <Link href="/dashboard/admin/setup" className="text-xs text-yellow-400 hover:text-yellow-300">
           🔧 Setup
