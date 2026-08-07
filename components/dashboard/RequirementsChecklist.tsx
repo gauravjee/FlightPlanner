@@ -4,6 +4,8 @@
 
 import { useEffect, useState } from 'react';
 import { useFlightStore } from '@/lib/store';
+import { useSession } from 'next-auth/react';
+
 
 interface Props {
   studentId: string;
@@ -21,6 +23,11 @@ export default function RequirementsChecklist({ studentId }: Props) {
   const completedCount = studentReqs.filter(r => r.isCompleted).length;
   const totalCount = studentReqs.length;
   const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+
+  const { data: session } = useSession();
+  const userRole = (session?.user as any)?.role;
+  const canEdit = ['admin', 'instructor', 'super_admin'].includes(userRole);
+
 
   const handleToggle = async (id: string, currentStatus: boolean) => {
     setLoading(true);
@@ -66,8 +73,10 @@ export default function RequirementsChecklist({ studentId }: Props) {
             <div className="flex items-center space-x-3">
               <button
                 onClick={() => handleToggle(req.id, req.isCompleted)}
-                disabled={loading}
+                disabled={!canEdit || loading}
                 className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
+                  !canEdit ? 'opacity-50 cursor-not-allowed' : ''
+                } ${
                   req.isCompleted
                     ? 'bg-green-500 border-green-500 text-white'
                     : 'border-slate-500 hover:border-slate-400'

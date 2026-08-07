@@ -26,7 +26,7 @@ export default function FuelPage() {
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
+      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'maintenance']}>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
       <Header 
         title="Fuel Management" 
