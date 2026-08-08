@@ -5,6 +5,13 @@
 import { supabase } from './supabase';
 import bcrypt from 'bcryptjs';
 
+export async function logLoginAttempt(email: string, status: 'SUCCESS' | 'FAILED') {
+  await supabase.from('login_audit').insert({
+    user_email: email,
+    login_status: status,
+  });
+}
+
 export async function verifyCredentials(email: string, password: string) {
   // Fetch user by email (only active accounts)
   const { data, error } = await supabase
