@@ -6,6 +6,7 @@
 import { useState } from 'react';
 import { signIn, getSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { logLoginAttempt } from '@/lib/auth';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -30,7 +31,11 @@ export default function LoginPage() {
 
     if (result?.error) {
       setError('Invalid email or password. Please try again.');
+      // Log failed attempt
+      await logLoginAttempt(email, 'FAILED');
     } else {
+       // Log successful login
+      await logLoginAttempt(email, 'SUCCESS');
       // Get the session to check the user's role
       const session = await getSession();
       const role = (session?.user as any)?.role;

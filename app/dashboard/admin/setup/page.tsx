@@ -15,6 +15,7 @@ import RequirementsTab from './RequirementsTab';
 import RolesTab from './RolesTab';
 import SettingsTab from './SettingsTab';
 import AircraftSetupTab from './AircraftSetupTab';
+import UserManagementTab from './UserManagementTab';
 
 const TABS = [
   { id: 'programs', label: '📚 Training Programs', component: TrainingProgramsTab },
@@ -23,6 +24,7 @@ const TABS = [
   { id: 'exercises', label: '📋 Exercises', component: ExercisesTab },
   { id: 'requirements', label: '✅ Requirements', component: RequirementsTab },
   { id: 'roles', label: '👨‍🏫 Instructor Roles', component: RolesTab },
+   { id: 'users', label: '👥 User Management', component: UserManagementTab },
   { id: 'settings', label: '⚙️ FTO Settings', component: SettingsTab },
 ];
 
