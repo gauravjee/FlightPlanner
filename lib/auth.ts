@@ -5,11 +5,34 @@
 import { supabase } from './supabase';
 import bcrypt from 'bcryptjs';
 
+/**
+ * 
+ * Auditing login attempts
+ * 
+ */
+
 export async function logLoginAttempt(email: string, status: 'SUCCESS' | 'FAILED') {
   await supabase.from('login_audit').insert({
     user_email: email,
     login_status: status,
   });
+}
+
+/**
+ * Check if a user is required to reset their password
+ * Used during login to redirect to the reset password page
+ * @param email - User's email address
+ * @returns true if password reset is required, false otherwise
+ */
+export async function checkForcePasswordReset(email: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('users')
+    .select('force_password_reset')
+    .eq('email', email)
+    .single();
+
+  if (error || !data) return false;
+  return data.force_password_reset === true;
 }
 
 export async function verifyCredentials(email: string, password: string) {
