@@ -68,7 +68,8 @@ function UserMenu() {
   if (!session?.user) return null;
 
   const role = (session.user as any).role;
-  const dashboardUrl = role === 'student' ? '/dashboard/student' : '/dashboard';
+  const dashboardUrl = role === 'student' ? '/dashboard/student' : 
+                       role === 'instructor' ? '/dashboard/instructor' : '/dashboard';
 
   const roleEmoji = 
     role === 'super_admin' ? '🔧' :

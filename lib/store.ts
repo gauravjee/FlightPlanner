@@ -63,6 +63,7 @@ interface FlightStore {
   availabilityRecords: AvailabilityRecord[];
   trainingRequirements: TrainingRequirement[];
   ftoSettings: Record<string, string>;      // FTO settings as key-value pairs
+  
 
   // ==========================================
   // UI STATE
@@ -97,6 +98,7 @@ interface FlightStore {
   updateStudent: (id: string, updates: Partial<StudentRecord>) => Promise<void>;
   removeStudent: (id: string) => Promise<void>;
   getStudentById: (id: string) => StudentRecord | undefined;
+  assignInstructor: (studentId: string, instructorId: string) => Promise<void>;
 
   // ==========================================
   // 3. FLIGHT RECORD ACTIONS
@@ -284,12 +286,18 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // ============================================================
   // 2. STUDENT FUNCTIONS
   // ============================================================
-  loadStudents: async () => {
+    loadStudents: async () => {
     set({ loadingStudents: true });
     const { data, error } = await supabase.from('students').select('*').order('created_at', { ascending: true });
     if (data && !error) {
-      set({
-        students: data.map((row: Record<string, unknown>) => ({
+      // Get instructors list for name lookup
+      const instructorsList = get().instructors;
+      
+      // Enrich students with assigned instructor names
+      const enriched = data.map((row: Record<string, unknown>) => {
+        const instructorId = row.assigned_instructor_id as string;
+        const instructor = instructorId ? instructorsList.find(i => String(i.id) === String(instructorId)) : undefined;
+        return {
           id: String(row.id),
           enrollmentId: row.enrollment_id as string,
           name: row.name as string,
@@ -303,7 +311,14 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           joinedDate: (row.joined_date as string) || '',
           status: row.status as string,
           firstSoloDate: row.first_solo_date as string || undefined,
-        })),
+          assignedInstructorId: instructorId || undefined,
+          assignedInstructorName: instructor?.name || undefined,        // ← LOOKED UP
+          assignedInstructorInitials: instructor?.initials || undefined, // ← LOOKED UP
+        };
+      });
+      
+      set({
+        students: enriched,
         loadingStudents: false,
       });
     } else { console.error('Error loading students:', error); set({ loadingStudents: false }); }
@@ -329,8 +344,11 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (updates.email !== undefined) dbUpdates.email = updates.email;
     if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
     if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.assignedInstructorId !== undefined) {
+          dbUpdates.assigned_instructor_id = updates.assignedInstructorId ? String(updates.assignedInstructorId) : null;
+        }
     const { error } = await supabase.from('students').update(dbUpdates).eq('id', id);
-    if (!error) set(state => ({ students: state.students.map(s => s.id === id ? { ...s, ...updates } : s) }));
+        if (!error) set(state => ({ students: state.students.map(s => s.id === id ? { ...s, ...updates } : s) }));
   },
 
   removeStudent: async (id) => {
@@ -339,6 +357,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   getStudentById: (id) => get().students.find(s => s.id === id),
+
 
   // ============================================================
   // 3. FLIGHT RECORDS / LOGBOOK FUNCTIONS
@@ -690,6 +709,19 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     const { error } = await supabase.from('instructors').delete().eq('id', id);
     if (!error) set(state => ({ instructors: state.instructors.filter(i => i.id !== id) }));
   },
+
+
+  //============================================================
+   // 3. FLIGHT RECORDS / LOGBOOK FUNCTIONS
+  // ============================================================
+  assignInstructor: async (studentId, instructorId) => {
+  await supabase
+    .from('students')
+    .update({ assigned_instructor_id: instructorId || null })
+    .eq('id', studentId);
+  await get().loadStudents();
+},
+
 
   // ============================================================
   // 8. WEATHER FUNCTIONS (LIVE FAA API)

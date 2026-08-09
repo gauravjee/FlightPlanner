@@ -120,6 +120,17 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
             <p className="text-xs text-slate-500 mt-1">{student.medicalExpiry}</p>
           )}
         </div>
+            {/* Assigned Instructor */}
+        <div className="bg-slate-900/50 rounded-lg p-3 col-span-2">
+          <p className="text-xs text-slate-400">Assigned Instructor</p>
+          {student.assignedInstructorName ? (
+            <p className="text-sm font-medium text-white">
+              👨‍🏫 {student.assignedInstructorName} ({student.assignedInstructorInitials})
+            </p>
+          ) : (
+            <p className="text-sm text-slate-500">Not assigned</p>
+          )}
+        </div>
 
         <div className="bg-slate-900/50 rounded-lg p-3">
           <p className="text-xs text-slate-400">Email</p>
