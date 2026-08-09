@@ -302,6 +302,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           dateOfBirth: (row.date_of_birth as string) || '',
           joinedDate: (row.joined_date as string) || '',
           status: row.status as string,
+          firstSoloDate: row.first_solo_date as string || undefined,
         })),
         loadingStudents: false,
       });
@@ -419,10 +420,29 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       instructor_notes: record.instructorNotes, student_performance: record.studentPerformance,
       weather_conditions: record.weatherConditions,
     });
-    if (!error) {
+        if (!error) {
+      // ============================================================
+      // FIRST SOLO CELEBRATION CHECK
+      // ============================================================
+      // If this is a SOLO flight, check if it's the student's first solo
+      // If so, record the date in the students table for celebration display
+      if (record.flightType === 'SOLO' || record.sortieType === 'SOLO') {
+        const student = get().students.find(s => s.id === record.studentId);
+        if (student && !student.firstSoloDate) {
+          // Update the student's first solo date in the database
+          await supabase
+            .from('students')
+            .update({ first_solo_date: record.flightDate })
+            .eq('id', record.studentId);
+        }
+      }
+
+      // Update total hours
       const student = get().students.find(s => s.id === record.studentId);
       const newTotalHours = (student?.totalHours || 0) + record.totalHours;
       await supabase.from('students').update({ total_hours: newTotalHours }).eq('id', record.studentId);
+      
+      // Reload data to reflect all changes
       await get().loadStudents();
       await get().loadFlightRecords();
     }

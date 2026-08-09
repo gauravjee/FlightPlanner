@@ -1,56 +1,152 @@
 // components/schedule/FlightDetailModal.tsx
+// Flight Detail Modal - Shows full information about a selected flight
+// ============================================================
+// Features:
+//   - Displays aircraft, instructor, student, times, sortie, weather
+//   - Shows NOTAM warnings relevant to the flight
+//   - Flight readiness checklist (aircraft status, weather, fuel, medical)
+//   - Action buttons based on flight status:
+//     * SCHEDULED: Check-In, Edit, Cancel
+//     * IN_PROGRESS: Check-Out/Debrief, Cancel
+//     * COMPLETED: Print Brief only
+//   - Print Brief button for all statuses
+// ============================================================
+
 'use client';
 
 import { useFlightStore } from '@/lib/store';
 import { FlightSlot } from '@/types';
 
+// ============================================================
+// PROPS
+// ============================================================
 interface Props {
-  slot: FlightSlot;
-  onClose: () => void;
-  onEdit?: (slot: FlightSlot) => void;   // new prop for editing
+  slot: FlightSlot;                              // The flight being viewed
+  onClose: () => void;                           // Close the modal
+  onEdit?: (slot: FlightSlot) => void;           // Edit or Check-Out handler
 }
 
 export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
-  const { getAircraftById, getInstructorById, getStudentById, weather, notams, cancelFlight, loadScheduledFlights, updateScheduledFlight } = useFlightStore();
+  // ============================================================
+  // STORE DATA
+  // ============================================================
+  const { 
+    getAircraftById,          // Find aircraft by ID
+    getInstructorById,        // Find instructor by ID
+    getStudentById,           // Find student by ID
+    weather,                  // Current weather data
+    notams,                   // Active NOTAMs
+    cancelFlight,             // Cancel a flight (hard delete)
+    loadScheduledFlights,     // Reload schedule after changes
+    updateScheduledFlight,    // Update flight status (Check-In)
+  } = useFlightStore();
 
-  const aircraft = getAircraftById(slot.aircraftId);
-  const instructor = getInstructorById(slot.instructorId);
-  const student = slot.studentId ? getStudentById(slot.studentId) : undefined;
+  // ============================================================
+  // DERIVED DATA
+  // ============================================================
+  const aircraft = getAircraftById(slot.aircraftId);       // Aircraft for this flight
+  const instructor = getInstructorById(slot.instructorId);  // Instructor for this flight
+  const student = slot.studentId ? getStudentById(slot.studentId) : undefined; // Student (if any)
 
+  // Calculate flight duration in hours
   const duration = (new Date(slot.endTime).getTime() - new Date(slot.startTime).getTime()) / 3600000;
 
-  
-const handleCancel = async () => {
-  if (window.confirm('Cancel this flight?')) {
-    await cancelFlight(slot.id);
-    await loadScheduledFlights();   // ← Refresh the schedule data
-    onClose();
-  }
-};
+  // ============================================================
+  // ACTION HANDLERS
+  // ============================================================
 
-  const handlePrint = () => {
-    window.print();
+  /**
+   * Cancel the flight (hard delete from database)
+   * Asks for confirmation before proceeding
+   * Reloads schedule after cancellation
+   */
+  const handleCancel = async () => {
+    if (window.confirm('Are you sure you want to cancel this flight? This action cannot be undone.')) {
+      await cancelFlight(slot.id);
+      await loadScheduledFlights();
+      onClose();
+    }
   };
 
+  /**
+   * Handle Edit button click
+   * Calls the onEdit callback passed from ScheduleBoard
+   * For SCHEDULED flights: opens BookingForm for editing
+   * For IN_PROGRESS flights: opens DebriefForm for check-out
+   */
   const handleEdit = () => {
     if (onEdit) onEdit(slot);
     onClose();
   };
 
+  /**
+   * Open browser print dialog
+   * Prints the current page (user can select PDF printer)
+   */
+  const handlePrint = () => {
+    window.print();
+  };
+
+  // ============================================================
+  // HELPER FUNCTIONS
+  // ============================================================
+
+  /**
+   * Format UTC ISO string to IST time for display
+   * IST = UTC + 5:30
+   */
+  const formatIST = (isoString: string): string => {
+    const date = new Date(isoString);
+    return date.toLocaleTimeString('en-IN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Asia/Kolkata',
+    });
+  };
+
+  /**
+   * Format date for display
+   */
+  const formatDate = (isoString: string): string => {
+    return new Date(isoString).toLocaleDateString('en-IN', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+  };
+
+  // ============================================================
+  // RENDER
+  // ============================================================
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 rounded-t-xl">
+    // Modal backdrop - click outside to close
+    <div 
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" 
+      onClick={onClose}
+    >
+      {/* Modal content - stop propagation to prevent closing when clicking inside */}
+      <div 
+        className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" 
+        onClick={e => e.stopPropagation()}
+      >
+        
+        {/* ============================================================ */}
+        {/* HEADER */}
+        {/* ============================================================ */}
+        <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 rounded-t-xl z-10">
           <h3 className="text-lg font-semibold text-white">✈️ Flight Details</h3>
           <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg cursor-pointer">
             <span className="text-slate-400 text-xl">✕</span>
           </button>
         </div>
 
-        {/* Content */}
+        {/* ============================================================ */}
+        {/* CONTENT */}
+        {/* ============================================================ */}
         <div className="p-4 space-y-4">
-          {/* Status Badge */}
+
+          {/* ----- STATUS BADGE + DURATION ----- */}
           <div className="flex items-center justify-between">
             <span className={`px-3 py-1 rounded-full text-sm font-medium ${
               slot.status === 'IN_PROGRESS' ? 'bg-green-500/20 text-green-400' :
@@ -63,7 +159,7 @@ const handleCancel = async () => {
             <span className="text-sm text-slate-400">{duration.toFixed(1)} hours</span>
           </div>
 
-          {/* Aircraft */}
+          {/* ----- AIRCRAFT INFO ----- */}
           {aircraft && (
             <div className="bg-slate-700/50 rounded-lg p-3">
               <p className="text-xs text-slate-400 mb-2">🛩️ AIRCRAFT</p>
@@ -80,21 +176,30 @@ const handleCancel = async () => {
             </div>
           )}
 
-          {/* Time & Sortie */}
+          {/* ----- TIME & SORTIE ----- */}
           <div className="bg-slate-700/50 rounded-lg p-3">
             <p className="text-xs text-slate-400 mb-2">⏰ SCHEDULE</p>
             <p className="text-white font-medium">
-              {new Date(slot.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              {' → '}
-              {new Date(slot.endTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {formatDate(slot.startTime)}
             </p>
-            <span className="inline-block mt-1 px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">
-              {slot.sortieType.replace(/_/g, ' ')}
+            <p className="text-white font-medium mt-1">
+              {formatIST(slot.startTime)} → {formatIST(slot.endTime)} IST
+            </p>
+            <span className="inline-block mt-2 px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">
+              {(slot as any).exercise || slot.sortieType?.replace(/_/g, ' ') || 'N/A'}
+            </span>
+            <span className={`inline-block mt-2 ml-2 px-2 py-0.5 rounded text-xs ${
+              String(slot.sortieType) === 'DUAL' ? 'bg-blue-500/20 text-blue-400' :
+              String(slot.sortieType) === 'SOLO' ? 'bg-green-500/20 text-green-400' :
+              'bg-yellow-500/20 text-yellow-400'
+            }`}>
+              {slot.sortieType}
             </span>
           </div>
 
-          {/* Personnel */}
+          {/* ----- PERSONNEL ----- */}
           <div className="grid grid-cols-2 gap-3">
+            {/* Instructor */}
             {instructor && (
               <div className="bg-slate-700/50 rounded-lg p-3">
                 <p className="text-xs text-slate-400 mb-1">👨‍🏫 INSTRUCTOR</p>
@@ -103,6 +208,7 @@ const handleCancel = async () => {
                 <p className="text-xs text-slate-500">{instructor.licenseNumber}</p>
               </div>
             )}
+            {/* Student (or Maintenance) */}
             {student ? (
               <div className="bg-slate-700/50 rounded-lg p-3">
                 <p className="text-xs text-slate-400 mb-1">👨‍✈️ STUDENT</p>
@@ -113,13 +219,12 @@ const handleCancel = async () => {
             ) : (
               <div className="bg-slate-700/50 rounded-lg p-3">
                 <p className="text-xs text-slate-400 mb-1">🔧 PURPOSE</p>
-                <p className="text-white font-medium">Check Flight</p>
-                <p className="text-xs text-slate-400">Maintenance / CofA</p>
+                <p className="text-white font-medium">Maintenance / Check Flight</p>
               </div>
             )}
           </div>
 
-          {/* Weather */}
+          {/* ----- WEATHER ----- */}
           <div className="bg-slate-700/50 rounded-lg p-3">
             <p className="text-xs text-slate-400 mb-2">🌤️ WEATHER</p>
             <div className="grid grid-cols-4 gap-2 text-center">
@@ -129,41 +234,39 @@ const handleCancel = async () => {
               </div>
               <div>
                 <p className="text-xs text-slate-500">Visibility</p>
-                <p className="text-sm text-white font-medium">{weather.visibility}m</p>
+                <p className="text-sm text-white font-medium">{weather.visibility >= 9999 ? '10km+' : `${weather.visibility}m`}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Ceiling</p>
-                <p className="text-sm text-white font-medium">{weather.ceiling}ft</p>
+                <p className="text-sm text-white font-medium">{weather.ceiling >= 9999 ? 'Clear' : `${weather.ceiling}ft`}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Flight Rules</p>
+                <p className="text-xs text-slate-500">Rules</p>
                 <p className="text-sm text-green-400 font-medium">{weather.flightRules}</p>
               </div>
             </div>
           </div>
 
-          {/* NOTAMs */}
+          {/* ----- ACTIVE NOTAMS ----- */}
           {notams.length > 0 && (
             <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
               <p className="text-xs text-yellow-400 font-medium mb-2">⚠️ ACTIVE NOTAMS</p>
-              {notams.slice(0, 3).map(n => (
-                <p key={n.id} className="text-xs text-yellow-300/80 mt-1">
+              {notams.slice(0, 3).map((n, i) => (
+                <p key={i} className="text-xs text-yellow-300/80 mt-1">
                   <span className="font-medium">{n.notamNumber}</span>: {n.text}
                 </p>
               ))}
             </div>
           )}
 
-          {/* Readiness Checklist */}
+          {/* ----- FLIGHT READINESS CHECKLIST ----- */}
           <div className="bg-slate-700/50 rounded-lg p-3">
             <p className="text-xs text-slate-400 mb-3">✅ FLIGHT READINESS</p>
             <div className="space-y-2">
               {[
                 { label: 'Aircraft Airworthy', ok: aircraft?.status === 'ACTIVE' },
                 { label: 'Weather Within Limits', ok: weather.flightRules === 'VFR' || weather.flightRules === 'MVFR' },
-                { label: 'Weather Briefed', ok: slot.weatherBriefed },
-                { label: 'NOTAMs Briefed', ok: slot.notamBriefed },
-                { label: 'Fuel Sufficient', ok: (aircraft?.currentFuel || 0) > 50 },
+                { label: 'Fuel Sufficient', ok: (aircraft?.currentFuel || 0) > 30 },
                 { label: 'Student Medical Valid', ok: student ? new Date(student.medicalExpiry) > new Date() : true },
               ].map((item, i) => (
                 <div key={i} className="flex items-center space-x-2">
@@ -179,48 +282,68 @@ const handleCancel = async () => {
           </div>
         </div>
 
-        {/* Actions */}
+        {/* ============================================================ */}
+        {/* ACTION BUTTONS */}
+        {/* Buttons change based on flight status */}
+        {/* ============================================================ */}
         <div className="flex items-center justify-end space-x-2 p-4 border-t border-slate-700 sticky bottom-0 bg-slate-800 rounded-b-xl">
+          
+          {/* ----- CLOSE BUTTON ----- */}
+          {/* Always visible */}
           <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition cursor-pointer">
             Close
           </button>
-          {onEdit && (
+
+          {/* ----- CHECK-IN BUTTON ----- */}
+          {/* Only for SCHEDULED flights → Changes status to IN_PROGRESS */}
+          {slot.status === 'SCHEDULED' && (
+            <button 
+              onClick={async () => {
+                await updateScheduledFlight(slot.id, { status: 'IN_PROGRESS' });
+                await loadScheduledFlights();
+                onClose();
+              }}
+              className="px-4 py-2 text-sm bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition cursor-pointer"
+            >
+              ✅ Check-In
+            </button>
+          )}
+
+          {/* ----- CHECK-OUT / DEBRIEF BUTTON ----- */}
+          {/* Only for IN_PROGRESS flights → Opens DebriefForm */}
+          {slot.status === 'IN_PROGRESS' && (
+            <button 
+              onClick={() => {
+                onClose();
+                if (onEdit) onEdit(slot);  // Triggers DebriefForm in ScheduleBoard
+              }}
+              className="px-4 py-2 text-sm bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition cursor-pointer"
+            >
+              📝 Check-Out / Debrief
+            </button>
+          )}
+
+          {/* ----- EDIT BUTTON ----- */}
+          {/* Only for SCHEDULED flights → Opens BookingForm for editing */}
+          {onEdit && slot.status === 'SCHEDULED' && (
             <button onClick={handleEdit} className="px-4 py-2 text-sm bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition cursor-pointer">
               ✏️ Edit
             </button>
           )}
-          <button onClick={handleCancel} className="px-4 py-2 text-sm bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
-            Cancel Flight
-          </button>
+
+          {/* ----- CANCEL FLIGHT BUTTON ----- */}
+          {/* Hidden for COMPLETED and CANCELLED flights */}
+          {slot.status !== 'COMPLETED' && slot.status !== 'CANCELLED' && (
+            <button onClick={handleCancel} className="px-4 py-2 text-sm bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
+              Cancel Flight
+            </button>
+          )}
+
+          {/* ----- PRINT BRIEF BUTTON ----- */}
+          {/* Available for all statuses */}
           <button onClick={handlePrint} className="px-4 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer">
             📋 Print Brief
           </button>
-          {/* Check-In Button (only for SCHEDULED flights) */}
-            {slot.status === 'SCHEDULED' && (
-              <button 
-                onClick={async () => {
-                  await updateScheduledFlight(slot.id, { status: 'IN_PROGRESS' });
-                  await loadScheduledFlights();
-                  onClose();
-                }}
-                className="px-4 py-2 text-sm bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition cursor-pointer"
-              >
-                ✅ Check-In
-              </button>
-            )}
-
-            {/* Check-Out Button (only for IN_PROGRESS flights) */}
-            {slot.status === 'IN_PROGRESS' && (
-              <button 
-                onClick={() => {
-                  onClose();
-                  // The Check-Out is handled by the Schedule Board's edit functionality
-                }}
-                className="px-4 py-2 text-sm bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition cursor-pointer"
-              >
-                📝 Check-Out / Debrief
-              </button>
-            )}
         </div>
       </div>
     </div>

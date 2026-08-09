@@ -138,6 +138,20 @@ export default function FlightsPage() {
                           record.flightType === 'DUAL' ? 'bg-blue-500/20 text-blue-400' :
                           'bg-yellow-500/20 text-yellow-400'
                         }`}>{record.flightType}</span>
+
+                         {/* ===== FIRST SOLO BADGE ===== */}
+                          {record.flightType === 'SOLO' && 
+                          record.flightDate === (() => {
+                            const student = students.find(s => s.id === record.studentId);
+                            return student?.firstSoloDate;
+                          })() && (
+                            <span 
+                              className="ml-2 px-1.5 py-0.5 bg-yellow-500/20 text-yellow-400 rounded text-xs font-bold animate-pulse"
+                              title="First Solo Flight! 🎉"
+                            >
+                              🎉 FIRST SOLO
+                            </span>
+                          )}
                       </td>
                       <td className="py-3 text-xs">{record.landings}</td>
                       <td className="py-3 text-xs">{getPerformanceStars(record.studentPerformance)}</td>

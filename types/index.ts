@@ -232,6 +232,7 @@ export interface StudentRecord {
   dateOfBirth?: string;
   joinedDate?: string;
   status: string;
+  firstSoloDate?: string;   // Date of first solo flight (for celebration)
 }
 
 // Availability / Leave record

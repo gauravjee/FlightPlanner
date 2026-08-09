@@ -304,7 +304,7 @@ function ResetPasswordForm() {
 
         {/* ============================================================ */}
         {/* ERROR MESSAGE */}
-        /* Displayed when validation fails or an error occurs */
+        {/* Displayed when validation fails or an error occurs */}
         {/* ============================================================ */}
         {error && (
           <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mb-4">
@@ -416,7 +416,7 @@ function ResetPasswordForm() {
 
           {/* ============================================================ */}
           {/* SUBMIT BUTTON */}
-          /* Disabled while loading (prevents double submission) */
+          {/* Disabled while loading (prevents double submission) */}
           {/* ============================================================ */}
           <button 
             type="submit" 
@@ -429,7 +429,7 @@ function ResetPasswordForm() {
 
         {/* ============================================================ */}
         {/* BACK TO LOGIN LINK */}
-        /* Provides a way for users to go back if they changed their mind */
+        {/* Provides a way for users to go back if they changed their mind */}
         {/* ============================================================ */}
         <p className="text-center mt-6">
           <a href="/login" className="text-sm text-slate-400 hover:text-white transition">

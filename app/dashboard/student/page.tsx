@@ -197,6 +197,26 @@ export default function StudentDashboardPage() {
               </div>
             )}
 
+            {/* ===== FIRST SOLO CELEBRATION BANNER ===== */}
+            {student?.firstSoloDate && (
+              <div className="bg-gradient-to-r from-yellow-500/20 via-amber-500/10 to-yellow-500/20 border border-yellow-500/30 rounded-xl p-6 mb-6 text-center">
+                <p className="text-4xl mb-3">🎉</p>
+                <p className="text-xl font-bold text-yellow-400">Congratulations on Your First Solo!</p>
+                <p className="text-sm text-yellow-300/80 mt-2">
+                  A major milestone achieved on{' '}
+                  <span className="font-bold text-yellow-400">
+                    {new Date(student.firstSoloDate).toLocaleDateString('en-IN', { 
+                      weekday: 'long', 
+                      day: 'numeric', 
+                      month: 'long', 
+                      year: 'numeric' 
+                    })}
+                  </span>
+                </p>
+                <p className="text-xs text-yellow-200/50 mt-2">This is where every pilot's journey truly begins! ✈️</p>
+              </div>
+            )}
+
             {/* ============================================================ */}
             {/* OVERALL PROGRESS BAR */}
             {/* ============================================================ */}
