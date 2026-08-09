@@ -144,9 +144,9 @@ export default function ScheduleBoard() {
   });
 
   // ----- Chart Configuration -----
-  const HOURS = Array.from({ length: 14 }, (_, i) => i + 6); // 06:00 to 19:00 (14 hours)
+  const HOURS = Array.from({ length: 17 }, (_, i) => i + 5); // 05:00 to 21:00 (17 hours)
   const activeAircraft = aircraft.filter(a => a.status !== 'GROUNDED'); // Only operational
-  const totalHours = 14; // Total time range displayed
+  const totalHours = 17; // 5 AM to 10 PM = 17 hours
 
   // ============================================================
   // HELPER FUNCTIONS
@@ -156,12 +156,27 @@ export default function ScheduleBoard() {
    * Convert UTC ISO string to IST display format "HH:MM"
    * IST = UTC + 5:30
    */
-  const formatISTTime = (isoString: string): string => {
-    const date = new Date(isoString);
-    const istHour = (date.getUTCHours() + 5.5 + 24) % 24;
-    const istMinute = date.getUTCMinutes();
-    return `${Math.floor(istHour).toString().padStart(2, '0')}:${istMinute.toString().padStart(2, '0')}`;
-  };
+    const formatISTTime = (isoString: string): string => {
+      const date = new Date(isoString);
+      // IST is UTC+5:30
+      const utcHours = date.getUTCHours();
+      const utcMinutes = date.getUTCMinutes();
+      
+      // Add 5 hours 30 minutes
+      let istHours = utcHours + 5;
+      let istMinutes = utcMinutes + 30;
+      
+      // Handle minute overflow
+      if (istMinutes >= 60) {
+        istHours += 1;
+        istMinutes -= 60;
+      }
+      
+      // Handle hour overflow (wrap around 24)
+      istHours = istHours % 24;
+      
+      return `${String(istHours).padStart(2, '0')}:${String(istMinutes).padStart(2, '0')}`;
+    };
 
   /**
    * Calculate position and width of a flight block on the Gantt chart.
@@ -170,26 +185,31 @@ export default function ScheduleBoard() {
   const getSlotStyle = (slot: FlightSlot | ScheduledFlight) => {
     const startDate = new Date(slot.startTime);
     const endDate = new Date(slot.endTime);
+    
+    // Convert UTC to IST properly
+    const startUtcHours = startDate.getUTCHours();
+    const startUtcMinutes = startDate.getUTCMinutes();
+    let startIstHours = startUtcHours + 5;
+    let startIstMinutes = startUtcMinutes + 30;
+    if (startIstMinutes >= 60) { startIstHours += 1; startIstMinutes -= 60; }
+    startIstHours = startIstHours % 24;
+    const startHour = startIstHours + startIstMinutes / 60;
 
-    // Convert UTC to IST for display positioning
-    const startHourIST = (startDate.getUTCHours() + 5.5 + 24) % 24;
-    const startMinutes = startDate.getUTCMinutes();
-    const startHour = startHourIST + startMinutes / 60;
-
-    const endHourIST = (endDate.getUTCHours() + 5.5 + 24) % 24;
-    const endMinutes = endDate.getUTCMinutes();
-    const endHour = endHourIST + endMinutes / 60;
-
+    const endUtcHours = endDate.getUTCHours();
+    const endUtcMinutes = endDate.getUTCMinutes();
+    let endIstHours = endUtcHours + 5;
+    let endIstMinutes = endUtcMinutes + 30;
+    if (endIstMinutes >= 60) { endIstHours += 1; endIstMinutes -= 60; }
+    endIstHours = endIstHours % 24;
+    const endHour = endIstHours + endIstMinutes / 60;
+    
     const duration = endHour - startHour;
     if (duration <= 0) return { left: '0%', width: '0%' };
-
-    // Convert to percentages of the total time range (06:00 to 20:00)
-    const leftPercent = ((startHour - 6) / totalHours) * 100;
+    const leftPercent = ((startHour - 5) / totalHours) * 100;
     const widthPercent = (duration / totalHours) * 100;
-
     return {
       left: `${Math.max(0, leftPercent)}%`,
-      width: `calc(${Math.max(0, widthPercent)}% - 4px)`, // 4px gap between blocks
+      width: `calc(${Math.max(0, widthPercent)}% - 4px)`,
     };
   };
 
@@ -378,7 +398,7 @@ export default function ScheduleBoard() {
             <thead>
               <tr>
                 <th style="width:${colWidth}">Aircraft</th>
-                ${HOURS.map(h => `<th style="width:${colWidth}">${h.toString().padStart(2, '0')}:00</th>`).join('')}
+                ${HOURS.map(h => `<th style="width:${colWidth}">${h.toString().padStart(2,'0')}:00</th>`).join('')}
               </tr>
             </thead>
             <tbody>${ganttRows}</tbody>
@@ -530,8 +550,8 @@ export default function ScheduleBoard() {
         </div>
 
         {/* ----- Gantt Chart Area ----- */}
-        <div className="overflow-x-auto scrollbar-thin">
-          <div className="min-w-[900px]">
+        <div className="overflow-x-auto scrollbar-thin" style={{ overflowX: 'auto' }}>
+          <div className="min-w-[1400px]">
 
             {/* Time Header Row – Shows hours from 06:00 to 19:00 with IST and UTC labels */}
             <div className="flex mb-1">
@@ -557,16 +577,16 @@ export default function ScheduleBoard() {
               {/* Vertical Grid Lines – Solid for hours, dashed for half‑hours, dotted for UTC */}
               <div className="absolute inset-0 flex pointer-events-none z-0">
                 <div className="w-[140px] flex-shrink-0 pr-3 flex flex-col justify-center z-20 bg-slate-900/80 rounded-l-lg px-2 py-1 pt-2"></div>
-                <div className="w-[140px] flex-shrink-0" />
-                {HOURS.map(hour => {
-                  const utcHour = hour - 5.5;
+                
+               {HOURS.map(hour => {
                   return (
-                    <div key={hour} className="flex-1 relative">
+                   <div key={hour} className="flex-1 relative">
+                     {/* IST Hour line - solid */}
                       <div className="absolute inset-0 border-l border-slate-600/40" />
-                      <div className="absolute inset-0 left-1/2 border-l border-dashed border-slate-600/20" />
-                      {utcHour >= 0 && utcHour < 24 && (
-                        <div className="absolute inset-0 left-1/2 border-l border-dotted border-blue-500/30" />
-                      )}
+                      {/* IST Half-hour line - dashed */}
+                     <div className="absolute inset-0 left-1/2 border-l border-dashed border-slate-600/20" />
+                      {/* UTC Hour line - dotted (always shown) */}
+                      <div className="absolute inset-0 left-1/2 border-l border-dotted border-blue-500/30" />
                     </div>
                   );
                 })}
@@ -590,22 +610,23 @@ export default function ScheduleBoard() {
               {/* Current Time Line – Red vertical line showing current IST time (only when viewing today) */}
               {selectedDate === todayLocal && (() => {
                 const now = new Date();
-                const currentHourIST = now.getHours() + now.getMinutes() / 60;
-                if (currentHourIST >= 6 && currentHourIST <= 20) {
-                  const leftPercent = ((currentHourIST - 6) / totalHours) * 100;
+                const utcHours = now.getUTCHours();
+                const utcMinutes = now.getUTCMinutes();
+                let istHours = utcHours + 5;
+                let istMinutes = utcMinutes + 30;
+                if (istMinutes >= 60) { istHours += 1; istMinutes -= 60; }
+                istHours = istHours % 24;
+                const currentHourIST = istHours + istMinutes / 60;
+                
+                if (currentHourIST >= 5 && currentHourIST <= 22) {
+                  const leftPercent = ((currentHourIST - 5) / totalHours) * 100;
                   return (
-                    <div
-                      className="absolute top-0 bottom-0 z-30 pointer-events-none"
-                      style={{ left: `calc(${leftPercent}% + 140px)` }}
-                    >
+                    <div className="absolute top-0 bottom-0 z-30 pointer-events-none" 
+                      style={{ left: `calc(${leftPercent}% + 140px)` }}>
                       <div className="absolute inset-0 w-0.5 bg-red-500/70" />
                       <div className="absolute -top-1 -left-1.5 w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-lg shadow-red-500/50" />
                       <div className="absolute -top-6 -left-10 text-[10px] text-red-400 whitespace-nowrap font-medium bg-slate-900/80 px-1 rounded">
-                        {now.toLocaleTimeString('en-IN', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          timeZone: 'Asia/Kolkata',
-                        })} IST
+                        {String(istHours).padStart(2, '0') + ':' + String(istMinutes).padStart(2, '0')} IST
                       </div>
                     </div>
                   );

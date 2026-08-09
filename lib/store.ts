@@ -63,6 +63,7 @@ interface FlightStore {
   availabilityRecords: AvailabilityRecord[];
   trainingRequirements: TrainingRequirement[];
   ftoSettings: Record<string, string>;      // FTO settings as key-value pairs
+  exercises: { exercise_name: string; short_code: string; full_description: string }[];
   
 
   // ==========================================
@@ -158,7 +159,7 @@ interface FlightStore {
   updateAvailability: (id: string, updates: Partial<AvailabilityRecord>) => Promise<void>;
   removeAvailability: (id: string) => Promise<void>;
   checkAvailability: (personType: string, personId: string, date: string) => Promise<boolean>;
-
+  loadExercises: () => Promise<void>;
   // ==========================================
   // 11. TRAINING REQUIREMENTS ACTIONS
   // ==========================================
@@ -177,6 +178,7 @@ interface FlightStore {
   // ==========================================
   // UI ACTIONS
   // ==========================================
+  
   setSelectedSlot: (slot: FlightSlot | null) => void;
   setHoveredSlot: (id: string | null) => void;
   getInstructorById: (id: string) => Instructor | undefined;
@@ -198,6 +200,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   maintenanceRecords: [],
   instructors: [],
   notams: [],
+  exercises: [],
   weather: {
     metar: 'Loading weather...',
     taf: 'Loading forecast...',
@@ -226,6 +229,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   loadingNotams: false,
   loadingAvailability: false,
   loadingRequirements: false,
+  
 
   // ============================================================
   // 1. AIRCRAFT FUNCTIONS
@@ -896,6 +900,28 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
    */
   getFTOSetting: (key: string) => {
     return get().ftoSettings[key] || '';
+  },
+
+    // ============================================================
+  // EXERCISES FUNCTIONS (from database)
+  // ============================================================
+  /**
+   * Load all active exercises from the database
+   * Used by ScheduleBoard for short code lookup and legend display
+   * Managed via Super Admin Setup Wizard
+   */
+  loadExercises: async () => {
+    const { data, error } = await supabase
+      .from('exercises')
+      .select('exercise_name, short_code, full_description')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+    
+    if (data && !error) {
+      set({ exercises: data });
+    } else {
+      console.error('Error loading exercises:', error);
+    }
   },
 
   // ============================================================
