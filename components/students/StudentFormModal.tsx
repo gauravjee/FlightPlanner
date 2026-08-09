@@ -5,6 +5,7 @@ import { StudentRecord } from '@/types';
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 
+
 interface Props {
   student: StudentRecord | null;
   onSave: (student: StudentRecord | Omit<StudentRecord, 'id'>) => void;
@@ -12,7 +13,15 @@ interface Props {
 }
 
 export default function StudentFormModal({ student, onSave, onClose }: Props) {
+  const { instructors, loadInstructors } = useFlightStore(); 
   const isEditing = !!student;
+
+    // Load instructors if not already loaded
+      useEffect(() => {
+        if (instructors.length === 0) {
+          loadInstructors();
+        }
+      }, [instructors.length, loadInstructors]); 
   
   const [form, setForm] = useState({
     enrollmentId: '',
@@ -26,6 +35,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
     dateOfBirth: '',
     joinedDate: new Date().toISOString().split('T')[0],
     status: 'ACTIVE',
+    assignedInstructorId: undefined as string | undefined,
   });
 
   const [initialsManuallyEdited, setInitialsManuallyEdited] = useState(false);
@@ -44,6 +54,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
         dateOfBirth: student.dateOfBirth || '',
         joinedDate: student.joinedDate || '',
         status: student.status,
+        assignedInstructorId: student.assignedInstructorId,
       });
       setInitialsManuallyEdited(true);
     }
@@ -86,7 +97,10 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(form as StudentRecord);
+    onSave({
+      ...form,
+      assignedInstructorId: form.assignedInstructorId || undefined,
+    } as StudentRecord);
     onClose();
   };
 
@@ -165,6 +179,20 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
                 <option value="MULTI">MULTI</option>
               </select>
             </div>
+          </div>
+          {/* Assigned Instructor */}
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">👨‍🏫 Assigned Instructor</label>
+            <select
+              value={form.assignedInstructorId || ''}
+              onChange={e => setForm(p => ({ ...p, assignedInstructorId: e.target.value || undefined }))}
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
+            >
+              <option value="">None (Unassigned)</option>
+              {instructors.map(i => (
+                <option key={i.id} value={i.id}>{i.name} ({i.initials})</option>
+              ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

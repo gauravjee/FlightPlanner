@@ -13,15 +13,16 @@ import Link from 'next/link';
 import RoleGate from '@/components/ui/RoleGate';
 
 export default function StudentsPage() {
-  const { students, loadingStudents, loadStudents, addStudent, updateStudent, removeStudent } = useFlightStore();
+  const { students, loadingStudents, loadStudents, loadInstructors, addStudent, updateStudent, removeStudent } = useFlightStore();
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('ALL');
 
   useEffect(() => {
-    loadStudents();
-  }, [loadStudents]);
+  loadInstructors();  // Load instructors first
+  loadStudents();     // Then load students (so instructor names can be looked up)
+}, [loadInstructors, loadStudents]);
 
   const filteredStudents = students.filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -48,12 +49,15 @@ export default function StudentsPage() {
     setShowForm(true);
   };
 
-  const handleSave = (student: StudentRecord | Omit<StudentRecord, 'id'>) => {
+  const handleSave = async (student: StudentRecord | Omit<StudentRecord, 'id'>) => {
     if (editingStudent) {
-      updateStudent(editingStudent.id, student);
+      await updateStudent(editingStudent.id, student);
     } else {
-      addStudent(student as Omit<StudentRecord, 'id'>);
+      await addStudent(student as Omit<StudentRecord, 'id'>);
     }
+    // Reload data to reflect changes (including instructor assignment)
+    await loadInstructors();
+    await loadStudents();
     setShowForm(false);
     setEditingStudent(null);
   };

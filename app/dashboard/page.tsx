@@ -20,6 +20,7 @@ import Header from '@/components/ui/Header';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import StudentProgressWidget from '@/components/dashboard/StudentProgressWidget';
+import NotificationWidget from '@/components/dashboard/NotificationWidget';
 
 export default function DashboardPage() {
   const store = useFlightStore();
@@ -237,6 +238,9 @@ export default function DashboardPage() {
             {/* ===== RIGHT COLUMN ===== */}
             <div className="space-y-6">
 
+            {/* ----- NOTIFICATION ALERTS ----- */}
+            <NotificationWidget />
+            
               {/* ----- LIVE ACTIVE NOTAMS ----- */}
               <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
                 <h2 className="text-lg font-semibold text-white mb-4">⚠️ Active NOTAMs</h2>
@@ -283,8 +287,16 @@ export default function DashboardPage() {
                   <a href="/dashboard/maintenance" className="bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
                     <p className="text-xl mb-1">🔧</p><p className="text-xs">Maintenance</p>
                   </a>
+                  {/* Existing - Manage Instructors (Admin) */}
                   <a href="/dashboard/instructors" className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">👨‍🏫</p><p className="text-xs">Instructors</p>
+                    <p className="text-xl mb-1">👨‍🏫</p>
+                    <p className="text-xs">Instructors</p>
+                  </a>
+
+                  {/* NEW - Instructor Dashboard View */}
+                  <a href="/dashboard/instructor" className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
+                    <p className="text-xl mb-1">🎓</p>
+                    <p className="text-xs">My Students</p>
                   </a>
                   <a href="/dashboard/availability" className="bg-teal-500/10 text-teal-400 border border-teal-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
                     <p className="text-xl mb-1">🏖️</p><p className="text-xs">Availability</p>

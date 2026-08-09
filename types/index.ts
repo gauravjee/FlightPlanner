@@ -232,6 +232,10 @@ export interface StudentRecord {
   dateOfBirth?: string;
   joinedDate?: string;
   status: string;
+  firstSoloDate?: string;   // Date of first solo flight (for celebration)
+  assignedInstructorId?: string;       // UUID of assigned instructor
+  assignedInstructorName?: string;     // Display name (looked up)
+  assignedInstructorInitials?: string; // Display initials (looked up)
 }
 
 // Availability / Leave record

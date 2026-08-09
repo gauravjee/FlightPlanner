@@ -68,9 +68,9 @@ function UserMenu() {
   if (!session?.user) return null;
 
   const role = (session.user as any).role;
-  const dashboardUrl = role === 'student' ? '/dashboard/student' : '/dashboard';
+  const dashboardUrl = role === 'student' ? '/dashboard/student' : 
+                       role === 'instructor' ? '/dashboard/instructor' : '/dashboard';
 
-  // Role-specific emoji
   const roleEmoji = 
     role === 'super_admin' ? '🔧' :
     role === 'admin' ? '👑' :
@@ -94,6 +94,10 @@ function UserMenu() {
           🔧 Setup
         </Link>
       )}
+      {/* ===== CHANGE PASSWORD LINK ===== */}
+      <Link href="/change-password" className="text-xs text-slate-400 hover:text-white transition">
+        🔑 Change PW
+      </Link>
       <button
         onClick={() => signOut({ callbackUrl: '/login' })}
         className="px-3 py-1.5 bg-red-500/20 text-red-400 rounded-lg text-xs hover:bg-red-500/30 transition cursor-pointer"

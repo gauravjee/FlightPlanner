@@ -71,6 +71,22 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
           <p className="text-xs text-slate-400">Total Hours</p>
           <p className="text-lg font-bold text-white">{student.totalHours}</p>
         </div>
+
+      {/* ===== FIRST SOLO CELEBRATION BADGE ===== */}
+      {student.firstSoloDate && (
+        <div className="bg-gradient-to-r from-yellow-500/20 to-amber-500/10 border border-yellow-500/30 rounded-lg p-3 mb-3 text-center">
+          <p className="text-lg mb-1">🎉</p>
+          <p className="text-sm font-bold text-yellow-400">First Solo!</p>
+          <p className="text-xs text-yellow-300/80 mt-1">
+            {new Date(student.firstSoloDate).toLocaleDateString('en-IN', { 
+              weekday: 'short', 
+              day: 'numeric', 
+              month: 'short', 
+              year: 'numeric' 
+            })}
+          </p>
+        </div>
+      )}
         
         {/* Medical Status */}
         <div className={`rounded-lg p-3 ${
@@ -102,6 +118,17 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
           )}
           {medicalExpiry && medicalStatus !== 'expired' && (
             <p className="text-xs text-slate-500 mt-1">{student.medicalExpiry}</p>
+          )}
+        </div>
+            {/* Assigned Instructor */}
+        <div className="bg-slate-900/50 rounded-lg p-3 col-span-2">
+          <p className="text-xs text-slate-400">Assigned Instructor</p>
+          {student.assignedInstructorName ? (
+            <p className="text-sm font-medium text-white">
+              👨‍🏫 {student.assignedInstructorName} ({student.assignedInstructorInitials})
+            </p>
+          ) : (
+            <p className="text-sm text-slate-500">Not assigned</p>
           )}
         </div>
 

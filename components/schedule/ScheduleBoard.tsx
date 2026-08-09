@@ -22,6 +22,7 @@ import { useFlightStore } from '@/lib/store';
 import { FlightSlot, ScheduledFlight } from '@/types';
 import FlightDetailModal from './FlightDetailModal';
 import BookingForm from './BookingForm';
+import DebriefForm from './DebriefForm';
 
 
 // ============================================================
@@ -32,6 +33,7 @@ const SORTIE_COLORS: Record<string, string> = {
   SOLO: 'bg-green-600/80 border-green-400',
   MAINTENANCE: 'bg-yellow-500/80 border-yellow-400',
 };
+
 
 const SORTIE_LABELS: Record<string, string> = {
   DUAL: 'Dual',
@@ -92,6 +94,11 @@ const getExerciseShortCode = (fullExercise: string): string => {
 };
 
 export default function ScheduleBoard() {
+
+  // CONSTANTS – Debrief Form State
+  const [showDebriefForm, setShowDebriefForm] = useState(false);     // Toggle debrief modal
+  const [debriefFlight, setDebriefFlight] = useState<ScheduledFlight | null>(null); // Flight being checked out
+
   // ----- UI State (local to this component) -----
   const [showBookingForm, setShowBookingForm] = useState(false);  // Toggle booking modal
   const [successMessage, setSuccessMessage] = useState('');        // Green toast message
@@ -810,9 +817,28 @@ export default function ScheduleBoard() {
           slot={selectedSlot}
           onClose={handleCloseModal}
           onEdit={(flight) => {
-            setEditingFlight(flight as ScheduledFlight);
+          const sf = flight as ScheduledFlight;
+          if (sf.status === 'IN_PROGRESS') {
+            // ============================================================
+            // CHECK-OUT FLOW: Open the Debrief Form
+            // ============================================================
+            // When a flight is IN_PROGRESS and user clicks "Check-Out / Debrief",
+            // we open the DebriefForm to record actual times, fuel, notes.
+            // On completion, it auto-creates a logbook entry.
+            // ============================================================
+            setDebriefFlight(sf);
+            setShowDebriefForm(true);
+          } else {
+            // ============================================================
+            // EDIT FLOW: Open the Booking Form for editing
+            // ============================================================
+            // When a flight is SCHEDULED and user clicks "Edit",
+            // we open the BookingForm pre-filled with the flight data.
+            // ============================================================
+            setEditingFlight(sf);
             setShowBookingForm(true);
-          }}
+          }
+        }}
         />
       )}
 
@@ -825,6 +851,27 @@ export default function ScheduleBoard() {
           }}
           onSuccess={handleBookingSuccess}
           existingFlight={editingFlight}
+        />
+      )}
+
+      {/* ============================================================ */}
+      {/* DEBRIEF FORM MODAL */}
+      {/* ============================================================ */}
+      {/* Opens when user clicks "Check-Out / Debrief" on IN_PROGRESS flight */}
+      {showDebriefForm && debriefFlight && (
+        <DebriefForm
+          flight={debriefFlight}
+          onClose={() => {
+            setShowDebriefForm(false);
+            setDebriefFlight(null);
+          }}
+          onComplete={(message) => {
+            setShowDebriefForm(false);
+            setDebriefFlight(null);
+            setSuccessMessage(message);
+            loadScheduledFlights();
+            setTimeout(() => setSuccessMessage(''), 3000);
+          }}
         />
       )}
 
