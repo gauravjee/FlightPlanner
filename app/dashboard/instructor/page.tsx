@@ -23,8 +23,7 @@ import Link from 'next/link';
 export default function InstructorDashboardPage() {
   const { data: session } = useSession();
   const instructorName = session?.user?.name || 'Instructor';
-  const instructorId = session?.user?.id || '';
-
+  const instructorEmail = session?.user?.email || '';
   // ============================================================
   // STORE DATA
   // ============================================================
@@ -35,6 +34,20 @@ export default function InstructorDashboardPage() {
     flightRecords, loadFlightRecords,
     trainingRequirements, loadTrainingRequirements,
   } = useFlightStore();
+  
+  // Find the instructor's database ID from their email
+  const [instructorId, setInstructorId] = useState('');
+  
+  useEffect(() => {
+    if (instructorEmail && instructors.length > 0) {
+      const inst = instructors.find(i => i.email === instructorEmail);
+      if (inst) {
+        setInstructorId(inst.id);
+      }
+    }
+  }, [instructorEmail, instructors]);
+
+
 
   // Load all data on mount
   useEffect(() => {

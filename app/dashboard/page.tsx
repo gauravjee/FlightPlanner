@@ -20,6 +20,7 @@ import Header from '@/components/ui/Header';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import StudentProgressWidget from '@/components/dashboard/StudentProgressWidget';
+import NotificationWidget from '@/components/dashboard/NotificationWidget';
 
 export default function DashboardPage() {
   const store = useFlightStore();
@@ -237,6 +238,9 @@ export default function DashboardPage() {
             {/* ===== RIGHT COLUMN ===== */}
             <div className="space-y-6">
 
+            {/* ----- NOTIFICATION ALERTS ----- */}
+            <NotificationWidget />
+            
               {/* ----- LIVE ACTIVE NOTAMS ----- */}
               <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
                 <h2 className="text-lg font-semibold text-white mb-4">⚠️ Active NOTAMs</h2>
