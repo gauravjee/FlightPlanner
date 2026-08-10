@@ -284,3 +284,47 @@ export interface TrainingRequirement {
   blocksAllFlights?: boolean;    
   programCode?: string;
 }
+
+// Ground school subject
+export interface GroundSchoolSubject {
+  id: string;
+  subjectName: string;
+  subjectCode: string;
+  validityYears?: number;
+  requiredBeforeHours?: number;
+  isMandatory: boolean;
+  sortOrder: number;
+  isActive: boolean;
+}
+
+// Ground school class
+export interface GroundSchoolClass {
+  id: string;
+  subjectId: string;
+  instructorId: string;
+  classDate: string;
+  startTime?: string;
+  endTime?: string;
+  topic: string;
+  notes: string;
+  status: string;
+  subjectName?: string;
+  instructorName?: string;
+  enrolledCount?: number;
+}
+
+// Student enrollment
+export interface GroundSchoolEnrollment {
+  id: string;
+  classId: string;
+  studentId: string;
+  attendanceStatus: string;
+  examDate?: string;
+  examScore?: number;
+  examResult?: string;
+  attempts: number;
+  examiner: string;
+  notes: string;
+  studentName?: string;
+  studentInitials?: string;
+}
