@@ -190,7 +190,7 @@ export default function ProgressPage() {
               <select
                 value={selectedStudentId}
                 onChange={e => setSelectedStudentId(e.target.value)}
-                className="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-white"
+                className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white"
               >
                 <option value="">Select a student to view progress</option>
                 {students.map(s => (
@@ -251,6 +251,28 @@ export default function ProgressPage() {
               {selectedStudentId && (
                 <div className="mb-6">
                   <RequirementsChecklist studentId={selectedStudentId} />
+                </div>
+              )}
+
+              {/* ----- GROUND SCHOOL PROGRESS LINK ----- */}
+              {/* ADD THIS BLOCK RIGHT AFTER THE REQUIREMENTS CHECKLIST */}
+              {selectedStudentId && (
+                <div className="mb-6">
+                  <a
+                    href={`/dashboard/ground-school/progress?student=${selectedStudentId}`}
+                    className="bg-teal-500/10 border border-teal-500/20 rounded-xl p-4 hover:bg-teal-500/20 transition cursor-pointer no-underline flex items-center justify-between"
+                  >
+                    <div>
+                      <h3 className="text-white font-semibold flex items-center space-x-2">
+                        <span>🏫</span>
+                        <span>Ground School Progress</span>
+                      </h3>
+                      <p className="text-sm text-slate-400 mt-1">
+                        View detailed theoretical training status, attendance & exam results
+                      </p>
+                    </div>
+                    <span className="text-teal-400 text-xl">→</span>
+                  </a>
                 </div>
               )}
 

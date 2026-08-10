@@ -305,6 +305,10 @@ export default function DashboardPage() {
                     <p className="text-xl mb-1">📊</p>
                     <p className="text-xs">Progress</p>
                   </a>
+                  <a href="/dashboard/ground-school" className="bg-teal-500/10 text-teal-400 border border-teal-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
+                    <p className="text-xl mb-1">🏫</p>
+                    <p className="text-xs">Ground School</p>
+                  </a>
                 </div>
               </div>
 
