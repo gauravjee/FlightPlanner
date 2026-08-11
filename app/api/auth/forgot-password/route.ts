@@ -11,15 +11,16 @@
 // ============================================================
 
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
 import crypto from 'crypto';
+import { supabaseAdmin } from '@/lib/supabase-admin';
 
-// Initialize Supabase client for database operations
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// This route already only ever runs server-side, but it used to build its
+// own anon-key Supabase client instead of reusing supabaseAdmin. Once Row
+// Level Security is enabled on `users` / `password_reset_tokens`, an
+// anon-key client here would silently stop finding any rows — using
+// supabaseAdmin (service-role key) keeps this route working regardless of
+// RLS policy changes, consistent with the other auth routes.
 
 /**
  * POST handler for forgot password requests
@@ -42,7 +43,7 @@ export async function POST(request: Request) {
     // ============================================================
     // CHECK IF USER EXISTS
     // ============================================================
-    const { data: user, error: userError } = await supabase
+    const { data: user, error: userError } = await supabaseAdmin
       .from('users')
       .select('id, email, name')
       .eq('email', email)
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
     // ============================================================
     // STORE TOKEN IN DATABASE
     // ============================================================
-    const { error: tokenError } = await supabase
+    const { error: tokenError } = await supabaseAdmin
       .from('password_reset_tokens')
       .insert({
         user_id: user.id,

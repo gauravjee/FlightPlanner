@@ -5,15 +5,21 @@
 // This route sends email from the app's domain using the org's Resend API
 // key, so it must not be reachable by an unauthenticated caller — otherwise
 // it's an open mail relay anyone on the internet can use to send arbitrary
-// HTML email (spam/phishing) "from" FlightPro Manager. The only current
-// caller is the admin "create user" welcome email, so we require an
-// admin/super_admin session.
+// HTML email (spam/phishing) "from" FlightPro Manager.
+//
+// Nothing in the app currently calls this route — the admin "create user"
+// welcome email is now sent directly, server-side, from
+// app/api/admin/users/route.ts (see lib/email.ts's sendWelcomeEmailServer).
+// It's kept for any future server-triggered email and locked to
+// super_admin, matching the Setup Wizard's actual RoleGate
+// (app/dashboard/admin/setup/page.tsx uses ['super_admin'] only — not
+// ['admin', 'super_admin']).
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth-options';
 
-const ALLOWED_ROLES = ['admin', 'super_admin'];
+const ALLOWED_ROLES = ['super_admin'];
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
