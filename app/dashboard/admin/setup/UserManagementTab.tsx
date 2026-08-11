@@ -13,6 +13,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { supabase } from '@/lib/supabase-client';
 import { sendWelcomeEmail } from '@/lib/email';
 import bcrypt from 'bcryptjs';
@@ -47,6 +48,9 @@ const ROLES = [
 // MAIN COMPONENT
 // ============================================================
 export default function UserManagementTab() {
+  // Current admin's own session — used to stop them deleting their own account.
+  const { data: session } = useSession();
+
   // ----- State -----
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,9 +76,11 @@ export default function UserManagementTab() {
    */
   const loadUsers = async () => {
     setLoading(true);
+    // Never select password_hash here — this list renders straight into the
+    // browser, and the hash has no business leaving the server.
     const { data, error } = await supabase
       .from('users')
-      .select('*')
+      .select('id, email, name, role, is_active, force_password_reset, last_login, created_at')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -212,10 +218,11 @@ export default function UserManagementTab() {
    *****************************************************/
 
       const handleDeleteUser = async (userId: string, userEmail: string) => {
-        // Prevent super admin from deleting themselves
-        const { data: session } = await supabase.auth.getSession();
-        const currentUserEmail = session?.session?.user?.email;
-        
+        // Prevent an admin from deleting themselves. Note: this app doesn't use
+        // Supabase Auth (login goes through NextAuth), so the current user's
+        // identity comes from the NextAuth session, not supabase.auth.
+        const currentUserEmail = session?.user?.email;
+
         if (userEmail === currentUserEmail) {
           alert('❌ You cannot delete your own account.');
           return;

@@ -15,8 +15,6 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
-import { supabase } from '@/lib/supabase-client';
-import bcrypt from 'bcryptjs';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import Header from '@/components/ui/Header';
 
@@ -74,46 +72,26 @@ export default function ChangePasswordPage() {
         return;
       }
 
-      // Find user in database
-      const { data: user, error: fetchError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', userEmail)
-        .single();
+      // Verify current password and update it entirely server-side —
+      // the password hash never comes to the browser. Identity is taken
+      // from the NextAuth session on the server, not from anything sent here.
+      const response = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
 
-      if (fetchError || !user) {
-        setError('❌ User not found.');
-        setLoading(false);
-        return;
-      }
+      const data = await response.json();
 
-      // Verify current password
-      const isValid = await bcrypt.compare(currentPassword, user.password_hash);
-      if (!isValid) {
-        setError('❌ Current password is incorrect.');
-        setLoading(false);
-        return;
-      }
-
-      // Hash and update new password
-      const newHash = await bcrypt.hash(newPassword, 10);
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({ 
-          password_hash: newHash,
-          force_password_reset: false,  // Clear any force reset flag
-        })
-        .eq('id', user.id);
-
-      if (updateError) {
-        setError('❌ Error updating password. Please try again.');
+      if (!response.ok) {
+        setError('❌ ' + (data.error || 'Error updating password. Please try again.'));
         setLoading(false);
         return;
       }
 
       // Success - show message and force logout after 2 seconds
       setSuccess('✅ Password changed successfully! You will be logged out in 2 seconds...');
-      
+
       setTimeout(async () => {
         await signOut({ callbackUrl: '/login' });
       }, 2000);

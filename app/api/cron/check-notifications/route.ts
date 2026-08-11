@@ -37,6 +37,31 @@ var resend = new Resend(process.env.RESEND_API_KEY || '');
 // MAIN GET HANDLER
 // ============================================================
 export async function GET(request: Request) {
+  // ============================================================
+  // AUTHENTICATE THE CRON CALLER
+  // ============================================================
+  // This endpoint has real side effects (emails every admin, uses the
+  // service-role key, writes to notification_log) and was previously
+  // reachable by anyone who found the URL. Require a shared secret,
+  // passed either as `Authorization: Bearer <secret>` or `?secret=`
+  // (cron-job.org and most schedulers can set either), matching the
+  // CRON_SECRET env var you configure alongside the scheduled job.
+  const cronSecret = process.env.CRON_SECRET;
+  if (cronSecret) {
+    const authHeader = request.headers.get('authorization') || '';
+    const headerSecret = authHeader.replace(/^Bearer\s+/i, '');
+    const querySecret = new URL(request.url).searchParams.get('secret');
+    if (headerSecret !== cronSecret && querySecret !== cronSecret) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+  } else {
+    // Fail loudly in the server logs rather than silently staying open.
+    console.warn(
+      '⚠️ CRON_SECRET is not set — /api/cron/check-notifications is unauthenticated ' +
+      'and can be triggered by anyone who finds the URL. Set CRON_SECRET.'
+    );
+  }
+
   // Array to collect all notification messages for the response
   var notifications: string[] = [];
   
