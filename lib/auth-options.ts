@@ -34,6 +34,7 @@ export const authOptions: AuthOptions = {
             name: user.name,
             role: user.role,                   // 'admin' | 'instructor' | 'student'
             studentId: user.studentId || null,  // only for students
+            forcePasswordReset: user.forcePasswordReset ?? false,
           };
         }
         return null;
@@ -51,15 +52,23 @@ export const authOptions: AuthOptions = {
       if (user) {
         token.role = user.role || 'instructor';
         token.studentId = user.studentId ?? null;
+        token.forcePasswordReset = user.forcePasswordReset ?? false;
       }
       return token;
     },
 
-    // Session callback – makes role and studentId available on the client
+    // Session callback – makes role/studentId/forcePasswordReset available
+    // on the client. forcePasswordReset lets the login page decide whether
+    // to redirect to /reset-password WITHOUT making its own client-side
+    // `users` table read — that table is now behind Row Level Security, so
+    // a browser-side (anon-key) read of it would just fail. This value was
+    // already fetched server-side (with the service-role key) inside
+    // verifyCredentials/authorize() above, so it's free to expose here.
     async session({ session, token }) {
       if (session.user) {
         session.user.role = token.role || 'instructor';
         session.user.studentId = token.studentId ?? null;
+        session.user.forcePasswordReset = token.forcePasswordReset ?? false;
       }
       return session;
     },
