@@ -58,13 +58,24 @@ export default function AttendancePage() {
     setEnrollments(data || []);
   }, []);
 
-  const loadStudents = useCallback(async () => {
-    const { data } = await supabase
-      .from('students')
-      .select('id, name, initials')
-      .eq('status', 'ACTIVE');
-    setStudents(data || []);
+  // Fetches active students via the role-scoped /api/students route
+  // (not a direct Supabase call — see app/api/students/route.ts) so this
+  // keeps working once the anon key can no longer read the `students`
+  // table directly.
+  const fetchActiveStudents = useCallback(async (): Promise<Student[]> => {
+    const res = await fetch('/api/students');
+    if (!res.ok) return [];
+    const { students: rows } = (await res.json()) as {
+      students: { id: string; name: string; initials: string; status: string }[];
+    };
+    return (rows || [])
+      .filter((r) => r.status === 'ACTIVE')
+      .map((r) => ({ id: r.id, name: r.name, initials: r.initials }));
   }, []);
+
+  const loadStudents = useCallback(async () => {
+    setStudents(await fetchActiveStudents());
+  }, [fetchActiveStudents]);
 
   const loadAvailableStudents = useCallback(async (classId: number) => {
     // Students not already enrolled
@@ -73,12 +84,9 @@ export default function AttendancePage() {
       .select('student_id')
       .eq('class_id', classId);
     const enrolledIds = new Set((enrolled || []).map(e => e.student_id));
-    const { data: all } = await supabase
-      .from('students')
-      .select('id, name, initials')
-      .eq('status', 'ACTIVE');
-    setAvailableStudents((all || []).filter(s => !enrolledIds.has(s.id)));
-  }, []);
+    const all = await fetchActiveStudents();
+    setAvailableStudents(all.filter(s => !enrolledIds.has(s.id)));
+  }, [fetchActiveStudents]);
 
   useEffect(() => {
     loadClasses();

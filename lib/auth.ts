@@ -1,8 +1,14 @@
 // lib/auth.ts
 // Verifies user credentials against the Supabase users table
 // Returns user data including role and studentId (if applicable)
+//
+// This runs only inside NextAuth's authorize() callback — server-side —
+// so it uses supabaseAdmin (service-role key) rather than the anon-key
+// client. That matters once Row Level Security is enabled on `users`
+// (see the students/users access-control notes): with the anon key this
+// login check would silently start failing for everyone.
 
-import { supabase } from './supabase';
+import { supabaseAdmin } from './supabase-admin';
 import bcrypt from 'bcryptjs';
 
 /**
@@ -12,7 +18,7 @@ import bcrypt from 'bcryptjs';
  */
 
 export async function logLoginAttempt(email: string, status: 'SUCCESS' | 'FAILED') {
-  await supabase.from('login_audit').insert({
+  await supabaseAdmin.from('login_audit').insert({
     user_email: email,
     login_status: status,
   });
@@ -25,7 +31,7 @@ export async function logLoginAttempt(email: string, status: 'SUCCESS' | 'FAILED
  * @returns true if password reset is required, false otherwise
  */
 export async function checkForcePasswordReset(email: string): Promise<boolean> {
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('users')
     .select('force_password_reset')
     .eq('email', email)
@@ -37,7 +43,7 @@ export async function checkForcePasswordReset(email: string): Promise<boolean> {
 
 export async function verifyCredentials(email: string, password: string) {
   // Fetch user by email (only active accounts)
-  const { data, error } = await supabase
+  const { data, error } = await supabaseAdmin
     .from('users')
     .select('*')
     .eq('email', email)

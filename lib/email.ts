@@ -90,6 +90,59 @@ export async function sendWelcomeEmail(
   }
 }
 // ============================================================
+// SEND WELCOME EMAIL (server-side)
+// ============================================================
+// Same content as sendWelcomeEmail() above, but calls Resend directly
+// instead of going through a self-fetch to /api/send-email. Use this from
+// server-side code (API routes) that already has an authorized admin
+// session — e.g. app/api/admin/users/route.ts when creating a new user —
+// so account creation doesn't need an extra authenticated HTTP hop.
+export async function sendWelcomeEmailServer(
+  email: string,
+  name: string,
+  password: string,
+  role: string
+): Promise<{ success: boolean; message: string }> {
+  const resend = getResend();
+
+  if (!resend) {
+    return { success: false, message: 'Email service not configured.' };
+  }
+
+  try {
+    await resend.emails.send({
+      from: 'FlightPro Manager <noreply@pushpak.mahesho.com>',
+      to: email,
+      subject: `Welcome to FlightPro - Your ${roleLabels[role] || role} Account`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="color: #1e40af;">✈️ FlightPro Manager</h1>
+            <p style="color: #64748b;">Flight Training Organization Management System</p>
+          </div>
+          <h2 style="color: #1e293b;">Welcome, ${name}!</h2>
+          <p>Your <strong>${roleLabels[role] || role}</strong> account has been created.</p>
+          <div style="background: #f1f5f9; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p><strong>🔗 Login URL:</strong> <a href="https://flightplanner-xi.vercel.app/login">FlightPro Login</a></p>
+            <p><strong>📧 Email:</strong> ${email}</p>
+            <p><strong>🔑 Password:</strong> ${password}</p>
+          </div>
+          <div style="background: #fef3c7; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+            <p style="color: #92400e; margin: 0;">⚠️ <strong>Important:</strong> You will be required to change your password on your first login.</p>
+          </div>
+        </div>
+      `,
+    });
+
+    return { success: true, message: 'Welcome email sent!' };
+  } catch (error) {
+    console.error('❌ Welcome email send error:', error);
+    const message = error instanceof Error ? error.message : 'Failed to send welcome email.';
+    return { success: false, message };
+  }
+}
+
+// ============================================================
 // SEND PASSWORD RESET EMAIL
 // ============================================================
 export async function sendPasswordResetEmail(

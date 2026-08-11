@@ -114,17 +114,22 @@ export default function StudentProgressPage() {
   // These are loaded once and used to enrich enrollment records.
   // ============================================================
   const loadStaticData = useCallback(async () => {
-    // Fetch all three tables in parallel for performance
+    // Fetch all three data sources in parallel for performance. Students
+    // come from the role-scoped /api/students route (not a direct
+    // Supabase call — see app/api/students/route.ts): staff get the full
+    // active roster for the picker below, a 'student'-role caller only
+    // ever gets their own record (which this page doesn't use — students
+    // never see the picker, their ID comes from the session instead).
     const [subRes, stuRes, clsRes] = await Promise.all([
       supabase
         .from('ground_school_subjects')
         .select('*')
         .eq('is_active', true)
         .order('sort_order'),
-      supabase
-        .from('students')
-        .select('id, name, initials')
-        .eq('status', 'ACTIVE'),
+      fetch('/api/students').then(
+        (r): Promise<{ students: { id: string; name: string; initials: string; status: string }[] }> =>
+          r.ok ? r.json() : Promise.resolve({ students: [] })
+      ),
       supabase
         .from('ground_school_classes')
         .select(
@@ -134,7 +139,7 @@ export default function StudentProgressPage() {
     ]);
 
     setSubjects(subRes.data || []);
-    setStudents(stuRes.data || []);
+    setStudents((stuRes.students || []).filter((s) => s.status === 'ACTIVE'));
 
     // Flatten class joins into a simple array for easy client‑side look‑up
     const flatClasses: ClassInfo[] = (clsRes.data || []).map((c: any) => ({

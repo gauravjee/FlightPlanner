@@ -14,9 +14,6 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { supabase } from '@/lib/supabase-client';
-import { sendWelcomeEmail } from '@/lib/email';
-import bcrypt from 'bcryptjs';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -77,36 +74,21 @@ export default function UserManagementTab() {
   const loadUsers = async () => {
     setLoading(true);
     // Never select password_hash here — this list renders straight into the
-    // browser, and the hash has no business leaving the server.
-    const { data, error } = await supabase
-      .from('users')
-      .select('id, email, name, role, is_active, force_password_reset, last_login, created_at')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.error('Error loading users:', error.message);
-    } else {
-      setUsers(data || []);
+    // browser, and the hash has no business leaving the server. Routed
+    // through /api/admin/users (super_admin only, enforced server-side)
+    // rather than a direct Supabase call.
+    try {
+      const res = await fetch('/api/admin/users');
+      if (res.ok) {
+        const { users: data } = await res.json();
+        setUsers(data || []);
+      } else {
+        console.error('Error loading users:', await res.text());
+      }
+    } catch (err) {
+      console.error('Error loading users:', err instanceof Error ? err.message : err);
     }
     setLoading(false);
-  };
-
-  // ============================================================
-  // PASSWORD GENERATION
-  // ============================================================
-
-  /**
-   * Generate a secure random password
-   * Uses mixed case letters and numbers (no confusing characters like I, l, 0, O)
-   * @returns A 10-character random password
-   */
-  const generatePassword = (): string => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-    let password = '';
-    for (let i = 0; i < 10; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return password;
   };
 
   // ============================================================
@@ -114,12 +96,9 @@ export default function UserManagementTab() {
   // ============================================================
 
   /**
-   * Create a new user account
-   * 1. Generates a random password
-   * 2. Hashes the password with bcrypt
-   * 3. Inserts the user into the database
-   * 4. Optionally sends a welcome email with credentials
-   * 5. Sets force_password_reset = true for security
+   * Create a new user account. Password generation, hashing, the insert,
+   * and the welcome email are all handled server-side by
+   * /api/admin/users (POST) — this just calls it and shows the result.
    */
   const handleCreateUser = async () => {
     // Validate required fields
@@ -132,42 +111,25 @@ export default function UserManagementTab() {
     setSuccessMessage('');
 
     try {
-      // Generate and hash password
-      const password = generatePassword();
-      const hash = await bcrypt.hash(password, 10);
-
-      // Insert user into database with force_password_reset enabled
-      const { error } = await supabase.from('users').insert({
-        email: form.email,
-        password_hash: hash,
-        name: form.name,
-        role: form.role,
-        is_active: true,
-        force_password_reset: true,  // User must change password on first login
+      const res = await fetch('/api/admin/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
       });
+      const result = await res.json();
 
-      if (error) {
-        alert('❌ Error creating user: ' + error.message);
+      if (!res.ok) {
+        alert('❌ Error creating user: ' + (result.error || 'Unknown error'));
         setSending(false);
         return;
       }
 
-      // Send welcome email if checkbox is checked
-      if (form.sendEmail) {
-        const emailResult = await sendWelcomeEmail(
-          form.email,
-          form.name,
-          password,
-          form.role
-        );
-
-        if (emailResult.success) {
-          setSuccessMessage(`✅ User created! Welcome email sent to ${form.email}`);
-        } else {
-          setSuccessMessage(`⚠️ User created but email failed: ${emailResult.message}. Password: ${password}`);
-        }
+      if (result.emailSent) {
+        setSuccessMessage(`✅ User created! Welcome email sent to ${form.email}`);
+      } else if (form.sendEmail) {
+        setSuccessMessage(`⚠️ User created but email failed: ${result.emailMessage}. Password: ${result.password}`);
       } else {
-        setSuccessMessage(`✅ User created! Password: ${password} (save this - it won't be shown again)`);
+        setSuccessMessage(`✅ User created! Password: ${result.password} (save this - it won't be shown again)`);
       }
 
       // Reset form and reload user list
@@ -191,10 +153,16 @@ export default function UserManagementTab() {
    * Inactive users cannot log in
    */
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
-    await supabase
-      .from('users')
-      .update({ is_active: !currentStatus })
-      .eq('id', userId);
+    const res = await fetch(`/api/admin/users/${userId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive: !currentStatus }),
+    });
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: 'Unknown error' }));
+      alert('❌ Error updating status: ' + error);
+      return;
+    }
     loadUsers();
   };
 
@@ -204,23 +172,28 @@ export default function UserManagementTab() {
    *****************************************************/
 
     const forceReset = async (userId: string) => {
-      await supabase
-        .from('users')
-        .update({ force_password_reset: true })
-        .eq('id', userId);
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forcePasswordReset: true }),
+      });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: 'Unknown error' }));
+        alert('❌ Error: ' + error);
+        return;
+      }
       loadUsers();
       alert('✅ User will be forced to reset password on next login.');
     };
 
   /*****************************************************
    * Delete a user permanently
-   * Super admin cannot delete themselves
+   * Super admin cannot delete themselves — enforced server-side using the
+   * verified NextAuth session (this client-side check is just for
+   * immediate UX feedback).
    *****************************************************/
 
       const handleDeleteUser = async (userId: string, userEmail: string) => {
-        // Prevent an admin from deleting themselves. Note: this app doesn't use
-        // Supabase Auth (login goes through NextAuth), so the current user's
-        // identity comes from the NextAuth session, not supabase.auth.
         const currentUserEmail = session?.user?.email;
 
         if (userEmail === currentUserEmail) {
@@ -229,13 +202,11 @@ export default function UserManagementTab() {
         }
 
         if (window.confirm(`Are you sure you want to permanently delete ${userEmail}? This action cannot be undone.`)) {
-          const { error } = await supabase
-            .from('users')
-            .delete()
-            .eq('id', userId);
+          const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
 
-          if (error) {
-            alert('❌ Error deleting user: ' + error.message);
+          if (!res.ok) {
+            const { error } = await res.json().catch(() => ({ error: 'Unknown error' }));
+            alert('❌ Error deleting user: ' + error);
           } else {
             loadUsers();
             setSuccessMessage(`🗑️ User ${userEmail} deleted successfully.`);

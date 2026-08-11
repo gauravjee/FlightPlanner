@@ -292,11 +292,23 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // ============================================================
     loadStudents: async () => {
     set({ loadingStudents: true });
-    const { data, error } = await supabase.from('students').select('*').order('created_at', { ascending: true });
-    if (data && !error) {
+    // Routed through /api/students (not a direct Supabase call) so the
+    // server can scope the result by role: staff get everyone, a logged-in
+    // 'student' only ever gets their own record. See app/api/students/route.ts.
+    let data: Record<string, unknown>[] | null = null;
+    try {
+      const res = await fetch('/api/students');
+      if (res.ok) {
+        const json = await res.json();
+        data = json.students;
+      }
+    } catch (err) {
+      console.error('Error loading students:', err);
+    }
+    if (data) {
       // Get instructors list for name lookup
       const instructorsList = get().instructors;
-      
+
       // Enrich students with assigned instructor names
       const enriched = data.map((row: Record<string, unknown>) => {
         const instructorId = row.assigned_instructor_id as string;
@@ -325,39 +337,37 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
         students: enriched,
         loadingStudents: false,
       });
-    } else { console.error('Error loading students:', error); set({ loadingStudents: false }); }
+    } else { set({ loadingStudents: false }); }
   },
 
   addStudent: async (student) => {
-    const { data, error } = await supabase.from('students').insert({
-      enrollment_id: student.enrollmentId, name: student.name, initials: student.initials,
-      training_stage: student.trainingStage, total_hours: student.totalHours,
-      medical_expiry: student.medicalExpiry, email: student.email, phone: student.phone,
-      date_of_birth: student.dateOfBirth, joined_date: student.joinedDate, status: student.status,
-    }).select().single();
-    if (data && !error) set(state => ({ students: [...state.students, { ...student, id: String(data.id) }] }));
+    const res = await fetch('/api/students', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(student),
+    });
+    if (res.ok) {
+      const { student: created } = await res.json();
+      set(state => ({ students: [...state.students, { ...student, id: String(created.id) }] }));
+    } else {
+      console.error('Error adding student:', await res.text());
+    }
   },
 
   updateStudent: async (id, updates) => {
-    const dbUpdates: Record<string, unknown> = {};
-    if (updates.name !== undefined) dbUpdates.name = updates.name;
-    if (updates.initials !== undefined) dbUpdates.initials = updates.initials;
-    if (updates.trainingStage !== undefined) dbUpdates.training_stage = updates.trainingStage;
-    if (updates.totalHours !== undefined) dbUpdates.total_hours = updates.totalHours;
-    if (updates.medicalExpiry !== undefined) dbUpdates.medical_expiry = updates.medicalExpiry;
-    if (updates.email !== undefined) dbUpdates.email = updates.email;
-    if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
-    if (updates.status !== undefined) dbUpdates.status = updates.status;
-    if (updates.assignedInstructorId !== undefined) {
-          dbUpdates.assigned_instructor_id = updates.assignedInstructorId ? String(updates.assignedInstructorId) : null;
-        }
-    const { error } = await supabase.from('students').update(dbUpdates).eq('id', id);
-        if (!error) set(state => ({ students: state.students.map(s => s.id === id ? { ...s, ...updates } : s) }));
+    const res = await fetch(`/api/students/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (res.ok) set(state => ({ students: state.students.map(s => s.id === id ? { ...s, ...updates } : s) }));
+    else console.error('Error updating student:', await res.text());
   },
 
   removeStudent: async (id) => {
-    const { error } = await supabase.from('students').delete().eq('id', id);
-    if (!error) set(state => ({ students: state.students.filter(s => s.id !== id) }));
+    const res = await fetch(`/api/students/${id}`, { method: 'DELETE' });
+    if (res.ok) set(state => ({ students: state.students.filter(s => s.id !== id) }));
+    else console.error('Error removing student:', await res.text());
   },
 
   getStudentById: (id) => get().students.find(s => s.id === id),
@@ -452,19 +462,18 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       if (record.flightType === 'SOLO' || record.sortieType === 'SOLO') {
         const student = get().students.find(s => s.id === record.studentId);
         if (student && !student.firstSoloDate) {
-          // Update the student's first solo date in the database
-          await supabase
-            .from('students')
-            .update({ first_solo_date: record.flightDate })
-            .eq('id', record.studentId);
+          // Update the student's first solo date via the students API
+          // (routed through the server — see app/api/students/[id]/route.ts)
+          // rather than writing to the `students` table directly from the browser.
+          await get().updateStudent(record.studentId, { firstSoloDate: record.flightDate });
         }
       }
 
       // Update total hours
       const student = get().students.find(s => s.id === record.studentId);
       const newTotalHours = (student?.totalHours || 0) + record.totalHours;
-      await supabase.from('students').update({ total_hours: newTotalHours }).eq('id', record.studentId);
-      
+      await get().updateStudent(record.studentId, { totalHours: newTotalHours });
+
       // Reload data to reflect all changes
       await get().loadStudents();
       await get().loadFlightRecords();
@@ -719,10 +728,13 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
    // 3. FLIGHT RECORDS / LOGBOOK FUNCTIONS
   // ============================================================
   assignInstructor: async (studentId, instructorId) => {
-  await supabase
-    .from('students')
-    .update({ assigned_instructor_id: instructorId || null })
-    .eq('id', studentId);
+  // `|| null` (not `undefined`) so an empty instructorId still reaches the
+  // server as an explicit "clear the assignment" — updateStudent only
+  // includes a field in the PATCH body when it's !== undefined.
+  await get().updateStudent(
+    studentId,
+    { assignedInstructorId: instructorId || null } as unknown as Partial<StudentRecord>
+  );
   await get().loadStudents();
 },
 
