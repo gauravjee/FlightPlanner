@@ -29,9 +29,10 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-// ----- Database & Security -----
-import { supabase } from '@/lib/supabase-client';  // Supabase client for database operations
-import bcrypt from 'bcryptjs';                      // For password hashing and verification
+// Token verification and the actual password reset both happen server-side
+// (see app/api/auth/reset-password/) — the browser never sees a password
+// hash, and a forced reset can only ever change the currently-logged-in
+// user's own password.
 
 // ============================================================
 // INNER COMPONENT: ResetPasswordForm
@@ -106,35 +107,30 @@ function ResetPasswordForm() {
    */
   const verifyToken = async (token: string) => {
     try {
-      // Query the password_reset_tokens table
-      // Joins with users table to get the email associated with this token
-      const { data, error } = await supabase
-        .from('password_reset_tokens')
-        .select('*, users!inner(email)')  // Join to get user's email
-        .eq('token', token)               // Match the token
-        .eq('used', false)                // Token must not have been used already
-        .gt('expires_at', new Date().toISOString())  // Token must not be expired
-        .single();                        // Expect exactly one matching row
+      // Ask the server whether this token is still valid. This does NOT
+      // mark the token as used — it's only marked used once the password
+      // has actually been changed (see handleReset below), so a page
+      // refresh can't burn a reset link before the user finishes the form.
+      const response = await fetch('/api/auth/reset-password/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
 
-      // If no matching token found or an error occurred
-      if (error || !data) {
+      const data = await response.json();
+
+      if (!response.ok || !data.valid) {
         setError('❌ Invalid or expired reset link. Please request a new one from the login page.');
         return;
       }
 
       // Token is valid! Set up the form for token-based reset
-      setTokenVerified(true);              // Switch to token reset mode (no old password needed)
-      setTokenEmail(data.users.email);     // Store the email from the database
-      setEmail(data.users.email);          // Pre-fill the email field
-
-      // Mark the token as used so it cannot be reused (security measure)
-      await supabase
-        .from('password_reset_tokens')
-        .update({ used: true })
-        .eq('id', data.id);
+      setTokenVerified(true);       // Switch to token reset mode (no old password needed)
+      setTokenEmail(data.email);    // Store the email associated with the token
+      setEmail(data.email);         // Pre-fill the email field
 
     } catch (err) {
-      // Handle unexpected errors (network issues, database errors, etc.)
+      // Handle unexpected errors (network issues, server errors, etc.)
       setError('❌ Error verifying reset link. Please try again.');
     }
   };
@@ -189,57 +185,26 @@ function ResetPasswordForm() {
 
     try {
       // ============================================================
-      // FIND THE USER IN THE DATABASE
+      // RESET THE PASSWORD (entirely server-side)
       // ============================================================
-      // Use tokenEmail (from verified token) or email (from form input)
-      const lookupEmail = tokenVerified ? tokenEmail : email;
+      // Token mode: the token itself proves identity — no session needed.
+      // Forced-reset mode: identity comes from the caller's NextAuth
+      // session on the server (they're already logged in at this point),
+      // not from the email field, so this can't touch another account.
+      const response = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          tokenVerified
+            ? { token: resetToken, newPassword }
+            : { oldPassword, newPassword }
+        ),
+      });
 
-      const { data: user, error: fetchError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', lookupEmail)
-        .single();  // Expect exactly one user
+      const data = await response.json();
 
-      // If user not found or database error
-      if (fetchError || !user) {
-        setError('❌ User not found. Please check your email address.');
-        setLoading(false);
-        return;
-      }
-
-      // ============================================================
-      // VALIDATION STEP 3: Verify current password (forced reset only)
-      // ============================================================
-      // Skip this check for token-based resets (user already verified via email link)
-      if (!tokenVerified) {
-        // Compare the entered old password with the stored hash
-        const isValid = await bcrypt.compare(oldPassword, user.password_hash);
-        
-        if (!isValid) {
-          setError('❌ Current password is incorrect.');
-          setLoading(false);
-          return;
-        }
-      }
-
-      // ============================================================
-      // UPDATE PASSWORD IN DATABASE
-      // ============================================================
-      // Hash the new password with bcrypt (cost factor 10 = good security)
-      const newHash = await bcrypt.hash(newPassword, 10);
-
-      // Update the user's record in the database
-      const { error: updateError } = await supabase
-        .from('users')
-        .update({
-          password_hash: newHash,           // Store the new hashed password
-          force_password_reset: false,      // Clear the force reset flag
-        })
-        .eq('id', user.id);                 // Only update this specific user
-
-      // If the database update failed
-      if (updateError) {
-        setError('❌ Error updating password. Please try again.');
+      if (!response.ok) {
+        setError('❌ ' + (data.error || 'Error updating password. Please try again.'));
         setLoading(false);
         return;
       }

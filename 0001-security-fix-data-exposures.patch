@@ -1,0 +1,1232 @@
+From 191a0543177fcb2097c8012e87342a49a5d5b557 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 10 Aug 2026 18:59:06 +0000
+Subject: [PATCH] Fix data-exposure issues: password hashes, open endpoints,
+ default creds
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- Move password verification/updates for change-password and reset-password
+  (both token and forced-reset modes) into server-side API routes. The
+  browser no longer fetches password_hash at all; bcrypt compare/hash now
+  happens only in lib/supabase-admin.ts-backed routes, using the NextAuth
+  session (not a client-supplied email) to establish identity.
+- Add lib/auth-options.ts so getServerSession() can be used from API routes,
+  and lib/supabase-admin.ts as a server-only Supabase client (prefers
+  SUPABASE_SERVICE_KEY, warns if it falls back to the anon key).
+- UserManagementTab: stop selecting password_hash (and the rest of `*`) into
+  the admin user list; select only the columns the table actually renders.
+  Also fix the self-delete guard, which called supabase.auth.getSession()
+  and always got back an empty session (this app uses NextAuth, not
+  Supabase Auth), so the "can't delete your own account" check never
+  actually fired — now uses the real NextAuth session.
+- Require an authenticated admin/super_admin session on /api/send-email
+  (previously anyone could use it as an open mail relay from the app's
+  domain) and a shared-secret check on /api/cron/check-notifications
+  (previously anyone who found the URL could trigger it, spamming admins
+  and burning the service-role-authenticated Supabase/Resend calls inside
+  it).
+- lib/email.ts: sendPasswordResetEmail() read its Resend key from
+  NEXT_PUBLIC_RESEND_API_KEY, which would ship a secret API key into the
+  client bundle if this function is ever called from the browser. Renamed
+  to the server-only RESEND_API_KEY already used everywhere else.
+- scripts/setup-auth.ts: generate a random password per seeded account
+  instead of the hardcoded FlightPro@2024 (which was committed, in plain
+  text, to this public repo). Removed the stray `code` scratch file that
+  hashed the same literal password. scripts/test-auth.ts now uses an
+  obviously-fake placeholder instead of the real default password.
+- Add .env.example (and un-ignore it) documenting every env var these
+  routes need, including the new CRON_SECRET.
+
+Note: this does not change how the rest of the app reads/writes Supabase
+tables from the browser using the anon key — that's the bigger
+access-control/RLS question flagged separately and intentionally left for
+a follow-up pass.
+---
+ .env.example                                  |  40 ++++++
+ .gitignore                                    |   1 +
+ app/api/auth/[...nextauth]/route.ts           |  71 +---------
+ app/api/auth/change-password/route.ts         | 105 ++++++++++++++
+ app/api/auth/reset-password/route.ts          | 131 ++++++++++++++++++
+ app/api/auth/reset-password/verify/route.ts   |  44 ++++++
+ app/api/cron/check-notifications/route.ts     |  25 ++++
+ app/api/send-email/route.ts                   |  27 +++-
+ app/change-password/page.tsx                  |  46 ++----
+ .../admin/setup/UserManagementTab.tsx         |  17 ++-
+ app/reset-password/page.tsx                   | 115 ++++++---------
+ code                                          |   6 -
+ lib/auth-options.ts                           |  73 ++++++++++
+ lib/email.ts                                  |  10 +-
+ lib/supabase-admin.ts                         |  43 ++++++
+ scripts/setup-auth.ts                         |  88 +++++++-----
+ scripts/test-auth.ts                          |  10 +-
+ types/next-auth.d.ts                          |   9 +-
+ 18 files changed, 635 insertions(+), 226 deletions(-)
+ create mode 100644 .env.example
+ create mode 100644 app/api/auth/change-password/route.ts
+ create mode 100644 app/api/auth/reset-password/route.ts
+ create mode 100644 app/api/auth/reset-password/verify/route.ts
+ delete mode 100644 code
+ create mode 100644 lib/auth-options.ts
+ create mode 100644 lib/supabase-admin.ts
+
+diff --git a/.env.example b/.env.example
+new file mode 100644
+index 0000000..84b20e2
+--- /dev/null
++++ b/.env.example
+@@ -0,0 +1,40 @@
++# Copy this file to .env.local and fill in real values.
++# .env.local is already gitignored — never commit real secrets.
++
++# ------------------------------------------------------------------
++# Supabase
++# ------------------------------------------------------------------
++# Project URL and anon (public) key — safe to expose to the browser,
++# used by every client-side Supabase call in the app.
++NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
++NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
++
++# Service role key — server-only, NEVER prefix this with NEXT_PUBLIC_ or
++# expose it to the browser. It bypasses Row Level Security entirely.
++# Used by lib/supabase-admin.ts (password verification/reset, admin user
++# management) and the notifications cron route. Find it in your Supabase
++# project settings under API → service_role key.
++SUPABASE_SERVICE_KEY=your-service-role-key
++
++# ------------------------------------------------------------------
++# NextAuth
++# ------------------------------------------------------------------
++# Random secret used to sign session tokens. Generate one with:
++#   openssl rand -base64 32
++NEXTAUTH_SECRET=
++
++# ------------------------------------------------------------------
++# Resend (transactional email)
++# ------------------------------------------------------------------
++# Server-only — do not prefix with NEXT_PUBLIC_.
++RESEND_API_KEY=re_your_key_here
++
++# ------------------------------------------------------------------
++# Cron endpoint
++# ------------------------------------------------------------------
++# Shared secret required by /api/cron/check-notifications. Set this,
++# then configure your scheduler (e.g. cron-job.org) to call the endpoint
++# with either header `Authorization: Bearer <value>` or `?secret=<value>`.
++# If left unset, the endpoint runs unauthenticated — a warning is logged
++# on every request as a reminder to set it.
++CRON_SECRET=
+diff --git a/.gitignore b/.gitignore
+index 9c8a03f..1a706a7 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -32,6 +32,7 @@ yarn-error.log*
+ 
+ # env files (can opt-in for committing if needed)
+ .env*
++!.env.example
+ 
+ # vercel
+ .vercel
+diff --git a/app/api/auth/[...nextauth]/route.ts b/app/api/auth/[...nextauth]/route.ts
+index 8e3336c..a7f8179 100644
+--- a/app/api/auth/[...nextauth]/route.ts
++++ b/app/api/auth/[...nextauth]/route.ts
+@@ -2,72 +2,13 @@
+ // NextAuth.js API route for authentication
+ // Handles sign‑in, JWT creation, session management
+ // Supports multi‑role: admin, instructor, student
++//
++// The actual configuration lives in lib/auth-options.ts so it can be reused
++// by getServerSession() in other API routes.
+ 
+ import NextAuth from 'next-auth';
+-import CredentialsProvider from 'next-auth/providers/credentials';
+-import { verifyCredentials } from '@/lib/auth';
++import { authOptions } from '@/lib/auth-options';
+ 
+-const handler = NextAuth({
+-  providers: [
+-    CredentialsProvider({
+-      name: 'credentials',
+-      credentials: {
+-        email: { label: 'Email', type: 'email' },
+-        password: { label: 'Password', type: 'password' },
+-      },
+-      async authorize(credentials) {
+-        if (!credentials?.email || !credentials?.password) return null;
++const handler = NextAuth(authOptions);
+ 
+-        // Verify the user against our database
+-        const user = await verifyCredentials(
+-          credentials.email,
+-          credentials.password
+-        );
+-
+-        if (user) {
+-          // Return user object – these fields will be stored in the JWT
+-          return {
+-            id: user.id,
+-            email: user.email,
+-            name: user.name,
+-            role: user.role,                 // 'admin' | 'instructor' | 'student'
+-            studentId: user.studentId || null, // only for students
+-          };
+-        }
+-        return null;
+-      },
+-    }),
+-  ],
+-
+-  session: {
+-    strategy: 'jwt',   // Use JSON Web Tokens (stateless)
+-  },
+-
+-  callbacks: {
+-    // JWT callback – called when a token is created or updated
+-    async jwt({ token, user }) {
+-      if (user) {
+-        token.role = (user as any).role || 'instructor';
+-        token.studentId = (user as any).studentId || null;
+-      }
+-      return token;
+-    },
+-
+-    // Session callback – makes role and studentId available on the client
+-    async session({ session, token }) {
+-      if (session.user) {
+-        (session.user as any).role = token.role || 'instructor';
+-        (session.user as any).studentId = token.studentId || null;
+-      }
+-      return session;
+-    },
+-  },
+-
+-  pages: {
+-    signIn: '/login',   // Our custom login page
+-  },
+-
+-  secret: process.env.NEXTAUTH_SECRET,
+-});
+-
+-export { handler as GET, handler as POST };
+\ No newline at end of file
++export { handler as GET, handler as POST };
+diff --git a/app/api/auth/change-password/route.ts b/app/api/auth/change-password/route.ts
+new file mode 100644
+index 0000000..d6cb604
+--- /dev/null
++++ b/app/api/auth/change-password/route.ts
+@@ -0,0 +1,105 @@
++// app/api/auth/change-password/route.ts
++// Server-side password change for an already-logged-in user.
++// ============================================================
++// This replaces the old client-side flow in app/change-password/page.tsx,
++// which fetched the user's row (including password_hash) into the browser
++// and did the bcrypt compare there. That meant every password hash was
++// visible to the network tab / anyone with the anon key. Here the hash
++// never leaves the server.
++//
++// The user's identity comes from the NextAuth session — never from a
++// client-supplied email — so there's no way to change someone else's
++// password by tampering with the request body.
++// ============================================================
++
++import { NextResponse } from 'next/server';
++import { getServerSession } from 'next-auth/next';
++import bcrypt from 'bcryptjs';
++import { authOptions } from '@/lib/auth-options';
++import { supabaseAdmin } from '@/lib/supabase-admin';
++
++export async function POST(request: Request) {
++  const session = await getServerSession(authOptions);
++
++  if (!session?.user?.email) {
++    return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
++  }
++
++  let currentPassword: string | undefined;
++  let newPassword: string | undefined;
++
++  try {
++    const body = await request.json();
++    currentPassword = body.currentPassword;
++    newPassword = body.newPassword;
++  } catch {
++    return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
++  }
++
++  if (!currentPassword || !newPassword) {
++    return NextResponse.json(
++      { error: 'Current and new password are required.' },
++      { status: 400 }
++    );
++  }
++
++  if (newPassword.length < 8) {
++    return NextResponse.json(
++      { error: 'New password must be at least 8 characters.' },
++      { status: 400 }
++    );
++  }
++
++  if (newPassword === currentPassword) {
++    return NextResponse.json(
++      { error: 'New password must be different from current password.' },
++      { status: 400 }
++    );
++  }
++
++  try {
++    const { data: user, error: fetchError } = await supabaseAdmin
++      .from('users')
++      .select('id, password_hash')
++      .eq('email', session.user.email)
++      .single();
++
++    if (fetchError || !user) {
++      return NextResponse.json({ error: 'User not found.' }, { status: 404 });
++    }
++
++    const isValid = await bcrypt.compare(currentPassword, user.password_hash);
++    if (!isValid) {
++      return NextResponse.json(
++        { error: 'Current password is incorrect.' },
++        { status: 401 }
++      );
++    }
++
++    const newHash = await bcrypt.hash(newPassword, 10);
++
++    const { error: updateError } = await supabaseAdmin
++      .from('users')
++      .update({
++        password_hash: newHash,
++        force_password_reset: false,
++      })
++      .eq('id', user.id);
++
++    if (updateError) {
++      console.error('Error updating password:', updateError);
++      return NextResponse.json(
++        { error: 'Error updating password. Please try again.' },
++        { status: 500 }
++      );
++    }
++
++    return NextResponse.json({ success: true });
++  } catch (error) {
++    console.error('Change password error:', error);
++    return NextResponse.json(
++      { error: 'An unexpected error occurred.' },
++      { status: 500 }
++    );
++  }
++}
+diff --git a/app/api/auth/reset-password/route.ts b/app/api/auth/reset-password/route.ts
+new file mode 100644
+index 0000000..99b8741
+--- /dev/null
++++ b/app/api/auth/reset-password/route.ts
+@@ -0,0 +1,131 @@
++// app/api/auth/reset-password/route.ts
++// Server-side password reset for both flows previously handled client-side
++// in app/reset-password/page.tsx:
++//
++//   1. TOKEN RESET — body: { token, newPassword }
++//      The token proves identity (it came from an emailed link), so no
++//      session is required. Looked up in password_reset_tokens; marked
++//      used only after the password update succeeds.
++//
++//   2. FORCED RESET — body: { oldPassword, newPassword }
++//      Used right after a first-time login when force_password_reset is
++//      set. The user's identity comes from the NextAuth session (they're
++//      already logged in at this point in the flow) — never from a
++//      client-supplied email — so this can't be used to reset someone
++//      else's password.
++//
++// In both cases the password hash is read, compared, and rewritten
++// entirely on the server; it's never sent to the browser.
++
++import { NextResponse } from 'next/server';
++import { getServerSession } from 'next-auth/next';
++import bcrypt from 'bcryptjs';
++import { authOptions } from '@/lib/auth-options';
++import { supabaseAdmin } from '@/lib/supabase-admin';
++
++export async function POST(request: Request) {
++  let body: { token?: string; oldPassword?: string; newPassword?: string };
++
++  try {
++    body = await request.json();
++  } catch {
++    return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
++  }
++
++  const { token, oldPassword, newPassword } = body;
++
++  if (!newPassword || newPassword.length < 8) {
++    return NextResponse.json(
++      { error: 'Password must be at least 8 characters for security.' },
++      { status: 400 }
++    );
++  }
++
++  let userId: string;
++  let tokenRowId: string | null = null;
++
++  try {
++    if (token) {
++      // ============================================================
++      // TOKEN-BASED RESET
++      // ============================================================
++      const { data, error } = await supabaseAdmin
++        .from('password_reset_tokens')
++        .select('id, user_id, expires_at, used')
++        .eq('token', token)
++        .eq('used', false)
++        .gt('expires_at', new Date().toISOString())
++        .single();
++
++      if (error || !data) {
++        return NextResponse.json(
++          { error: 'Invalid or expired reset link. Please request a new one from the login page.' },
++          { status: 400 }
++        );
++      }
++
++      userId = data.user_id;
++      tokenRowId = data.id;
++    } else {
++      // ============================================================
++      // FORCED RESET (authenticated session required)
++      // ============================================================
++      const session = await getServerSession(authOptions);
++      if (!session?.user?.email) {
++        return NextResponse.json({ error: 'Not authenticated.' }, { status: 401 });
++      }
++
++      if (!oldPassword) {
++        return NextResponse.json({ error: 'Current password is required.' }, { status: 400 });
++      }
++
++      const { data: user, error: fetchError } = await supabaseAdmin
++        .from('users')
++        .select('id, password_hash')
++        .eq('email', session.user.email)
++        .single();
++
++      if (fetchError || !user) {
++        return NextResponse.json({ error: 'User not found.' }, { status: 404 });
++      }
++
++      const isValid = await bcrypt.compare(oldPassword, user.password_hash);
++      if (!isValid) {
++        return NextResponse.json({ error: 'Current password is incorrect.' }, { status: 401 });
++      }
++
++      userId = user.id;
++    }
++
++    const newHash = await bcrypt.hash(newPassword, 10);
++
++    const { error: updateError } = await supabaseAdmin
++      .from('users')
++      .update({
++        password_hash: newHash,
++        force_password_reset: false,
++      })
++      .eq('id', userId);
++
++    if (updateError) {
++      console.error('Error updating password:', updateError);
++      return NextResponse.json(
++        { error: 'Error updating password. Please try again.' },
++        { status: 500 }
++      );
++    }
++
++    // Only invalidate the reset token once the password has actually changed.
++    if (tokenRowId) {
++      await supabaseAdmin
++        .from('password_reset_tokens')
++        .update({ used: true })
++        .eq('id', tokenRowId);
++    }
++
++    return NextResponse.json({ success: true });
++  } catch (error) {
++    console.error('Reset password error:', error);
++    return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
++  }
++}
+diff --git a/app/api/auth/reset-password/verify/route.ts b/app/api/auth/reset-password/verify/route.ts
+new file mode 100644
+index 0000000..4b28e9d
+--- /dev/null
++++ b/app/api/auth/reset-password/verify/route.ts
+@@ -0,0 +1,44 @@
++// app/api/auth/reset-password/verify/route.ts
++// Checks whether a password reset token (from the emailed reset link) is
++// still valid, WITHOUT marking it as used and without requiring the caller
++// to be logged in. Used by app/reset-password/page.tsx on page load to
++// decide whether to show the "token reset" or "forced reset" form.
++//
++// Marking the token used happens in /api/auth/reset-password, and only
++// after the password has actually been changed — verifying a token here no
++// longer burns it, so a page refresh (or a slow network) can't lock a user
++// out of their own reset link.
++
++import { NextResponse } from 'next/server';
++import { supabaseAdmin } from '@/lib/supabase-admin';
++
++export async function POST(request: Request) {
++  let token: string | undefined;
++
++  try {
++    const body = await request.json();
++    token = body.token;
++  } catch {
++    return NextResponse.json({ valid: false }, { status: 400 });
++  }
++
++  if (!token) {
++    return NextResponse.json({ valid: false }, { status: 400 });
++  }
++
++  const { data, error } = await supabaseAdmin
++    .from('password_reset_tokens')
++    .select('id, expires_at, used, users!inner(email)')
++    .eq('token', token)
++    .eq('used', false)
++    .gt('expires_at', new Date().toISOString())
++    .single<{ id: string; expires_at: string; used: boolean; users: { email: string } | { email: string }[] }>();
++
++  if (error || !data) {
++    return NextResponse.json({ valid: false });
++  }
++
++  const email = Array.isArray(data.users) ? data.users[0]?.email : data.users?.email;
++
++  return NextResponse.json({ valid: true, email });
++}
+diff --git a/app/api/cron/check-notifications/route.ts b/app/api/cron/check-notifications/route.ts
+index fe02b54..f52e639 100644
+--- a/app/api/cron/check-notifications/route.ts
++++ b/app/api/cron/check-notifications/route.ts
+@@ -37,6 +37,31 @@ var resend = new Resend(process.env.RESEND_API_KEY || '');
+ // MAIN GET HANDLER
+ // ============================================================
+ export async function GET(request: Request) {
++  // ============================================================
++  // AUTHENTICATE THE CRON CALLER
++  // ============================================================
++  // This endpoint has real side effects (emails every admin, uses the
++  // service-role key, writes to notification_log) and was previously
++  // reachable by anyone who found the URL. Require a shared secret,
++  // passed either as `Authorization: Bearer <secret>` or `?secret=`
++  // (cron-job.org and most schedulers can set either), matching the
++  // CRON_SECRET env var you configure alongside the scheduled job.
++  var cronSecret = process.env.CRON_SECRET;
++  if (cronSecret) {
++    var authHeader = request.headers.get('authorization') || '';
++    var headerSecret = authHeader.replace(/^Bearer\s+/i, '');
++    var querySecret = new URL(request.url).searchParams.get('secret');
++    if (headerSecret !== cronSecret && querySecret !== cronSecret) {
++      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
++    }
++  } else {
++    // Fail loudly in the server logs rather than silently staying open.
++    console.warn(
++      '⚠️ CRON_SECRET is not set — /api/cron/check-notifications is unauthenticated ' +
++      'and can be triggered by anyone who finds the URL. Set CRON_SECRET.'
++    );
++  }
++
+   // Array to collect all notification messages for the response
+   var notifications: string[] = [];
+   
+diff --git a/app/api/send-email/route.ts b/app/api/send-email/route.ts
+index 2304cd1..b27f926 100644
+--- a/app/api/send-email/route.ts
++++ b/app/api/send-email/route.ts
+@@ -1,14 +1,39 @@
+ // app/api/send-email/route.ts
+ // Server-side email sending via Resend
+ // This avoids browser CORS issues
++//
++// This route sends email from the app's domain using the org's Resend API
++// key, so it must not be reachable by an unauthenticated caller — otherwise
++// it's an open mail relay anyone on the internet can use to send arbitrary
++// HTML email (spam/phishing) "from" FlightPro Manager. The only current
++// caller is the admin "create user" welcome email, so we require an
++// admin/super_admin session.
+ import { NextResponse } from 'next/server';
+ import { Resend } from 'resend';
++import { getServerSession } from 'next-auth/next';
++import { authOptions } from '@/lib/auth-options';
++
++const ALLOWED_ROLES = ['admin', 'super_admin'];
+ 
+ export async function POST(request: Request) {
++  const session = await getServerSession(authOptions);
++  const role = session?.user?.role;
++
++  if (!session || !role || !ALLOWED_ROLES.includes(role)) {
++    return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
++  }
++
+   try {
+     const body = await request.json();
+     const { to, subject, html } = body;
+ 
++    if (!to || !subject || !html) {
++      return NextResponse.json(
++        { error: 'to, subject, and html are all required.' },
++        { status: 400 }
++      );
++    }
++
+     // Use server-side API key (no NEXT_PUBLIC_ prefix needed)
+     const resend = new Resend(process.env.RESEND_API_KEY || '');
+ 
+@@ -24,4 +49,4 @@ export async function POST(request: Request) {
+     console.error('Email error:', error);
+     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+   }
+-}
+\ No newline at end of file
++}
+diff --git a/app/change-password/page.tsx b/app/change-password/page.tsx
+index 6a588ac..294bd02 100644
+--- a/app/change-password/page.tsx
++++ b/app/change-password/page.tsx
+@@ -15,8 +15,6 @@
+ import { useState } from 'react';
+ import { useRouter } from 'next/navigation';
+ import { useSession, signOut } from 'next-auth/react';
+-import { supabase } from '@/lib/supabase-client';
+-import bcrypt from 'bcryptjs';
+ import ProtectedRoute from '@/components/ui/ProtectedRoute';
+ import Header from '@/components/ui/Header';
+ 
+@@ -74,46 +72,26 @@ export default function ChangePasswordPage() {
+         return;
+       }
+ 
+-      // Find user in database
+-      const { data: user, error: fetchError } = await supabase
+-        .from('users')
+-        .select('*')
+-        .eq('email', userEmail)
+-        .single();
++      // Verify current password and update it entirely server-side —
++      // the password hash never comes to the browser. Identity is taken
++      // from the NextAuth session on the server, not from anything sent here.
++      const response = await fetch('/api/auth/change-password', {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ currentPassword, newPassword }),
++      });
+ 
+-      if (fetchError || !user) {
+-        setError('❌ User not found.');
+-        setLoading(false);
+-        return;
+-      }
++      const data = await response.json();
+ 
+-      // Verify current password
+-      const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+-      if (!isValid) {
+-        setError('❌ Current password is incorrect.');
+-        setLoading(false);
+-        return;
+-      }
+-
+-      // Hash and update new password
+-      const newHash = await bcrypt.hash(newPassword, 10);
+-      const { error: updateError } = await supabase
+-        .from('users')
+-        .update({ 
+-          password_hash: newHash,
+-          force_password_reset: false,  // Clear any force reset flag
+-        })
+-        .eq('id', user.id);
+-
+-      if (updateError) {
+-        setError('❌ Error updating password. Please try again.');
++      if (!response.ok) {
++        setError('❌ ' + (data.error || 'Error updating password. Please try again.'));
+         setLoading(false);
+         return;
+       }
+ 
+       // Success - show message and force logout after 2 seconds
+       setSuccess('✅ Password changed successfully! You will be logged out in 2 seconds...');
+-      
++
+       setTimeout(async () => {
+         await signOut({ callbackUrl: '/login' });
+       }, 2000);
+diff --git a/app/dashboard/admin/setup/UserManagementTab.tsx b/app/dashboard/admin/setup/UserManagementTab.tsx
+index 54aa430..9935f59 100644
+--- a/app/dashboard/admin/setup/UserManagementTab.tsx
++++ b/app/dashboard/admin/setup/UserManagementTab.tsx
+@@ -13,6 +13,7 @@
+ 'use client';
+ 
+ import { useState, useEffect } from 'react';
++import { useSession } from 'next-auth/react';
+ import { supabase } from '@/lib/supabase-client';
+ import { sendWelcomeEmail } from '@/lib/email';
+ import bcrypt from 'bcryptjs';
+@@ -47,6 +48,9 @@ const ROLES = [
+ // MAIN COMPONENT
+ // ============================================================
+ export default function UserManagementTab() {
++  // Current admin's own session — used to stop them deleting their own account.
++  const { data: session } = useSession();
++
+   // ----- State -----
+   const [users, setUsers] = useState<User[]>([]);
+   const [loading, setLoading] = useState(true);
+@@ -72,9 +76,11 @@ export default function UserManagementTab() {
+    */
+   const loadUsers = async () => {
+     setLoading(true);
++    // Never select password_hash here — this list renders straight into the
++    // browser, and the hash has no business leaving the server.
+     const { data, error } = await supabase
+       .from('users')
+-      .select('*')
++      .select('id, email, name, role, is_active, force_password_reset, last_login, created_at')
+       .order('created_at', { ascending: false });
+ 
+     if (error) {
+@@ -212,10 +218,11 @@ export default function UserManagementTab() {
+    *****************************************************/
+ 
+       const handleDeleteUser = async (userId: string, userEmail: string) => {
+-        // Prevent super admin from deleting themselves
+-        const { data: session } = await supabase.auth.getSession();
+-        const currentUserEmail = session?.session?.user?.email;
+-        
++        // Prevent an admin from deleting themselves. Note: this app doesn't use
++        // Supabase Auth (login goes through NextAuth), so the current user's
++        // identity comes from the NextAuth session, not supabase.auth.
++        const currentUserEmail = session?.user?.email;
++
+         if (userEmail === currentUserEmail) {
+           alert('❌ You cannot delete your own account.');
+           return;
+diff --git a/app/reset-password/page.tsx b/app/reset-password/page.tsx
+index f75f487..8f93abd 100644
+--- a/app/reset-password/page.tsx
++++ b/app/reset-password/page.tsx
+@@ -29,9 +29,10 @@
+ import { useState, useEffect, Suspense } from 'react';
+ import { useRouter, useSearchParams } from 'next/navigation';
+ 
+-// ----- Database & Security -----
+-import { supabase } from '@/lib/supabase-client';  // Supabase client for database operations
+-import bcrypt from 'bcryptjs';                      // For password hashing and verification
++// Token verification and the actual password reset both happen server-side
++// (see app/api/auth/reset-password/) — the browser never sees a password
++// hash, and a forced reset can only ever change the currently-logged-in
++// user's own password.
+ 
+ // ============================================================
+ // INNER COMPONENT: ResetPasswordForm
+@@ -106,35 +107,30 @@ function ResetPasswordForm() {
+    */
+   const verifyToken = async (token: string) => {
+     try {
+-      // Query the password_reset_tokens table
+-      // Joins with users table to get the email associated with this token
+-      const { data, error } = await supabase
+-        .from('password_reset_tokens')
+-        .select('*, users!inner(email)')  // Join to get user's email
+-        .eq('token', token)               // Match the token
+-        .eq('used', false)                // Token must not have been used already
+-        .gt('expires_at', new Date().toISOString())  // Token must not be expired
+-        .single();                        // Expect exactly one matching row
+-
+-      // If no matching token found or an error occurred
+-      if (error || !data) {
++      // Ask the server whether this token is still valid. This does NOT
++      // mark the token as used — it's only marked used once the password
++      // has actually been changed (see handleReset below), so a page
++      // refresh can't burn a reset link before the user finishes the form.
++      const response = await fetch('/api/auth/reset-password/verify', {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify({ token }),
++      });
++
++      const data = await response.json();
++
++      if (!response.ok || !data.valid) {
+         setError('❌ Invalid or expired reset link. Please request a new one from the login page.');
+         return;
+       }
+ 
+       // Token is valid! Set up the form for token-based reset
+-      setTokenVerified(true);              // Switch to token reset mode (no old password needed)
+-      setTokenEmail(data.users.email);     // Store the email from the database
+-      setEmail(data.users.email);          // Pre-fill the email field
+-
+-      // Mark the token as used so it cannot be reused (security measure)
+-      await supabase
+-        .from('password_reset_tokens')
+-        .update({ used: true })
+-        .eq('id', data.id);
++      setTokenVerified(true);       // Switch to token reset mode (no old password needed)
++      setTokenEmail(data.email);    // Store the email associated with the token
++      setEmail(data.email);         // Pre-fill the email field
+ 
+     } catch (err) {
+-      // Handle unexpected errors (network issues, database errors, etc.)
++      // Handle unexpected errors (network issues, server errors, etc.)
+       setError('❌ Error verifying reset link. Please try again.');
+     }
+   };
+@@ -189,57 +185,26 @@ function ResetPasswordForm() {
+ 
+     try {
+       // ============================================================
+-      // FIND THE USER IN THE DATABASE
+-      // ============================================================
+-      // Use tokenEmail (from verified token) or email (from form input)
+-      const lookupEmail = tokenVerified ? tokenEmail : email;
+-
+-      const { data: user, error: fetchError } = await supabase
+-        .from('users')
+-        .select('*')
+-        .eq('email', lookupEmail)
+-        .single();  // Expect exactly one user
+-
+-      // If user not found or database error
+-      if (fetchError || !user) {
+-        setError('❌ User not found. Please check your email address.');
+-        setLoading(false);
+-        return;
+-      }
+-
+-      // ============================================================
+-      // VALIDATION STEP 3: Verify current password (forced reset only)
+-      // ============================================================
+-      // Skip this check for token-based resets (user already verified via email link)
+-      if (!tokenVerified) {
+-        // Compare the entered old password with the stored hash
+-        const isValid = await bcrypt.compare(oldPassword, user.password_hash);
+-        
+-        if (!isValid) {
+-          setError('❌ Current password is incorrect.');
+-          setLoading(false);
+-          return;
+-        }
+-      }
+-
+-      // ============================================================
+-      // UPDATE PASSWORD IN DATABASE
++      // RESET THE PASSWORD (entirely server-side)
+       // ============================================================
+-      // Hash the new password with bcrypt (cost factor 10 = good security)
+-      const newHash = await bcrypt.hash(newPassword, 10);
+-
+-      // Update the user's record in the database
+-      const { error: updateError } = await supabase
+-        .from('users')
+-        .update({
+-          password_hash: newHash,           // Store the new hashed password
+-          force_password_reset: false,      // Clear the force reset flag
+-        })
+-        .eq('id', user.id);                 // Only update this specific user
+-
+-      // If the database update failed
+-      if (updateError) {
+-        setError('❌ Error updating password. Please try again.');
++      // Token mode: the token itself proves identity — no session needed.
++      // Forced-reset mode: identity comes from the caller's NextAuth
++      // session on the server (they're already logged in at this point),
++      // not from the email field, so this can't touch another account.
++      const response = await fetch('/api/auth/reset-password', {
++        method: 'POST',
++        headers: { 'Content-Type': 'application/json' },
++        body: JSON.stringify(
++          tokenVerified
++            ? { token: resetToken, newPassword }
++            : { oldPassword, newPassword }
++        ),
++      });
++
++      const data = await response.json();
++
++      if (!response.ok) {
++        setError('❌ ' + (data.error || 'Error updating password. Please try again.'));
+         setLoading(false);
+         return;
+       }
+diff --git a/code b/code
+deleted file mode 100644
+index 58305a1..0000000
+--- a/code
++++ /dev/null
+@@ -1,6 +0,0 @@
+-import bcrypt from 'bcryptjs';
+-async function main() {
+-  const hash = await bcrypt.hash('FlightPro@2024', 10);
+-  console.log('Hash:', hash);
+-}
+-main();
+\ No newline at end of file
+diff --git a/lib/auth-options.ts b/lib/auth-options.ts
+new file mode 100644
+index 0000000..bee51ab
+--- /dev/null
++++ b/lib/auth-options.ts
+@@ -0,0 +1,73 @@
++// lib/auth-options.ts
++// Shared NextAuth configuration.
++//
++// This is exported separately from app/api/auth/[...nextauth]/route.ts so that
++// server-side code (API routes, Server Actions) can call
++// `getServerSession(authOptions)` to find out who's making a request, without
++// having to import from a route.ts file.
++import type { AuthOptions } from 'next-auth';
++import CredentialsProvider from 'next-auth/providers/credentials';
++import { verifyCredentials } from '@/lib/auth';
++
++export const authOptions: AuthOptions = {
++  providers: [
++    CredentialsProvider({
++      name: 'credentials',
++      credentials: {
++        email: { label: 'Email', type: 'email' },
++        password: { label: 'Password', type: 'password' },
++      },
++      async authorize(credentials) {
++        if (!credentials?.email || !credentials?.password) return null;
++
++        // Verify the user against our database
++        const user = await verifyCredentials(
++          credentials.email,
++          credentials.password
++        );
++
++        if (user) {
++          // Return user object – these fields will be stored in the JWT
++          return {
++            id: user.id,
++            email: user.email,
++            name: user.name,
++            role: user.role,                   // 'admin' | 'instructor' | 'student'
++            studentId: user.studentId || null,  // only for students
++          };
++        }
++        return null;
++      },
++    }),
++  ],
++
++  session: {
++    strategy: 'jwt',   // Use JSON Web Tokens (stateless)
++  },
++
++  callbacks: {
++    // JWT callback – called when a token is created or updated
++    async jwt({ token, user }) {
++      if (user) {
++        token.role = user.role || 'instructor';
++        token.studentId = user.studentId ?? null;
++      }
++      return token;
++    },
++
++    // Session callback – makes role and studentId available on the client
++    async session({ session, token }) {
++      if (session.user) {
++        session.user.role = token.role || 'instructor';
++        session.user.studentId = token.studentId ?? null;
++      }
++      return session;
++    },
++  },
++
++  pages: {
++    signIn: '/login',   // Our custom login page
++  },
++
++  secret: process.env.NEXTAUTH_SECRET,
++};
+diff --git a/lib/email.ts b/lib/email.ts
+index 0150c15..d3f0cd0 100644
+--- a/lib/email.ts
++++ b/lib/email.ts
+@@ -25,9 +25,13 @@ let resendClient: Resend | null = null;
+ 
+ function getResend(): Resend | null {
+   if (resendClient) return resendClient;
+-  
+-  const apiKey = process.env.NEXT_PUBLIC_RESEND_API_KEY;
+-  
++
++  // Server-only key — must NOT have a NEXT_PUBLIC_ prefix, or it would be
++  // bundled into client-side JS and leak the Resend account's API key to
++  // every visitor. (This function is only ever called from server code,
++  // but keep the env var name safe regardless.)
++  const apiKey = process.env.RESEND_API_KEY;
++
+   if (!apiKey || apiKey === 're_your_key_here') {
+     console.warn('⚠️ Resend API key not configured. Emails will not be sent.');
+     return null;
+diff --git a/lib/supabase-admin.ts b/lib/supabase-admin.ts
+new file mode 100644
+index 0000000..e82ee46
+--- /dev/null
++++ b/lib/supabase-admin.ts
+@@ -0,0 +1,43 @@
++// lib/supabase-admin.ts
++// Server-only Supabase client for privileged operations: password verification
++// and updates, admin user management, and anything else that must not be
++// reachable using the public anon key.
++//
++// Do NOT import this from a 'use client' component or any code that ends up
++// in the browser bundle — it is only safe to use inside API routes / Server
++// Actions / other server-only code.
++
++import { createClient } from '@supabase/supabase-js';
++
++if (typeof window !== 'undefined') {
++  throw new Error(
++    'lib/supabase-admin.ts was imported from client code. This client is ' +
++    'server-only — use lib/supabase.ts (or lib/supabase-client.ts) in the browser instead.'
++  );
++}
++
++const serviceKey = process.env.SUPABASE_SERVICE_KEY;
++
++if (!serviceKey) {
++  // We still fall back to the anon key so the app doesn't hard-crash if this
++  // env var hasn't been configured yet, but that means these server routes
++  // are subject to the exact same Row Level Security policies as the browser
++  // — i.e. no extra protection. Set SUPABASE_SERVICE_KEY in your environment
++  // (Supabase project settings → API → service_role key) to fix this.
++  console.warn(
++    '⚠️ SUPABASE_SERVICE_KEY is not set. Falling back to the anon key for ' +
++    'server-side operations in lib/supabase-admin.ts — this provides no more ' +
++    'protection than a direct client-side call. Set SUPABASE_SERVICE_KEY.'
++  );
++}
++
++export const supabaseAdmin = createClient(
++  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
++  serviceKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
++  {
++    auth: {
++      persistSession: false,
++      autoRefreshToken: false,
++    },
++  }
++);
+diff --git a/scripts/setup-auth.ts b/scripts/setup-auth.ts
+index 9011e70..6017f30 100644
+--- a/scripts/setup-auth.ts
++++ b/scripts/setup-auth.ts
+@@ -1,12 +1,19 @@
+ // scripts/setup-auth.ts
+ // Run this script ONCE to create initial admin and instructor accounts
+-// Usage: npx ts-node scripts/setup-auth.ts
++// Usage: npx tsx scripts/setup-auth.ts
++//
++// Generates a random password per account instead of reusing a fixed one —
++// a fixed default password committed to a public repo is effectively a
++// public credential for every deployment that runs this script and forgets
++// to rotate it. Each generated password is printed once; force_password_reset
++// is also set so whoever logs in with it is required to pick their own.
+ 
+ import { createClient } from '@supabase/supabase-js';
+ import bcrypt from 'bcryptjs';
+ import { config } from 'dotenv';
+ import { fileURLToPath } from 'url';
+ import { dirname, resolve } from 'path';
++import crypto from 'crypto';
+ 
+ // Get current file directory (ES module equivalent of __dirname)
+ const __filename = fileURLToPath(import.meta.url);
+@@ -16,7 +23,10 @@ const __dirname = dirname(__filename);
+ config({ path: resolve(__dirname, '../.env.local') });
+ 
+ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
++// Prefer the service role key so this setup script isn't limited by
++// whatever RLS policies apply to the anon key; fall back to the anon key
++// for backwards compatibility with existing setups.
++const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+ 
+ if (!supabaseUrl || !supabaseKey) {
+   console.error('❌ Missing Supabase credentials in .env.local');
+@@ -25,12 +35,44 @@ if (!supabaseUrl || !supabaseKey) {
+ 
+ const supabase = createClient(supabaseUrl, supabaseKey);
+ 
++/**
++ * Generate a random password using a charset that avoids visually
++ * ambiguous characters (I, l, 1, 0, O).
++ */
++function generatePassword(length = 14): string {
++  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%';
++  return Array.from(crypto.randomBytes(length))
++    .map((byte) => chars[byte % chars.length])
++    .join('');
++}
++
++async function createAccount(email: string, name: string, role: string) {
++  const password = generatePassword();
++  const passwordHash = await bcrypt.hash(password, 10);
++
++  const { error } = await supabase.from('users').insert({
++    email,
++    password_hash: passwordHash,
++    name,
++    role,
++    is_active: true,
++    force_password_reset: true, // must be changed on first login
++  });
++
++  if (error) {
++    console.error(`❌ Failed to create ${email}:`, error.message);
++    return;
++  }
++
++  console.log(`✅ ${role} created: ${email} / ${password}`);
++}
++
+ async function setupAuth() {
+   console.log('🔐 Setting up authentication...\n');
+ 
+   // Check if users table exists
+   const { error: tableError } = await supabase.from('users').select('count').limit(1);
+-  
++
+   if (tableError) {
+     console.log('❌ Users table not found. Create it in Supabase SQL Editor first.');
+     return;
+@@ -44,37 +86,21 @@ async function setupAuth() {
+     .single();
+ 
+   if (existing) {
+-    console.log('⚠️  Users already exist.\n');
+-    console.log('📝 Login: admin@flightpro.com / FlightPro@2024\n');
++    console.log('⚠️  A user with email admin@flightpro.com already exists.');
++    console.log(
++      '   This script does not know (and cannot recover) its password. ' +
++      'Use the "Force PW Reset" action in User Management, or the forgot-password ' +
++      'flow, to issue a new one.\n'
++    );
+     return;
+   }
+ 
+-  // Create admin
+-  const adminHash = await bcrypt.hash('FlightPro@2024', 10);
+-  await supabase.from('users').insert({
+-    email: 'admin@flightpro.com',
+-    password_hash: adminHash,
+-    name: 'Admin User',
+-    role: 'admin',
+-    is_active: true,
+-  });
+-  console.log('✅ Admin created');
+-
+-  // Create instructor
+-  const instructorHash = await bcrypt.hash('FlightPro@2024', 10);
+-  await supabase.from('users').insert({
+-    email: 'instructor@flightpro.com',
+-    password_hash: instructorHash,
+-    name: 'Sarah Mitchell',
+-    role: 'instructor',
+-    is_active: true,
+-  });
+-  console.log('✅ Instructor created\n');
++  await createAccount('admin@flightpro.com', 'Admin User', 'admin');
++  await createAccount('instructor@flightpro.com', 'Sarah Mitchell', 'instructor');
+ 
+-  console.log('🎉 Setup complete!\n');
+-  console.log('📝 Login at http://localhost:3000/login');
+-  console.log('   Admin:      admin@flightpro.com / FlightPro@2024');
+-  console.log('   Instructor: instructor@flightpro.com / FlightPro@2024\n');
++  console.log('\n🎉 Setup complete!');
++  console.log('📝 Save the passwords printed above now — they will not be shown again.');
++  console.log('   Login at http://localhost:3000/login\n');
+ }
+ 
+-setupAuth().catch(console.error);
+\ No newline at end of file
++setupAuth().catch(console.error);
+diff --git a/scripts/test-auth.ts b/scripts/test-auth.ts
+index c1dc0da..8bae721 100644
+--- a/scripts/test-auth.ts
++++ b/scripts/test-auth.ts
+@@ -1,13 +1,17 @@
++// scripts/test-auth.ts
++// Local sanity check for bcrypt hash/compare — not tied to any real
++// account. Uses an obvious placeholder value so it can't be mistaken for a
++// live credential if this file is ever read out of context.
+ import bcrypt from 'bcryptjs';
+ 
+ async function test() {
+-  const password = 'FlightPro@2024';
++  const password = 'not-a-real-password-just-a-bcrypt-smoke-test';
+   const hash = await bcrypt.hash(password, 10);
+   console.log('Password:', password);
+   console.log('Hash:', hash);
+-  
++
+   const isValid = await bcrypt.compare(password, hash);
+   console.log('Verify works:', isValid);
+ }
+ 
+-test();
+\ No newline at end of file
++test();
+diff --git a/types/next-auth.d.ts b/types/next-auth.d.ts
+index f9c6a05..f848dd5 100644
+--- a/types/next-auth.d.ts
++++ b/types/next-auth.d.ts
+@@ -1,18 +1,20 @@
+ // types/next-auth.d.ts
+-// Extend NextAuth types to include role
++// Extend NextAuth types to include role and studentId
+ import 'next-auth';
+ 
+ declare module 'next-auth' {
+   interface User {
+     role?: string;
++    studentId?: string | null;
+   }
+-  
++
+   interface Session {
+     user: {
+       name?: string | null;
+       email?: string | null;
+       image?: string | null;
+       role?: string;
++      studentId?: string | null;
+     };
+   }
+ }
+@@ -20,5 +22,6 @@ declare module 'next-auth' {
+ declare module 'next-auth/jwt' {
+   interface JWT {
+     role?: string;
++    studentId?: string | null;
+   }
+-}
+\ No newline at end of file
++}
+-- 
+2.43.0
+

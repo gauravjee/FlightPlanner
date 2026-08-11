@@ -25,9 +25,13 @@ let resendClient: Resend | null = null;
 
 function getResend(): Resend | null {
   if (resendClient) return resendClient;
-  
-  const apiKey = process.env.NEXT_PUBLIC_RESEND_API_KEY;
-  
+
+  // Server-only key — must NOT have a NEXT_PUBLIC_ prefix, or it would be
+  // bundled into client-side JS and leak the Resend account's API key to
+  // every visitor. (This function is only ever called from server code,
+  // but keep the env var name safe regardless.)
+  const apiKey = process.env.RESEND_API_KEY;
+
   if (!apiKey || apiKey === 're_your_key_here') {
     console.warn('⚠️ Resend API key not configured. Emails will not be sent.');
     return null;
