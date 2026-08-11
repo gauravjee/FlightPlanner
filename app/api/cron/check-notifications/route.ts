@@ -46,11 +46,11 @@ export async function GET(request: Request) {
   // passed either as `Authorization: Bearer <secret>` or `?secret=`
   // (cron-job.org and most schedulers can set either), matching the
   // CRON_SECRET env var you configure alongside the scheduled job.
-  var cronSecret = process.env.CRON_SECRET;
+  const cronSecret = process.env.CRON_SECRET;
   if (cronSecret) {
-    var authHeader = request.headers.get('authorization') || '';
-    var headerSecret = authHeader.replace(/^Bearer\s+/i, '');
-    var querySecret = new URL(request.url).searchParams.get('secret');
+    const authHeader = request.headers.get('authorization') || '';
+    const headerSecret = authHeader.replace(/^Bearer\s+/i, '');
+    const querySecret = new URL(request.url).searchParams.get('secret');
     if (headerSecret !== cronSecret && querySecret !== cronSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
