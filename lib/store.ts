@@ -95,7 +95,16 @@ interface FlightStore {
   // 2. STUDENT ACTIONS
   // ==========================================
   loadStudents: () => Promise<void>;
-  addStudent: (student: Omit<StudentRecord, 'id'>) => Promise<void>;
+  // Creating a student also creates their login (see app/api/students POST),
+  // so the caller needs to know whether the welcome email went out — the
+  // return value surfaces that instead of just success/failure.
+  addStudent: (student: Omit<StudentRecord, 'id'>) => Promise<{
+    success: boolean;
+    error?: string;
+    emailSent?: boolean;
+    emailMessage?: string;
+    password?: string;
+  }>;
   updateStudent: (id: string, updates: Partial<StudentRecord>) => Promise<void>;
   removeStudent: (id: string) => Promise<void>;
   getStudentById: (id: string) => StudentRecord | undefined;
@@ -346,11 +355,19 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(student),
     });
+    const result = await res.json().catch(() => ({}));
     if (res.ok) {
-      const { student: created } = await res.json();
+      const created = result.student;
       set(state => ({ students: [...state.students, { ...student, id: String(created.id) }] }));
+      return {
+        success: true,
+        emailSent: result.emailSent,
+        emailMessage: result.emailMessage,
+        password: result.password,
+      };
     } else {
-      console.error('Error adding student:', await res.text());
+      console.error('Error adding student:', result.error);
+      return { success: false, error: result.error || 'Failed to add student.' };
     }
   },
 

@@ -14,31 +14,25 @@
 // message if email sending is skipped/fails).
 
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { requireRole } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { sendWelcomeEmailServer } from '@/lib/email';
+import { generatePassword } from '@/lib/password';
 
 const ALLOWED_ROLES = ['super_admin'];
 
-const VALID_USER_ROLES = ['admin', 'instructor', 'operations', 'maintenance', 'student', 'super_admin'];
+// 'student' is intentionally NOT accepted here anymore. Creating a user
+// with role='student' through this route used to leave `student_id` unset
+// forever (nothing else in the app ever set it), so a student created this
+// way could log in but the student portal couldn't find their training
+// profile. Students are now created as a single unit — login + profile
+// together — via POST /api/students. See that route for details.
+const VALID_USER_ROLES = ['admin', 'instructor', 'operations', 'maintenance', 'super_admin'];
 
 // Never select password_hash — this list is returned straight to the
 // browser to render the User Management table.
 const SAFE_COLUMNS = 'id, email, name, role, is_active, force_password_reset, last_login, created_at';
-
-function generatePassword(): string {
-  // Mixed case + digits, no ambiguous characters (I, l, 0, O) — matches the
-  // scheme already used by scripts/setup-auth.ts.
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
-  const bytes = crypto.randomBytes(12);
-  let password = '';
-  for (let i = 0; i < 12; i++) {
-    password += chars[bytes[i] % chars.length];
-  }
-  return password;
-}
 
 export async function GET() {
   const { error } = await requireRole(ALLOWED_ROLES);

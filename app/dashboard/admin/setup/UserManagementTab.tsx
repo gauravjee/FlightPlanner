@@ -1,7 +1,10 @@
 // app/dashboard/admin/setup/UserManagementTab.tsx
 // Super Admin User Management Tab
 // Features:
-//   - Create new users with any role (admin, instructor, operations, maintenance, student, super_admin)
+//   - Create new staff users (admin, instructor, operations, maintenance,
+//     super_admin). Students are NOT created here — see the note by the
+//     role dropdown below for why — they're created from the Students page
+//     instead, which creates the login and training profile together.
 //   - Auto-generate secure random passwords
 //   - Send welcome emails with credentials via Resend API
 //   - Force password reset on first login
@@ -32,12 +35,16 @@ interface User {
 // ============================================================
 // ROLE OPTIONS – Available roles for new users
 // ============================================================
+// 'student' is deliberately not an option here. It used to be, but creating
+// a student's login through this form never created their matching
+// `students` training-profile row (and vice versa for the old "Add Student"
+// flow) — the two records had no way to link up. Students are now created
+// as a single unit, login + profile together, from the Students page.
 const ROLES = [
   { value: 'admin', label: '👑 Admin' },
   { value: 'instructor', label: '👨‍🏫 Instructor' },
   { value: 'operations', label: '📋 Operations' },
   { value: 'maintenance', label: '🔧 Maintenance' },
-  { value: 'student', label: '👨‍✈️ Student' },
   { value: 'super_admin', label: '🔧 Super Admin' },
 ];
 
@@ -275,6 +282,13 @@ export default function UserManagementTab() {
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
             </select>
+            <p className="text-xs text-slate-500 mt-1">
+              Adding a student? Use the{' '}
+              <a href="/dashboard/students" className="text-blue-400 hover:underline">
+                Students page
+              </a>{' '}
+              instead — it creates their login and training profile together.
+            </p>
           </div>
           <div className="flex items-center space-x-2 pt-5">
             <input

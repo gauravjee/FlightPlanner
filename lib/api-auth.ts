@@ -67,3 +67,12 @@ export async function requireRole(
 // Roles that can see/manage every student, per the app's existing intended
 // policy — matches the RoleGate on app/dashboard/students/page.tsx.
 export const STUDENT_STAFF_ROLES = ['admin', 'instructor', 'super_admin', 'operations'];
+
+// Roles that can create a brand-new student. Intentionally narrower than
+// STUDENT_STAFF_ROLES above: creating a student now also creates their
+// login (email + generated password), and login creation has always been a
+// super_admin-only action everywhere else in the app (see
+// app/api/admin/users/route.ts). instructor/operations can still view and
+// edit existing students' training profiles — they just can't mint new
+// logins.
+export const STUDENT_CREATION_ROLES = ['admin', 'super_admin'];

@@ -22,8 +22,11 @@
 // now go through here using the service-role key, which RLS doesn't apply to.
 
 import { NextResponse } from 'next/server';
-import { requireSession, requireRole, STUDENT_STAFF_ROLES } from '@/lib/api-auth';
+import bcrypt from 'bcryptjs';
+import { requireSession, requireRole, STUDENT_STAFF_ROLES, STUDENT_CREATION_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { generatePassword } from '@/lib/password';
+import { sendWelcomeEmailServer } from '@/lib/email';
 
 export async function GET() {
   const { session, error } = await requireSession();
@@ -70,8 +73,19 @@ export async function GET() {
   return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
 }
 
+// Creating a student creates TWO rows as one unit: the `students` training
+// profile, and a `users` login (role='student') linked to it via
+// `users.student_id`. These used to be two entirely separate flows — this
+// one (POST /api/students) only ever wrote `students`, while creating a
+// login was a different form (Setup Wizard → User Management) that only
+// ever wrote `users` and never set `student_id`. A student created through
+// either old path alone ended up with either a working login and no
+// findable training profile, or a training profile with no way to log in.
+// See lib/api-auth.ts's STUDENT_CREATION_ROLES comment for why this is
+// scoped to admin/super_admin even though STUDENT_STAFF_ROLES (broader) can
+// still view/edit existing students.
 export async function POST(request: Request) {
-  const { error } = await requireRole(STUDENT_STAFF_ROLES);
+  const { error } = await requireRole(STUDENT_CREATION_ROLES);
   if (error) return error;
 
   let body: Record<string, unknown>;
@@ -90,7 +104,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'name and initials are required.' }, { status: 400 });
   }
 
-  const { data, error: dbError } = await supabaseAdmin
+  const trimmedEmail = typeof email === 'string' ? email.trim() : '';
+  if (!trimmedEmail) {
+    return NextResponse.json(
+      { error: 'Email is required — it becomes the student\'s login.' },
+      { status: 400 }
+    );
+  }
+
+  // Fail fast with a clear message rather than letting a unique-constraint
+  // error surface from the insert below.
+  const { data: existingUser } = await supabaseAdmin
+    .from('users')
+    .select('id')
+    .eq('email', trimmedEmail)
+    .maybeSingle();
+
+  if (existingUser) {
+    return NextResponse.json(
+      { error: `A user with email ${trimmedEmail} already exists.` },
+      { status: 409 }
+    );
+  }
+
+  // 1. Create the training profile first, so we have an id to link the
+  //    login to.
+  const { data: student, error: studentError } = await supabaseAdmin
     .from('students')
     .insert({
       enrollment_id: enrollmentId,
@@ -99,7 +138,7 @@ export async function POST(request: Request) {
       training_stage: trainingStage,
       total_hours: totalHours,
       medical_expiry: medicalExpiry,
-      email,
+      email: trimmedEmail,
       phone,
       date_of_birth: dateOfBirth,
       joined_date: joinedDate,
@@ -108,10 +147,44 @@ export async function POST(request: Request) {
     .select()
     .single();
 
-  if (dbError) {
-    console.error('Error creating student:', dbError);
+  if (studentError) {
+    console.error('Error creating student:', studentError);
     return NextResponse.json({ error: 'Failed to create student.' }, { status: 500 });
   }
 
-  return NextResponse.json({ student: data });
+  // 2. Create the login, linked back to the profile via student_id.
+  const password = generatePassword();
+  const hash = await bcrypt.hash(password, 10);
+
+  const { error: userError } = await supabaseAdmin.from('users').insert({
+    email: trimmedEmail,
+    password_hash: hash,
+    name,
+    role: 'student',
+    student_id: student.id,
+    is_active: true,
+    force_password_reset: true,
+  });
+
+  if (userError) {
+    console.error('Error creating student login:', userError);
+    // Don't leave an orphaned training profile with no way to log in —
+    // exactly the split this route exists to prevent.
+    await supabaseAdmin.from('students').delete().eq('id', student.id);
+    return NextResponse.json(
+      { error: 'Failed to create student login; the training profile was rolled back.' },
+      { status: 500 }
+    );
+  }
+
+  const emailResult = await sendWelcomeEmailServer(trimmedEmail, name as string, password, 'student');
+
+  return NextResponse.json({
+    student,
+    emailSent: emailResult.success,
+    emailMessage: emailResult.message,
+    // Only returned so the admin can copy it if the email failed — same
+    // pattern as /api/admin/users.
+    password: emailResult.success ? undefined : password,
+  });
 }
