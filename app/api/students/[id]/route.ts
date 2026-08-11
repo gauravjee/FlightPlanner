@@ -74,6 +74,24 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   const { id } = await context.params;
 
+  // Unlink and deactivate any login tied to this profile FIRST, before
+  // touching the students row. users.student_id has a foreign key back to
+  // students.id, so deleting the student while a users row still
+  // references it fails with a 23503 foreign-key-violation ("students" is
+  // still referenced from table "users") — that's the bug this reordering
+  // fixes. Clearing student_id is what actually satisfies the constraint;
+  // is_active=false on top of that makes sure the login can't be used
+  // again even though its link to a training profile is now gone.
+  const { error: userDeactivateError } = await supabaseAdmin
+    .from('users')
+    .update({ is_active: false, student_id: null })
+    .eq('student_id', id);
+
+  if (userDeactivateError) {
+    console.error('Error deactivating student login before profile delete:', userDeactivateError);
+    return NextResponse.json({ error: 'Failed to delete student.' }, { status: 500 });
+  }
+
   const { error: dbError } = await supabaseAdmin
     .from('students')
     .delete()
@@ -82,25 +100,6 @@ export async function DELETE(_request: Request, context: RouteContext) {
   if (dbError) {
     console.error('Error deleting student:', dbError);
     return NextResponse.json({ error: 'Failed to delete student.' }, { status: 500 });
-  }
-
-  // Deactivate (not delete) any login linked to this profile, so it can't
-  // be used to log in anymore. Soft, not hard, delete — matches how
-  // deactivation already works for staff users (is_active toggle in
-  // /api/admin/users), and avoids losing login_audit history for this
-  // account. Without this, a deleted student's login would keep working
-  // but point at a training profile that no longer exists — the same kind
-  // of dangling reference this whole change was meant to eliminate.
-  const { error: userDeactivateError } = await supabaseAdmin
-    .from('users')
-    .update({ is_active: false })
-    .eq('student_id', id);
-
-  if (userDeactivateError) {
-    // The student profile is already gone at this point — log it, but
-    // don't fail the request over it; a human can deactivate the login
-    // manually from User Management if this ever happens.
-    console.error('Error deactivating student login after profile delete:', userDeactivateError);
   }
 
   return NextResponse.json({ success: true });
