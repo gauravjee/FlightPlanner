@@ -1,6 +1,12 @@
 // app/dashboard/admin/setup/page.tsx
 // Super Admin Setup Wizard - Main Hub
 // Only accessible to super_admin role
+//
+// 🔧 WIZARD NAVIGATION (2026-08-11):
+//   - Added Back/Next buttons below each tab's content
+//   - First tab hides the Back button, last tab shows "Finish" instead of Next
+//   - Clicking Next/Back auto-selects the adjacent tab
+//   - Tab completion is still tracked by visiting each tab
 
 'use client';
 
@@ -18,9 +24,12 @@ import AircraftSetupTab from './AircraftSetupTab';
 import UserManagementTab from './UserManagementTab';
 import GroundSchoolTab from './GroundSchoolTab';
 
+// ============================================================
+// TAB CONFIGURATION
+// ============================================================
 const TABS = [
   { id: 'programs', label: '📚 Training Programs', component: TrainingProgramsTab },
-  { id: 'aircraft', label: '🛩️ Aircraft Fleet', component: AircraftSetupTab },  // ← ADD THIS
+  { id: 'aircraft', label: '🛩️ Aircraft Fleet', component: AircraftSetupTab },
   { id: 'sorties', label: '🎯 Sortie Types', component: SortieTypesTab },
   { id: 'exercises', label: '📋 Exercises', component: ExercisesTab },
   { id: 'requirements', label: '✅ Requirements', component: RequirementsTab },
@@ -32,7 +41,7 @@ const TABS = [
 
 export default function SetupWizardPage() {
   const [activeTab, setActiveTab] = useState('programs');
-  
+
   // Track which tabs have been visited (completed)
   const [completedTabs, setCompletedTabs] = useState<string[]>([]);
 
@@ -54,6 +63,32 @@ export default function SetupWizardPage() {
     return 'bg-orange-500';
   };
 
+  // ============================================================
+  // WIZARD NAVIGATION HELPERS
+  // ============================================================
+  const currentIndex = TABS.findIndex(t => t.id === activeTab);
+  const isFirstTab = currentIndex === 0;
+  const isLastTab = currentIndex === TABS.length - 1;
+
+  /**
+   * Go to the previous tab in the sequence.
+   */
+  const goToPrevTab = () => {
+    if (!isFirstTab) {
+      setActiveTab(TABS[currentIndex - 1].id);
+    }
+  };
+
+  /**
+   * Go to the next tab in the sequence.
+   */
+  const goToNextTab = () => {
+    if (!isLastTab) {
+      setActiveTab(TABS[currentIndex + 1].id);
+    }
+  };
+
+  // Get the active component
   const ActiveComponent = TABS.find(t => t.id === activeTab)?.component;
 
   return (
@@ -67,26 +102,26 @@ export default function SetupWizardPage() {
           />
 
           <div className="max-w-7xl mx-auto px-4 py-6">
-            
+
             {/* ============================================================ */}
             {/* SETUP PROGRESS BAR */}
             {/* ============================================================ */}
             <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 mb-6">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-white">📋 Setup Progress</h3>
+                <h3 className="text-sm font-medium text-white">📊 Setup Progress</h3>
                 <span className="text-sm text-slate-400 font-medium">{progressPercent}% Complete</span>
               </div>
-              
+
               {/* Progress Bar */}
-              <div className="w-full bg-slate-700 rounded-full h-3 mb-3">
+              <div className="w-full bg-slate-700 rounded-full h-2.5">
                 <div
-                  className={`h-3 rounded-full transition-all duration-500 ${getProgressColor(progressPercent)}`}
+                  className={`h-2.5 rounded-full transition-all duration-500 ${getProgressColor(progressPercent)}`}
                   style={{ width: `${progressPercent}%` }}
                 />
               </div>
 
-              {/* Step Indicators */}
-              <div className="flex flex-wrap gap-1">
+              {/* Step Indicators (compact circles with arrows) */}
+              <div className="flex flex-wrap gap-1 mt-3">
                 {TABS.map((tab, index) => {
                   const isCompleted = completedTabs.includes(tab.id);
                   const isActive = activeTab === tab.id;
@@ -103,18 +138,11 @@ export default function SetupWizardPage() {
                             : 'bg-slate-700 text-slate-500'
                         }`}
                       >
-                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${
-                          isActive
-                            ? 'bg-white text-blue-500'
-                            : isCompleted
-                            ? 'bg-green-500 text-white'
-                            : 'bg-slate-600 text-slate-400'
-                        }`}>
+                        <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold">
                           {isCompleted ? '✓' : index + 1}
                         </span>
                         <span className="hidden sm:inline">{tab.label.split(' ')[1] || tab.label}</span>
                       </button>
-                      
                       {/* Arrow between steps */}
                       {index < TABS.length - 1 && (
                         <span className="text-slate-600 mx-1">→</span>
@@ -126,7 +154,7 @@ export default function SetupWizardPage() {
             </div>
 
             {/* ============================================================ */}
-            {/* TAB NAVIGATION */}
+            {/* TAB NAVIGATION (full labels for larger screens) */}
             {/* ============================================================ */}
             <div className="flex flex-wrap gap-2 mb-6">
               {TABS.map(tab => (
@@ -138,7 +166,7 @@ export default function SetupWizardPage() {
                       ? 'bg-blue-500 text-white font-medium'
                       : completedTabs.includes(tab.id)
                       ? 'bg-green-500/10 text-green-400 border border-green-500/30'
-                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      : 'bg-slate-700/50 text-slate-400 border border-slate-600/30 hover:bg-slate-700'
                   }`}
                 >
                   {completedTabs.includes(tab.id) && '✅ '}
@@ -147,8 +175,54 @@ export default function SetupWizardPage() {
               ))}
             </div>
 
-            {/* Active Tab Content */}
-            {ActiveComponent && <ActiveComponent />}
+            {/* ============================================================ */}
+            {/* ACTIVE TAB CONTENT */}
+            {/* ============================================================ */}
+            <div className="mb-6">
+              {ActiveComponent && <ActiveComponent />}
+            </div>
+
+            {/* ============================================================ */}
+            {/* 🔧 WIZARD NAVIGATION — Back / Next Buttons */}
+            {/* ============================================================ */}
+            <div className="flex items-center justify-between bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+              {/* Back Button — hidden on first tab */}
+              {isFirstTab ? (
+                <div /> // Empty placeholder to keep Next button right-aligned
+              ) : (
+                <button
+                  onClick={goToPrevTab}
+                  className="flex items-center space-x-2 px-5 py-2.5 bg-slate-700 text-white rounded-lg text-sm font-medium hover:bg-slate-600 transition"
+                >
+                  <span>←</span>
+                  <span>Back: {TABS[currentIndex - 1]?.label}</span>
+                </button>
+              )}
+
+              {/* Progress indicator between buttons */}
+              <span className="text-xs text-slate-500">
+                Step {currentIndex + 1} of {TABS.length}
+              </span>
+
+              {/* Next / Finish Button */}
+              {isLastTab ? (
+                <button
+                  onClick={() => window.location.href = '/dashboard'}
+                  className="flex items-center space-x-2 px-5 py-2.5 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition"
+                >
+                  <span>✅ Finish Setup</span>
+                </button>
+              ) : (
+                <button
+                  onClick={goToNextTab}
+                  className="flex items-center space-x-2 px-5 py-2.5 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition"
+                >
+                  <span>Next: {TABS[currentIndex + 1]?.label}</span>
+                  <span>→</span>
+                </button>
+              )}
+            </div>
+
           </div>
         </main>
       </RoleGate>
