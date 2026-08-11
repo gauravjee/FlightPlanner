@@ -114,13 +114,29 @@ export async function POST(request: Request) {
 
   // Fail fast with a clear message rather than letting a unique-constraint
   // error surface from the insert below.
+  //
+  // One wrinkle: deleting a student (DELETE /api/students/[id]) does NOT
+  // remove their users row — it deactivates it and clears student_id, on
+  // purpose, so login_audit history for that account stays intact (and so
+  // the delete itself doesn't trip the same users_student_id_fkey
+  // violation this soft-delete was built to avoid). That means the email
+  // is still sitting in `users`, just deactivated and unlinked. Re-adding
+  // a student with that same email — a normal thing to do, e.g.
+  // re-enrolling someone — must NOT be treated the same as "someone else
+  // is already using this email"; it should reactivate that old login
+  // instead of bouncing the admin with a false-positive conflict.
   const { data: existingUser } = await supabaseAdmin
     .from('users')
-    .select('id')
+    .select('id, role, is_active, student_id')
     .eq('email', trimmedEmail)
     .maybeSingle();
 
-  if (existingUser) {
+  const reactivatingUserId =
+    existingUser && !existingUser.is_active && existingUser.role === 'student' && !existingUser.student_id
+      ? existingUser.id
+      : null;
+
+  if (existingUser && !reactivatingUserId) {
     return NextResponse.json(
       { error: `A user with email ${trimmedEmail} already exists.` },
       { status: 409 }
@@ -152,19 +168,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to create student.' }, { status: 500 });
   }
 
-  // 2. Create the login, linked back to the profile via student_id.
+  // 2. Create (or reactivate) the login, linked back to the profile via
+  //    student_id. A fresh password is issued either way — reactivating a
+  //    deactivated login doesn't mean the old password should still work.
   const password = generatePassword();
   const hash = await bcrypt.hash(password, 10);
 
-  const { error: userError } = await supabaseAdmin.from('users').insert({
-    email: trimmedEmail,
-    password_hash: hash,
-    name,
-    role: 'student',
-    student_id: student.id,
-    is_active: true,
-    force_password_reset: true,
-  });
+  const { error: userError } = reactivatingUserId
+    ? await supabaseAdmin
+        .from('users')
+        .update({
+          password_hash: hash,
+          name,
+          student_id: student.id,
+          is_active: true,
+          force_password_reset: true,
+        })
+        .eq('id', reactivatingUserId)
+    : await supabaseAdmin.from('users').insert({
+        email: trimmedEmail,
+        password_hash: hash,
+        name,
+        role: 'student',
+        student_id: student.id,
+        is_active: true,
+        force_password_reset: true,
+      });
 
   if (userError) {
     console.error('Error creating student login:', userError);
