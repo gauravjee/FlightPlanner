@@ -67,7 +67,8 @@ function ResetPasswordForm() {
 
   // ----- Token verification state -----
   const [tokenVerified, setTokenVerified] = useState(false);  // Whether the reset token is valid
-  const [tokenEmail, setTokenEmail] = useState('');          // Email associated with the verified token
+  
+  //const [tokenEmail, setTokenEmail] = useState('');          // Email associated with the verified token
 
   // ----- Password visibility toggle state -----
   // Each password field has its own toggle so they can be shown/hidden independently
@@ -126,7 +127,7 @@ function ResetPasswordForm() {
 
       // Token is valid! Set up the form for token-based reset
       setTokenVerified(true);       // Switch to token reset mode (no old password needed)
-      setTokenEmail(data.email);    // Store the email associated with the token
+      // setTokenEmail(data.email);    // Store the email associated with the token
       setEmail(data.email);         // Pre-fill the email field
 
     } catch (err) {
