@@ -6,6 +6,7 @@ declare module 'next-auth' {
   interface User {
     role?: string;
     studentId?: string | null;
+    forcePasswordReset?: boolean;
   }
 
   interface Session {
@@ -15,6 +16,7 @@ declare module 'next-auth' {
       image?: string | null;
       role?: string;
       studentId?: string | null;
+      forcePasswordReset?: boolean;
     };
   }
 }
@@ -23,5 +25,6 @@ declare module 'next-auth/jwt' {
   interface JWT {
     role?: string;
     studentId?: string | null;
+    forcePasswordReset?: boolean;
   }
 }

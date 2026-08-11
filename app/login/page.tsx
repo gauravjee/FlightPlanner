@@ -15,7 +15,7 @@
 import { useState } from 'react';
 import { signIn, getSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { logLoginAttempt, checkForcePasswordReset } from '@/lib/auth';
+import { logLoginAttempt } from '@/lib/auth-client';
 
 export default function LoginPage() {
   // ----- Navigation -----
@@ -72,22 +72,25 @@ export default function LoginPage() {
       // Login successful
       await logLoginAttempt(email, 'SUCCESS');  // Record successful login
 
-      // 🔐 SECURITY: Check if user must reset their password (first login or admin-forced reset)
-      const needsReset = await checkForcePasswordReset(email);
+      // Fetch the session once — it already carries role, studentId, and
+      // forcePasswordReset (populated server-side, with the service-role
+      // key, inside verifyCredentials/authorize()). We used to make a
+      // separate client-side `users` table read here to check
+      // force_password_reset; that table is now behind Row Level Security,
+      // so a browser-side read of it would just fail. Reading it off the
+      // session avoids needing that read at all.
+      const session = await getSession();
+      const sessionUser = session?.user as any;
+      const needsReset = sessionUser?.forcePasswordReset === true;
+      const role = sessionUser?.role;
 
       if (needsReset) {
         // Redirect to password reset page with email pre-filled
         router.push(`/reset-password?email=${encodeURIComponent(email)}`);
+      } else if (role === 'student') {
+        router.push('/dashboard/student');  // Students see their own dashboard
       } else {
-        // Normal login flow – redirect based on role
-        const session = await getSession();
-        const role = (session?.user as any)?.role;
-
-        if (role === 'student') {
-          router.push('/dashboard/student');  // Students see their own dashboard
-        } else {
-          router.push('/dashboard');  // All other roles see the main dashboard
-        }
+        router.push('/dashboard');  // All other roles see the main dashboard
       }
     }
   };
