@@ -91,18 +91,32 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   // HELPER FUNCTIONS
   // ============================================================
 
+
   /**
-   * Format UTC ISO string to IST time for display
-   * IST = UTC + 5:30
-   */
-  const formatIST = (isoString: string): string => {
-    const date = new Date(isoString);
-    return date.toLocaleTimeString('en-IN', {
-      hour: '2-digit',
-      minute: '2-digit',
-      timeZone: 'Asia/Kolkata',
-    });
-  };
+ * Format UTC ISO string to IST time for display.
+ * IST = UTC + 5:30
+ * Uses manual conversion (not browser timezone) for reliability.
+ */
+    const formatIST = (isoString: string): string => {
+      const date = new Date(isoString);
+      const utcHours = date.getUTCHours();
+      const utcMinutes = date.getUTCMinutes();
+      
+      // Add 5 hours 30 minutes for IST
+      let istHours = utcHours + 5;
+      let istMinutes = utcMinutes + 30;
+      
+      // Handle minute overflow
+      if (istMinutes >= 60) {
+        istHours += 1;
+        istMinutes -= 60;
+      }
+      
+      // Handle hour overflow (wrap around 24)
+      istHours = istHours % 24;
+      
+      return `${String(istHours).padStart(2, '0')}:${String(istMinutes).padStart(2, '0')}`;
+    };
 
   /**
    * Format date for display
