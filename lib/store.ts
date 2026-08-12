@@ -64,7 +64,11 @@ interface FlightStore {
   trainingRequirements: TrainingRequirement[];
   ftoSettings: Record<string, string>;      // FTO settings as key-value pairs
   exercises: { exercise_name: string; short_code: string; full_description: string }[];
-  
+  // requires_instructor / requires_student are used to derive whether a
+  // sortie counts as SOLO or DUAL (see addFlightRecord / FlightRecordForm),
+  // now that Flight Type is no longer a separate field.
+  sortieTypes: { id: number; type_name: string; type_code: string; requires_instructor: boolean; requires_student: boolean }[];
+
 
   // ==========================================
   // UI STATE
@@ -115,7 +119,11 @@ interface FlightStore {
   // ==========================================
   loadFlightRecords: () => Promise<void>;
   loadStudentFlightRecords: (studentId: string) => Promise<void>;
-  addFlightRecord: (record: Omit<FlightRecord, 'id' | 'studentName' | 'aircraftReg' | 'instructorName'>) => Promise<void>;
+  // Returns success/error instead of void so the form knows whether to
+  // close (save actually went through) or stay open with the error shown —
+  // previously a failed insert closed the form silently, same as it never
+  // happened.
+  addFlightRecord: (record: Omit<FlightRecord, 'id' | 'studentName' | 'aircraftReg' | 'instructorName'>) => Promise<{ success: boolean; error?: string }>;
 
   // ==========================================
   // 4. FUEL MANAGEMENT ACTIONS
@@ -169,6 +177,7 @@ interface FlightStore {
   removeAvailability: (id: string) => Promise<void>;
   checkAvailability: (personType: string, personId: string, date: string) => Promise<boolean>;
   loadExercises: () => Promise<void>;
+  loadSortieTypes: () => Promise<void>;
   // ==========================================
   // 11. TRAINING REQUIREMENTS ACTIONS
   // ==========================================
@@ -210,6 +219,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   instructors: [],
   notams: [],
   exercises: [],
+  sortieTypes: [],
   weather: {
     metar: 'Loading weather...',
     taf: 'Loading forecast...',
@@ -417,6 +427,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
             hobbsStart: row.hobbs_start as number, hobbsEnd: row.hobbs_end as number,
             totalHours: calcHours(), landings: row.landings as number,
             flightType: row.flight_type as string, sortieType: row.sortie_type as string,
+            exercise: (row.exercise as string) || undefined,
             maneuvers: row.maneuvers as string, instructorNotes: row.instructor_notes as string,
             studentPerformance: row.student_performance as number, weatherConditions: row.weather_conditions as string,
             studentName: student?.name || 'Unknown', aircraftReg: ac?.registration || 'Unknown', instructorName: inst?.name || 'Unknown',
@@ -451,6 +462,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
             hobbsStart: row.hobbs_start as number, hobbsEnd: row.hobbs_end as number,
             totalHours: calcHours(), landings: row.landings as number,
             flightType: row.flight_type as string, sortieType: row.sortie_type as string,
+            exercise: (row.exercise as string) || undefined,
             maneuvers: row.maneuvers as string, instructorNotes: row.instructor_notes as string,
             studentPerformance: row.student_performance as number, weatherConditions: row.weather_conditions as string,
             studentName: student?.name || 'Unknown', aircraftReg: ac?.registration || 'Unknown', instructorName: inst?.name || 'Unknown',
@@ -466,35 +478,53 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       student_id: record.studentId, aircraft_id: record.aircraftId, instructor_id: record.instructorId,
       flight_date: record.flightDate, departure_time: record.departureTime, arrival_time: record.arrivalTime,
       hobbs_start: record.hobbsStart, hobbs_end: record.hobbsEnd, landings: record.landings,
-      flight_type: record.flightType, sortie_type: record.sortieType, maneuvers: record.maneuvers,
-      instructor_notes: record.instructorNotes, student_performance: record.studentPerformance,
-      weather_conditions: record.weatherConditions,
+      flight_type: record.flightType, sortie_type: record.sortieType, exercise: record.exercise || null,
+      maneuvers: record.maneuvers, instructor_notes: record.instructorNotes,
+      student_performance: record.studentPerformance, weather_conditions: record.weatherConditions,
     });
-        if (!error) {
-      // ============================================================
-      // FIRST SOLO CELEBRATION CHECK
-      // ============================================================
-      // If this is a SOLO flight, check if it's the student's first solo
-      // If so, record the date in the students table for celebration display
-      if (record.flightType === 'SOLO' || record.sortieType === 'SOLO') {
-        const student = get().students.find(s => s.id === record.studentId);
-        if (student && !student.firstSoloDate) {
-          // Update the student's first solo date via the students API
-          // (routed through the server — see app/api/students/[id]/route.ts)
-          // rather than writing to the `students` table directly from the browser.
-          await get().updateStudent(record.studentId, { firstSoloDate: record.flightDate });
-        }
-      }
 
-      // Update total hours
-      const student = get().students.find(s => s.id === record.studentId);
-      const newTotalHours = (student?.totalHours || 0) + record.totalHours;
-      await get().updateStudent(record.studentId, { totalHours: newTotalHours });
-
-      // Reload data to reflect all changes
-      await get().loadStudents();
-      await get().loadFlightRecords();
+    if (error) {
+      // This used to be swallowed by an `if (!error)` guard with no else —
+      // the form still called onClose() as if the save worked, so a failed
+      // insert (e.g. a check-constraint violation) looked identical to a
+      // successful one. Surface the real Postgres error so it's visible in
+      // the console and can be shown to whoever's using the form.
+      console.error('Error adding flight record:', error);
+      return { success: false, error: error.message };
     }
+
+    // ============================================================
+    // FIRST SOLO CELEBRATION CHECK
+    // ============================================================
+    // If this is a SOLO flight, check if it's the student's first solo
+    // If so, record the date in the students table for celebration display
+    if (record.flightType === 'SOLO' || record.sortieType === 'SOLO') {
+      const student = get().students.find(s => s.id === record.studentId);
+      if (student && !student.firstSoloDate) {
+        // Update the student's first solo date via the students API
+        // (routed through the server — see app/api/students/[id]/route.ts)
+        // rather than writing to the `students` table directly from the browser.
+        await get().updateStudent(record.studentId, { firstSoloDate: record.flightDate });
+      }
+    }
+
+    // Update total hours
+    const student = get().students.find(s => s.id === record.studentId);
+    const newTotalHours = (student?.totalHours || 0) + record.totalHours;
+    await get().updateStudent(record.studentId, { totalHours: newTotalHours });
+
+    // Carry the logged Hobbs End reading forward as the aircraft's current
+    // Hobbs meter value, same as addFuelRecord already does for
+    // current_fuel — otherwise the aircraft's Hobbs time never advances
+    // and the next flight's auto-filled Hobbs Start goes stale.
+    await supabase.from('aircraft').update({ hobbs_time: record.hobbsEnd }).eq('id', record.aircraftId);
+    await get().loadAircraft();
+
+    // Reload data to reflect all changes
+    await get().loadStudents();
+    await get().loadFlightRecords();
+
+    return { success: true };
   },
 
   // ============================================================
@@ -950,6 +980,29 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       set({ exercises: data });
     } else {
       console.error('Error loading exercises:', error);
+    }
+  },
+
+  // ============================================================
+  // SORTIE TYPES (from database)
+  // ============================================================
+  /**
+   * Load all active sortie types from the database.
+   * Managed via Admin Setup → Sortie Types. Used by FlightRecordForm's
+   * "Sortie Type" dropdown, which used to be a hardcoded list unrelated
+   * to whatever an admin actually configured there.
+   */
+  loadSortieTypes: async () => {
+    const { data, error } = await supabase
+      .from('sortie_types')
+      .select('id, type_name, type_code, requires_instructor, requires_student')
+      .eq('is_active', true)
+      .order('id', { ascending: true });
+
+    if (data && !error) {
+      set({ sortieTypes: data });
+    } else {
+      console.error('Error loading sortie types:', error);
     }
   },
 

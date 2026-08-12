@@ -13,13 +13,28 @@ import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 
 export default function FlightsPage() {
-  const { flightRecords, students, loadingFlights, loadFlightRecords, loadStudents } = useFlightStore();
+  const {
+    flightRecords, students, sortieTypes, exercises, loadingFlights,
+    loadFlightRecords, loadStudents, loadAircraft, loadSortieTypes, loadExercises,
+  } = useFlightStore();
   const [showForm, setShowForm] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState('ALL');
 
   useEffect(() => {
-    loadStudents();
-    loadFlightRecords();
+    // loadFlightRecords() resolves each record's aircraft/student name
+    // client-side, in the store, from whatever's already in the aircraft/
+    // students state at the moment it runs — it doesn't reactively update
+    // if that data arrives later. Aircraft wasn't loaded by this page at
+    // all before, so records rendered with "Unknown" aircraft whenever
+    // this was the first page visited in the session. Awaiting both loads
+    // first removes that race instead of just usually getting lucky on
+    // load order.
+    (async () => {
+      await Promise.all([loadStudents(), loadAircraft()]);
+      loadFlightRecords();
+    })();
+    loadSortieTypes();
+    loadExercises();
   }, []);
 
   const filteredRecords = selectedStudent === 'ALL' 
@@ -118,6 +133,8 @@ export default function FlightsPage() {
                     <th className="pb-3">Time</th>
                     <th className="pb-3">Hrs</th>
                     <th className="pb-3">Type</th>
+                    <th className="pb-3">Sortie</th>
+                    <th className="pb-3">Exercise</th>
                     <th className="pb-3">Landings</th>
                     <th className="pb-3">Performance</th>
                   </tr>
@@ -152,6 +169,14 @@ export default function FlightsPage() {
                               🎉 FIRST SOLO
                             </span>
                           )}
+                      </td>
+                      <td className="py-3 text-xs">
+                        {sortieTypes.find(st => st.type_code === record.sortieType)?.type_name
+                          || record.sortieType?.replace(/_/g, ' ')
+                          || '—'}
+                      </td>
+                      <td className="py-3 text-xs" title={exercises.find(ex => ex.short_code === record.exercise)?.full_description || ''}>
+                        {record.exercise || '—'}
                       </td>
                       <td className="py-3 text-xs">{record.landings}</td>
                       <td className="py-3 text-xs">{getPerformanceStars(record.studentPerformance)}</td>

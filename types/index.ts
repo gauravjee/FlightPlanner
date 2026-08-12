@@ -129,6 +129,7 @@ export interface FlightRecord {
   landings: number;
   flightType: string;
   sortieType: string;
+  exercise?: string;
   maneuvers: string;
   instructorNotes: string;
   studentPerformance: number;
