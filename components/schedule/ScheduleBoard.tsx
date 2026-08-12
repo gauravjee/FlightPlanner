@@ -102,7 +102,12 @@ export default function ScheduleBoard() {
   // ----- UI State (local to this component) -----
   const [showBookingForm, setShowBookingForm] = useState(false);  // Toggle booking modal
   const [successMessage, setSuccessMessage] = useState('');        // Green toast message
+  const [errorMessage, setErrorMessage] = useState('');            // Red toast message (past-time / maintenance blocks)
   const [editingFlight, setEditingFlight] = useState<ScheduledFlight | null>(null); // Flight being edited
+  // Aircraft/date/time captured from clicking an empty spot on the grid,
+  // passed to BookingForm to pre-fill a new booking. null when the form was
+  // opened via the "+ Book Slot" button instead (no prefill).
+  const [gridClickPrefill, setGridClickPrefill] = useState<{ aircraftId: string; date: string; startTime: string } | null>(null);
 
   // ----- Date filter (local date in YYYY-MM-DD format) -----
   const todayLocal = new Date().toLocaleDateString('en-CA');       // e.g. "2026-08-03"
@@ -128,6 +133,8 @@ export default function ScheduleBoard() {
   const loadAircraft = store.loadAircraft;
   const loadStudents = store.loadStudents;
   const loadInstructors = store.loadInstructors;
+  const maintenanceRecords = store.maintenanceRecords;      // All maintenance records (for blocking slots)
+  const loadMaintenanceRecords = store.loadMaintenanceRecords;
 
   // ----- Load data when component mounts -----
   useEffect(() => {
@@ -135,7 +142,8 @@ export default function ScheduleBoard() {
     loadStudents();           // Load students for initials on blocks
     loadInstructors();        // Load instructors for initials on blocks
     loadScheduledFlights();   // Load booked flights for Gantt blocks
-  }, [loadAircraft, loadStudents, loadInstructors, loadScheduledFlights]);
+    loadMaintenanceRecords(); // Load maintenance records so we can block slots for aircraft under/scheduled for maintenance
+  }, [loadAircraft, loadStudents, loadInstructors, loadScheduledFlights, loadMaintenanceRecords]);
 
   // ----- Filter flights for the selected date -----
   const filteredFlights = scheduledFlights.filter(flight => {
@@ -221,6 +229,144 @@ export default function ScheduleBoard() {
   };
 
   const goToToday = () => setSelectedDate(todayLocal);
+
+  // Is the given date+"HH:MM" combination already in the past? Compared
+  // against the browser's local clock — same assumption BookingForm's own
+  // validateNotPast() makes (the FTO's users are physically in IST, so
+  // local time doubles as IST here, same as the pre-existing `todayLocal`
+  // above). Used to short-circuit a grid click before the BookingForm even
+  // opens, instead of only surfacing "can't book in the past" after the
+  // user fills the form in and hits Save.
+  const isSlotInPast = (dateStr: string, timeStr: string): boolean => {
+    const selected = new Date(`${dateStr}T${timeStr}:00`);
+    return selected < new Date();
+  };
+
+  // Is this aircraft unavailable for booking on the currently viewed date —
+  // either because its overall status is MAINTENANCE (indefinite, no known
+  // end — always blocks the whole day), or because it has a maintenance
+  // record scheduled/in-progress whose window overlaps this date? A record
+  // can optionally carry a precise maintenanceStart/maintenanceEnd (ISO
+  // timestamps, may span multiple days — e.g. a 3-day overhaul); when set,
+  // only the portion of THIS date inside that window is blocked (full day
+  // for a date strictly between start and end, partial for the start/end
+  // day). When not set, the whole scheduledDate day is blocked — the
+  // original/simple behavior, still the default in the form.
+  // maintenanceEnd may itself be null (open-ended — emergency / still in
+  // progress, finish time not known yet), which blocks every date from
+  // maintenanceStart onward until the record is completed or an end is set.
+  // Returns null (not blocked), or:
+  //   { maintenanceType, allDay: true,  openEnded, overdue }                – whole day
+  //   { maintenanceType, allDay: false, openEnded, overdue, startMin, endMin } – a window
+  //     within this date, as minutes since midnight IST
+  const getMaintenanceBlock = (aircraftId: string) => {
+    if (aircraft.find(a => String(a.id) === String(aircraftId))?.status === 'MAINTENANCE') {
+      return { maintenanceType: 'Maintenance', allDay: true as const, openEnded: false, overdue: false };
+    }
+
+    // IST day bounds for the currently viewed date, as real UTC instants —
+    // same "+05:30" convention used everywhere a date+time gets parsed here.
+    const dayStart = new Date(`${selectedDate}T00:00:00+05:30`);
+    const dayEnd = new Date(`${selectedDate}T23:59:59.999+05:30`);
+
+    const record = maintenanceRecords.find(m => {
+      if (String(m.aircraftId) !== String(aircraftId)) return false;
+      if (m.status !== 'SCHEDULED' && m.status !== 'IN_PROGRESS') return false;
+      if (!m.maintenanceStart) {
+        // Legacy/simple record — just a single scheduledDate, no precise window.
+        return new Date(m.scheduledDate).toLocaleDateString('en-CA') === selectedDate;
+      }
+      const mStart = new Date(m.maintenanceStart);
+      const mEnd = m.maintenanceEnd ? new Date(m.maintenanceEnd) : null;
+      return mStart <= dayEnd && (mEnd === null || mEnd >= dayStart);
+    });
+    if (!record) return null;
+
+    const mEndDate = record.maintenanceEnd ? new Date(record.maintenanceEnd) : null;
+    // Overdue = passed its planned end while still SCHEDULED/IN_PROGRESS —
+    // stays blocked regardless (never auto-unblocks on a timer), just
+    // flagged so it can't be missed.
+    const overdue = !!mEndDate && mEndDate < new Date();
+
+    if (!record.maintenanceStart) {
+      return { maintenanceType: record.maintenanceType, allDay: true as const, openEnded: false, overdue: false };
+    }
+
+    const mStart = new Date(record.maintenanceStart);
+    const clampedStart = mStart < dayStart ? dayStart : mStart;
+    const clampedEnd = mEndDate === null ? dayEnd : (mEndDate > dayEnd ? dayEnd : mEndDate);
+
+    // Convert a UTC instant to its IST minute-of-day (0–1439), same
+    // UTC->IST conversion used elsewhere on this board (formatISTTime,
+    // getSlotStyle) — so this window lines up with flight blocks and the
+    // hour grid exactly.
+    const toISTMinuteOfDay = (d: Date): number => {
+      const h = d.getUTCHours(); const m = d.getUTCMinutes();
+      return ((h + 5) * 60 + (m + 30)) % 1440;
+    };
+
+    return {
+      maintenanceType: record.maintenanceType,
+      allDay: false as const,
+      openEnded: mEndDate === null,
+      overdue,
+      startMin: toISTMinuteOfDay(clampedStart),
+      endMin: toISTMinuteOfDay(clampedEnd),
+    };
+  };
+
+  // Format minutes-since-midnight as "HH:MM"
+  const minutesToHHMM = (min: number): string =>
+    `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
+  // Does a maintenance block (from getMaintenanceBlock) cover the given "HH:MM" time?
+  const isTimeBlockedByMaintenance = (
+    block: ReturnType<typeof getMaintenanceBlock>,
+    timeStr: string
+  ): boolean => {
+    if (!block) return false;
+    if (block.allDay) return true;
+    const [h, m] = timeStr.split(':').map(Number);
+    const tMin = h * 60 + m;
+    return tMin >= block.startMin && tMin < block.endMin;
+  };
+
+  // Left/width (%) for rendering a maintenance block's overlay — full width
+  // for an all-day block, or the actual window (clamped to the 05:00–22:00
+  // grid) positioned with the same percent math as flight blocks (getSlotStyle).
+  const getMaintenanceBlockStyle = (block: ReturnType<typeof getMaintenanceBlock>) => {
+    if (!block) return { left: '0%', width: '0%' };
+    if (block.allDay) return { left: '0%', width: '100%' };
+    const startHour = Math.max(5, block.startMin / 60);
+    const endHour = Math.min(22, block.endMin / 60);
+    if (endHour <= startHour) return { left: '0%', width: '0%' }; // window entirely outside the visible grid
+    const leftPercent = ((startHour - 5) / totalHours) * 100;
+    const widthPercent = ((endHour - startHour) / totalHours) * 100;
+    return { left: `${leftPercent}%`, width: `${widthPercent}%` };
+  };
+
+  // Does this already-booked flight now overlap an active (SCHEDULED/
+  // IN_PROGRESS) maintenance window for its own aircraft? Maintenance can be
+  // logged after a flight was already booked (e.g. an emergency declared
+  // mid-day), so this is computed live at render time against every flight
+  // block currently on the board — not just checked once when the
+  // maintenance record was created — so the conflict stays visible on the
+  // board itself for as long as it's true, not just at creation time.
+  const doesFlightConflictWithMaintenance = (flight: ScheduledFlight): boolean => {
+    const fStart = new Date(flight.startTime);
+    const fEnd = new Date(flight.endTime);
+    const farFuture = new Date(8640000000000000);
+    return maintenanceRecords.some(m => {
+      if (String(m.aircraftId) !== String(flight.aircraftId)) return false;
+      if (m.status !== 'SCHEDULED' && m.status !== 'IN_PROGRESS') return false;
+      if (!m.maintenanceStart) {
+        return new Date(flight.startTime).toLocaleDateString('en-CA') === new Date(m.scheduledDate).toLocaleDateString('en-CA');
+      }
+      const mStart = new Date(m.maintenanceStart);
+      const mEnd = m.maintenanceEnd ? new Date(m.maintenanceEnd) : farFuture;
+      return fStart < mEnd && fEnd > mStart;
+    });
+  };
 
   // ============================================================
   // PRINT FUNCTION – generates a clean white‑background report
@@ -452,9 +598,63 @@ export default function ScheduleBoard() {
     loadScheduledFlights();   // Refresh after modal closes
   };
 
+  // Click-to-book: figure out the time from where the user clicked within
+  // an aircraft's row, then open BookingForm pre-filled with that aircraft,
+  // the currently selected date, and the computed time. Works for however
+  // many aircraft are in the fleet — the row and its aircraft ID come
+  // straight from the `activeAircraft.map(...)` below, nothing here assumes
+  // a fixed count.
+  const handleGridClick = (aircraftId: string, e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickPercent = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    // Same 05:00–22:00 span the Gantt blocks are positioned against (HOURS
+    // starts at 5, totalHours is 17) — map the click position back to a
+    // clock time, then round to the nearest 30 minutes (matches BookingForm's
+    // time dropdown granularity) and clamp to what that dropdown offers
+    // (06:00–22:30).
+    const rawHour = 5 + clickPercent * totalHours;
+    let snappedMinutes = Math.round((rawHour * 60) / 30) * 30;
+    snappedMinutes = Math.min(22 * 60 + 30, Math.max(6 * 60, snappedMinutes));
+    const hour = Math.floor(snappedMinutes / 60);
+    const minute = snappedMinutes % 60;
+    const startTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+
+    // Reject clicks that land inside a maintenance block — either the whole
+    // day (aircraft.status === 'MAINTENANCE', or a record with no precise
+    // window set) or just the portion of this date covered by a record's
+    // maintenanceStart/maintenanceEnd window (which may span multiple days).
+    const maintenanceBlock = getMaintenanceBlock(aircraftId);
+    if (isTimeBlockedByMaintenance(maintenanceBlock, startTime)) {
+      const ac = aircraft.find(a => String(a.id) === String(aircraftId));
+      const when = maintenanceBlock!.allDay
+        ? (ac?.status === 'MAINTENANCE' ? 'in progress' : `scheduled on ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}`)
+        : maintenanceBlock!.openEnded
+          ? `from ${minutesToHHMM(maintenanceBlock!.startMin)} — still in progress, no end time set yet`
+          : `from ${minutesToHHMM(maintenanceBlock!.startMin)} to ${minutesToHHMM(maintenanceBlock!.endMin)}`;
+      const overdueNote = maintenanceBlock!.overdue ? ' (⚠️ past its planned finish — check the maintenance log)' : '';
+      setErrorMessage(`🔧 ${ac?.registration || 'This aircraft'} is unavailable at ${startTime} — ${maintenanceBlock!.maintenanceType} maintenance ${when}.${overdueNote}`);
+      setTimeout(() => setErrorMessage(''), 4000);
+      return;
+    }
+
+    // Reject clicks on a past time slot immediately, instead of only
+    // surfacing "can't book in the past" after the user opens the form,
+    // fills it in, and hits Save.
+    if (isSlotInPast(selectedDate, startTime)) {
+      setErrorMessage(`⏰ ${startTime} on ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} is in the past — flights cannot be booked in the past. Please pick a future time slot.`);
+      setTimeout(() => setErrorMessage(''), 4000);
+      return;
+    }
+
+    setGridClickPrefill({ aircraftId, date: selectedDate, startTime });
+    setEditingFlight(null);
+    setShowBookingForm(true);
+  };
+
   const handleBookingSuccess = (message: string) => {
     setShowBookingForm(false);
     setEditingFlight(null);
+    setGridClickPrefill(null);
     setSuccessMessage(message);
     loadScheduledFlights();   // Refresh after booking
     setTimeout(() => setSuccessMessage(''), 3000); // Auto‑hide toast after 3 seconds
@@ -492,7 +692,11 @@ export default function ScheduleBoard() {
               🖨️ Print Schedule
             </button>
             <button
-              onClick={() => setShowBookingForm(true)}
+              onClick={() => {
+                setGridClickPrefill(null);
+                setEditingFlight(null);
+                setShowBookingForm(true);
+              }}
               className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 transition cursor-pointer"
             >
               + Book Slot
@@ -553,45 +757,70 @@ export default function ScheduleBoard() {
         <div className="overflow-x-auto scrollbar-thin" style={{ overflowX: 'auto' }}>
           <div className="min-w-[1400px]">
 
-            {/* Time Header Row – Shows hours from 06:00 to 19:00 with IST and UTC labels */}
+            {/* Time Header Row – Shows hours from 06:00 to 19:00 with IST and UTC labels.
+                Each label is positioned with the SAME `(idx / HOURS.length) * 100%` formula
+                used by the Vertical Grid Lines below, the current-time line, and flight
+                blocks (getSlotStyle's leftPercent), and now sits FLUSH (left: 0 on both
+                lines of text, no left-2/left-1 padding) against that position, with a tiny
+                downward tick mark as an explicit visual pointer from the label down to the
+                line it belongs to. Previously the label text was padded 8px/4px to the right
+                of its own anchor point purely for breathing room — reasonable in isolation,
+                but placed directly above a 17-column grid, it read as the label not lining up
+                with "its" line, since the line sat 8px to the label's left. Flush + a tick
+                removes the ambiguity: the label, the tick, and the line are all the same x. */}
             <div className="flex mb-1">
-              <div className="w-[140px] flex-shrink-0" />
-              {HOURS.map(hour => {
-                const utcHour = (hour - 5.5 + 24) % 24;
-                return (
-                  <div key={hour} className="flex-1 relative">
-                    <span className="text-xs text-slate-400 font-medium absolute -top-0 left-2">
-                      {hour.toString().padStart(2, '0')}:00
-                    </span>
-                    <span className="text-[9px] text-blue-400/50 absolute top-4 left-1">
-                      {Math.floor(utcHour).toString().padStart(2, '0')}:30 UTC
-                    </span>
-                  </div>
-                );
-              })}
+              <div className="w-[140px] flex-shrink-0 sticky left-0 z-20" />
+              <div className="flex-1 relative">
+                {HOURS.map((hour, idx) => {
+                  const utcHour = (hour - 5.5 + 24) % 24;
+                  const leftPercent = (idx / HOURS.length) * 100;
+                  return (
+                    <div key={hour} className="absolute top-0" style={{ left: `${leftPercent}%` }}>
+                      <span className="text-xs text-slate-400 font-medium absolute -top-0 left-0 whitespace-nowrap">
+                        {hour.toString().padStart(2, '0')}:00
+                      </span>
+                      <span className="text-[9px] text-blue-400/50 absolute top-4 left-0 whitespace-nowrap">
+                        {Math.floor(utcHour).toString().padStart(2, '0')}:30 UTC
+                      </span>
+                      {/* Tick mark pointing down at the exact x-position of this hour's
+                          gridline in the row below, so the eye has an explicit connector
+                          between the label and its line instead of having to infer it. */}
+                      <div className="absolute top-[26px] left-0 w-px h-2 bg-slate-500/60" />
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Aircraft Rows Container */}
             <div className="relative mt-8">
 
-              {/* Vertical Grid Lines – Solid for hours, dashed for half‑hours, dotted for UTC */}
+              {/* Vertical Grid Lines – Solid for hours, dashed for half‑hours, dotted for UTC.
+                  Positioned with the SAME `(idx / HOURS.length) * 100%` formula as the Time
+                  Header Row's labels above (and the current-time line / flight blocks below),
+                  instead of its own separate HOURS.length-column flex partition — see the
+                  comment on the Time Header Row for why sharing one formula matters. This also
+                  fixes a pre-existing bug where this row rendered one extra unlabeled flex-1
+                  column beyond the header's 17, silently narrowing every column here relative
+                  to the header. */}
               <div className="absolute inset-0 flex pointer-events-none z-0">
-                <div className="w-[140px] flex-shrink-0 pr-3 flex flex-col justify-center z-20 bg-slate-900/80 rounded-l-lg px-2 py-1 pt-2"></div>
-                
-               {HOURS.map(hour => {
-                  return (
-                   <div key={hour} className="flex-1 relative">
-                     {/* IST Hour line - solid */}
-                      <div className="absolute inset-0 border-l border-slate-600/40" />
-                      {/* IST Half-hour line - dashed */}
-                     <div className="absolute inset-0 left-1/2 border-l border-dashed border-slate-600/20" />
-                      {/* UTC Hour line - dotted (always shown) */}
-                      <div className="absolute inset-0 left-1/2 border-l border-dotted border-blue-500/30" />
-                    </div>
-                  );
-                })}
+                <div className="w-[140px] flex-shrink-0 sticky left-0 pr-3 flex flex-col justify-center z-20 bg-slate-900/80 rounded-l-lg px-2 py-1 pt-2"></div>
+
                 <div className="flex-1 relative">
-                  <div className="absolute inset-0 border-l border-slate-600/40" />
+                  {HOURS.map((hour, idx) => {
+                    const leftPercent = (idx / HOURS.length) * 100;
+                    const halfHourPercent = ((idx + 0.5) / HOURS.length) * 100;
+                    return (
+                      <React.Fragment key={hour}>
+                        {/* IST Hour line - solid, aligned under this hour's header label */}
+                        <div className="absolute top-0 bottom-0 border-l border-slate-600/40" style={{ left: `${leftPercent}%` }} />
+                        {/* IST Half-hour line - dashed */}
+                        <div className="absolute top-0 bottom-0 border-l border-dashed border-slate-600/20" style={{ left: `${halfHourPercent}%` }} />
+                        {/* UTC Hour line - dotted (coincides with the IST half-hour mark, since IST = UTC + 5:30) */}
+                        <div className="absolute top-0 bottom-0 border-l border-dotted border-blue-500/30" style={{ left: `${halfHourPercent}%` }} />
+                      </React.Fragment>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -607,7 +836,14 @@ export default function ScheduleBoard() {
                 ))}
               </div>
 
-              {/* Current Time Line – Red vertical line showing current IST time (only when viewing today) */}
+              {/* Current Time Line – Red vertical line showing current IST time (only when viewing today).
+                  Wrapped in the same 140px-label-spacer + flex-1 structure used by the header row
+                  and every flight-blocks-area div below, so `leftPercent` resolves against the
+                  grid-only width. Previously this was positioned with `calc(X% + 140px)` directly
+                  against the full-width row container, which resolves the `%` against the FULL
+                  width (including the 140px label column) and then added 140px on top of that —
+                  double-counting the label offset and pushing the line noticeably too far right
+                  (worse the wider the browser window, since the grid area grows with it). */}
               {selectedDate === todayLocal && (() => {
                 const now = new Date();
                 const utcHours = now.getUTCHours();
@@ -617,16 +853,20 @@ export default function ScheduleBoard() {
                 if (istMinutes >= 60) { istHours += 1; istMinutes -= 60; }
                 istHours = istHours % 24;
                 const currentHourIST = istHours + istMinutes / 60;
-                
+
                 if (currentHourIST >= 5 && currentHourIST <= 22) {
                   const leftPercent = ((currentHourIST - 5) / totalHours) * 100;
                   return (
-                    <div className="absolute top-0 bottom-0 z-30 pointer-events-none" 
-                      style={{ left: `calc(${leftPercent}% + 140px)` }}>
-                      <div className="absolute inset-0 w-0.5 bg-red-500/70" />
-                      <div className="absolute -top-1 -left-1.5 w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-lg shadow-red-500/50" />
-                      <div className="absolute -top-6 -left-10 text-[10px] text-red-400 whitespace-nowrap font-medium bg-slate-900/80 px-1 rounded">
-                        {String(istHours).padStart(2, '0') + ':' + String(istMinutes).padStart(2, '0')} IST
+                    <div className="absolute inset-0 flex z-30 pointer-events-none">
+                      <div className="w-[140px] flex-shrink-0" />
+                      <div className="flex-1 relative">
+                        <div className="absolute top-0 bottom-0" style={{ left: `${leftPercent}%` }}>
+                          <div className="absolute inset-0 w-0.5 bg-red-500/70" />
+                          <div className="absolute -top-1 -left-1.5 w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-lg shadow-red-500/50" />
+                          <div className="absolute -top-6 -left-10 text-[10px] text-red-400 whitespace-nowrap font-medium bg-slate-900/80 px-1 rounded">
+                            {String(istHours).padStart(2, '0') + ':' + String(istMinutes).padStart(2, '0')} IST
+                          </div>
+                        </div>
                       </div>
                     </div>
                   );
@@ -639,12 +879,25 @@ export default function ScheduleBoard() {
                 const realFlights = filteredFlights.filter(
                   f => String(f.aircraftId) === String(ac.id)
                 );
+                // Aircraft under maintenance (status === 'MAINTENANCE') or with a
+                // SCHEDULED/IN_PROGRESS maintenance record for the currently viewed
+                // date. allDay (no scheduledTime set on the record, or an indefinite
+                // aircraft.status) blocks the whole row; otherwise only the record's
+                // scheduledTime + durationHours window is blocked.
+                const maintenanceBlock = getMaintenanceBlock(ac.id);
+                const maintenanceBlockStyle = getMaintenanceBlockStyle(maintenanceBlock);
                 return (
                   <div key={ac.id} className="relative mb-3 z-10">
                     <div className="flex items-stretch" style={{ minHeight: '60px' }}>
 
-                      {/* Aircraft Label – Left column with registration, type, hours, fuel */}
-                      <div className="w-[140px] flex-shrink-0 pr-3 flex flex-col justify-center z-20 bg-slate-900/80 rounded-l-lg px-2 py-1">
+                      {/* Aircraft Label – Left column with registration, type, hours, fuel.
+                          Sticky so it stays pinned to the left edge while the grid scrolls
+                          horizontally (e.g. scrolling right to book a late slot) — previously
+                          this scrolled away with the rest of the row, so once you scrolled far
+                          enough right there was no way to tell which aircraft's row you were
+                          looking at. Solid background (not /80) + a higher z-index than flight
+                          blocks so blocks that scroll underneath don't show through it. */}
+                      <div className="w-[140px] flex-shrink-0 sticky left-0 pr-3 flex flex-col justify-center z-40 bg-slate-900 rounded-l-lg px-2 py-1">
                         <div className="flex items-center space-x-2">
                           <div className={`w-2 h-2 rounded-full ${
                             ac.status === 'ACTIVE' ? 'bg-green-400' :
@@ -660,11 +913,60 @@ export default function ScheduleBoard() {
                         </div>
                       </div>
 
-                      {/* Flight Blocks Area – Where colored blocks appear */}
+                      {/* Flight Blocks Area – Where colored blocks appear. Also
+                          doubles as the click-to-book target: clicking any
+                          empty spot opens BookingForm pre-filled with this
+                          aircraft, the selected date, and the time under the
+                          click. Clicks on an existing flight block are
+                          stopped from bubbling here (see that block's
+                          onClick), so they only open the detail modal.
+                          handleGridClick itself checks whether the clicked
+                          time falls inside a maintenance block (whole-day or
+                          just the record's window) and shows an "unavailable"
+                          message instead of opening the booking form when it
+                          does — so a partial-day maintenance window only
+                          blocks clicks inside that window, not the whole row. */}
                       <div
-                        className="flex-1 relative bg-slate-900/20 rounded-r-lg border border-slate-700/20"
+                        onClick={(e) => handleGridClick(ac.id, e)}
+                        className={`flex-1 relative rounded-r-lg border transition ${
+                          maintenanceBlock?.allDay
+                            ? `bg-slate-900/20 cursor-not-allowed ${maintenanceBlock.overdue ? 'border-red-600/40' : 'border-yellow-600/30'}`
+                            : 'bg-slate-900/20 border-slate-700/20 cursor-pointer hover:bg-slate-700/10'
+                        }`}
                         style={{ minHeight: '55px' }}
+                        title={
+                          maintenanceBlock?.allDay
+                            ? `${ac.registration} unavailable — ${maintenanceBlock.maintenanceType} maintenance${maintenanceBlock.overdue ? ' (overdue)' : ''}`
+                            : maintenanceBlock
+                              ? `${ac.registration} unavailable ${minutesToHHMM(maintenanceBlock.startMin)}–${maintenanceBlock.openEnded ? 'ongoing' : minutesToHHMM(maintenanceBlock.endMin)} — ${maintenanceBlock.maintenanceType} maintenance${maintenanceBlock.overdue ? ' (overdue)' : ''}`
+                              : 'Click to book a flight at this time'
+                        }
                       >
+                        {/* Maintenance overlay – diagonal-striped backdrop covering either the
+                            whole row (allDay) or just the record's window for this date (which
+                            may be a partial slice of a multi-day job), sitting below existing
+                            flight blocks (z-10+) so any bookings made before the maintenance was
+                            scheduled stay visible, but above the empty "Available" hint. Turns
+                            red/urgent once it's overdue (past its planned end but still
+                            SCHEDULED/IN_PROGRESS) — stays blocked either way, this is purely a
+                            visibility cue so it doesn't quietly sit there unnoticed. */}
+                        {maintenanceBlock && (
+                          <div
+                            className="absolute top-1 bottom-1 z-[5] flex items-center justify-center pointer-events-none rounded-md overflow-hidden"
+                            style={{
+                              ...maintenanceBlockStyle,
+                              background: maintenanceBlock.overdue
+                                ? 'repeating-linear-gradient(45deg, rgba(239,68,68,0.22), rgba(239,68,68,0.22) 10px, rgba(239,68,68,0.06) 10px, rgba(239,68,68,0.06) 20px)'
+                                : 'repeating-linear-gradient(45deg, rgba(234,179,8,0.15), rgba(234,179,8,0.15) 10px, rgba(234,179,8,0.04) 10px, rgba(234,179,8,0.04) 20px)',
+                            }}
+                          >
+                            <span className={`text-xs font-semibold bg-slate-900/85 px-2 py-1 rounded whitespace-nowrap ${maintenanceBlock.overdue ? 'text-red-400' : 'text-yellow-400'}`}>
+                              🔧{maintenanceBlock.allDay ? '' : ` ${minutesToHHMM(maintenanceBlock.startMin)}–${maintenanceBlock.openEnded ? '…' : minutesToHHMM(maintenanceBlock.endMin)}`} {maintenanceBlock.maintenanceType}
+                              {maintenanceBlock.openEnded ? ' (ongoing)' : ''}{maintenanceBlock.overdue ? ' ⚠️ OVERDUE' : ''}
+                            </span>
+                          </div>
+                        )}
+
                         {realFlights.map(flight => {
                           const style = getSlotStyle(flight);
                           // Use sortie type color: Dual=Blue, Solo=Green, Maintenance=Yellow
@@ -675,6 +977,7 @@ export default function ScheduleBoard() {
                             : undefined;
                           const isHovered = hoveredSlot === flight.id;
                           const flightStartIST = formatISTTime(flight.startTime);
+                          const hasMaintenanceConflict = doesFlightConflictWithMaintenance(flight);
 
                           // Get exercise name and extract short code
                           const exerciseName = (flight as any).exercise || '';
@@ -683,19 +986,31 @@ export default function ScheduleBoard() {
                           return (
                             <div
                               key={flight.id}
-                              onClick={() => handleSlotClick(flight as unknown as FlightSlot)}
+                              onClick={(e) => {
+                                // Don't let this bubble up to the row's
+                                // click-to-book handler — an existing block
+                                // should only open its own detail modal.
+                                e.stopPropagation();
+                                handleSlotClick(flight as unknown as FlightSlot);
+                              }}
                               onMouseEnter={() => setHoveredSlot(flight.id)}
                               onMouseLeave={() => setHoveredSlot(null)}
-                              className={`absolute top-1 bottom-1 ${colors} border rounded-md px-2 py-1 
-                                cursor-pointer transition-all duration-200 
+                              className={`absolute top-1 bottom-1 ${colors} border rounded-md px-2 py-1
+                                cursor-pointer transition-all duration-200
                                 hover:scale-[1.03] hover:z-30 hover:shadow-xl
                                 ${isHovered ? 'ring-2 ring-white/50 z-20 scale-[1.03] shadow-xl' : 'z-10'}
-                                ${flight.status === 'IN_PROGRESS' ? 'ring-1 ring-green-400/50' : ''}`}
+                                ${flight.status === 'IN_PROGRESS' ? 'ring-1 ring-green-400/50' : ''}
+                                ${hasMaintenanceConflict ? 'ring-2 ring-red-500 animate-pulse' : ''}`}
                               style={style}
-                              title={`${student?.name || flight.studentName || 'No Student'} - ${exerciseName || flight.sortieType}\n${flightStartIST} IST`}
+                              title={`${student?.name || flight.studentName || 'No Student'} - ${exerciseName || flight.sortieType}\n${flightStartIST} IST${hasMaintenanceConflict ? '\n⚠️ Conflicts with scheduled maintenance on this aircraft — reassign or cancel' : ''}`}
                             >
                               {flight.status === 'IN_PROGRESS' && (
                                 <span className="absolute top-1 right-1 w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                              )}
+                              {hasMaintenanceConflict && (
+                                <span className="absolute -top-1.5 -right-1.5 text-[10px] bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center shadow-lg z-20" title="Conflicts with scheduled maintenance">
+                                  ⚠
+                                </span>
                               )}
                               <div className="flex flex-col justify-center h-full min-w-0">
                                 {/* Student initials / Instructor initials */}
@@ -721,10 +1036,12 @@ export default function ScheduleBoard() {
                           );
                         })}
 
-                        {/* Empty state when no flights scheduled */}
-                        {realFlights.length === 0 && (
-                          <div className="flex items-center justify-center h-full">
-                            <p className="text-xs text-slate-600">Available</p>
+                        {/* Empty state when no flights scheduled and not blocked for the whole day
+                            (an all-day maintenance block shows its own label instead; a partial
+                            window still leaves the rest of the day free, so the hint stays). */}
+                        {realFlights.length === 0 && !maintenanceBlock?.allDay && (
+                          <div className="flex items-center justify-center h-full pointer-events-none">
+                            <p className="text-xs text-slate-600">Available — click to book</p>
                           </div>
                         )}
                       </div>
@@ -856,6 +1173,7 @@ export default function ScheduleBoard() {
             // When a flight is SCHEDULED and user clicks "Edit",
             // we open the BookingForm pre-filled with the flight data.
             // ============================================================
+            setGridClickPrefill(null);
             setEditingFlight(sf);
             setShowBookingForm(true);
           }
@@ -863,15 +1181,18 @@ export default function ScheduleBoard() {
         />
       )}
 
-      {/* Booking Form Modal – Opens when "+ Book Slot" is clicked */}
+      {/* Booking Form Modal – Opens via "+ Book Slot", editing a flight, or
+          clicking a spot on the grid (see handleGridClick) */}
       {showBookingForm && (
         <BookingForm
           onClose={() => {
             setShowBookingForm(false);
             setEditingFlight(null);
+            setGridClickPrefill(null);
           }}
           onSuccess={handleBookingSuccess}
           existingFlight={editingFlight}
+          prefill={gridClickPrefill}
         />
       )}
 
@@ -903,6 +1224,20 @@ export default function ScheduleBoard() {
           <button
             onClick={() => setSuccessMessage('')}
             className="ml-3 font-bold hover:text-green-200"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Error Toast – Red notification at bottom‑right for blocked actions
+          (clicking a past time slot, or an aircraft unavailable for maintenance) */}
+      {errorMessage && (
+        <div className="fixed bottom-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md">
+          <span>{errorMessage}</span>
+          <button
+            onClick={() => setErrorMessage('')}
+            className="ml-3 font-bold hover:text-red-200"
           >
             ✕
           </button>

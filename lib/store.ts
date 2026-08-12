@@ -673,19 +673,36 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     const { data, error } = await supabase.from('maintenance_records').select('*').order('scheduled_date', { ascending: true });
     if (data && !error) {
       const aircraftList = get().aircraft; const today = new Date(); today.setHours(0, 0, 0, 0);
+      const now = new Date();
       set({
         maintenanceRecords: data.map((row: Record<string, unknown>) => {
           const ac = aircraftList.find(a => String(a.id) === String(row.aircraft_id));
-          const scheduledDate = new Date(row.scheduled_date as string);
-          const daysUntilDue = Math.ceil((scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          const maintenanceEnd = (row.maintenance_end as string) || null;
+          const isActive = row.status === 'SCHEDULED' || row.status === 'IN_PROGRESS';
+          // Prefer the precise maintenanceEnd for overdue/days-until-due when
+          // it's set (exact moment, not just a day) — falls back to the
+          // original whole-day scheduledDate comparison for legacy/simple
+          // records that never got a precise window.
+          let isOverdue: boolean; let daysUntilDue: number;
+          if (maintenanceEnd) {
+            const end = new Date(maintenanceEnd);
+            isOverdue = isActive && end < now;
+            daysUntilDue = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          } else {
+            const scheduledDate = new Date(row.scheduled_date as string);
+            daysUntilDue = Math.ceil((scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            isOverdue = isActive && daysUntilDue < 0;
+          }
           return {
             id: String(row.id), aircraftId: String(row.aircraft_id),
             maintenanceType: row.maintenance_type as string, description: row.description as string,
             scheduledDate: row.scheduled_date as string, completedDate: row.completed_date as string || null,
             status: row.status as MaintenanceRecord['status'], cost: row.cost as number,
             performedBy: row.performed_by as string, notes: row.notes as string,
+            maintenanceStart: (row.maintenance_start as string) || null,
+            maintenanceEnd,
             aircraftReg: ac?.registration || 'Unknown', aircraftType: ac?.type || '',
-            isOverdue: daysUntilDue < 0 && row.status !== 'COMPLETED' && row.status !== 'CANCELLED', daysUntilDue,
+            isOverdue, daysUntilDue,
           };
         }),
         loadingMaintenance: false,
@@ -699,6 +716,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       description: record.description, scheduled_date: record.scheduledDate,
       completed_date: record.completedDate, status: record.status, cost: record.cost,
       performed_by: record.performedBy, notes: record.notes,
+      maintenance_start: record.maintenanceStart ?? null, maintenance_end: record.maintenanceEnd ?? null,
     });
     if (!error) await get().loadMaintenanceRecords();
   },
@@ -712,8 +730,38 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
     if (updates.description !== undefined) dbUpdates.description = updates.description;
     if (updates.scheduledDate !== undefined) dbUpdates.scheduled_date = updates.scheduledDate;
+    if (updates.maintenanceStart !== undefined) dbUpdates.maintenance_start = updates.maintenanceStart;
+    if (updates.maintenanceEnd !== undefined) dbUpdates.maintenance_end = updates.maintenanceEnd;
     const { error } = await supabase.from('maintenance_records').update(dbUpdates).eq('id', id);
-    if (!error) set(state => ({ maintenanceRecords: state.maintenanceRecords.map(m => m.id === id ? { ...m, ...updates } : m) }));
+    if (error) return;
+    set(state => ({ maintenanceRecords: state.maintenanceRecords.map(m => m.id === id ? { ...m, ...updates } : m) }));
+
+    // An aircraft's `status` field (ACTIVE/MAINTENANCE/GROUNDED, set on the
+    // Aircraft Fleet page) is separate from this maintenance log, and
+    // getMaintenanceBlock() on the schedule board treats status ===
+    // 'MAINTENANCE' as an unconditional whole-day block regardless of what
+    // the maintenance_records say. If nothing ever flips it back, an
+    // aircraft stays "under maintenance" forever even after the record that
+    // (most likely) caused it is completed or cancelled. So: whenever a
+    // record just left the active (SCHEDULED/IN_PROGRESS) state, auto-clear
+    // the aircraft's status back to ACTIVE — but only if no OTHER record for
+    // the same aircraft is still active, so a genuinely-still-blocked
+    // aircraft (or one someone deliberately grounded by hand for unrelated
+    // reasons — GROUNDED, not MAINTENANCE) isn't touched.
+    if (updates.status === 'COMPLETED' || updates.status === 'CANCELLED') {
+      const state = get();
+      const record = state.maintenanceRecords.find(m => m.id === id);
+      if (record) {
+        const stillActive = state.maintenanceRecords.some(m =>
+          m.id !== id && String(m.aircraftId) === String(record.aircraftId) &&
+          (m.status === 'SCHEDULED' || m.status === 'IN_PROGRESS')
+        );
+        const ac = state.aircraft.find(a => String(a.id) === String(record.aircraftId));
+        if (!stillActive && ac?.status === 'MAINTENANCE') {
+          await get().updateAircraft(ac.id, { status: 'ACTIVE' });
+        }
+      }
+    }
   },
 
   removeMaintenanceRecord: async (id) => {

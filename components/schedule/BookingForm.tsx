@@ -33,25 +33,29 @@ interface Props {
   onClose: () => void;
   onSuccess: (message: string) => void;
   existingFlight?: ScheduledFlight | null;   // non‑null → edit mode
+  // Set when opened by clicking a spot on the ScheduleBoard grid — seeds
+  // aircraft/date/start time from where the user clicked, leaving
+  // instructor/student/sortie type for them to fill in. Ignored in edit
+  // mode (existingFlight takes precedence).
+  prefill?: { aircraftId: string; date: string; startTime: string } | null;
 }
 
 // ============================================================
-// TIME SLOTS – 30‑minute increments from 06:00 to 22:00 IST
+// TIME SLOTS
 // ============================================================
-const generateTimeSlots = (): { value: string; label: string }[] => {
-  const slots: { value: string; label: string }[] = [];
-  for (let h = 6; h <= 22; h++) {
-    for (let m = 0; m < 60; m += 30) {
-      const hour = h.toString().padStart(2, '0');
-      const minute = m.toString().padStart(2, '0');
-      slots.push({ value: `${hour}:${minute}`, label: `${hour}:${minute} IST` });
-    }
-  }
-  return slots;
-};
+// Time slots are no longer a fixed 06:00–22:00/30-min list — they're derived
+// per-render from the FTO's own configured operating window (Settings ->
+// Daily Time Slots -> fto_settings.time_slot_start / _end / _interval, minutes).
+// See the TIME_SLOTS useMemo inside the component. These are just the
+// fallback defaults used until that setting has loaded (or if it's missing).
+const DEFAULT_SLOT_START = '06:00';
+const DEFAULT_SLOT_END = '22:00';
+const DEFAULT_SLOT_INTERVAL_MIN = 30;
 
-const TIME_SLOTS = generateTimeSlots();
 const todayLocal = new Date().toLocaleDateString('en-CA');   // local date in YYYY-MM-DD
+
+// Zero-pad a number to 2 digits, e.g. 6 -> "06".
+const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 // ============================================================
 // FTO EXERCISE LIST
@@ -89,23 +93,35 @@ const EXERCISES = [
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
-export default function BookingForm({ onClose, onSuccess, existingFlight }: Props) {
+export default function BookingForm({ onClose, onSuccess, existingFlight, prefill }: Props) {
 
   // ----- Store -----
   const {
     aircraft, students, instructors, scheduledFlights,
     bookFlight, loadAircraft, loadStudents, loadScheduledFlights,
     updateScheduledFlight,
-    loadTrainingRequirements,           
-    getRequirementsForStudent,         
+    loadTrainingRequirements,
+    getRequirementsForStudent,
+    ftoSettings, loadFTOSettings,
   } = useFlightStore();
 
   // ----- Initial data load -----
   useEffect(() => {
     if (aircraft.length === 0) loadAircraft();
     if (students.length === 0) loadStudents();
+    if (Object.keys(ftoSettings).length === 0) loadFTOSettings();
     loadScheduledFlights();
   }, []);
+
+  // ----- Daily operating window & slot granularity, from FTO Settings -----
+  // (Settings -> Daily Time Slots). Falls back to the previous hardcoded
+  // 06:00-22:00/30-min defaults until the setting has loaded, or if it's
+  // missing/unset. `ftoSettings` is a subscribed store field, so this
+  // recomputes (and TIME_SLOTS/HOUR_OPTIONS below with it) once the async
+  // load resolves — no stale defaults baked in permanently.
+  const slotStart = ftoSettings['time_slot_start'] || DEFAULT_SLOT_START;
+  const slotEnd = ftoSettings['time_slot_end'] || DEFAULT_SLOT_END;
+  const slotIntervalMin = parseInt(ftoSettings['time_slot_interval'], 10) || DEFAULT_SLOT_INTERVAL_MIN;
 
   // ----- Default times (next full hour) -----
   const now = new Date();
@@ -114,33 +130,119 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
   const defaultEnd = new Date(defaultStart);
   defaultEnd.setHours(defaultStart.getHours() + 2);
 
-  // Helper to format a Date to HH:MM (rounded to nearest 30 min)
+  // Helper to format a Date to HH:MM (rounded to nearest 30 min) — only used
+  // for the two "next full hour" defaults above, which always land on an
+  // exact hour (0 minutes), so this rounding is a no-op regardless of the
+  // configured interval.
   const formatTime = (date: Date): string => {
     const h = date.getHours().toString().padStart(2, '0');
     const m = date.getMinutes() >= 30 ? '30' : '00';
     return `${h}:${m}`;
   };
 
-  // Helper to add hours to a time string
+  // Snap an arbitrary Date to the nearest valid slot boundary for the
+  // configured interval (e.g. interval=15 -> :00/:15/:30/:45). Used wherever
+  // a real timestamp (an existing flight's stored time, or start+duration)
+  // needs to land on a value the Hour/Minute dropdowns can actually select.
+  const snapToInterval = (date: Date, intervalMin: number): string => {
+    let totalMin = Math.round((date.getHours() * 60 + date.getMinutes()) / intervalMin) * intervalMin;
+    totalMin = ((totalMin % 1440) + 1440) % 1440; // wrap into [0, 1440)
+    return `${pad2(Math.floor(totalMin / 60))}:${pad2(totalMin % 60)}`;
+  };
+
+  // Helper to add hours to a time string, snapped to the configured interval
   const addHoursToTime = (timeStr: string, hoursToAdd: number): string => {
     const [h, m] = timeStr.split(':').map(Number);
     const totalMinutes = h * 60 + m + hoursToAdd * 60;
-    const newH = Math.floor(totalMinutes / 60) % 24;
-    const newM = totalMinutes % 60 >= 30 ? 30 : 0;
-    return `${newH.toString().padStart(2, '0')}:${newM.toString().padStart(2, '0')}`;
+    const snapped = Math.round(totalMinutes / slotIntervalMin) * slotIntervalMin;
+    const newH = Math.floor(snapped / 60) % 24;
+    const newM = snapped % 60;
+    return `${pad2(newH)}:${pad2(newM)}`;
+  };
+
+  // ----- Selectable time slots for this FTO's configured operating window -----
+  const TIME_SLOTS = useMemo(() => {
+    const [startH, startM] = slotStart.split(':').map(Number);
+    const [endH, endM] = slotEnd.split(':').map(Number);
+    const startTotal = startH * 60 + startM;
+    const endTotal = endH * 60 + endM;
+    const slots: { value: string; label: string; hour: number; minute: number }[] = [];
+    if (Number.isFinite(startTotal) && Number.isFinite(endTotal) && endTotal > startTotal && slotIntervalMin > 0) {
+      for (let t = startTotal; t <= endTotal; t += slotIntervalMin) {
+        const h = Math.floor(t / 60);
+        const m = t % 60;
+        slots.push({ value: `${pad2(h)}:${pad2(m)}`, label: `${pad2(h)}:${pad2(m)} IST`, hour: h, minute: m });
+      }
+    }
+    return slots;
+  }, [slotStart, slotEnd, slotIntervalMin]);
+
+  // Unique hour values available across the whole window (for the Hour
+  // dropdown — up to 24 of them, but in practice bounded by time_slot_start
+  // / time_slot_end, e.g. 06 through 22 for a typical daytime-only FTO).
+  const HOUR_OPTIONS = useMemo(
+    () => Array.from(new Set(TIME_SLOTS.map(s => s.hour))),
+    [TIME_SLOTS]
+  );
+
+  // Valid minute values for a given hour (depends on where that hour falls
+  // relative to the configured start/end — the first and last hour in the
+  // window may only offer a subset of the interval's usual minute marks).
+  const getMinutesForHour = (hour: number): number[] =>
+    TIME_SLOTS.filter(s => s.hour === hour).map(s => s.minute);
+
+  // Format a Date to plain HH:MM (no rounding — used for the "earliest
+  // bookable time" cutoff, which lands on a quarter-hour, not a half-hour).
+  const formatHHMM = (date: Date): string =>
+    `${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+
+  // Earliest a NEW booking's start time may be: "now" rounded UP to the next
+  // quarter-hour mark (16:58 -> 17:15, 17:00:00 exactly -> 17:00). Bookings
+  // for a future date have no time-of-day restriction — this only matters
+  // when the selected date is today.
+  const getMinBookableTime = (): Date => {
+    const now = new Date();
+    const min = new Date(now);
+    min.setSeconds(0, 0);
+    const remainder = min.getMinutes() % 15;
+    if (remainder !== 0 || now.getSeconds() > 0 || now.getMilliseconds() > 0) {
+      min.setMinutes(min.getMinutes() - remainder + 15);
+    }
+    return min;
   };
 
   // ----- Form state -----
-  const [form, setForm] = useState({
-    aircraftId: '',
-    instructorId: '',
-    studentId: '',
-    date: todayLocal,
-    startTime: formatTime(defaultStart),
-    endTime: formatTime(defaultEnd),
-    sortieType: 'DUAL',          // DUAL | SOLO | MAINTENANCE
-    exercise: '',                 // Exercise code (for DUAL & SOLO only)
-    notes: '',
+  // Lazy initializer so a grid-click prefill (aircraft/date/start time) is
+  // baked into the very first render instead of being patched in via an
+  // effect afterward — BookingForm gets a fresh mount each time it's
+  // opened (see ScheduleBoard), so this always sees the right prefill.
+  // Edit mode (existingFlight) is unaffected — that's handled by the effect
+  // below, same as before.
+  const [form, setForm] = useState(() => {
+    if (prefill) {
+      return {
+        aircraftId: prefill.aircraftId,
+        instructorId: '',
+        studentId: '',
+        date: prefill.date,
+        startTime: prefill.startTime,
+        endTime: addHoursToTime(prefill.startTime, 1),
+        sortieType: 'DUAL',
+        exercise: '',
+        notes: '',
+      };
+    }
+    return {
+      aircraftId: '',
+      instructorId: '',
+      studentId: '',
+      date: todayLocal,
+      startTime: formatTime(defaultStart),
+      endTime: formatTime(defaultEnd),
+      sortieType: 'DUAL',          // DUAL | SOLO | MAINTENANCE
+      exercise: '',                 // Exercise code (for DUAL & SOLO only)
+      notes: '',
+    };
   });
 
   const [loading, setLoading] = useState(false);
@@ -157,14 +259,17 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
         instructorId: existingFlight.instructorId || '',
         studentId: existingFlight.studentId || '',
         date: startDate.toLocaleDateString('en-CA'),
-        startTime: formatTime(startDate),
-        endTime: formatTime(endDate),
+        // Snapped to the current interval so the Hour/Minute dropdowns below
+        // always have a matching option, even if this flight was originally
+        // booked under a different (e.g. finer) interval setting.
+        startTime: snapToInterval(startDate, slotIntervalMin),
+        endTime: snapToInterval(endDate, slotIntervalMin),
         sortieType: existingFlight.sortieType || 'DUAL',
         exercise: (existingFlight as any).exercise || '',
         notes: existingFlight.notes || '',
       });
     }
-  }, [existingFlight]);
+  }, [existingFlight, slotIntervalMin]);
 
   // ============================================================
   // DERIVED STATE
@@ -222,10 +327,16 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
     return '';
   };
 
-  // Start time must not be in the past (for today's date)
+  // Start time must be at or after the earliest bookable time (for today's
+  // date) — "now" rounded up to the next quarter-hour, not simply "any time
+  // after right now" (which would let someone pick a start time only
+  // seconds away and have it be stale by the time they hit Submit).
   const validateNotPast = (dateStr: string, timeStr: string): string => {
     const selected = new Date(`${dateStr}T${timeStr}:00`);
-    if (selected < new Date()) return '❌ Cannot book a time slot in the past.';
+    const minAllowed = getMinBookableTime();
+    if (selected < minAllowed) {
+      return `❌ Earliest bookable time today is ${formatHHMM(minAllowed)}. Please pick a later time.`;
+    }
     return '';
   };
 
@@ -337,6 +448,21 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
       if (field === 'studentId' && value) {
         const medError = validateStudentMedical(value);
         if (medError) setError(medError);
+      }
+
+      // Default Instructor to this student's assigned instructor (still
+      // changeable below) — same pattern as FlightRecordForm's Log Flight.
+      // Only defaults when the student actually has a valid assigned
+      // instructor; otherwise leaves whatever instructor was already picked.
+      // Harmless in Solo mode too — the instructor field is disabled there
+      // and the submit handler forces instructorId to '' regardless.
+      if (field === 'studentId' && value) {
+        const student = students.find(s => s.id === value);
+        const assignedIsValid = student?.assignedInstructorId
+          && instructors.some(i => i.id === student.assignedInstructorId);
+        if (assignedIsValid) {
+          updated.instructorId = student!.assignedInstructorId!;
+        }
       }
 
       const checkStudentRequirements = async (studentId: string): Promise<string> => {
@@ -518,31 +644,101 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
           </div>
 
           {/* ===== START & END TIME ===== */}
+          {/* Separate Hour / Minute dropdowns rather than one combined
+              HH:MM list — the Hour options come from the FTO's configured
+              operating window (up to all 24, in practice bounded by
+              time_slot_start/time_slot_end) and the Minute options come
+              from time_slot_interval, both from Settings -> Daily Time Slots. */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-slate-400 mb-1">🕐 Start Time *</label>
-              <select value={form.startTime} onChange={e => handleFieldChange('startTime', e.target.value)} required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
-                {TIME_SLOTS.map(slot => <option key={slot.value} value={slot.value}>{slot.label}</option>)}
-              </select>
+              <div className="flex gap-2">
+                {(() => {
+                  const [startHour, startMinute] = form.startTime.split(':').map(Number);
+                  const minutesForStartHour = getMinutesForHour(startHour);
+                  return (
+                    <>
+                      <select
+                        value={pad2(startHour)}
+                        onChange={e => {
+                          const hour = parseInt(e.target.value, 10);
+                          const valid = getMinutesForHour(hour);
+                          const minute = valid.includes(startMinute) ? startMinute : (valid[0] ?? 0);
+                          handleFieldChange('startTime', `${pad2(hour)}:${pad2(minute)}`);
+                        }}
+                        required
+                        className="w-1/2 bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-white">
+                        {HOUR_OPTIONS.map(h => {
+                          // Only today's date has a "too early" cutoff — future
+                          // dates have no time-of-day restriction. An hour is
+                          // disabled only when EVERY minute in it is past.
+                          const isPast = form.date === todayLocal
+                            && getMinutesForHour(h).every(m => new Date(`${form.date}T${pad2(h)}:${pad2(m)}:00`) < getMinBookableTime());
+                          return <option key={h} value={pad2(h)} disabled={isPast}>{pad2(h)}</option>;
+                        })}
+                      </select>
+                      <select
+                        value={pad2(minutesForStartHour.includes(startMinute) ? startMinute : (minutesForStartHour[0] ?? 0))}
+                        onChange={e => handleFieldChange('startTime', `${pad2(startHour)}:${e.target.value}`)}
+                        required
+                        className="w-1/2 bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-white">
+                        {minutesForStartHour.map(m => {
+                          const isPast = form.date === todayLocal
+                            && new Date(`${form.date}T${pad2(startHour)}:${pad2(m)}:00`) < getMinBookableTime();
+                          return <option key={m} value={pad2(m)} disabled={isPast}>{pad2(m)}</option>;
+                        })}
+                      </select>
+                    </>
+                  );
+                })()}
+              </div>
             </div>
             <div>
               <label className="block text-sm text-slate-400 mb-1">🕑 End Time *</label>
-              <select value={form.endTime} onChange={e => handleFieldChange('endTime', e.target.value)} required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
-                {TIME_SLOTS.map(slot => {
-                  const [sh, sm] = (form.startTime || '06:00').split(':').map(Number);
-                  const [eh, em] = slot.value.split(':').map(Number);
-                  const isBeforeStart = (eh * 60 + em) <= (sh * 60 + sm);
+              <div className="flex gap-2">
+                {(() => {
+                  const [startHour, startMinute] = (form.startTime || slotStart).split(':').map(Number);
+                  const startTotal = startHour * 60 + startMinute;
+                  const [endHour, endMinute] = form.endTime.split(':').map(Number);
+                  const minutesForEndHour = getMinutesForHour(endHour);
                   return (
-                    <option key={slot.value} value={slot.value} disabled={isBeforeStart}>
-                      {slot.label}{isBeforeStart ? ' (before start)' : ''}
-                    </option>
+                    <>
+                      <select
+                        value={pad2(endHour)}
+                        onChange={e => {
+                          const hour = parseInt(e.target.value, 10);
+                          const valid = getMinutesForHour(hour);
+                          const minute = valid.includes(endMinute) ? endMinute : (valid[0] ?? 0);
+                          handleFieldChange('endTime', `${pad2(hour)}:${pad2(minute)}`);
+                        }}
+                        required
+                        className="w-1/2 bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-white">
+                        {HOUR_OPTIONS.map(h => {
+                          // An hour is disabled only when EVERY minute in it
+                          // is at or before the selected start time.
+                          const isBeforeStart = getMinutesForHour(h).every(m => (h * 60 + m) <= startTotal);
+                          return <option key={h} value={pad2(h)} disabled={isBeforeStart}>{pad2(h)}</option>;
+                        })}
+                      </select>
+                      <select
+                        value={pad2(minutesForEndHour.includes(endMinute) ? endMinute : (minutesForEndHour[0] ?? 0))}
+                        onChange={e => handleFieldChange('endTime', `${pad2(endHour)}:${e.target.value}`)}
+                        required
+                        className="w-1/2 bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-white">
+                        {minutesForEndHour.map(m => {
+                          const isBeforeStart = (endHour * 60 + m) <= startTotal;
+                          return <option key={m} value={pad2(m)} disabled={isBeforeStart}>{pad2(m)}</option>;
+                        })}
+                      </select>
+                    </>
                   );
-                })}
-              </select>
+                })()}
+              </div>
             </div>
           </div>
+          <p className="text-xs text-slate-500 -mt-2">
+            Bookable window: {slotStart}–{slotEnd} IST, {slotIntervalMin}-minute slots
+          </p>
 
           {/* ===== DURATION ===== */}
           {form.startTime && form.endTime && getDuration() !== '--' && (
@@ -550,52 +746,6 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
               <p className="text-sm text-blue-400">⏱ Duration: <span className="font-bold">{getDuration()}</span></p>
             </div>
           )}
-
-          {/* ===== SORTIE TYPE ===== */}
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">🎯 Sortie Type</label>
-            <select value={form.sortieType} onChange={e => handleFieldChange('sortieType', e.target.value)}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
-              <option value="DUAL">Dual</option>
-              <option value="SOLO">Solo</option>
-              <option value="MAINTENANCE">Maintenance Flight</option>
-            </select>
-          </div>
-
-          {/* ===== EXERCISE (Dual & Solo only) ===== */}
-          {!isMaintenance && (
-            <div>
-              <label className="block text-sm text-slate-400 mb-1">📋 Exercise *</label>
-              <select value={form.exercise} onChange={e => handleFieldChange('exercise', e.target.value)}
-                required={!isMaintenance}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
-                <option value="">Select Exercise</option>
-                {EXERCISES.map(ex => <option key={ex} value={ex}>{ex}</option>)}
-              </select>
-            </div>
-          )}
-
-          {/* ===== INSTRUCTOR ===== */}
-          <div>
-            <label className="block text-sm text-slate-400 mb-1">
-              👨‍🏫 Instructor {!isSolo && '*'}
-            </label>
-            <select
-              value={isSolo ? '' : form.instructorId}
-              onChange={e => handleFieldChange('instructorId', e.target.value)}
-              required={!isSolo}
-              disabled={isSolo}
-              className={`w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white ${isSolo ? 'opacity-50 cursor-not-allowed' : ''}`}>
-              <option value="">
-                {isSolo ? 'N/A – Solo Flight' : 'Select Instructor'}
-              </option>
-              {!isSolo && instructors.map(i => <option key={i.id} value={i.id}>{i.name} ({i.initials})</option>)}
-            </select>
-            {/* Instructor conflict warning */}
-            {form.instructorId && !isSolo && checkPersonConflict().includes('instructor') && (
-              <p className="text-xs text-red-400 mt-1">⚠️ This instructor is already booked at this time</p>
-            )}
-          </div>
 
           {/* ===== AIRCRAFT ===== */}
           <div>
@@ -621,15 +771,6 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
             </select>
             {bookedAircraft.length > 0 && <p className="text-xs text-yellow-400 mt-1">🔴 {bookedAircraft.length} aircraft booked (30‑min buffer)</p>}
           </div>
-
-          {/* ===== AIRCRAFT FUEL INFO ===== */}
-          {selectedAircraft && (
-            <div className="bg-slate-700/50 rounded-lg p-3 text-center">
-              <p className="text-xs text-slate-400">Current Fuel Level</p>
-              <p className="text-2xl font-bold text-white">{selectedAircraft.currentFuel}L</p>
-              <p className="text-xs text-slate-500">Capacity: {selectedAircraft.fuelCapacity}L</p>
-            </div>
-          )}
 
           {/* ===== STUDENT ===== */}
           <div>
@@ -659,6 +800,61 @@ export default function BookingForm({ onClose, onSuccess, existingFlight }: Prop
               <p className="text-xs text-red-400 mt-1">⚠️ This student is already booked at this time</p>
             )}
           </div>
+
+          {/* ===== INSTRUCTOR ===== */}
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">
+              👨‍🏫 Instructor {!isSolo && '*'}
+            </label>
+            <select
+              value={isSolo ? '' : form.instructorId}
+              onChange={e => handleFieldChange('instructorId', e.target.value)}
+              required={!isSolo}
+              disabled={isSolo}
+              className={`w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white ${isSolo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <option value="">
+                {isSolo ? 'N/A – Solo Flight' : 'Select Instructor'}
+              </option>
+              {!isSolo && instructors.map(i => <option key={i.id} value={i.id}>{i.name} ({i.initials})</option>)}
+            </select>
+            {/* Instructor conflict warning */}
+            {form.instructorId && !isSolo && checkPersonConflict().includes('instructor') && (
+              <p className="text-xs text-red-400 mt-1">⚠️ This instructor is already booked at this time</p>
+            )}
+          </div>
+
+          {/* ===== SORTIE TYPE ===== */}
+          <div>
+            <label className="block text-sm text-slate-400 mb-1">🎯 Sortie Type</label>
+            <select value={form.sortieType} onChange={e => handleFieldChange('sortieType', e.target.value)}
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+              <option value="DUAL">Dual</option>
+              <option value="SOLO">Solo</option>
+              <option value="MAINTENANCE">Maintenance Flight</option>
+            </select>
+          </div>
+
+          {/* ===== EXERCISE (Dual & Solo only) ===== */}
+          {!isMaintenance && (
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">📋 Exercise *</label>
+              <select value={form.exercise} onChange={e => handleFieldChange('exercise', e.target.value)}
+                required={!isMaintenance}
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+                <option value="">Select Exercise</option>
+                {EXERCISES.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* ===== AIRCRAFT FUEL INFO (Current Fuel Level) ===== */}
+          {selectedAircraft && (
+            <div className="bg-slate-700/50 rounded-lg p-3 text-center">
+              <p className="text-xs text-slate-400">Current Fuel Level</p>
+              <p className="text-2xl font-bold text-white">{selectedAircraft.currentFuel}L</p>
+              <p className="text-xs text-slate-500">Capacity: {selectedAircraft.fuelCapacity}L</p>
+            </div>
+          )}
 
           {/* ===== NOTES ===== */}
           <div>
