@@ -5,6 +5,7 @@ import Header from '@/components/ui/Header';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import { StudentRecord } from '@/types';
 import StudentCard from '@/components/students/StudentCard';
@@ -12,12 +13,22 @@ import StudentFormModal from '@/components/students/StudentFormModal';
 import Link from 'next/link';
 import RoleGate from '@/components/ui/RoleGate';
 
+// Creating a student also creates their login (POST /api/students), which
+// is scoped server-side to admin/super_admin only — see
+// lib/api-auth.ts's STUDENT_CREATION_ROLES. instructor/operations can still
+// view this page and edit existing students; the "Add Student" button is
+// hidden for them so they don't hit a 403 after filling out the form.
+const CAN_CREATE_STUDENT_ROLES = ['admin', 'super_admin'];
+
 export default function StudentsPage() {
+  const { data: session } = useSession();
+  const canCreateStudent = CAN_CREATE_STUDENT_ROLES.includes(session?.user?.role || '');
   const { students, loadingStudents, loadStudents, loadInstructors, addStudent, updateStudent, removeStudent } = useFlightStore();
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('ALL');
+  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
   loadInstructors();  // Load instructors first
@@ -53,7 +64,19 @@ export default function StudentsPage() {
     if (editingStudent) {
       await updateStudent(editingStudent.id, student);
     } else {
-      await addStudent(student as Omit<StudentRecord, 'id'>);
+      // Creating a student also creates their login (see /api/students
+      // POST) — surface whether the welcome email went out, same pattern
+      // as User Management's "create user" success message.
+      const result = await addStudent(student as Omit<StudentRecord, 'id'>);
+      if (!result.success) {
+        alert('❌ Error creating student: ' + (result.error || 'Unknown error'));
+        return;
+      }
+      if (result.emailSent) {
+        setSuccessMessage(`✅ Student created! Welcome email sent to ${student.email}`);
+      } else {
+        setSuccessMessage(`⚠️ Student created but email failed: ${result.emailMessage}. Password: ${result.password}`);
+      }
     }
     // Reload data to reflect changes (including instructor assignment)
     await loadInstructors();
@@ -72,17 +95,24 @@ export default function StudentsPage() {
     <ProtectedRoute>
     <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'operations']}>
     <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-      <Header 
-        title="Student Records" 
-        subtitle="Manage student pilots" 
+      <Header
+        title="Student Records"
+        subtitle="Manage student pilots"
         action={
-          <button onClick={handleAdd} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold">
-      ➕ Add Student
-    </button>
-  }
+          canCreateStudent ? (
+            <button onClick={handleAdd} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold">
+              ➕ Add Student
+            </button>
+          ) : undefined
+        }
 />
 
       <div className="max-w-7xl mx-auto px-4 py-6">
+        {successMessage && (
+          <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 mb-6">
+            <p className="text-sm text-green-400">{successMessage}</p>
+          </div>
+        )}
         {loadingStudents ? (
           <div className="text-center py-20"><p className="text-slate-400 text-lg">Loading students...</p></div>
         ) : (

@@ -32,6 +32,14 @@ export default function StudentDashboardPage() {
   } = useFlightStore();
 
   const [studentId, setStudentId] = useState<string | null>(null);
+  // "View All" used to link to /dashboard/flights — the staff logbook page,
+  // which is RoleGated to admin/instructor/super_admin and 404s (now:
+  // redirects to /unauthorized) for a student. That page also shows every
+  // student's records with staff-only actions (log flight, export, filter
+  // by student), so adding 'student' to its RoleGate isn't the right fix
+  // either. myLogbook below already holds this student's complete history
+  // client-side, so "View All" just expands it in place instead.
+  const [showAllLogbook, setShowAllLogbook] = useState(false);
 
   // Extract studentId from session and load data
   useEffect(() => {
@@ -351,7 +359,15 @@ export default function StudentDashboardPage() {
             <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-white">📋 Recent Logbook</h2>
-                <a href="/dashboard/flights" className="text-sm text-blue-400 hover:text-blue-300">View All →</a>
+                {myLogbook.length > 5 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllLogbook(prev => !prev)}
+                    className="text-sm text-blue-400 hover:text-blue-300 cursor-pointer"
+                  >
+                    {showAllLogbook ? '← Show Less' : 'View All →'}
+                  </button>
+                )}
               </div>
               {myLogbook.length === 0 ? (
                 <p className="text-slate-400 text-sm">No flight records yet.</p>
@@ -370,7 +386,7 @@ export default function StudentDashboardPage() {
                       </tr>
                     </thead>
                     <tbody className="text-slate-300">
-                      {myLogbook.slice(0, 5).map(record => (
+                      {(showAllLogbook ? myLogbook : myLogbook.slice(0, 5)).map(record => (
                         <tr key={record.id} className="border-b border-slate-700/50">
                           <td className="py-2 text-white">{new Date(record.flightDate).toLocaleDateString('en-IN')}</td>
                           <td className="py-2">{record.sortieType?.replace(/_/g, ' ')}</td>

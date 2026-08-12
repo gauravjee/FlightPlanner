@@ -11,14 +11,20 @@ interface Props {
 }
 
 export default function FlightRecordForm({ onClose, studentId }: Props) {
-  const { students, aircraft, instructors, addFlightRecord, loadStudents, loadAircraft } = useFlightStore();
-  
+  const {
+    students, aircraft, instructors, sortieTypes, exercises, addFlightRecord,
+    loadStudents, loadAircraft, loadInstructors, loadSortieTypes, loadExercises,
+  } = useFlightStore();
+
   // Load data if empty
   useEffect(() => {
     if (students.length === 0) loadStudents();
     if (aircraft.length === 0) loadAircraft();
+    if (instructors.length === 0) loadInstructors();
+    if (sortieTypes.length === 0) loadSortieTypes();
+    if (exercises.length === 0) loadExercises();
   }, []);
-  
+
   const today = new Date().toISOString().split('T')[0];
   
   const [form, setForm] = useState({
@@ -31,8 +37,8 @@ export default function FlightRecordForm({ onClose, studentId }: Props) {
     hobbsStart: 0,
     hobbsEnd: 0,
     landings: 1,
-    flightType: 'DUAL',
-    sortieType: 'CIRCUIT_DUAL',
+    sortieType: '',
+    exercise: '',
     maneuvers: '',
     instructorNotes: '',
     studentPerformance: 3,
@@ -51,9 +57,31 @@ export default function FlightRecordForm({ onClose, studentId }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.studentId || !form.aircraftId || !form.instructorId) return;
-    
-    await addFlightRecord({
+    if (!form.studentId || !form.aircraftId || !form.instructorId || !form.sortieType) return;
+
+    // Flight Type used to be a separate hardcoded dropdown (Dual / Solo /
+    // Check Ride / Night) that duplicated Sortie Type — which is now driven
+    // by the same admin-configured sortie_types list, so asking for both
+    // was just double entry. Instead of dropping the flight_type column's
+    // value entirely (SOLO/DUAL hour totals in the logbook PDF and Progress
+    // page both key off it), derive it from the selected sortie type's
+    // requires_instructor / requires_student flags — the same flags Admin
+    // Setup already uses to configure each sortie type:
+    //   instructor + student required  -> DUAL
+    //   student required, no instructor -> SOLO
+    //   anything else (e.g. a Maintenance Flight sortie, which requires
+    //     neither) -> falls back to the sortie's own code, so it isn't
+    //     miscounted as either SOLO or DUAL hours.
+    const selectedSortie = sortieTypes.find(st => st.type_code === form.sortieType);
+    const derivedFlightType = selectedSortie
+      ? selectedSortie.requires_instructor && selectedSortie.requires_student
+        ? 'DUAL'
+        : !selectedSortie.requires_instructor && selectedSortie.requires_student
+          ? 'SOLO'
+          : selectedSortie.type_code
+      : form.sortieType;
+
+    const result = await addFlightRecord({
       studentId: form.studentId,
       aircraftId: form.aircraftId,
       instructorId: form.instructorId,
@@ -64,14 +92,23 @@ export default function FlightRecordForm({ onClose, studentId }: Props) {
       hobbsEnd: form.hobbsEnd,
       totalHours: totalHours,
       landings: form.landings,
-      flightType: form.flightType,
+      flightType: derivedFlightType,
       sortieType: form.sortieType,
+      exercise: form.exercise,
       maneuvers: form.maneuvers,
       instructorNotes: form.instructorNotes,
       studentPerformance: form.studentPerformance,
       weatherConditions: form.weatherConditions,
     });
-    onClose();
+
+    if (result.success) {
+      onClose();
+    } else {
+      // Keep the form open with everything the user entered still intact —
+      // previously a failed save closed the form exactly like a successful
+      // one, so nothing looked wrong even though nothing was saved.
+      alert(`❌ Failed to save flight record: ${result.error || 'Unknown error'}`);
+    }
   };
 
   const performanceStars = ['⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐⭐⭐'];
@@ -91,7 +128,27 @@ export default function FlightRecordForm({ onClose, studentId }: Props) {
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-slate-400 mb-1">Student *</label>
-              <select value={form.studentId} onChange={e => setForm(p => ({ ...p, studentId: e.target.value }))} required
+              <select
+                value={form.studentId}
+                onChange={e => {
+                  const id = e.target.value;
+                  // Default Instructor to this student's assigned instructor
+                  // (still changeable below) — this is what actually gets
+                  // logged, so if the assigned instructor wasn't available
+                  // and the student flew with someone else, that's captured
+                  // by just picking a different instructor afterward. Only
+                  // defaults when the student actually has one assigned;
+                  // otherwise leaves whatever instructor was already picked.
+                  const student = students.find(s => s.id === id);
+                  const assignedIsValid = student?.assignedInstructorId
+                    && instructors.some(i => i.id === student.assignedInstructorId);
+                  setForm(p => ({
+                    ...p,
+                    studentId: id,
+                    instructorId: assignedIsValid ? student!.assignedInstructorId! : p.instructorId,
+                  }));
+                }}
+                required
                 className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
                 <option value="">Select</option>
                 {students.filter(s => s.status === 'ACTIVE').map(s => (
@@ -101,7 +158,19 @@ export default function FlightRecordForm({ onClose, studentId }: Props) {
             </div>
             <div>
               <label className="block text-xs text-slate-400 mb-1">Aircraft *</label>
-              <select value={form.aircraftId} onChange={e => setForm(p => ({ ...p, aircraftId: e.target.value }))} required
+              <select
+                value={form.aircraftId}
+                onChange={e => {
+                  const id = e.target.value;
+                  // Auto-fill Hobbs Start from the selected aircraft's
+                  // current Hobbs meter reading (still editable below) —
+                  // done here in the change handler, not a useEffect, so
+                  // it's a plain synchronous update tied to the action that
+                  // caused it.
+                  const selected = aircraft.find(a => a.id === id);
+                  setForm(p => ({ ...p, aircraftId: id, hobbsStart: selected ? selected.hobbsTime : 0 }));
+                }}
+                required
                 className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
                 <option value="">Select</option>
                 {aircraft.filter(a => a.status === 'ACTIVE').map(a => (
@@ -145,12 +214,13 @@ export default function FlightRecordForm({ onClose, studentId }: Props) {
             </div>
           </div>
 
-          {/* Hobbs, Landings, Type */}
-          <div className="grid grid-cols-4 gap-3">
+          {/* Hobbs & Landings */}
+          <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-slate-400 mb-1">Hobbs Start</label>
               <input type="number" value={form.hobbsStart || ''} onChange={e => setForm(p => ({ ...p, hobbsStart: parseFloat(e.target.value) || 0 }))}
                 step="0.1" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white" />
+              <p className="text-[10px] text-slate-500 mt-0.5">Auto-filled from the aircraft&apos;s current Hobbs — edit if needed.</p>
             </div>
             <div>
               <label className="block text-xs text-slate-400 mb-1">Hobbs End</label>
@@ -162,33 +232,31 @@ export default function FlightRecordForm({ onClose, studentId }: Props) {
               <input type="number" value={form.landings || ''} onChange={e => setForm(p => ({ ...p, landings: parseInt(e.target.value) || 0 }))}
                 min={0} className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white" />
             </div>
-            <div>
-              <label className="block text-xs text-slate-400 mb-1">Flight Type</label>
-              <select value={form.flightType} onChange={e => setForm(p => ({ ...p, flightType: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
-                <option value="DUAL">Dual</option>
-                <option value="SOLO">Solo</option>
-                <option value="CHECK">Check Ride</option>
-                <option value="NIGHT">Night</option>
-              </select>
-            </div>
           </div>
 
-          {/* Sortie & Weather */}
-          <div className="grid grid-cols-2 gap-3">
+          {/* Sortie, Exercise & Weather */}
+          <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Sortie Type</label>
+              <label className="block text-xs text-slate-400 mb-1">Sortie Type *</label>
               <select value={form.sortieType} onChange={e => setForm(p => ({ ...p, sortieType: e.target.value }))}
+                required
                 className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
-                <option value="CIRCUIT_DUAL">Circuit (Dual)</option>
-                <option value="CIRCUIT_SOLO">Circuit (Solo)</option>
-                <option value="NAVIGATION">Navigation</option>
-                <option value="INSTRUMENT">Instrument</option>
-                <option value="STALL_RECOVERY">Stall & Recovery</option>
-                <option value="EMERGENCY_PROCEDURES">Emergency Procedures</option>
-                <option value="CROSS_COUNTRY">Cross Country</option>
-                <option value="SOLO_CONSOLIDATION">Solo Consolidation</option>
-                <option value="CHECK_RIDE">Check Ride</option>
+                <option value="">Select</option>
+                {sortieTypes.map(st => (
+                  <option key={st.id} value={st.type_code}>{st.type_name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">Exercise</label>
+              <select value={form.exercise} onChange={e => setForm(p => ({ ...p, exercise: e.target.value }))}
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
+                <option value="">Select</option>
+                {exercises.map(ex => (
+                  <option key={ex.short_code} value={ex.short_code} title={ex.full_description}>
+                    {ex.short_code} — {ex.exercise_name}
+                  </option>
+                ))}
               </select>
             </div>
             <div>

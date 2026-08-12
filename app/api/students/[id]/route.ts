@@ -74,6 +74,24 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   const { id } = await context.params;
 
+  // Unlink and deactivate any login tied to this profile FIRST, before
+  // touching the students row. users.student_id has a foreign key back to
+  // students.id, so deleting the student while a users row still
+  // references it fails with a 23503 foreign-key-violation ("students" is
+  // still referenced from table "users") — that's the bug this reordering
+  // fixes. Clearing student_id is what actually satisfies the constraint;
+  // is_active=false on top of that makes sure the login can't be used
+  // again even though its link to a training profile is now gone.
+  const { error: userDeactivateError } = await supabaseAdmin
+    .from('users')
+    .update({ is_active: false, student_id: null })
+    .eq('student_id', id);
+
+  if (userDeactivateError) {
+    console.error('Error deactivating student login before profile delete:', userDeactivateError);
+    return NextResponse.json({ error: 'Failed to delete student.' }, { status: 500 });
+  }
+
   const { error: dbError } = await supabaseAdmin
     .from('students')
     .delete()
