@@ -178,6 +178,18 @@ export interface MaintenanceRecord {
   cost: number;
   performedBy: string;
   notes: string;
+  // Optional precise maintenance window (ISO timestamps, may span multiple
+  // days — e.g. a 3-day propeller overhaul). scheduledDate above is left
+  // untouched for the existing list/overdue-by-day display; these are what
+  // the schedule board actually blocks against when present.
+  //   Both null            -> legacy/simple: blocks the whole scheduledDate day.
+  //   Start set, end null  -> open-ended (emergency / in-progress, finish
+  //                           time not known yet) — blocks from start onward
+  //                           indefinitely until completed or an end is set.
+  //   Both set             -> blocks exactly that window, across as many
+  //                           days as it spans.
+  maintenanceStart?: string | null;  // ISO timestamp
+  maintenanceEnd?: string | null;    // ISO timestamp
   // Display fields (looked up from aircraft table)
   aircraftReg?: string;
   aircraftType?: string;

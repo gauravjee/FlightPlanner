@@ -61,10 +61,14 @@ export default function MaintenancePage() {
     setEditingRecord(null);
   };
 
-  const handleComplete = (id: string) => {
-    updateMaintenanceRecord(id, {
+  const handleComplete = (record: MaintenanceRecord) => {
+    updateMaintenanceRecord(record.id, {
       status: 'COMPLETED',
       completedDate: new Date().toISOString().split('T')[0],
+      // Snap the window's end to the real completion time if it wrapped
+      // early or was open-ended — doesn't affect blocking (COMPLETED never
+      // blocks), just keeps the record's history honest for reporting.
+      ...(record.maintenanceStart ? { maintenanceEnd: new Date().toISOString() } : {}),
     });
   };
 
@@ -73,6 +77,19 @@ export default function MaintenancePage() {
       removeMaintenanceRecord(id);
     }
   };
+
+  // Quick-extend — bumps an existing maintenanceEnd forward without
+  // reopening the full edit form. Only applies to records that already have
+  // an end time; an open-ended (no end set yet) record has nothing to
+  // extend from — use Edit to set one instead.
+  const handleExtend = (record: MaintenanceRecord, addMs: number) => {
+    if (!record.maintenanceEnd) return;
+    const newEnd = new Date(new Date(record.maintenanceEnd).getTime() + addMs);
+    updateMaintenanceRecord(record.id, { maintenanceEnd: newEnd.toISOString() });
+  };
+
+  const formatISTDateTime = (iso: string): string =>
+    new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
   return (
     <ProtectedRoute>
@@ -143,13 +160,25 @@ export default function MaintenancePage() {
                   </tr>
                 </thead>
                 <tbody className="text-slate-300">
-                  {filteredRecords.map(record => (
+                  {filteredRecords.map(record => {
+                    const isActive = record.status === 'SCHEDULED' || record.status === 'IN_PROGRESS';
+                    const openEnded = isActive && !!record.maintenanceStart && !record.maintenanceEnd;
+                    return (
                     <tr key={record.id} className={`border-b border-slate-700/50 ${record.isOverdue ? 'bg-red-500/10' : ''}`}>
                       <td className="py-3 text-white font-medium">{record.aircraftReg}</td>
                       <td className="py-3 text-xs">{record.maintenanceType}</td>
                       <td className="py-3 text-xs">
                         {new Date(record.scheduledDate).toLocaleDateString('en-IN')}
-                        {record.isOverdue && <span className="text-red-400 ml-1">⚠ OVERDUE</span>}
+                        {/* Precise window, when set — shows the actual blocked span instead of
+                            just the scheduled day, so it's clear at a glance whether this is a
+                            whole-day block or just a few hours. */}
+                        {record.maintenanceStart && (
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            {formatISTDateTime(record.maintenanceStart)} → {record.maintenanceEnd ? formatISTDateTime(record.maintenanceEnd) : 'ongoing'}
+                          </p>
+                        )}
+                        {openEnded && <span className="text-yellow-400 ml-1 block text-[11px]">⏳ open-ended</span>}
+                        {record.isOverdue && <span className="text-red-400 ml-1 block text-[11px]">⚠ OVERDUE</span>}
                       </td>
                       <td className="py-3">
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -161,12 +190,28 @@ export default function MaintenancePage() {
                       </td>
                       <td className="py-3">₹{record.cost.toLocaleString('en-IN')}</td>
                       <td className="py-3">
-                        <div className="flex space-x-1">
-                          {record.status === 'SCHEDULED' && (
-                            <button onClick={() => handleComplete(record.id)}
+                        <div className="flex flex-wrap gap-1">
+                          {isActive && (
+                            <button onClick={() => handleComplete(record)}
                               className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs hover:bg-green-500/30">
                               ✓ Complete
                             </button>
+                          )}
+                          {/* Quick-extend — only meaningful once there's an end time to push
+                              forward; an open-ended record has nothing to extend (use Edit to
+                              set an end instead). Never auto-extends on its own — the aircraft
+                              stays blocked (and overdue-flagged) either way until someone does. */}
+                          {isActive && record.maintenanceEnd && (
+                            <>
+                              <button onClick={() => handleExtend(record, 4 * 60 * 60 * 1000)}
+                                className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded text-xs hover:bg-orange-500/30">
+                                +4h
+                              </button>
+                              <button onClick={() => handleExtend(record, 24 * 60 * 60 * 1000)}
+                                className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded text-xs hover:bg-orange-500/30">
+                                +1d
+                              </button>
+                            </>
                           )}
                           <button onClick={() => handleEdit(record)}
                             className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs hover:bg-blue-500/30">
@@ -179,7 +224,8 @@ export default function MaintenancePage() {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

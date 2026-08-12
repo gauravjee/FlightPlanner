@@ -51,6 +51,19 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   // Calculate flight duration in hours
   const duration = (new Date(slot.endTime).getTime() - new Date(slot.startTime).getTime()) / 3600000;
 
+  // ----- Check-In / Check-Out time windows -----
+  // Check-In opens 1 hour before the SCHEDULED start time (no upper bound —
+  // crew can still check in late). Check-Out only opens once the SCHEDULED
+  // end time has actually passed. Both compare against real Date objects
+  // (not wall-clock strings), so this is correct regardless of the
+  // browser's timezone.
+  const now = new Date();
+  const scheduledStart = new Date(slot.startTime);
+  const scheduledEnd = new Date(slot.endTime);
+  const checkInOpensAt = new Date(scheduledStart.getTime() - 60 * 60 * 1000);
+  const canCheckIn = now >= checkInOpensAt;
+  const canCheckOut = now >= scheduledEnd;
+
   // ============================================================
   // ACTION HANDLERS
   // ============================================================
@@ -309,32 +322,58 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
           </button>
 
           {/* ----- CHECK-IN BUTTON ----- */}
-          {/* Only for SCHEDULED flights → Changes status to IN_PROGRESS */}
+          {/* Only for SCHEDULED flights → Changes status to IN_PROGRESS.
+              Disabled until 1 hour before the scheduled start time. */}
           {slot.status === 'SCHEDULED' && (
-            <button 
-              onClick={async () => {
-                await updateScheduledFlight(slot.id, { status: 'IN_PROGRESS' });
-                await loadScheduledFlights();
-                onClose();
-              }}
-              className="px-4 py-2 text-sm bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition cursor-pointer"
-            >
-              ✅ Check-In
-            </button>
+            <div className="flex flex-col items-end">
+              <button
+                onClick={async () => {
+                  if (!canCheckIn) return;
+                  await updateScheduledFlight(slot.id, { status: 'IN_PROGRESS' });
+                  await loadScheduledFlights();
+                  onClose();
+                }}
+                disabled={!canCheckIn}
+                title={canCheckIn ? undefined : `Check-in opens at ${formatIST(checkInOpensAt.toISOString())} IST`}
+                className={`px-4 py-2 text-sm rounded-lg transition ${
+                  canCheckIn
+                    ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 cursor-pointer'
+                    : 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                ✅ Check-In
+              </button>
+              {!canCheckIn && (
+                <p className="text-[10px] text-slate-500 mt-1">Opens {formatIST(checkInOpensAt.toISOString())} IST</p>
+              )}
+            </div>
           )}
 
           {/* ----- CHECK-OUT / DEBRIEF BUTTON ----- */}
-          {/* Only for IN_PROGRESS flights → Opens DebriefForm */}
+          {/* Only for IN_PROGRESS flights → Opens DebriefForm.
+              Disabled until the scheduled end time has passed. */}
           {slot.status === 'IN_PROGRESS' && (
-            <button 
-              onClick={() => {
-                onClose();
-                if (onEdit) onEdit(slot);  // Triggers DebriefForm in ScheduleBoard
-              }}
-              className="px-4 py-2 text-sm bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition cursor-pointer"
-            >
-              📝 Check-Out / Debrief
-            </button>
+            <div className="flex flex-col items-end">
+              <button
+                onClick={() => {
+                  if (!canCheckOut) return;
+                  onClose();
+                  if (onEdit) onEdit(slot);  // Triggers DebriefForm in ScheduleBoard
+                }}
+                disabled={!canCheckOut}
+                title={canCheckOut ? undefined : `Check-out opens at ${formatIST(scheduledEnd.toISOString())} IST`}
+                className={`px-4 py-2 text-sm rounded-lg transition ${
+                  canCheckOut
+                    ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 cursor-pointer'
+                    : 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+                }`}
+              >
+                📝 Check-Out / Debrief
+              </button>
+              {!canCheckOut && (
+                <p className="text-[10px] text-slate-500 mt-1">Opens {formatIST(scheduledEnd.toISOString())} IST</p>
+              )}
+            </div>
           )}
 
           {/* ----- EDIT BUTTON ----- */}
