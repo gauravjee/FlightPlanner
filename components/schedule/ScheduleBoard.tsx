@@ -19,6 +19,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
+import { getLocationDisplay } from '@/lib/location';
 import { FlightSlot, ScheduledFlight } from '@/types';
 import FlightDetailModal from './FlightDetailModal';
 import BookingForm from './BookingForm';
@@ -135,6 +136,9 @@ export default function ScheduleBoard() {
   const loadInstructors = store.loadInstructors;
   const maintenanceRecords = store.maintenanceRecords;      // All maintenance records (for blocking slots)
   const loadMaintenanceRecords = store.loadMaintenanceRecords;
+  const ftoSettings = store.ftoSettings;                    // School name / airport code for the printed schedule header
+  const loadFTOSettings = store.loadFTOSettings;
+  const getFTOSetting = store.getFTOSetting;
 
   // ----- Load data when component mounts -----
   useEffect(() => {
@@ -144,6 +148,16 @@ export default function ScheduleBoard() {
     loadScheduledFlights();   // Load booked flights for Gantt blocks
     loadMaintenanceRecords(); // Load maintenance records so we can block slots for aircraft under/scheduled for maintenance
   }, [loadAircraft, loadStudents, loadInstructors, loadScheduledFlights, loadMaintenanceRecords]);
+
+  // Loaded defensively in its own effect (not just relying on the main
+  // dashboard having already loaded it) so the Print Schedule sheet below
+  // shows the real configured school name/airport even if a user lands
+  // directly on this page without visiting the dashboard first. Kept
+  // separate from the effect above so it doesn't re-trigger the other
+  // (unrelated) data loads once ftoSettings populates.
+  useEffect(() => {
+    if (Object.keys(ftoSettings).length === 0) loadFTOSettings();
+  }, [ftoSettings, loadFTOSettings]);
 
   // ----- Filter flights for the selected date -----
   const filteredFlights = scheduledFlights.filter(flight => {
@@ -372,6 +386,14 @@ export default function ScheduleBoard() {
   // PRINT FUNCTION – generates a clean white‑background report
   // ============================================================
   const handlePrint = () => {
+    // Bug fix: this used to hardcode "Horizon Flight Training Academy" and
+    // "VOBL – Bangalore" regardless of what's actually configured on the
+    // Settings page. Falls back to those same defaults only if a school
+    // hasn't set them yet. Location combines the (optional) ICAO code with
+    // the (optional) free-text location name, same rule as the header.
+    const printSchoolName = getFTOSetting('school_name') || 'Horizon Flight Training Academy';
+    const printLocation = getLocationDisplay(getFTOSetting('airport_code'), getFTOSetting('location_name'));
+
     // Format the selected date for the report header
     const dateStr = new Date(selectedDate).toLocaleDateString('en-US', {
       weekday: 'long',
@@ -535,7 +557,7 @@ export default function ScheduleBoard() {
         <body>
           <h2>✈️ FlightPro Manager – Daily Operations Sheet</h2>
           <p class="sub">
-            Horizon Flight Training Academy | VOBL – Bangalore<br/>
+            ${printSchoolName} | ${printLocation}<br/>
             ${dateStr} | All times in IST
           </p>
 

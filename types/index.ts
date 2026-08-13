@@ -231,6 +231,25 @@ export interface WeatherData {
   error: string | null;    // Error message if API fails
 }
 
+// General (non-aviation) weather for a school's configured lat/long,
+// used only when there's no ICAO/reference station configured to source
+// real METAR/TAF from. Deliberately a separate shape from WeatherData:
+// there is no METAR/TAF or official VFR/MVFR/IFR flight-category rating
+// for an arbitrary coordinate, so this must never be presented as if it
+// were aviation weather.
+export interface GeneralWeatherData {
+  temperature: number;      // Celsius
+  dewpoint: number;         // Celsius
+  windDirection: number;    // Degrees
+  windSpeed: number;        // Knots (converted from the source API's km/h)
+  pressure: number;         // hPa, surface pressure (NOT an altimeter/QNH setting)
+  cloudCover: number;       // Percent
+  conditionText: string;    // Human-readable description derived from a WMO weather code
+  time: string;             // Observation time (ISO)
+  isLoading: boolean;
+  error: string | null;
+}
+
 // Student record from database
 export interface StudentRecord {
   id: string;

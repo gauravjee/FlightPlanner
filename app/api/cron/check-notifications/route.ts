@@ -24,10 +24,17 @@ import { Resend } from 'resend';
 // ============================================================
 // INITIALIZE SERVICES
 // ============================================================
-// Supabase client for database queries
+// Supabase client for database queries — this must use the service-role
+// key (bypasses RLS). It used to silently fall back to the anon key when
+// SUPABASE_SERVICE_KEY was unset, which was a trap: RLS blocks anon access
+// to `users`/`students`, so the medical-expiry checks below would just
+// silently return zero rows — the cron would happily report "✅ All clear",
+// send no emails, and no one would know it was actually just failing
+// closed. See the explicit check at the top of GET() below, which fails
+// loudly (500 + a console.error) instead of running degraded.
 var supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+  process.env.SUPABASE_SERVICE_KEY || ''
 );
 
 // Resend client for sending emails (uses server-side API key)
@@ -37,6 +44,26 @@ var resend = new Resend(process.env.RESEND_API_KEY || '');
 // MAIN GET HANDLER
 // ============================================================
 export async function GET(request: Request) {
+  // ============================================================
+  // REQUIRE THE SERVICE-ROLE KEY
+  // ============================================================
+  // Must run before any query below. See the comment above the `supabase`
+  // client construction — a missing service key used to mean this endpoint
+  // would quietly report "all clear" instead of actually checking anything.
+  if (!process.env.SUPABASE_SERVICE_KEY) {
+    console.error(
+      '🚨 SUPABASE_SERVICE_KEY is not set — refusing to run /api/cron/check-notifications. ' +
+      'Running with the anon key instead would silently skip the medical-expiry checks ' +
+      '(RLS blocks anon access to users/students) and report "all clear" even with real ' +
+      'overdue maintenance or expired medicals in the database. Set SUPABASE_SERVICE_KEY ' +
+      'in your environment and retry.'
+    );
+    return NextResponse.json(
+      { error: 'Server misconfigured: SUPABASE_SERVICE_KEY is not set. See server logs.' },
+      { status: 500 }
+    );
+  }
+
   // ============================================================
   // AUTHENTICATE THE CRON CALLER
   // ============================================================

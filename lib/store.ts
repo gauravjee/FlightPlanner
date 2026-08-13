@@ -34,9 +34,9 @@
 'use client';
 
 import { create } from 'zustand';
-import { 
-  Aircraft, Instructor, StudentRecord, FlightSlot, 
-  WeatherData, NOTAM, FuelRecord, FlightRecord, 
+import {
+  Aircraft, Instructor, StudentRecord, FlightSlot,
+  WeatherData, GeneralWeatherData, NOTAM, FuelRecord, FlightRecord,
   ScheduledFlight, TimeConflict, MaintenanceRecord,
   AvailabilityRecord, TrainingRequirement
 } from '@/types';
@@ -59,10 +59,19 @@ interface FlightStore {
   instructors: Instructor[];
   notams: NOTAM[];
   weather: WeatherData;
+  // General (non-aviation) weather for a configured lat/long — only used
+  // when there's no ICAO/reference station to source real METAR/TAF from.
+  // null until fetchGeneralWeather() has been called at least once.
+  generalWeather: GeneralWeatherData | null;
   schedule: FlightSlot[];
   availabilityRecords: AvailabilityRecord[];
   trainingRequirements: TrainingRequirement[];
   ftoSettings: Record<string, string>;      // FTO settings as key-value pairs
+  // True once loadFTOSettings() has resolved at least once (success or
+  // failure). Distinguishes "still loading, don't know yet" from "loaded,
+  // and genuinely has no airport_code set" — needed so the weather widget
+  // doesn't flash a wrong state before settings arrive. Starts false.
+  ftoSettingsLoaded: boolean;
   exercises: { exercise_name: string; short_code: string; full_description: string }[];
   // requires_instructor / requires_student are used to derive whether a
   // sortie counts as SOLO or DUAL (see addFlightRecord / FlightRecordForm),
@@ -162,6 +171,7 @@ interface FlightStore {
   // 8. WEATHER ACTIONS
   // ==========================================
   fetchWeather: (station?: string) => Promise<void>;
+  fetchGeneralWeather: (lat: number, lon: number) => Promise<void>;
 
   // ==========================================
   // 9. NOTAM ACTIONS
@@ -232,10 +242,12 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     time: '', station: 'VOBL',
     isLoading: true, error: null,
   },
+  generalWeather: null,
   schedule: generateSchedule(),
   availabilityRecords: [],
   trainingRequirements: [],
   ftoSettings: {},          // Start empty, loaded from database
+  ftoSettingsLoaded: false,
   selectedSlot: null,
   hoveredSlot: null,
   loadingAircraft: false,
@@ -843,6 +855,15 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     set({ weather: data });
   },
 
+  // General (non-aviation) weather by lat/long — used only as a fallback
+  // for schools with no ICAO/reference station configured. See
+  // GeneralWeatherData for why this is kept separate from `weather`.
+  fetchGeneralWeather: async (lat: number, lon: number) => {
+    const { fetchGeneralWeather } = await import('./weather');
+    const data = await fetchGeneralWeather(lat, lon);
+    set({ generalWeather: data });
+  },
+
   // ============================================================
   // 9. NOTAM FUNCTIONS (LIVE FAA API)
   // ============================================================
@@ -994,9 +1015,13 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
         settings[row.setting_key as string] = row.setting_value as string;
       });
       console.log('✅ FTO settings loaded:', Object.keys(settings).length, 'settings');
-      set({ ftoSettings: settings });
+      set({ ftoSettings: settings, ftoSettingsLoaded: true });
     } else {
       console.error('❌ Error loading FTO settings:', error);
+      // Still flip this to true on failure — otherwise a school with real
+      // DB trouble would leave dependents (like the weather widget) stuck
+      // showing "loading" forever instead of falling back sensibly.
+      set({ ftoSettingsLoaded: true });
     }
   },
 
