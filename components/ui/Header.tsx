@@ -6,6 +6,7 @@ import { useState, useEffect, ReactNode } from 'react';
 import Link from 'next/link';
 import { signOut, useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
+import { getLocationDisplay } from '@/lib/location';
 
 
 // ============================================================
@@ -121,6 +122,19 @@ interface HeaderProps {
 export default function Header({ title, subtitle, backUrl = '/dashboard', action }: HeaderProps) {
   const store = useFlightStore();
   const ftoSettings = store.ftoSettings;
+
+  // Defensive load — this header renders on every dashboard page, but only
+  // the main dashboard page (app/dashboard/page.tsx) previously called
+  // loadFTOSettings(). Landing directly on any other page (bookmark, deep
+  // link, refresh) meant ftoSettings was still empty here: this affected
+  // both the custom-logo lookup just below (silently fell back to the
+  // default ✈️ icon) and the airport label further down (bug fix: used to
+  // just hardcode "VOBL - Bangalore" regardless of this at all).
+  useEffect(() => {
+    if (Object.keys(ftoSettings).length === 0) store.loadFTOSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ftoSettings]);
+
     return (
     <header className="border-b border-slate-700 bg-slate-800/50 backdrop-blur-sm">
       <div className="max-w-7xl mx-auto px-4 py-4">
@@ -161,7 +175,9 @@ export default function Header({ title, subtitle, backUrl = '/dashboard', action
             <div className="flex items-center space-x-4">
               <LiveClock />
               <div className="text-right">
-                <p className="text-xs text-slate-500">VOBL - Bangalore</p>
+                <p className="text-xs text-slate-500">
+                  {getLocationDisplay(ftoSettings?.airport_code || '', ftoSettings?.location_name || '')}
+                </p>
               </div>
             </div>
           </div>

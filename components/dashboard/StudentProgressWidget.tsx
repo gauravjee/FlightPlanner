@@ -35,11 +35,14 @@ export default function StudentProgressWidget() {
         const targetHours = isPPL ? 40 : 200;
         const progressPercent = Math.min(100, Math.round((totalHours / targetHours) * 100));
 
-        // Get today's flight for this student
+        // Get today's flight for this student. Excludes CANCELLED bookings —
+        // a flight that was cancelled today never happened, so listing the
+        // student under "🟢 Flying Today" for it is misleading (bug fix:
+        // this previously had no status filter at all).
         const todayStr = new Date().toLocaleDateString('en-CA');
         const todayFlights = scheduledFlights.filter(f => {
           const flightDate = new Date(f.startTime).toLocaleDateString('en-CA');
-          return f.studentId === student.id && flightDate === todayStr;
+          return f.studentId === student.id && flightDate === todayStr && f.status !== 'CANCELLED';
         });
 
         // Check medical status

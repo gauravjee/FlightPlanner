@@ -25,8 +25,10 @@ import NotificationWidget from '@/components/dashboard/NotificationWidget';
 export default function DashboardPage() {
   const store = useFlightStore();
   const weather = store.weather;
+  const generalWeather = store.generalWeather;
   const aircraft = store.aircraft;
   const fetchWeather = store.fetchWeather;
+  const fetchGeneralWeather = store.fetchGeneralWeather;
   const notams = store.notams;
   const loadNOTAMs = store.loadNOTAMs;
 
@@ -40,31 +42,86 @@ export default function DashboardPage() {
     }
   }, [session, router]);
 
-  // Fetch live weather on page load
-  useEffect(() => {
-    import('@/lib/weather').then(({ getTimeUntilNextMetar }) => {
-      fetchWeather('VOBL');
-      const timeUntil = getTimeUntilNextMetar();
-      const timeout = setTimeout(() => {
-        fetchWeather('VOBL');
-        setInterval(() => fetchWeather('VOBL'), 30 * 60 * 1000);
-      }, timeUntil);
-      return () => clearTimeout(timeout);
-    });
-  }, [fetchWeather]);
-
-  // Fetch live NOTAMs
-  useEffect(() => {
-    loadNOTAMs('VOBL');
-  }, [loadNOTAMs]);
-
-
   // Fetch FTO settings on page load
-  const { ftoSettings, loadFTOSettings } = useFlightStore();
+  const { ftoSettings, ftoSettingsLoaded, loadFTOSettings, getFTOSetting } = useFlightStore();
 
   useEffect(() => {
     loadFTOSettings();
   }, [loadFTOSettings]);
+
+  // The school's configured primary airport (Settings → School Information
+  // → "Primary Airport (ICAO)"). This field is optional — a school flying
+  // from an airstrip with no ICAO code can leave it blank (or enter a
+  // nearby reporting station's code purely to source reference weather).
+  // No fallback to a default code here: an empty station means "no live
+  // weather configured", handled explicitly below, rather than silently
+  // showing another airport's weather.
+  const station = getFTOSetting('airport_code');
+
+  // Fallback coordinates for general (non-aviation) weather, used only when
+  // there's no ICAO/reference station. Both must be present and parse as
+  // finite numbers, otherwise this falls through to "no live weather".
+  const latRaw = getFTOSetting('latitude');
+  const lonRaw = getFTOSetting('longitude');
+  const lat = parseFloat(latRaw);
+  const lon = parseFloat(lonRaw);
+  const hasValidLatLon = latRaw !== '' && lonRaw !== '' && Number.isFinite(lat) && Number.isFinite(lon);
+
+  // Fetch live weather on page load, and re-fetch if the configured airport
+  // changes. Waits for fto_settings to finish loading (ftoSettingsLoaded)
+  // so it doesn't fire once for a not-yet-loaded empty station and again
+  // for the real one, and skips entirely once loaded if no station is
+  // configured — the "no live weather available" UI below handles that
+  // case instead of quietly defaulting to some other airport.
+  //
+  // Bug fix (kept from earlier): the setTimeout/setInterval pair here were
+  // previously never cleared on unmount — the `return () => clearTimeout(timeout)`
+  // lived inside the async `.then()` callback, where React never sees it
+  // (it's just the resolved value of a promise nobody reads). Effect
+  // cleanup only runs the function this *outer* effect body returns. Every
+  // time this effect re-ran (route re-visits, fast refresh) it left another
+  // orphaned 30-minute poller running forever, compounding into duplicate
+  // weather fetches over a long session. Both timers are hoisted so the
+  // real cleanup below can clear them.
+  useEffect(() => {
+    if (!ftoSettingsLoaded || !station) return undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let interval: ReturnType<typeof setInterval> | undefined;
+    let cancelled = false;
+    import('@/lib/weather').then(({ getTimeUntilNextMetar }) => {
+      if (cancelled) return;
+      fetchWeather(station);
+      const timeUntil = getTimeUntilNextMetar();
+      timeout = setTimeout(() => {
+        fetchWeather(station);
+        interval = setInterval(() => fetchWeather(station), 30 * 60 * 1000);
+      }, timeUntil);
+    });
+    return () => {
+      cancelled = true;
+      if (timeout) clearTimeout(timeout);
+      if (interval) clearInterval(interval);
+    };
+  }, [fetchWeather, station, ftoSettingsLoaded]);
+
+  // Fetch live NOTAMs — same station, same "only once settings are loaded
+  // and a station is actually configured" behavior.
+  useEffect(() => {
+    if (!ftoSettingsLoaded || !station) return;
+    loadNOTAMs(station);
+  }, [loadNOTAMs, station, ftoSettingsLoaded]);
+
+  // Fetch general (non-aviation) weather by lat/long — only when there's no
+  // ICAO/reference station configured (station takes priority: real METAR
+  // beats a general forecast). Refreshed every 30 minutes, same cadence as
+  // the METAR poller above, but without METAR's fixed :20/:50 issuance
+  // timing since general forecasts don't follow that schedule.
+  useEffect(() => {
+    if (!ftoSettingsLoaded || station || !hasValidLatLon) return undefined;
+    fetchGeneralWeather(lat, lon);
+    const interval = setInterval(() => fetchGeneralWeather(lat, lon), 30 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchGeneralWeather, station, lat, lon, hasValidLatLon, ftoSettingsLoaded]);
 
 
 
@@ -113,78 +170,161 @@ export default function DashboardPage() {
                       <span className="text-xs text-slate-400 ml-2 animate-pulse">Loading...</span>
                     )}
                   </h2>
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                    weather.flightRules === 'VFR' ? 'bg-green-500/20 text-green-400' :
-                    weather.flightRules === 'MVFR' ? 'bg-yellow-500/20 text-yellow-400' :
-                    weather.flightRules === 'IFR' ? 'bg-red-500/20 text-red-400' :
-                    'bg-red-500/20 text-red-400'
-                  }`}>
-                    {weather.flightRules}
-                  </span>
+                  {ftoSettingsLoaded && station && (
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      weather.flightRules === 'VFR' ? 'bg-green-500/20 text-green-400' :
+                      weather.flightRules === 'MVFR' ? 'bg-yellow-500/20 text-yellow-400' :
+                      weather.flightRules === 'IFR' ? 'bg-red-500/20 text-red-400' :
+                      'bg-red-500/20 text-red-400'
+                    }`}>
+                      {weather.flightRules}
+                    </span>
+                  )}
+                  {ftoSettingsLoaded && !station && hasValidLatLon && (
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-600/50 text-slate-300">
+                      General (not aviation weather)
+                    </span>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* METAR & TAF Text */}
-                  <div className="space-y-2">
-                    <div className="bg-slate-900/50 rounded-lg p-3">
-                      <p className="text-xs text-slate-400 mb-1">METAR</p>
-                      <p className="text-sm font-mono text-green-400">{weather.metar}</p>
-                    </div>
-                    <div className="bg-slate-900/50 rounded-lg p-3">
-                      <p className="text-xs text-slate-400 mb-1">TAF</p>
-                      <p className="text-sm font-mono text-green-400">{weather.taf}</p>
-                    </div>
-                  </div>
-
-                  {/* Weather Parameters Grid */}
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-slate-900/50 rounded-lg p-3">
-                      <p className="text-xs text-slate-400">Wind</p>
-                      <p className="text-lg font-bold text-white">{weather.windDirection}°/{weather.windSpeed}kt</p>
-                      <p className="text-xs text-slate-500">RWY 09 OK</p>
-                    </div>
-                    <div className="bg-slate-900/50 rounded-lg p-3">
-                      <p className="text-xs text-slate-400">Temperature</p>
-                      <p className="text-lg font-bold text-white">{weather.temperature}°C</p>
-                      <p className="text-xs text-slate-500">Dew: {weather.dewpoint}°C</p>
-                    </div>
-                    <div className="bg-slate-900/50 rounded-lg p-3">
-                      <p className="text-xs text-slate-400">Visibility</p>
-                      <p className="text-lg font-bold text-white">
-                        {weather.visibility >= 9999 ? '10km+' : `${weather.visibility}m`}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {weather.visibility >= 5000 ? 'Good' : 'Reduced'}
-                      </p>
-                    </div>
-                    <div className="bg-slate-900/50 rounded-lg p-3">
-                      <p className="text-xs text-slate-400">QNH</p>
-                      <p className="text-lg font-bold text-white">{weather.qnh} hPa</p>
-                      <p className="text-xs text-slate-500">{weather.altimeter} inHg</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Weather Warnings */}
-                {weather.warnings.length > 0 && (
-                  <div className="mt-4 space-y-1">
-                    {weather.warnings.map((warning, i) => (
-                      <div key={i} className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2">
-                        <p className="text-xs text-yellow-400">{warning}</p>
+                {!ftoSettingsLoaded ? (
+                  <p className="text-slate-400 text-sm text-center py-8">Loading...</p>
+                ) : station ? (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* METAR & TAF Text */}
+                      <div className="space-y-2">
+                        <div className="bg-slate-900/50 rounded-lg p-3">
+                          <p className="text-xs text-slate-400 mb-1">METAR</p>
+                          <p className="text-sm font-mono text-green-400">{weather.metar}</p>
+                        </div>
+                        <div className="bg-slate-900/50 rounded-lg p-3">
+                          <p className="text-xs text-slate-400 mb-1">TAF</p>
+                          <p className="text-sm font-mono text-green-400">{weather.taf}</p>
+                        </div>
                       </div>
-                    ))}
+
+                      {/* Weather Parameters Grid */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-slate-900/50 rounded-lg p-3">
+                          <p className="text-xs text-slate-400">Wind</p>
+                          <p className="text-lg font-bold text-white">{weather.windDirection}°/{weather.windSpeed}kt</p>
+                          <p className="text-xs text-slate-500">RWY 09 OK</p>
+                        </div>
+                        <div className="bg-slate-900/50 rounded-lg p-3">
+                          <p className="text-xs text-slate-400">Temperature</p>
+                          <p className="text-lg font-bold text-white">{weather.temperature}°C</p>
+                          <p className="text-xs text-slate-500">Dew: {weather.dewpoint}°C</p>
+                        </div>
+                        <div className="bg-slate-900/50 rounded-lg p-3">
+                          <p className="text-xs text-slate-400">Visibility</p>
+                          <p className="text-lg font-bold text-white">
+                            {weather.visibility >= 9999 ? '10km+' : `${weather.visibility}m`}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {weather.visibility >= 5000 ? 'Good' : 'Reduced'}
+                          </p>
+                        </div>
+                        <div className="bg-slate-900/50 rounded-lg p-3">
+                          <p className="text-xs text-slate-400">QNH</p>
+                          <p className="text-lg font-bold text-white">{weather.qnh} hPa</p>
+                          <p className="text-xs text-slate-500">{weather.altimeter} inHg</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Weather Warnings */}
+                    {weather.warnings.length > 0 && (
+                      <div className="mt-4 space-y-1">
+                        {weather.warnings.map((warning, i) => (
+                          <div key={i} className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2">
+                            <p className="text-xs text-yellow-400">{warning}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Refresh Weather Button */}
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        onClick={async () => { await fetchWeather(station); }}
+                        className="px-3 py-1.5 bg-blue-500/20 text-blue-400 rounded-lg text-xs hover:bg-blue-500/30 transition"
+                      >
+                        🔄 Refresh Weather
+                      </button>
+                    </div>
+                  </>
+                ) : hasValidLatLon ? (
+                  <>
+                    {/* General (non-aviation) weather for the configured lat/long.
+                        No METAR/TAF text and no flight-rules classification —
+                        those don't exist for an arbitrary coordinate — so this
+                        is laid out and labeled differently from the METAR view
+                        above rather than reusing its fields. */}
+                    <p className="text-xs text-slate-500 -mt-2 mb-3">
+                      Sourced from configured coordinates — general conditions only, not an official
+                      aviation weather briefing.
+                    </p>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      <div className="bg-slate-900/50 rounded-lg p-3">
+                        <p className="text-xs text-slate-400">Conditions</p>
+                        <p className="text-sm font-bold text-white">{generalWeather?.conditionText || 'Loading...'}</p>
+                      </div>
+                      <div className="bg-slate-900/50 rounded-lg p-3">
+                        <p className="text-xs text-slate-400">Wind</p>
+                        <p className="text-lg font-bold text-white">
+                          {generalWeather ? `${generalWeather.windDirection}°/${generalWeather.windSpeed}kt` : '—'}
+                        </p>
+                      </div>
+                      <div className="bg-slate-900/50 rounded-lg p-3">
+                        <p className="text-xs text-slate-400">Temperature</p>
+                        <p className="text-lg font-bold text-white">
+                          {generalWeather ? `${generalWeather.temperature}°C` : '—'}
+                        </p>
+                        <p className="text-xs text-slate-500">Dew: {generalWeather ? `${generalWeather.dewpoint}°C` : '—'}</p>
+                      </div>
+                      <div className="bg-slate-900/50 rounded-lg p-3">
+                        <p className="text-xs text-slate-400">Pressure</p>
+                        <p className="text-lg font-bold text-white">
+                          {generalWeather ? `${generalWeather.pressure} hPa` : '—'}
+                        </p>
+                      </div>
+                      <div className="bg-slate-900/50 rounded-lg p-3">
+                        <p className="text-xs text-slate-400">Cloud Cover</p>
+                        <p className="text-lg font-bold text-white">
+                          {generalWeather ? `${generalWeather.cloudCover}%` : '—'}
+                        </p>
+                      </div>
+                    </div>
+
+                    {generalWeather?.error && (
+                      <div className="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2">
+                        <p className="text-xs text-yellow-400">⚠️ Could not fetch weather for these coordinates</p>
+                      </div>
+                    )}
+
+                    <div className="mt-4 flex justify-end">
+                      <button
+                        onClick={async () => { await fetchGeneralWeather(lat, lon); }}
+                        className="px-3 py-1.5 bg-blue-500/20 text-blue-400 rounded-lg text-xs hover:bg-blue-500/30 transition"
+                      >
+                        🔄 Refresh Weather
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  /* No ICAO/reference station and no valid lat/long either.
+                     Rather than silently showing another airport's weather,
+                     say so plainly and point to where it can be fixed. */
+                  <div className="text-center py-8">
+                    <p className="text-slate-400 text-sm">📭 No live weather available</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Add a Primary Airport (ICAO) code in Settings — your own, or the nearest reporting
+                      station if your field doesn&apos;t have one — or set Latitude/Longitude for general
+                      weather instead.
+                    </p>
                   </div>
                 )}
-
-                {/* Refresh Weather Button */}
-                <div className="mt-4 flex justify-end">
-                  <button
-                    onClick={async () => { await fetchWeather('VOBL'); }}
-                    className="px-3 py-1.5 bg-blue-500/20 text-blue-400 rounded-lg text-xs hover:bg-blue-500/30 transition"
-                  >
-                    🔄 Refresh Weather
-                  </button>
-                </div>
               </div>
 
               {/* ----- TODAY'S FLIGHT SCHEDULE ----- */}

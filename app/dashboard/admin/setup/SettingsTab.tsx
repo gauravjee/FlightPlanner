@@ -107,16 +107,36 @@ export default function SettingsTab() {
     try {
       let updatedCount = 0;
 
-      for (const setting of settings) {
-        const newValue = formValues[setting.setting_key] || '';
-        if (newValue !== setting.setting_value) {
+      // Union of settings already in the DB and any keys present in the form
+      // (e.g. a newly-added field like location_name that has no DB row yet
+      // for schools that were set up before it existed). Existing rows are
+      // updated by id; brand-new keys are inserted.
+      const allKeys = new Set([...settings.map(s => s.setting_key), ...Object.keys(formValues)]);
+
+      for (const key of allKeys) {
+        const newValue = formValues[key] || '';
+        const existing = settings.find(s => s.setting_key === key);
+
+        if (existing) {
+          if (newValue !== existing.setting_value) {
+            const { error } = await supabase
+              .from('fto_settings')
+              .update({ setting_value: newValue })
+              .eq('id', existing.id);
+
+            if (error) {
+              console.error(`❌ Error saving ${key}:`, error.message);
+            } else {
+              updatedCount++;
+            }
+          }
+        } else if (newValue !== '') {
           const { error } = await supabase
             .from('fto_settings')
-            .update({ setting_value: newValue })
-            .eq('id', setting.id);
+            .insert({ setting_key: key, setting_value: newValue });
 
           if (error) {
-            console.error(`❌ Error saving ${setting.setting_key}:`, error.message);
+            console.error(`❌ Error creating ${key}:`, error.message);
           } else {
             updatedCount++;
           }
@@ -288,9 +308,22 @@ export default function SettingsTab() {
                 <p className="text-xs text-slate-500 mt-1">Displayed in the header and all reports</p>
               </div>
 
+              {/* Location Name */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Location Name</label>
+                <input
+                  type="text"
+                  value={getValue('location_name')}
+                  onChange={e => setValue('location_name', e.target.value)}
+                  placeholder="e.g., Chennai or ABC Farm Airstrip"
+                  className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+                />
+                <p className="text-xs text-slate-500 mt-1">City or airstrip name, shown in the header next to the airport code (or alone if you have no ICAO code)</p>
+              </div>
+
               {/* Airport Code */}
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Primary Airport (ICAO)</label>
+                <label className="block text-xs text-slate-400 mb-1">Primary Airport (ICAO) — optional</label>
                 <input
                   type="text"
                   value={getValue('airport_code')}
@@ -299,7 +332,45 @@ export default function SettingsTab() {
                   maxLength={4}
                   className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
                 />
-                <p className="text-xs text-slate-500 mt-1">4-letter ICAO airport code</p>
+                <p className="text-xs text-slate-500 mt-1">
+                  4-letter ICAO code, used for live aviation weather (METAR/TAF). If your field has no ICAO
+                  code, leave this blank and enter the code of the nearest reporting station instead — its
+                  weather will be shown as a reference. If you have neither, set Latitude/Longitude below for
+                  general (non-aviation) weather instead.
+                </p>
+              </div>
+
+              {/* Latitude / Longitude — fallback weather source when there's no
+                  ICAO code and no nearby reference station. Stored as two
+                  separate free-text fields so partial/invalid entries don't
+                  block saving the rest of the form. */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Latitude — optional</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={getValue('latitude')}
+                  onChange={e => setValue('latitude', e.target.value)}
+                  placeholder="e.g., 13.0827"
+                  className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+                />
+                <p className="text-xs text-slate-500 mt-1">
+                  Only used when the airport code above is blank. Shows general weather (temperature, wind,
+                  cloud cover) for these coordinates — not official aviation METAR/TAF data.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs text-slate-400 mb-1">Longitude — optional</label>
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={getValue('longitude')}
+                  onChange={e => setValue('longitude', e.target.value)}
+                  placeholder="e.g., 80.2707"
+                  className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+                />
+                <p className="text-xs text-slate-500 mt-1">Used together with Latitude above.</p>
               </div>
             </div>
 
