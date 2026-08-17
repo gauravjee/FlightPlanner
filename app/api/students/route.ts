@@ -27,6 +27,7 @@ import { requireSession, requireRole, STUDENT_STAFF_ROLES, STUDENT_CREATION_ROLE
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { generatePassword } from '@/lib/password';
 import { sendWelcomeEmailServer } from '@/lib/email';
+import { provisionRequirementsForStudent } from '@/lib/requirements-provisioning';
 
 export async function GET() {
   const { session, error } = await requireSession();
@@ -73,14 +74,19 @@ export async function GET() {
   return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
 }
 
-// Creating a student creates TWO rows as one unit: the `students` training
-// profile, and a `users` login (role='student') linked to it via
-// `users.student_id`. These used to be two entirely separate flows — this
-// one (POST /api/students) only ever wrote `students`, while creating a
-// login was a different form (Setup Wizard → User Management) that only
-// ever wrote `users` and never set `student_id`. A student created through
+// Creating a student writes THREE things as one unit: the `students`
+// training profile, a `users` login (role='student') linked to it via
+// `users.student_id`, and per-student `training_requirements` rows copied
+// from that program's templates (see lib/requirements-provisioning.ts). The
+// first two used to be two entirely separate flows — this one
+// (POST /api/students) only ever wrote `students`, while creating a login
+// was a different form (Setup Wizard → User Management) that only ever
+// wrote `users` and never set `student_id`. A student created through
 // either old path alone ended up with either a working login and no
 // findable training profile, or a training profile with no way to log in.
+// The requirements step was missing entirely until later — every student
+// created before that fix has an empty Requirements Checklist until synced
+// (Admin Setup -> Requirements -> "Sync to Students").
 // See lib/api-auth.ts's STUDENT_CREATION_ROLES comment for why this is
 // scoped to admin/super_admin even though STUDENT_STAFF_ROLES (broader) can
 // still view/edit existing students.
@@ -208,6 +214,22 @@ export async function POST(request: Request) {
 
   const emailResult = await sendWelcomeEmailServer(trimmedEmail, name as string, password, 'student');
 
+  // 3. Provision this student's per-row training requirements by copying
+  //    the template rows (student_id IS NULL, Admin Setup -> Requirements)
+  //    for their program. Best-effort: a student with a working login and
+  //    training profile but a requirements hiccup (e.g. no templates exist
+  //    yet for their program) is recoverable via Admin Setup ->
+  //    Requirements -> "Sync to Students" — rolling back the whole
+  //    creation over this would not be, and is not warranted the way the
+  //    login-creation failure above is.
+  const provisionResult = await provisionRequirementsForStudent(
+    student.id,
+    trainingStage as string | undefined
+  );
+  if (provisionResult.error) {
+    console.warn(`Requirements not fully provisioned for new student ${student.id}:`, provisionResult.error);
+  }
+
   return NextResponse.json({
     student,
     emailSent: emailResult.success,
@@ -215,5 +237,7 @@ export async function POST(request: Request) {
     // Only returned so the admin can copy it if the email failed — same
     // pattern as /api/admin/users.
     password: emailResult.success ? undefined : password,
+    requirementsProvisioned: provisionResult.provisioned,
+    requirementsWarning: provisionResult.error,
   });
 }

@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase-client';
-import { CircleCheck, Pencil, Plus, Save, Trash2, Lock } from 'lucide-react';
+import { CircleCheck, Pencil, Plus, Save, Trash2, Lock, RefreshCw } from 'lucide-react';
 
 interface TrainingProgram {
   id: number;
@@ -35,6 +35,13 @@ export default function RequirementsTab() {
   const [loading, setLoading] = useState(true);
   const [selectedProgram, setSelectedProgram] = useState('CPL');
   const [editing, setEditing] = useState<Requirement | null>(null);
+  // "Sync to Students" — see app/api/admin/requirements/sync/route.ts.
+  // Backfills any student on the selected program who's missing a
+  // requirement that exists here as a template (new students created
+  // before requirement provisioning existed, or anyone whose program
+  // picked up a template requirement added after they were provisioned).
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ studentsChecked: number; totalProvisioned: number } | string | null>(null);
   const [form, setForm] = useState({
     requirement_name: '',
     requirement_category: 'CPL',
@@ -57,6 +64,7 @@ export default function RequirementsTab() {
   useEffect(() => {
     loadRequirements();
     setForm(p => ({ ...p, program_code: selectedProgram, requirement_category: selectedProgram }));
+    setSyncResult(null);
   }, [selectedProgram]);
 
   const loadPrograms = async () => {
@@ -127,6 +135,31 @@ export default function RequirementsTab() {
       blocks_all_flights: req.blocks_all_flights,
       notes: req.notes || '',
     });
+  };
+
+  // Push this program's template requirements out to every student
+  // currently on it, filling in whatever they're missing. Never touches an
+  // existing per-student row — see app/api/admin/requirements/sync/route.ts.
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch('/api/admin/requirements/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ programCode: selectedProgram }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSyncResult(data.error || 'Sync failed.');
+      } else {
+        setSyncResult({ studentsChecked: data.studentsChecked, totalProvisioned: data.totalProvisioned });
+      }
+    } catch (err) {
+      console.error('Error syncing requirements:', err);
+      setSyncResult('Sync failed — check your connection and try again.');
+    }
+    setSyncing(false);
   };
 
   // Delete
@@ -288,6 +321,40 @@ export default function RequirementsTab() {
               Cancel
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Sync to Students */}
+      <div className="surface-inner p-4 mb-6 flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h3 className="text-sm font-medium flex items-center gap-1.5">
+            <RefreshCw className="w-3.5 h-3.5" /> Sync to Students
+          </h3>
+          <p className="text-xs text-tertiary mt-1 max-w-md">
+            Gives every student on {selectedProgram} any requirement above they&apos;re missing —
+            for students created before this checklist existed, or after a
+            requirement is added here. Never changes an existing student&apos;s
+            requirement.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {syncResult && (
+            <p className="text-xs" style={typeof syncResult === 'string' ? { color: 'var(--danger)' } : { color: 'var(--success)' }}>
+              {typeof syncResult === 'string'
+                ? syncResult
+                : `Checked ${syncResult.studentsChecked} student${syncResult.studentsChecked === 1 ? '' : 's'} — added ${syncResult.totalProvisioned} requirement${syncResult.totalProvisioned === 1 ? '' : 's'}.`}
+            </p>
+          )}
+          <button
+            onClick={handleSync}
+            disabled={syncing || requirements.length === 0}
+            className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' }}
+            title={requirements.length === 0 ? `No requirement templates defined for ${selectedProgram} yet` : undefined}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Syncing…' : `Sync to ${selectedProgram} Students`}
+          </button>
         </div>
       </div>
 
