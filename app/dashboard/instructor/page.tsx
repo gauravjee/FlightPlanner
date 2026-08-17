@@ -15,7 +15,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import Link from 'next/link';
@@ -157,16 +157,16 @@ export default function InstructorDashboardPage() {
   // ============================================================
   // RENDER
   // ============================================================
+  useSetHeader({
+    title: 'Instructor Dashboard',
+    subtitle: `Welcome, ${instructorName}`,
+    backUrl: '/dashboard',
+  });
+
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['instructor', 'admin', 'super_admin']}>
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-          <Header
-            title="Instructor Dashboard"
-            subtitle={`Welcome, ${instructorName}`}
-            backUrl="/dashboard"
-          />
-
           <div className="max-w-7xl mx-auto px-4 py-6">
 
             {/* ============================================================ */}

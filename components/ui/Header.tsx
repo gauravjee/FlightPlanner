@@ -9,6 +9,7 @@ import { ArrowLeft, Plane, Wrench, Crown, GraduationCap, ClipboardList, UserRoun
 import { useFlightStore } from '@/lib/store';
 import { getLocationDisplay } from '@/lib/location';
 import ThemeToggle from './ThemeToggle';
+import { useHeaderConfig } from './HeaderContext';
 
 // ============================================================
 // LIVE CLOCK COMPONENT
@@ -178,13 +179,28 @@ function UserMenu() {
 // SHARED HEADER COMPONENT
 // ============================================================
 interface HeaderProps {
-  title: string;
+  // All optional now: app/dashboard/** pages no longer pass these at all —
+  // they call useSetHeader() instead and Header reads the result from
+  // HeaderContext (see below). Pages outside app/dashboard/layout.tsx's
+  // scope (app/change-password, /login, etc.) still pass these directly;
+  // any prop passed explicitly wins over context.
+  title?: string;
   subtitle?: string;
   backUrl?: string;
   action?: ReactNode;
 }
 
-export default function Header({ title, subtitle, backUrl = '/dashboard', action }: HeaderProps) {
+// Sidebar.tsx's own nav links already reach these exact destinations at
+// `lg`+ (1024px) — a "Back" link pointing at the same place is pure
+// duplication at that width, so it's hidden there (and left exactly as it
+// always was below `lg`, where Sidebar doesn't render). Any backUrl NOT in
+// this list — e.g. '/', which nothing in Sidebar points to — keeps Back
+// visible at every width.
+const BACK_URLS_COVERED_BY_SIDEBAR = ['/dashboard', '/dashboard/student', '/dashboard/ground-school'];
+
+export default function Header(props: HeaderProps = {}) {
+  const headerConfig = useHeaderConfig();
+  const { data: session, status } = useSession();
   const store = useFlightStore();
   const ftoSettings = store.ftoSettings;
 
@@ -200,13 +216,29 @@ export default function Header({ title, subtitle, backUrl = '/dashboard', action
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ftoSettings]);
 
+  const title = props.title ?? headerConfig.title;
+  const subtitle = props.subtitle ?? headerConfig.subtitle;
+  const backUrl = props.backUrl ?? headerConfig.backUrl ?? '/dashboard';
+  const action = props.action ?? headerConfig.action;
+  const backCoveredBySidebar = BACK_URLS_COVERED_BY_SIDEBAR.includes(backUrl);
+
+  // Mirrors Sidebar.tsx's own guard: render nothing until we actually know
+  // someone's logged in. Previously unnecessary here since Header only ever
+  // mounted from inside a page's own <ProtectedRoute>; now that Header also
+  // lives in app/dashboard/layout.tsx (outside any single page's
+  // ProtectedRoute), it needs to gate itself the same way.
+  if (status !== 'authenticated' || !session?.user) return null;
+
   return (
     <header className="border-b divider backdrop-blur-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--surface) 85%, transparent)' }}>
       <div className="max-w-7xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           {/* Left section */}
           <div className="flex items-center gap-3 min-w-0">
-            <Link href={backUrl} className="text-secondary hover:text-accent transition flex items-center gap-1 text-sm flex-shrink-0">
+            <Link
+              href={backUrl}
+              className={`text-secondary hover:text-accent transition flex items-center gap-1 text-sm flex-shrink-0 ${backCoveredBySidebar ? 'lg:hidden' : ''}`}
+            >
               <ArrowLeft className="w-4 h-4" />
               <span className="hidden sm:inline">Back</span>
             </Link>

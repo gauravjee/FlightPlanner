@@ -19,7 +19,7 @@ import {
   useFlightStore, getAircraftBufferMinutes, parseTurnaroundBufferSetting, MIN_FLIGHT_DURATION_MIN,
   getAircraftFuelBurnRate, getProjectedFuelAfter,
 } from '@/lib/store';
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import StudentProgressWidget from '@/components/dashboard/StudentProgressWidget';
@@ -284,16 +284,15 @@ export default function DashboardPage() {
   }, [aircraft, scheduledFlights, getFTOSetting]);
 
 
+  useSetHeader({
+    title: 'FlightPro Manager',
+    subtitle: 'Horizon Flight Training Academy',
+    backUrl: '/',
+  });
+
   return (
     <ProtectedRoute>
       <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-
-        {/* Shared Header with live clock */}
-        <Header
-          title="FlightPro Manager"
-          subtitle="Horizon Flight Training Academy"
-          backUrl="/"
-        />
 
         {/* Main Content */}
         <div className="max-w-7xl mx-auto px-4 py-6">

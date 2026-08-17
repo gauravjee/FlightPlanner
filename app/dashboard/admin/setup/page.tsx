@@ -13,7 +13,7 @@
 import { useState, useEffect } from 'react';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 import TrainingProgramsTab from './TrainingProgramsTab';
 import SortieTypesTab from './SortieTypesTab';
 import ExercisesTab from './ExercisesTab';
@@ -104,16 +104,16 @@ export default function SetupWizardPage() {
   // Get the active component
   const ActiveComponent = TABS.find(t => t.id === activeTab)?.component;
 
+  useSetHeader({
+    title: 'Flight School Setup Wizard',
+    subtitle: 'Configure your FTO settings',
+    backUrl: '/dashboard',
+  });
+
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['super_admin']}>
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-          <Header
-            title="Flight School Setup Wizard"
-            subtitle="Configure your FTO settings"
-            backUrl="/dashboard"
-          />
-
           <div className="max-w-7xl mx-auto px-4 py-6">
 
             {/* ============================================================ */}

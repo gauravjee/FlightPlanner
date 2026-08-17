@@ -1,7 +1,7 @@
 // app/dashboard/students/page.tsx
 'use client';
 
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 
 import { useState, useEffect } from 'react';
@@ -91,26 +91,24 @@ export default function StudentsPage() {
     }
   };
 
+  useSetHeader({
+    title: 'Student Records',
+    subtitle: 'Manage student pilots',
+    action: canCreateStudent ? (
+      <button
+        onClick={handleAdd}
+        className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
+        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+      >
+        <Plus className="w-4 h-4" /> Add Student
+      </button>
+    ) : undefined,
+  });
+
   return (
     <ProtectedRoute>
     <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'operations']}>
     <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-      <Header
-        title="Student Records"
-        subtitle="Manage student pilots"
-        action={
-          canCreateStudent ? (
-            <button
-              onClick={handleAdd}
-              className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
-              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
-            >
-              <Plus className="w-4 h-4" /> Add Student
-            </button>
-          ) : undefined
-        }
-/>
-
       <div className="max-w-7xl mx-auto px-4 py-6">
         {successMessage && (
           <div className="rounded-lg p-3 mb-6" style={{ backgroundColor: 'var(--success-soft)', border: '1px solid var(--success)' }}>

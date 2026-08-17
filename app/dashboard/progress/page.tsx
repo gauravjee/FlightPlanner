@@ -8,7 +8,7 @@ import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase-client';
 import { StudentRecord, FlightRecord } from '@/types';
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist';
@@ -244,6 +244,8 @@ export default function ProgressPage() {
     }));
   }, [studentFlights]);
 
+  useSetHeader({ title: 'Student Progress', subtitle: 'Track training progress and achievements' });
+
   return (
     <ProtectedRoute>
       {/* Includes 'student' — this page doubles as the student's own progress
@@ -253,8 +255,6 @@ export default function ProgressPage() {
           use for this page) are excluded, matching the dashboard tile filter. */}
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'student']}>
       <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-        <Header title="Student Progress" subtitle="Track training progress and achievements" />
-
         <div className="max-w-7xl mx-auto px-4 py-6">
 
           {/* Student Selector (only for admin/instructor) */}

@@ -1,7 +1,7 @@
 // app/dashboard/flights/page.tsx
 // Flight Records & Digital Logbook page
 'use client';
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 
 import { generateStudentLogbook } from '@/lib/pdf';
 
@@ -61,48 +61,47 @@ export default function FlightsPage() {
   const totalFlights = flightRecords.length;
   const totalLandings = flightRecords.reduce((s, r) => s + r.landings, 0);
 
+  useSetHeader({
+    title: 'Flight Records',
+    subtitle: 'Digital Logbook',
+    action: (
+      <div className="flex space-x-2">
+       {selectedStudent === 'ALL' ? (
+        <span className="px-3 py-2 surface-inner text-tertiary rounded-lg text-xs cursor-not-allowed flex items-center space-x-1"
+          title="Select a specific student to export their logbook">
+          <FileText className="w-3.5 h-3.5" /> Export Logbook
+          <span className="text-[10px] text-tertiary">(select student)</span>
+        </span>
+      ) : (
+        <button
+          onClick={() => {
+            const student = students.find(s => s.id === selectedStudent);
+            const studentFlights = flightRecords.filter(r => r.studentId === selectedStudent);
+            if (student && studentFlights.length > 0) {
+              generateStudentLogbook(student, studentFlights);
+            }
+          }}
+          className="px-3 py-2 rounded-lg text-xs transition cursor-pointer flex items-center gap-1.5"
+          style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}
+        >
+          <FileText className="w-3.5 h-3.5" /> Export Logbook
+        </button>
+      )}
+        <button
+          onClick={() => { setResolvingFlight(null); setShowForm(true); }}
+          className="px-4 py-2 rounded-lg transition cursor-pointer font-bold flex items-center gap-1.5"
+          style={{ backgroundColor: 'var(--success)', color: '#04141a' }}
+        >
+          <NotebookPen className="w-3.5 h-3.5" /> Log Flight
+        </button>
+      </div>
+    ),
+  });
+
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
     <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-      <Header
-        title="Flight Records"
-        subtitle="Digital Logbook"
-        action={
-          <div className="flex space-x-2">
-           {selectedStudent === 'ALL' ? (
-            <span className="px-3 py-2 surface-inner text-tertiary rounded-lg text-xs cursor-not-allowed flex items-center space-x-1"
-              title="Select a specific student to export their logbook">
-              <FileText className="w-3.5 h-3.5" /> Export Logbook
-              <span className="text-[10px] text-tertiary">(select student)</span>
-            </span>
-          ) : (
-            <button
-              onClick={() => {
-                const student = students.find(s => s.id === selectedStudent);
-                const studentFlights = flightRecords.filter(r => r.studentId === selectedStudent);
-                if (student && studentFlights.length > 0) {
-                  generateStudentLogbook(student, studentFlights);
-                }
-              }}
-              className="px-3 py-2 rounded-lg text-xs transition cursor-pointer flex items-center gap-1.5"
-              style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}
-            >
-              <FileText className="w-3.5 h-3.5" /> Export Logbook
-            </button>
-          )}
-            <button
-              onClick={() => { setResolvingFlight(null); setShowForm(true); }}
-              className="px-4 py-2 rounded-lg transition cursor-pointer font-bold flex items-center gap-1.5"
-              style={{ backgroundColor: 'var(--success)', color: '#04141a' }}
-            >
-              <NotebookPen className="w-3.5 h-3.5" /> Log Flight
-            </button>
-          </div>
-        }
-      />
-
-
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* ----- PENDING LOGBOOK ENTRIES ----- */}
         {/* Flights checked out with "auto-create logbook entry" unchecked —

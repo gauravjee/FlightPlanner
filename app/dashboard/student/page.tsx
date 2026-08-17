@@ -7,7 +7,7 @@
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import { useEffect, useState, useMemo } from 'react';
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 import RoleGate from '@/components/ui/RoleGate';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist';
@@ -147,16 +147,16 @@ export default function StudentDashboardPage() {
     ? Math.ceil((medicalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
     : null;
 
+  useSetHeader({
+    title: 'Student Dashboard',
+    subtitle: student ? `Welcome, ${student.name}` : 'Loading...',
+    backUrl: '/',
+  });
+
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['student']}>
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-          <Header
-            title="Student Dashboard"
-            subtitle={student ? `Welcome, ${student.name}` : 'Loading...'}
-            backUrl="/"
-          />
-
           <div className="max-w-7xl mx-auto px-4 py-6">
 
             {/* ============================================================ */}

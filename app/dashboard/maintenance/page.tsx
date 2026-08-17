@@ -2,7 +2,7 @@
 // Maintenance tracking page - view, add, complete maintenance records
 'use client';
 
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
@@ -91,24 +91,24 @@ export default function MaintenancePage() {
   const formatISTDateTime = (iso: string): string =>
     new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 
+  useSetHeader({
+    title: 'Maintenance Tracking',
+    subtitle: 'Aircraft maintenance records',
+    action: (
+      <button
+        onClick={handleAdd}
+        className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
+        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+      >
+        <Wrench className="w-4 h-4" /> Log Maintenance
+      </button>
+    ),
+  });
+
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'maintenance']}>
     <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-      <Header
-        title="Maintenance Tracking"
-        subtitle="Aircraft maintenance records"
-        action={
-          <button
-            onClick={handleAdd}
-            className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
-          >
-            <Wrench className="w-4 h-4" /> Log Maintenance
-          </button>
-        }
-      />
-
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

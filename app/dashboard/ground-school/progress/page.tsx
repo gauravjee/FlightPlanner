@@ -34,7 +34,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation'; // ← For reading ?student= param
 import { supabase } from '@/lib/supabase-client';
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { syncRequirementsFromGroundSchoolPass } from '@/lib/ground-school-sync';
@@ -310,6 +310,12 @@ export default function StudentProgressPage() {
   // ============================================================
   // Render
   // ============================================================
+  useSetHeader({
+    title: 'Student Ground School Progress',
+    subtitle: 'Detailed per‑student theoretical training status',
+    backUrl: '/dashboard/ground-school',
+  });
+
   if (loading) {
     return (
       <ProtectedRoute>
@@ -326,12 +332,6 @@ export default function StudentProgressPage() {
         allowedRoles={['admin', 'instructor', 'super_admin', 'student', 'operations']}
       >
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-          <Header
-            title="Student Ground School Progress"
-            subtitle="Detailed per‑student theoretical training status"
-            backUrl="/dashboard/ground-school"
-          />
-
           <div className="max-w-7xl mx-auto px-4 py-6">
             {/* ----- Back to Flight Progress link ----- */}
             {/* Shows when a student is selected — allows quick navigation back */}

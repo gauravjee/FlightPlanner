@@ -1,7 +1,7 @@
 // app/dashboard/aircraft/page.tsx
 'use client';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { Aircraft } from '@/types';
@@ -64,24 +64,24 @@ export default function AircraftPage() {
     }
   };
 
+  useSetHeader({
+    title: 'Aircraft Fleet',
+    subtitle: 'Manage your aircraft',
+    action: (
+      <button
+        onClick={handleAdd}
+        className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
+        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+      >
+        <Plus className="w-4 h-4" /> Add Aircraft
+      </button>
+    ),
+  });
+
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-          <Header
-            title="Aircraft Fleet"
-            subtitle="Manage your aircraft"
-            action={
-              <button
-                onClick={handleAdd}
-                className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
-                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
-              >
-                <Plus className="w-4 h-4" /> Add Aircraft
-              </button>
-            }
-          />
-
       <div className="max-w-7xl mx-auto px-4 py-6">
         {loadingAircraft ? (
           <div className="text-center py-20">

@@ -5,7 +5,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { supabase } from '@/lib/supabase-client';
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { Calendar, ClipboardList, ChartColumn } from 'lucide-react';
@@ -67,6 +67,8 @@ export default function GroundSchoolPage() {
     return classes.filter((c: any) => c.class_date >= today && c.status === 'SCHEDULED').slice(0, 5);
   }, [classes]);
 
+  useSetHeader({ title: 'Ground School', subtitle: 'Theoretical Training Progress', backUrl: '/dashboard' });
+
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg)' }}>
       <p className="text-secondary">Loading...</p>
@@ -77,8 +79,6 @@ export default function GroundSchoolPage() {
     <ProtectedRoute>
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'student', 'operations']}>
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-          <Header title="Ground School" subtitle="Theoretical Training Progress" backUrl="/dashboard" />
-
           <div className="max-w-7xl mx-auto px-4 py-6">
             {/* Subject Progress Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">

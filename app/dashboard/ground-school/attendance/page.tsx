@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase-client';
 import { useSession } from 'next-auth/react';
-import Header from '@/components/ui/Header';
+import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { Trash2, Plus, CircleCheck, X } from 'lucide-react';
@@ -158,12 +158,12 @@ export default function AttendancePage() {
 
   const inputClass = "surface-inner rounded px-2 py-1 text-xs focus:outline-none focus:border-[var(--accent)]";
 
+  useSetHeader({ title: 'Ground School Attendance', subtitle: 'Track student attendance & exam results', backUrl: '/dashboard/ground-school' });
+
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'operations']}>
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-          <Header title="Ground School Attendance" subtitle="Track student attendance & exam results" backUrl="/dashboard/ground-school" />
-
           <div className="max-w-7xl mx-auto px-4 py-6">
             {/* Class Selector */}
             <div className="surface-card p-4 mb-6">
