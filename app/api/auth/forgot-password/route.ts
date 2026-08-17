@@ -101,7 +101,20 @@ export async function POST(request: Request) {
     // Build the reset URL with the dynamic base URL
     const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;
 
-    await resend.emails.send({
+    // resend.emails.send() does NOT throw on API-level failures (bad/
+    // missing API key, unverified sender domain, rate limit, etc.) — it
+    // resolves with { data, error }. Previously that return value was
+    // discarded entirely, so any such failure was invisible: the route
+    // still returned success below and the user was told to check their
+    // inbox for an email that was never sent. Capturing `error` here and
+    // logging it server-side (Vercel → Logs) makes real failures
+    // diagnosable, while still returning the same generic success
+    // response to the client — that's intentional, not an oversight: it
+    // preserves the "don't reveal whether an email exists" property from
+    // the comment at the top of this file. See also the reset token
+    // itself, which is already stored in `password_reset_tokens` by this
+    // point regardless of whether the email send below succeeds.
+    const { error: sendError } = await resend.emails.send({
       from: 'FlightPro Manager <noreply@pushpak.mahesho.com>',
       to: email,
       subject: 'FlightPro - Password Reset Request',
@@ -141,6 +154,14 @@ export async function POST(request: Request) {
         </div>
       `,
     });
+
+    if (sendError) {
+      console.error('❌ Resend failed to send password reset email:', {
+        to: email,
+        error: sendError,
+      });
+      // Deliberately still return success below — see comment above.
+    }
 
     // Return success response
     return NextResponse.json({
