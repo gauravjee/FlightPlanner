@@ -2,10 +2,10 @@
 // Shared header component with live IST clock, optional action button, and user menu
 'use client';
 
-import { useState, useEffect, ReactNode } from 'react';
+import { useState, useEffect, useRef, ReactNode } from 'react';
 import Link from 'next/link';
 import { signOut, useSession } from 'next-auth/react';
-import { ArrowLeft, Plane, Wrench, Crown, GraduationCap, ClipboardList, UserRound, KeyRound, LogOut } from 'lucide-react';
+import { ArrowLeft, Plane, Wrench, Crown, GraduationCap, ClipboardList, UserRound, KeyRound, LogOut, LayoutDashboard } from 'lucide-react';
 import { useFlightStore } from '@/lib/store';
 import { getLocationDisplay } from '@/lib/location';
 import ThemeToggle from './ThemeToggle';
@@ -73,58 +73,102 @@ function RoleIcon({ role, className }: { role: string; className?: string }) {
 }
 
 // ============================================================
-// USER MENU – shows logged‑in user and logout button
+// MOBILE NAV LINKS — Dashboard / Setup
+// ============================================================
+// Sidebar.tsx (app/dashboard/layout.tsx) covers this same navigation from
+// lg (1024px) up, so these are hidden there to stop the header repeating
+// what the sidebar already offers — that duplication (two "Dashboard"
+// links, two ways to reach Setup, all crammed alongside the clock, the
+// theme toggle and the full user menu in one row) was a big part of why
+// the header felt cluttered. Below lg, where Sidebar renders nothing at
+// all, these stay exactly as they always were — no loss of access on
+// phone/narrow-tablet widths.
+function MobileNavLinks({ role }: { role: string }) {
+  const dashboardUrl = role === 'student' ? '/dashboard/student' :
+                       role === 'instructor' ? '/dashboard/instructor' : '/dashboard';
+  return (
+    <div className="flex lg:hidden items-center gap-3">
+      <Link href={dashboardUrl} className="text-secondary hover:text-accent transition" aria-label="Dashboard">
+        <LayoutDashboard className="w-4 h-4" />
+      </Link>
+      {role === 'super_admin' && (
+        <Link href="/dashboard/admin/setup" className="text-secondary hover:text-accent transition" aria-label="Admin Setup">
+          <Wrench className="w-4 h-4" />
+        </Link>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// USER MENU – single avatar that opens a small dropdown with
+// account info, Change Password, and Logout. Previously this was two
+// entirely separate blocks of markup (one for md+, one for mobile) that
+// each spelled out name, a Dashboard link, a Setup link, Change Password,
+// and Logout as five-plus separate inline elements — one avatar with a
+// dropdown is the same functionality (minus the two links Sidebar/
+// MobileNavLinks above already cover) in a fraction of the header's width.
 // ============================================================
 function UserMenu() {
   const { data: session } = useSession();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   if (!session?.user) return null;
 
   const role = (session.user as any).role;
-  const dashboardUrl = role === 'student' ? '/dashboard/student' :
-                       role === 'instructor' ? '/dashboard/instructor' : '/dashboard';
 
   return (
     <>
-      {/* Full version — enough room to show labels */}
-      <div className="hidden md:flex items-center gap-3">
-        <div className="flex items-center gap-1.5 text-xs text-secondary">
-          <RoleIcon role={role} className="w-3.5 h-3.5" />
-          <span>{session.user.name}</span>
-        </div>
-        <Link href={dashboardUrl} className="text-xs text-accent hover:opacity-80">
-          Dashboard
-        </Link>
-        {role === 'super_admin' && (
-          <Link href="/dashboard/admin/setup" className="text-xs text-secondary hover:text-accent flex items-center gap-1">
-            <Wrench className="w-3.5 h-3.5" /> Setup
-          </Link>
-        )}
-        <Link href="/change-password" className="text-xs text-secondary hover:opacity-80 transition flex items-center gap-1">
-          <KeyRound className="w-3.5 h-3.5" /> Change PW
-        </Link>
+      <MobileNavLinks role={role} />
+      <div className="relative" ref={menuRef}>
         <button
-          onClick={() => signOut({ callbackUrl: '/login' })}
-          className="badge badge-danger hover:opacity-80 transition cursor-pointer"
+          onClick={() => setOpen((o) => !o)}
+          className="flex items-center gap-2 rounded-full pl-1 pr-1 md:pr-2.5 py-1 transition cursor-pointer hover:bg-[var(--surface-muted)]"
+          aria-label="Account menu"
         >
-          <LogOut className="w-3.5 h-3.5 mr-1" /> Logout
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold flex-shrink-0"
+            style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}
+          >
+            <RoleIcon role={role} className="w-3.5 h-3.5" />
+          </div>
+          <span className="hidden md:inline text-xs text-secondary max-w-[110px] truncate">{session.user.name}</span>
         </button>
-      </div>
 
-      {/* Condensed version — icon-only, for narrow screens */}
-      <div className="flex md:hidden items-center gap-3">
-        <div
-          className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-semibold surface-muted text-secondary"
-          title={session.user.name || ''}
-        >
-          <RoleIcon role={role} className="w-3.5 h-3.5" />
-        </div>
-        <Link href="/change-password" className="text-secondary" aria-label="Change password">
-          <KeyRound className="w-4 h-4" />
-        </Link>
-        <button onClick={() => signOut({ callbackUrl: '/login' })} aria-label="Logout" style={{ color: 'var(--danger)' }}>
-          <LogOut className="w-4 h-4" />
-        </button>
+        {open && (
+          <div
+            className="absolute right-0 top-full mt-2 w-52 rounded-lg shadow-lg z-30 py-1 overflow-hidden"
+            style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}
+          >
+            <div className="px-3 py-2.5 border-b divider">
+              <p className="text-sm font-medium truncate">{session.user.name}</p>
+              <p className="text-xs text-tertiary capitalize">{role?.replace(/_/g, ' ')}</p>
+            </div>
+            <Link
+              href="/change-password"
+              onClick={() => setOpen(false)}
+              className="flex items-center gap-2 px-3 py-2.5 text-sm text-secondary hover:bg-[var(--surface-muted)] transition"
+            >
+              <KeyRound className="w-3.5 h-3.5" /> Change Password
+            </Link>
+            <button
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              className="w-full flex items-center gap-2 px-3 py-2.5 text-sm text-left hover:bg-[var(--surface-muted)] transition cursor-pointer"
+              style={{ color: 'var(--danger)' }}
+            >
+              <LogOut className="w-3.5 h-3.5" /> Logout
+            </button>
+          </div>
+        )}
       </div>
     </>
   );

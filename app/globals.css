@@ -3,69 +3,72 @@
 /* ============================================================
    DESIGN TOKENS — dark/light theme pair
    ------------------------------------------------------------
-   Dark is the "Aviation Instrument" identity (charcoal surfaces,
-   cyan primary accent, amber for scheduled/highlighted data).
-   Light is built as its counterpart for outdoor/field use (high
-   contrast, flat surfaces, no blur) — same cyan/amber identity,
-   not a separate palette, so toggling reads as one app changing
-   lighting rather than two different apps.
+   Retuned 2026-08-17 to the blue/navy identity from the Pushpak/
+   FlightPlanner UI mockups reviewed that day (see
+   PushpakDesignSystemReference.md) — light theme uses that
+   reference's values close to verbatim (#2f6fed accent, #12213a/
+   #5b6b85 ink pair, and its VFR/MVFR/IFR/LIFR-derived status
+   colors), since that palette was already designed and tested
+   there. The mockups only ever specified a single light theme;
+   dark is a derived counterpart in the same blue hue rather than
+   a straight port, following this app's own established pattern
+   of "dark gets the brighter/more saturated shade of a color,
+   light gets the deeper one" (see the accent pair below) so the
+   two themes still read as one app changing lighting, not two
+   different apps. This replaces the previous cyan/amber pairing.
 
    Toggled via [data-theme="light"] on <html> (see ThemeToggle +
    the inline anti-flash script in app/layout.tsx). Defaults to
    dark when no attribute is present.
-
-   Exact shades are a first pass — expect to retune once this is
-   running for real (tracked: green accent already asked to go
-   a shade darker than the initial mockups).
    ============================================================ */
 @layer base {
   :root {
     --background: 222 47% 11%;
     --foreground: 210 40% 98%;
 
-    --bg: #0a0e14;
-    --surface: #10141c;
-    --surface-muted: #0a0e14;
-    --border: #232a36;
-    --text-primary: #e4e9f0;
-    --text-secondary: #7d8ba0;
-    --text-tertiary: #57647a;
+    --bg: #0b111e;
+    --surface: #131b2c;
+    --surface-muted: #0e1523;
+    --border: #232e44;
+    --text-primary: #e8ecf5;
+    --text-secondary: #92a0bd;
+    --text-tertiary: #5f6d8c;
 
-    --accent: #22d3ee;         /* cyan-400 — primary links/icons/actions */
-    --accent-strong: #0891b2;  /* cyan-600 — gradients, hover states */
-    --accent-soft: rgba(34, 211, 238, 0.12);
+    --accent: #5b8dff;         /* brightened for legibility on dark surfaces */
+    --accent-strong: #2f6fed;  /* the mockup's base blue, used as the deeper/gradient-end shade here */
+    --accent-soft: rgba(91, 141, 255, 0.14);
 
-    --success: #16a34a;        /* green-600 — darker than the initial mockup per feedback */
-    --success-soft: rgba(22, 163, 74, 0.16);
-    --warning: #fbbf24;
-    --warning-soft: rgba(217, 119, 6, 0.16);
-    --warning-text: #b45309;
-    --danger: #f87171;
-    --danger-soft: rgba(239, 68, 68, 0.15);
+    --success: #22c55e;
+    --success-soft: rgba(34, 197, 94, 0.16);
+    --warning: #f2b418;
+    --warning-soft: rgba(242, 180, 24, 0.16);
+    --warning-text: #f2b418;
+    --danger: #f2564c;
+    --danger-soft: rgba(242, 86, 76, 0.16);
 
-    --radius-card: 10px;
+    --radius-card: 14px;
   }
 
   [data-theme="light"] {
-    --bg: #ffffff;
+    --bg: #eef1f6;
     --surface: #ffffff;
-    --surface-muted: #fafafa;
-    --border: #e8e9ec;
-    --text-primary: #14161a;
-    --text-secondary: #6b7078;
-    --text-tertiary: #9a9fa8;
+    --surface-muted: #f3f5f9;
+    --border: #e3e8f0;
+    --text-primary: #12213a;
+    --text-secondary: #5b6b85;
+    --text-tertiary: #94a0b8;
 
-    --accent: #0e7490;         /* cyan-700/teal — legible on white, still reads as the same brand hue */
-    --accent-strong: #22d3ee;
-    --accent-soft: rgba(14, 116, 144, 0.1);
+    --accent: #2f6fed;         /* mockup's primary blue, used verbatim */
+    --accent-strong: #1d54c4;  /* deeper, for gradients/hover — dark theme uses the inverse relationship */
+    --accent-soft: #e8effe;
 
-    --success: #16a34a;
-    --success-soft: rgba(22, 163, 74, 0.12);
-    --warning: #b45309;
-    --warning-soft: rgba(217, 119, 6, 0.14);
-    --warning-text: #b45309;
-    --danger: #dc2626;
-    --danger-soft: rgba(220, 38, 38, 0.1);
+    --success: #1f9d55;
+    --success-soft: #e6f7ec;
+    --warning: #c98a11;
+    --warning-soft: #fbf1de;
+    --warning-text: #7a5307;
+    --danger: #e0473f;
+    --danger-soft: #fdeceb;
   }
 
   * {
