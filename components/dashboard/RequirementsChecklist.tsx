@@ -20,6 +20,8 @@ import { useEffect, useState } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { useSession } from 'next-auth/react';
 import { syncGroundSchoolFromChecklist } from '@/lib/ground-school-sync'; // ← NEW IMPORT
+import { ClipboardList, Lock, TriangleAlert, ChevronDown, ChevronRight } from 'lucide-react';
+import { TrainingRequirement } from '@/types';
 
 interface Props {
   studentId: string;
@@ -34,6 +36,11 @@ export default function RequirementsChecklist({ studentId }: Props) {
   } = useFlightStore();
 
   const [loading, setLoading] = useState(false);
+
+  // Categories the user has explicitly collapsed. Starts empty (everything
+  // expanded) rather than collapsed-by-default, so a category containing an
+  // incomplete blocking requirement is never hidden from view on load.
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
   // ----- Load requirements on mount / when student changes -----
   useEffect(() => {
@@ -53,6 +60,34 @@ export default function RequirementsChecklist({ studentId }: Props) {
   const { data: session } = useSession();
   const userRole = (session?.user as any)?.role;
   const canEdit = ['admin', 'instructor', 'super_admin'].includes(userRole);
+
+  // ----- Blocking requirements summary (incomplete + flagged) -----
+  // blocksAllFlights takes precedence in the summary/badge over blocksSolo
+  // when a requirement happens to have both set, since "blocks everything"
+  // is the stronger statement.
+  const blockingAllFlights = studentReqs.filter((r) => r.blocksAllFlights && !r.isCompleted);
+  const blockingSoloOnly = studentReqs.filter((r) => r.blocksSolo && !r.blocksAllFlights && !r.isCompleted);
+  const totalBlocking = blockingAllFlights.length + blockingSoloOnly.length;
+
+  // ----- Group requirements by category, ordered by each item's sortOrder -----
+  const groupedByCategory: { category: string; items: TrainingRequirement[] }[] = (() => {
+    const byCategory = new Map<string, TrainingRequirement[]>();
+    for (const r of [...studentReqs].sort((a, b) => a.sortOrder - b.sortOrder)) {
+      const cat = r.requirementCategory || 'General';
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat)!.push(r);
+    }
+    return Array.from(byCategory, ([category, items]) => ({ category, items }));
+  })();
+
+  const toggleCategoryCollapsed = (category: string) => {
+    setCollapsedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) next.delete(category);
+      else next.add(category);
+      return next;
+    });
+  };
 
   // ============================================================
   // Toggle handler — now syncs with ground school module
@@ -93,8 +128,8 @@ export default function RequirementsChecklist({ studentId }: Props) {
   if (studentReqs.length === 0) {
     return (
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-white mb-4">
-          📋 Requirements Checklist
+        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+          <ClipboardList className="w-4 h-4" /> Requirements Checklist
         </h3>
         <p className="text-slate-400 text-sm">No requirements defined yet.</p>
       </div>
@@ -108,8 +143,8 @@ export default function RequirementsChecklist({ studentId }: Props) {
     <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
       {/* ----- Header with progress bar ----- */}
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-white">
-          📋 Requirements Checklist
+        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <ClipboardList className="w-4 h-4" /> Requirements Checklist
         </h3>
         <span className="text-sm text-slate-400">
           {completedCount}/{totalCount} completed
@@ -124,78 +159,134 @@ export default function RequirementsChecklist({ studentId }: Props) {
         />
       </div>
 
-              
+      {/* ----- Blocking requirements summary banner ----- */}
+      {/* Surfaces blocksSolo/blocksAllFlights — previously set from Admin
+          Setup -> Requirements but never shown or enforced anywhere. This
+          summarizes every incomplete blocking requirement so it can't be
+          missed by scrolling through a flat list. */}
+      {totalBlocking > 0 && (
+        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+          <p className="text-sm font-medium text-red-400 flex items-center gap-1.5 mb-1">
+            <TriangleAlert className="w-4 h-4" />
+            {totalBlocking} incomplete requirement{totalBlocking !== 1 ? 's' : ''} blocking flights
+          </p>
+          <ul className="text-xs text-red-300/90 space-y-0.5 pl-5 list-disc">
+            {blockingAllFlights.map((r) => (
+              <li key={r.id}>{r.requirementName} — blocks all flights</li>
+            ))}
+            {blockingSoloOnly.map((r) => (
+              <li key={r.id}>{r.requirementName} — blocks solo flights</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
-      {/* ----- Requirements list ----- */}
-      <div className="space-y-2">
-        {studentReqs.map((req) => (
-          <div
-            key={req.id}
-            className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
-              req.isCompleted
-                ? 'bg-green-500/10 border-green-500/30'
-                : 'bg-slate-700/30 border-slate-600/30'
-            }`}
-          >
-            {/* Requirement name and category */}
-            <div className="flex items-center space-x-3">
-              {/* Checkbox (or clickable icon) */}
+      {/* ----- Requirements list, grouped by category ----- */}
+      <div className="space-y-4">
+        {groupedByCategory.map(({ category, items }) => {
+          const collapsed = collapsedCategories.has(category);
+          const categoryCompleted = items.filter((i) => i.isCompleted).length;
+          return (
+            <div key={category}>
               <button
-                onClick={() =>
-                  canEdit &&
-                  handleToggle(req.id, req.isCompleted, req.requirementName)
-                }
-                disabled={!canEdit || loading}
-                className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
-                  req.isCompleted
-                    ? 'bg-green-500 border-green-500'
-                    : 'border-slate-500 hover:border-slate-400'
-                } ${!canEdit ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                type="button"
+                onClick={() => toggleCategoryCollapsed(category)}
+                className="w-full flex items-center justify-between text-xs font-medium uppercase tracking-wide text-slate-500 hover:text-slate-400 mb-2 cursor-pointer transition-colors"
               >
-                {req.isCompleted && (
-                  <svg
-                    className="w-3 h-3 text-white"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={3}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                )}
+                <span className="flex items-center gap-1">
+                  {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  {category}
+                </span>
+                <span>{categoryCompleted}/{items.length}</span>
               </button>
 
-              <div>
-                <p
-                  className={`text-sm font-medium ${
-                    req.isCompleted
-                      ? 'text-green-400 line-through'
-                      : 'text-white'
-                  }`}
-                >
-                  {req.requirementName}
-                </p>
-                {req.requirementCategory && (
-                  <p className="text-xs text-slate-500">
-                    {req.requirementCategory}
-                  </p>
-                )}
-              </div>
-            </div>
+              {!collapsed && (
+                <div className="space-y-2">
+                  {items.map((req) => (
+                    <div
+                      key={req.id}
+                      className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                        req.isCompleted
+                          ? 'bg-green-500/10 border-green-500/30'
+                          : 'bg-slate-700/30 border-slate-600/30'
+                      }`}
+                    >
+                      {/* Requirement name, blocking badge, checkbox */}
+                      <div className="flex items-center space-x-3 min-w-0">
+                        {/* Checkbox (or clickable icon) */}
+                        <button
+                          onClick={() =>
+                            canEdit &&
+                            handleToggle(req.id, req.isCompleted, req.requirementName)
+                          }
+                          disabled={!canEdit || loading}
+                          className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                            req.isCompleted
+                              ? 'bg-green-500 border-green-500'
+                              : 'border-slate-500 hover:border-slate-400'
+                          } ${!canEdit ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+                        >
+                          {req.isCompleted && (
+                            <svg
+                              className="w-3 h-3 text-white"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              stroke="currentColor"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={3}
+                                d="M5 13l4 4L19 7"
+                              />
+                            </svg>
+                          )}
+                        </button>
 
-            {/* Completion details */}
-            {req.isCompleted && (
-              <div className="text-right text-xs text-slate-400">
-                <p>{req.completedDate || '—'}</p>
-                {req.completedBy && <p>by {req.completedBy}</p>}
-              </div>
-            )}
-          </div>
-        ))}
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                          <p
+                            className={`text-sm font-medium ${
+                              req.isCompleted
+                                ? 'text-green-400 line-through'
+                                : 'text-white'
+                            }`}
+                          >
+                            {req.requirementName}
+                          </p>
+                          {(req.blocksAllFlights || req.blocksSolo) && (
+                            <span
+                              className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                req.isCompleted
+                                  ? 'text-slate-500 bg-slate-700/50'
+                                  : 'text-red-400 bg-red-500/10'
+                              }`}
+                              title={
+                                req.blocksAllFlights
+                                  ? 'Blocks all flights until completed'
+                                  : 'Blocks solo flights until completed'
+                              }
+                            >
+                              <Lock className="w-2.5 h-2.5" />
+                              {req.blocksAllFlights ? 'Blocks All' : 'Blocks Solo'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Completion details */}
+                      {req.isCompleted && (
+                        <div className="text-right text-xs text-slate-400 flex-shrink-0">
+                          <p>{req.completedDate || '—'}</p>
+                          {req.completedBy && <p>by {req.completedBy}</p>}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

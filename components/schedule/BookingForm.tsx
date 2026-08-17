@@ -524,28 +524,6 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
         }
       }
 
-      const checkStudentRequirements = async (studentId: string): Promise<string> => {
-        // Load requirements for this student
-        await loadTrainingRequirements(studentId);
-        const reqs = getRequirementsForStudent(studentId);
-        
-        // Check for mandatory FRTOL(R) – required for solo
-        if (form.sortieType === 'SOLO') {
-          const frtol = reqs.find(r => r.requirementName.includes('FRTOL(R)'));
-          if (frtol && !frtol.isCompleted) {
-            return '❌ Student cannot fly solo without a valid FRTOL(R).';
-          }
-        }
-        
-        // Check SPL – required for any flying
-        const spl = reqs.find(r => r.requirementName.includes('Student Pilot License'));
-        if (spl && !spl.isCompleted) {
-          return '❌ Student cannot fly without a valid Student Pilot License (SPL).';
-        }
-        
-        return ''; // all good
-      };
-
       return updated;
     });
   };
@@ -578,29 +556,59 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
     setLoading(true);
 
-    // Student Requirements check
-        // ===== CHECK STUDENT REQUIREMENTS (CPL Ground Classes, SPL, FRTOL) =====
+    // ===== CHECK STUDENT REQUIREMENTS =====
+    // Two layers, both against the same freshly-loaded requirements list:
+    //   1. The two specific checks that already existed here (SPL for any
+    //      flight, FRTOL(R) for solo), kept by name match so this doesn't
+    //      silently stop enforcing them if those particular requirement
+    //      templates don't (yet) have blocksAllFlights/blocksSolo ticked
+    //      in Admin Setup -> Requirements.
+    //   2. A generic check across every requirement: any incomplete
+    //      requirement flagged blocksAllFlights blocks every sortie type;
+    //      blocksSolo additionally blocks SOLO specifically. This is what
+    //      makes the Lock flags configured on the Requirements tab (fully
+    //      modeled in the DB/UI, but never actually enforced anywhere
+    //      until now) actually stop a booking — for any requirement an
+    //      admin marks blocking, not just these two hardcoded ones.
+    // Every early return below must setLoading(false) first — this runs
+    // after the setLoading(true) above, unlike the validation checks
+    // earlier in this handler.
     if (!isMaintenance && form.studentId) {
-      // Load requirements for this student
       await loadTrainingRequirements(form.studentId);
       const studentReqs = getRequirementsForStudent(form.studentId);
-      
-      // Check SPL - required for any flying
-      const spl = studentReqs.find(r => 
+
+      const spl = studentReqs.find(r =>
         r.requirementName.includes('Student Pilot License')
       );
       if (spl && !spl.isCompleted) {
         setError('❌ Student cannot fly without a valid Student Pilot License (SPL).');
+        setLoading(false);
         return;
       }
-      
-      // Check FRTOL(R) - required for solo flying
+
       if (isSolo) {
-        const frtol = studentReqs.find(r => 
+        const frtol = studentReqs.find(r =>
           r.requirementName.includes('FRTOL(R)')
         );
         if (frtol && !frtol.isCompleted) {
           setError('❌ Student cannot fly solo without a valid FRTOL(R).');
+          setLoading(false);
+          return;
+        }
+      }
+
+      const blockingAllFlights = studentReqs.find(r => r.blocksAllFlights && !r.isCompleted);
+      if (blockingAllFlights) {
+        setError(`❌ Student cannot fly until "${blockingAllFlights.requirementName}" is completed.`);
+        setLoading(false);
+        return;
+      }
+
+      if (isSolo) {
+        const blockingSolo = studentReqs.find(r => r.blocksSolo && !r.isCompleted);
+        if (blockingSolo) {
+          setError(`❌ Student cannot fly solo until "${blockingSolo.requirementName}" is completed.`);
+          setLoading(false);
           return;
         }
       }
