@@ -17,6 +17,7 @@ import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import Header from '@/components/ui/Header';
+import { Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 export default function ChangePasswordPage() {
   const router = useRouter();
@@ -104,52 +105,36 @@ export default function ChangePasswordPage() {
   };
 
   // ============================================================
-  // EYE ICONS
-  // ============================================================
-  const EyeIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    </svg>
-  );
-
-  const EyeOffIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-    </svg>
-  );
-
-  // ============================================================
   // RENDER
   // ============================================================
   return (
     <ProtectedRoute>
-      <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+      <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
         <Header title="Change Password" backUrl="/dashboard" />
 
         <div className="max-w-md mx-auto px-4 py-12">
-          <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-8">
-            
+          <div className="surface-card backdrop-blur-sm p-8">
+
             {/* Header */}
             <div className="text-center mb-6">
-              <div className="text-4xl mb-3">🔐</div>
-              <h1 className="text-2xl font-bold text-white">Change Password</h1>
-              <p className="text-sm text-slate-400 mt-2">
+              <Lock className="w-10 h-10 mx-auto mb-3 text-secondary" />
+              <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Change Password</h1>
+              <p className="text-sm text-secondary mt-2">
                 Enter your current password and choose a new one.
               </p>
             </div>
 
             {/* Error Message */}
             {error && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mb-4">
-                <p className="text-sm text-red-400">{error}</p>
+              <div className="rounded-lg p-3 mb-4" style={{ backgroundColor: 'var(--danger-soft)', border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }}>
+                <p className="text-sm" style={{ color: 'var(--danger)' }}>{error}</p>
               </div>
             )}
 
             {/* Success Message */}
             {success && (
-              <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 mb-4">
-                <p className="text-sm text-green-400">{success}</p>
+              <div className="rounded-lg p-3 mb-4" style={{ backgroundColor: 'var(--success-soft)', border: '1px solid color-mix(in srgb, var(--success) 30%, transparent)' }}>
+                <p className="text-sm" style={{ color: 'var(--success)' }}>{success}</p>
               </div>
             )}
 
@@ -158,7 +143,7 @@ export default function ChangePasswordPage() {
 
               {/* Current Password */}
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Current Password</label>
+                <label className="block text-sm text-secondary mb-1">Current Password</label>
                 <div className="relative">
                   <input
                     type={showCurrent ? 'text' : 'password'}
@@ -166,18 +151,18 @@ export default function ChangePasswordPage() {
                     onChange={e => setCurrentPassword(e.target.value)}
                     placeholder="Enter current password"
                     required
-                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 pr-12 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="w-full surface-inner rounded-lg px-4 py-3 pr-12 focus:outline-none focus:border-[var(--accent)]"
                   />
                   <button type="button" onClick={() => setShowCurrent(!showCurrent)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white" tabIndex={-1}>
-                    {showCurrent ? <EyeOffIcon /> : <EyeIcon />}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-tertiary hover:text-secondary transition" tabIndex={-1}>
+                    {showCurrent ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
 
               {/* New Password */}
               <div>
-                <label className="block text-sm text-slate-400 mb-1">New Password</label>
+                <label className="block text-sm text-secondary mb-1">New Password</label>
                 <div className="relative">
                   <input
                     type={showNew ? 'text' : 'password'}
@@ -186,19 +171,19 @@ export default function ChangePasswordPage() {
                     placeholder="Minimum 8 characters"
                     required
                     minLength={8}
-                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 pr-12 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="w-full surface-inner rounded-lg px-4 py-3 pr-12 focus:outline-none focus:border-[var(--accent)]"
                   />
                   <button type="button" onClick={() => setShowNew(!showNew)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white" tabIndex={-1}>
-                    {showNew ? <EyeOffIcon /> : <EyeIcon />}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-tertiary hover:text-secondary transition" tabIndex={-1}>
+                    {showNew ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
-                <p className="text-xs text-slate-500 mt-1">Must be at least 8 characters</p>
+                <p className="text-xs text-tertiary mt-1">Must be at least 8 characters</p>
               </div>
 
               {/* Confirm New Password */}
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Confirm New Password</label>
+                <label className="block text-sm text-secondary mb-1">Confirm New Password</label>
                 <div className="relative">
                   <input
                     type={showConfirm ? 'text' : 'password'}
@@ -206,11 +191,11 @@ export default function ChangePasswordPage() {
                     onChange={e => setConfirmPassword(e.target.value)}
                     placeholder="Re-enter new password"
                     required
-                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 pr-12 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                    className="w-full surface-inner rounded-lg px-4 py-3 pr-12 focus:outline-none focus:border-[var(--accent)]"
                   />
                   <button type="button" onClick={() => setShowConfirm(!showConfirm)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white" tabIndex={-1}>
-                    {showConfirm ? <EyeOffIcon /> : <EyeIcon />}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-tertiary hover:text-secondary transition" tabIndex={-1}>
+                    {showConfirm ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                   </button>
                 </div>
               </div>
@@ -219,16 +204,17 @@ export default function ChangePasswordPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full py-3 rounded-lg transition font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
               >
-                {loading ? '⏳ Changing Password...' : '🔐 Change Password'}
+                <Lock className="w-4 h-4" /> {loading ? 'Changing Password...' : 'Change Password'}
               </button>
             </form>
 
             {/* Back to Dashboard */}
             <p className="text-center mt-6">
-              <a href="/dashboard" className="text-sm text-slate-400 hover:text-white transition">
-                ← Back to Dashboard
+              <a href="/dashboard" className="text-sm text-tertiary hover:text-secondary transition flex items-center justify-center gap-1">
+                <ArrowLeft className="w-3.5 h-3.5" /> Back to Dashboard
               </a>
             </p>
           </div>

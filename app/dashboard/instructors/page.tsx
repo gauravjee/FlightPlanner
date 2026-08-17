@@ -7,10 +7,10 @@ import { useFlightStore } from '@/lib/store';
 import { Instructor } from '@/types';
 import InstructorCard from '@/components/instructors/InstructorCard';
 import InstructorFormModal from '@/components/instructors/InstructorFormModal';
-import Link from 'next/link';
 import Header from '@/components/ui/Header';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
+import { Plus, Search, GraduationCap } from 'lucide-react';
 
 export default function InstructorsPage() {
   const { instructors, loadInstructors, addInstructor, updateInstructor, removeInstructor } = useFlightStore();
@@ -69,13 +69,17 @@ export default function InstructorsPage() {
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-      <Header 
-      title="Instructors" 
-      subtitle="Manage flight instructors" 
+    <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
+      <Header
+      title="Instructors"
+      subtitle="Manage flight instructors"
       action={
-        <button onClick={handleAdd} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold">
-          👨‍🏫 Add Instructor
+        <button
+          onClick={handleAdd}
+          className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
+          style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+        >
+          <GraduationCap className="w-4 h-4" /> Add Instructor
         </button>
       }
     />
@@ -84,25 +88,28 @@ export default function InstructorsPage() {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Total', value: stats.total, color: 'text-white' },
-            { label: 'Available', value: stats.available, color: 'text-green-400' },
-            { label: 'Flying', value: stats.flying, color: 'text-blue-400' },
-            { label: 'Off Duty', value: stats.offDuty, color: 'text-slate-400' },
+            { label: 'Total', value: stats.total, color: 'var(--text-primary)' },
+            { label: 'Available', value: stats.available, color: 'var(--success)' },
+            { label: 'Flying', value: stats.flying, color: 'var(--accent)' },
+            { label: 'Off Duty', value: stats.offDuty, color: 'var(--text-secondary)' },
           ].map((stat, i) => (
-            <div key={i} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-              <p className="text-xs text-slate-400">{stat.label}</p>
-              <p className={`text-2xl font-bold ${stat.color} mt-1`}>{stat.value}</p>
+            <div key={i} className="surface-inner p-4">
+              <p className="text-xs text-tertiary">{stat.label}</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: stat.color }}>{stat.value}</p>
             </div>
           ))}
         </div>
 
         {/* Search & Filter */}
         <div className="flex gap-3 mb-6">
-          <input type="text" placeholder="🔍 Search by name or license..." value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-            className="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-white" />
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-tertiary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input type="text" placeholder="Search by name or license..." value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              className="w-full surface-inner rounded-lg pl-9 pr-4 py-2 focus:outline-none focus:border-[var(--accent)]" />
+          </div>
           <select value={statusFilter} onChange={e => setStatusFilter(e.target.value)}
-            className="bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-white">
+            className="surface-inner rounded-lg px-3 py-2 focus:outline-none focus:border-[var(--accent)]">
             <option value="ALL">All Status</option>
             <option value="AVAILABLE">Available</option>
             <option value="FLYING">Flying</option>
@@ -113,8 +120,8 @@ export default function InstructorsPage() {
         {/* Instructor Cards */}
         {filteredInstructors.length === 0 ? (
           <div className="text-center py-20">
-            <p className="text-6xl mb-4">👨‍🏫</p>
-            <p className="text-slate-400 text-lg">No instructors found</p>
+            <GraduationCap className="w-10 h-10 text-tertiary mx-auto mb-4" />
+            <p className="text-secondary text-lg">No instructors found</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

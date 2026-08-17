@@ -11,16 +11,20 @@ import Header from '@/components/ui/Header';
 import RoleGate from '@/components/ui/RoleGate';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist';
+import {
+  HeartPulse, TriangleAlert, CircleCheck, PartyPopper, Plane,
+  TrendingUp, Calendar, NotebookPen, ClipboardList, Star,
+} from 'lucide-react';
 
 // ============================================================
 // PROGRESS BAR COLOR HELPER
 // ============================================================
 const getProgressColor = (percent: number): string => {
-  if (percent >= 100) return 'bg-green-500';
-  if (percent >= 75) return 'bg-blue-500';
-  if (percent >= 50) return 'bg-yellow-500';
-  if (percent >= 25) return 'bg-orange-500';
-  return 'bg-red-500';
+  if (percent >= 100) return 'var(--success)';
+  if (percent >= 75) return 'var(--accent)';
+  if (percent >= 50) return 'var(--warning)';
+  if (percent >= 25) return 'var(--warning-text)';
+  return 'var(--danger)';
 };
 
 export default function StudentDashboardPage() {
@@ -146,7 +150,7 @@ export default function StudentDashboardPage() {
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['student']}>
-        <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+        <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
           <Header
             title="Student Dashboard"
             subtitle={student ? `Welcome, ${student.name}` : 'Loading...'}
@@ -154,50 +158,57 @@ export default function StudentDashboardPage() {
           />
 
           <div className="max-w-7xl mx-auto px-4 py-6">
-            
+
             {/* ============================================================ */}
             {/* STUDENT INFO & MEDICAL BANNER */}
             {/* ============================================================ */}
             {student && (
-              <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 mb-6">
+              <div className="surface-card p-4 mb-6">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-slate-700 rounded-full flex items-center justify-center">
-                      <span className="text-xl font-bold text-white">{student.initials}</span>
+                    <div className="w-12 h-12 surface-inner rounded-full flex items-center justify-center">
+                      <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{student.initials}</span>
                     </div>
                     <div>
-                      <h2 className="text-lg font-bold text-white">{student.name}</h2>
-                      <p className="text-xs text-slate-400">
+                      <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{student.name}</h2>
+                      <p className="text-xs text-tertiary">
                         {student.enrollmentId} | {student.trainingStage} | {progress.totalHours}h Total
                       </p>
                     </div>
                   </div>
                   {/* Medical Status */}
                   {medicalDate && (
-                    <div className={`px-4 py-2 rounded-lg text-center ${
-                      daysUntilMedical !== null && daysUntilMedical < 0
-                        ? 'bg-red-500/20 border border-red-500/30'
-                        : daysUntilMedical !== null && daysUntilMedical <= 30
-                        ? 'bg-yellow-500/20 border border-yellow-500/30'
-                        : 'bg-green-500/20 border border-green-500/30'
-                    }`}>
-                      <p className={`text-sm font-bold ${
+                    <div
+                      className="px-4 py-2 rounded-lg text-center"
+                      style={
                         daysUntilMedical !== null && daysUntilMedical < 0
-                          ? 'text-red-400'
+                          ? { backgroundColor: 'var(--danger-soft)', border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)' }
                           : daysUntilMedical !== null && daysUntilMedical <= 30
-                          ? 'text-yellow-400'
-                          : 'text-green-400'
-                      }`}>
-                        🏥 Medical: {student.medicalExpiry}
+                          ? { backgroundColor: 'var(--warning-soft)', border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)' }
+                          : { backgroundColor: 'var(--success-soft)', border: '1px solid color-mix(in srgb, var(--success) 30%, transparent)' }
+                      }
+                    >
+                      <p
+                        className="text-sm font-bold flex items-center gap-1.5 justify-center"
+                        style={{
+                          color:
+                            daysUntilMedical !== null && daysUntilMedical < 0
+                              ? 'var(--danger)'
+                              : daysUntilMedical !== null && daysUntilMedical <= 30
+                              ? 'var(--warning-text)'
+                              : 'var(--success)',
+                        }}
+                      >
+                        <HeartPulse className="w-3.5 h-3.5" /> Medical: {student.medicalExpiry}
                       </p>
                       {daysUntilMedical !== null && daysUntilMedical < 0 && (
-                        <p className="text-xs text-red-400 mt-1">⚠ EXPIRED - Grounded until renewed!</p>
+                        <p className="text-xs mt-1 flex items-center gap-1 justify-center" style={{ color: 'var(--danger)' }}><TriangleAlert className="w-3 h-3" /> EXPIRED - Grounded until renewed!</p>
                       )}
                       {daysUntilMedical !== null && daysUntilMedical > 0 && daysUntilMedical <= 30 && (
-                        <p className="text-xs text-yellow-400 mt-1">⚠ {daysUntilMedical} days remaining</p>
+                        <p className="text-xs mt-1 flex items-center gap-1 justify-center" style={{ color: 'var(--warning-text)' }}><TriangleAlert className="w-3 h-3" /> {daysUntilMedical} days remaining</p>
                       )}
                       {daysUntilMedical !== null && daysUntilMedical > 30 && (
-                        <p className="text-xs text-green-400 mt-1">✅ Valid</p>
+                        <p className="text-xs mt-1 flex items-center gap-1 justify-center" style={{ color: 'var(--success)' }}><CircleCheck className="w-3 h-3" /> Valid</p>
                       )}
                     </div>
                   )}
@@ -207,39 +218,43 @@ export default function StudentDashboardPage() {
 
             {/* ===== FIRST SOLO CELEBRATION BANNER ===== */}
             {student?.firstSoloDate && (
-              <div className="bg-gradient-to-r from-yellow-500/20 via-amber-500/10 to-yellow-500/20 border border-yellow-500/30 rounded-xl p-6 mb-6 text-center">
-                <p className="text-4xl mb-3">🎉</p>
-                <p className="text-xl font-bold text-yellow-400">Congratulations on Your First Solo!</p>
-                <p className="text-sm text-yellow-300/80 mt-2">
+              <div className="rounded-xl p-6 mb-6 text-center" style={{ backgroundImage: 'linear-gradient(90deg, color-mix(in srgb, var(--warning) 20%, transparent), color-mix(in srgb, var(--warning) 10%, transparent), color-mix(in srgb, var(--warning) 20%, transparent))', border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)' }}>
+                <PartyPopper className="w-8 h-8 mx-auto mb-3" style={{ color: 'var(--warning-text)' }} />
+                <p className="text-xl font-bold" style={{ color: 'var(--warning-text)' }}>Congratulations on Your First Solo!</p>
+                <p className="text-sm mt-2" style={{ color: 'var(--warning-text)' }}>
                   A major milestone achieved on{' '}
-                  <span className="font-bold text-yellow-400">
-                    {new Date(student.firstSoloDate).toLocaleDateString('en-IN', { 
-                      weekday: 'long', 
-                      day: 'numeric', 
-                      month: 'long', 
-                      year: 'numeric' 
+                  <span className="font-bold">
+                    {new Date(student.firstSoloDate).toLocaleDateString('en-IN', {
+                      weekday: 'long',
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric'
                     })}
                   </span>
                 </p>
-                <p className="text-xs text-yellow-200/50 mt-2">This is where every pilot's journey truly begins! ✈️</p>
+                <p className="text-xs mt-2 flex items-center gap-1 justify-center" style={{ color: 'var(--warning-text)', opacity: 0.7 }}>
+                  This is where every pilot's journey truly begins! <Plane className="w-3.5 h-3.5" />
+                </p>
               </div>
             )}
 
             {/* ============================================================ */}
             {/* OVERALL PROGRESS BAR */}
             {/* ============================================================ */}
-            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 mb-6">
-              <h3 className="text-lg font-semibold text-white mb-4">📈 My Progress</h3>
+            <div className="surface-card p-6 mb-6">
+              <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <TrendingUp className="w-4 h-4 text-secondary" /> My Progress
+              </h3>
               <div className="flex items-center space-x-4 mb-4">
-                <div className="flex-1 bg-slate-700 rounded-full h-4">
+                <div className="flex-1 surface-inner rounded-full h-4">
                   <div
-                    className={`h-4 rounded-full transition-all duration-500 ${getProgressColor(overallPercent)}`}
-                    style={{ width: `${overallPercent}%` }}
+                    className="h-4 rounded-full transition-all duration-500"
+                    style={{ width: `${overallPercent}%`, backgroundColor: getProgressColor(overallPercent) }}
                   />
                 </div>
-                <span className="text-white font-bold text-lg">{overallPercent}%</span>
+                <span className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>{overallPercent}%</span>
               </div>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-tertiary">
                 {progress.totalHours}h / {progress.requirements.totalHours}h required for {student?.trainingStage || 'license'}
               </p>
             </div>
@@ -256,14 +271,14 @@ export default function StudentDashboardPage() {
                 { label: 'Night Hours', value: `${progress.nightHours}h`, target: `${progress.requirements.nightHours}h`, percent: progress.nightPercent },
                 { label: 'Landings', value: progress.totalLandings.toString(), target: progress.requirements.landings.toString(), percent: progress.landingsPercent },
               ].map((item, i) => (
-                <div key={i} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <p className="text-xs text-slate-400 mb-2">{item.label}</p>
-                  <p className="text-lg font-bold text-white">{item.value}</p>
-                  <p className="text-xs text-slate-500 mb-2">Target: {item.target}</p>
-                  <div className="w-full bg-slate-700 rounded-full h-2">
-                    <div className={`h-2 rounded-full ${getProgressColor(item.percent)}`} style={{ width: `${item.percent}%` }} />
+                <div key={i} className="surface-card p-4">
+                  <p className="text-xs text-tertiary mb-2">{item.label}</p>
+                  <p className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{item.value}</p>
+                  <p className="text-xs text-tertiary mb-2">Target: {item.target}</p>
+                  <div className="w-full surface-inner rounded-full h-2">
+                    <div className="h-2 rounded-full" style={{ width: `${item.percent}%`, backgroundColor: getProgressColor(item.percent) }} />
                   </div>
-                  <p className="text-xs text-slate-400 mt-1">{item.percent}%</p>
+                  <p className="text-xs text-tertiary mt-1">{item.percent}%</p>
                 </div>
               ))}
             </div>
@@ -279,28 +294,28 @@ export default function StudentDashboardPage() {
             {/* TWO COLUMN: UPCOMING FLIGHTS + RECENT DEBRIEFS */}
             {/* ============================================================ */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-              
+
               {/* ----- UPCOMING FLIGHTS ----- */}
-              <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
-                <h2 className="text-lg font-semibold text-white mb-4">📅 My Upcoming Flights</h2>
+              <div className="surface-card backdrop-blur-sm p-6">
+                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-secondary" /> My Upcoming Flights
+                </h2>
                 {myFlights.length === 0 ? (
-                  <p className="text-slate-400 text-sm">No upcoming flights scheduled.</p>
+                  <p className="text-secondary text-sm">No upcoming flights scheduled.</p>
                 ) : (
                   <div className="space-y-2">
                     {myFlights.slice(0, 5).map(flight => (
-                      <div key={flight.id} className="bg-slate-900/50 rounded-lg p-3 flex justify-between items-center">
+                      <div key={flight.id} className="surface-inner p-3 flex justify-between items-center">
                         <div>
-                          <p className="text-white text-sm font-medium">
+                          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                             {new Date(flight.startTime).toLocaleDateString('en-IN')}{' '}
                             {new Date(flight.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                           </p>
-                          <p className="text-slate-400 text-xs">
+                          <p className="text-tertiary text-xs">
                             {flight.sortieType?.replace(/_/g, ' ')} — {flight.aircraftReg} | {flight.instructorName}
                           </p>
                         </div>
-                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          flight.status === 'SCHEDULED' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
-                        }`}>
+                        <span className={`badge ${flight.status === 'SCHEDULED' ? 'badge-accent' : 'badge-success'}`}>
                           {flight.status?.replace('_', ' ')}
                         </span>
                       </div>
@@ -310,40 +325,41 @@ export default function StudentDashboardPage() {
               </div>
 
               {/* ----- RECENT DEBRIEFS ----- */}
-              <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
-                <h2 className="text-lg font-semibold text-white mb-4">📝 Recent Instructor Debriefs</h2>
+              <div className="surface-card backdrop-blur-sm p-6">
+                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <NotebookPen className="w-4 h-4 text-secondary" /> Recent Instructor Debriefs
+                </h2>
                 {recentDebriefs.length === 0 ? (
                   <div className="text-center py-8">
-                    <p className="text-slate-400 text-sm">No debriefs yet. Complete a flight with your instructor!</p>
+                    <p className="text-secondary text-sm">No debriefs yet. Complete a flight with your instructor!</p>
                   </div>
                 ) : (
                   <div className="space-y-3">
                     {recentDebriefs.map((record, i) => (
-                      <div key={i} className="bg-slate-900/50 rounded-lg p-4 border border-slate-700/50">
+                      <div key={i} className="surface-inner p-4">
                         {/* Header */}
                         <div className="flex items-center justify-between mb-2">
                           <div>
-                            <p className="text-white text-sm font-medium">
+                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                               {new Date(record.flightDate).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })}
                             </p>
-                            <p className="text-xs text-slate-400">
+                            <p className="text-xs text-tertiary">
                               {record.sortieType?.replace(/_/g, ' ')} | {record.aircraftReg} | {record.totalHours}h
                             </p>
                           </div>
-                          <span className="text-sm">
-                            {'⭐'.repeat(record.studentPerformance || 0)}
-                            {'☆'.repeat(5 - (record.studentPerformance || 0))}
+                          <span className="text-sm flex items-center gap-1" style={{ color: 'var(--warning-text)' }}>
+                            <Star className="w-3.5 h-3.5" /> {record.studentPerformance || 0}/5
                           </span>
                         </div>
                         {/* Instructor Notes */}
-                        <div className="bg-slate-800/50 rounded p-2 mt-2">
-                          <p className="text-xs text-slate-500 mb-1">Instructor: {record.instructorName}</p>
-                          <p className="text-sm text-slate-300 italic">"{record.instructorNotes}"</p>
+                        <div className="surface-muted rounded p-2 mt-2">
+                          <p className="text-xs text-tertiary mb-1">Instructor: {record.instructorName}</p>
+                          <p className="text-sm text-secondary italic">"{record.instructorNotes}"</p>
                         </div>
                         {/* Maneuvers */}
                         {record.maneuvers && (
                           <div className="mt-2">
-                            <p className="text-xs text-slate-500">Maneuvers: <span className="text-slate-400">{record.maneuvers}</span></p>
+                            <p className="text-xs text-tertiary">Maneuvers: <span className="text-secondary">{record.maneuvers}</span></p>
                           </div>
                         )}
                       </div>
@@ -356,26 +372,29 @@ export default function StudentDashboardPage() {
             {/* ============================================================ */}
             {/* RECENT LOGBOOK */}
             {/* ============================================================ */}
-            <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
+            <div className="surface-card backdrop-blur-sm p-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white">📋 Recent Logbook</h2>
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-secondary" /> Recent Logbook
+                </h2>
                 {myLogbook.length > 5 && (
                   <button
                     type="button"
                     onClick={() => setShowAllLogbook(prev => !prev)}
-                    className="text-sm text-blue-400 hover:text-blue-300 cursor-pointer"
+                    className="text-sm cursor-pointer transition"
+                    style={{ color: 'var(--accent)' }}
                   >
                     {showAllLogbook ? '← Show Less' : 'View All →'}
                   </button>
                 )}
               </div>
               {myLogbook.length === 0 ? (
-                <p className="text-slate-400 text-sm">No flight records yet.</p>
+                <p className="text-secondary text-sm">No flight records yet.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-slate-400 border-b border-slate-700">
+                      <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                         <th className="pb-2">Date</th>
                         <th className="pb-2">Sortie</th>
                         <th className="pb-2">Aircraft</th>
@@ -385,18 +404,16 @@ export default function StudentDashboardPage() {
                         <th className="pb-2">Instructor</th>
                       </tr>
                     </thead>
-                    <tbody className="text-slate-300">
+                    <tbody className="text-secondary">
                       {(showAllLogbook ? myLogbook : myLogbook.slice(0, 5)).map(record => (
-                        <tr key={record.id} className="border-b border-slate-700/50">
-                          <td className="py-2 text-white">{new Date(record.flightDate).toLocaleDateString('en-IN')}</td>
+                        <tr key={record.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
+                          <td className="py-2" style={{ color: 'var(--text-primary)' }}>{new Date(record.flightDate).toLocaleDateString('en-IN')}</td>
                           <td className="py-2">{record.sortieType?.replace(/_/g, ' ')}</td>
                           <td className="py-2">{record.aircraftReg}</td>
                           <td className="py-2">
-                            <span className={`px-2 py-0.5 rounded text-xs ${
-                              record.flightType === 'SOLO' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'
-                            }`}>{record.flightType}</span>
+                            <span className={`badge ${record.flightType === 'SOLO' ? 'badge-success' : 'badge-accent'}`}>{record.flightType}</span>
                           </td>
-                          <td className="py-2 text-green-400">{record.totalHours}h</td>
+                          <td className="py-2" style={{ color: 'var(--success)' }}>{record.totalHours}h</td>
                           <td className="py-2">{record.landings}</td>
                           <td className="py-2">{record.instructorName}</td>
                         </tr>

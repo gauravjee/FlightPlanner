@@ -11,8 +11,8 @@ export default function SchedulePage() {
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'operations']}>
-        <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-          <Header title="📅 Ground School Schedule" subtitle="Weekly / Monthly Calendar" backUrl="/dashboard/ground-school" />
+        <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
+          <Header title="Ground School Schedule" subtitle="Weekly / Monthly Calendar" backUrl="/dashboard/ground-school" />
           <div className="max-w-7xl mx-auto px-4 py-6">
             <GroundSchoolCalendar />
           </div>

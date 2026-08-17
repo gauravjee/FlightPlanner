@@ -4,7 +4,10 @@
 // Features:
 //   - IST → UTC conversion for storage
 //   - Date validation (no past dates)
-//   - 30‑minute buffer between flights on same aircraft
+//   - Minimum flight duration 45 min, in 15-min increments (45, 60, 75, ...)
+//   - Turnaround buffer between flights on same aircraft: the FTO's
+//     configured "Buffer Between Flights" setting (defaults to 15 min if
+//     unset), +15 min mandatory refuel window if the aircraft's fuel is ≤ 50L
 //   - Real‑time conflict detection with available/booked aircraft grouping
 //   - Person conflict detection (student/instructor can't be double‑booked)
 //   - Student medical expiry check – blocks expired students
@@ -23,7 +26,13 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { useFlightStore } from '@/lib/store';
+import {
+  useFlightStore, getAircraftBufferMinutes, parseTurnaroundBufferSetting,
+  MIN_FLIGHT_DURATION_MIN, FLIGHT_DURATION_INCREMENT_MIN,
+  LOW_FUEL_THRESHOLD_L, FUELING_BUFFER_MIN,
+  getAircraftFuelBurnRate, getProjectedFuelAfter,
+  getSchedulingBlockReason, parseWeeklyOffDays,
+} from '@/lib/store';
 import { ScheduledFlight } from '@/types';
 
 // ============================================================
@@ -103,6 +112,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     loadTrainingRequirements,
     getRequirementsForStudent,
     ftoSettings, loadFTOSettings,
+    holidays, loadHolidays,
   } = useFlightStore();
 
   // ----- Initial data load -----
@@ -110,8 +120,14 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     if (aircraft.length === 0) loadAircraft();
     if (students.length === 0) loadStudents();
     if (Object.keys(ftoSettings).length === 0) loadFTOSettings();
+    if (holidays.length === 0) loadHolidays();
     loadScheduledFlights();
   }, []);
+
+  // FTO-wide blackout days — weekly recurring off day(s) (Settings -> Time &
+  // Scheduling -> "Weekly Off Day(s)") parsed from the raw comma-separated
+  // fto_settings value.
+  const weeklyOffDays = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
 
   // ----- Daily operating window & slot granularity, from FTO Settings -----
   // (Settings -> Daily Time Slots). Falls back to the previous hardcoded
@@ -122,6 +138,12 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   const slotStart = ftoSettings['time_slot_start'] || DEFAULT_SLOT_START;
   const slotEnd = ftoSettings['time_slot_end'] || DEFAULT_SLOT_END;
   const slotIntervalMin = parseInt(ftoSettings['time_slot_interval'], 10) || DEFAULT_SLOT_INTERVAL_MIN;
+
+  // Required turnaround gap between flights on the same aircraft (Settings
+  // -> Time & Scheduling -> "Buffer Between Flights"); low-fuel aircraft get
+  // an additional mandatory refuel window on top of this — see
+  // getAircraftBufferMinutes.
+  const turnaroundMin = parseTurnaroundBufferSetting(ftoSettings['buffer_minutes']);
 
   // ----- Default times (next full hour) -----
   const now = new Date();
@@ -304,26 +326,50 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // Selected aircraft object for fuel display
   const selectedAircraft = aircraft.find(a => String(a.id) === String(form.aircraftId));
 
+  // Estimated fuel remaining at the end of THIS booking, from the selected
+  // aircraft's current fuel level and its (per-aircraft, else per-type)
+  // burn rate — a planning estimate only, not a certified fuel calculation.
+  // null until a valid aircraft + duration are selected.
+  const durationMinForFuelEstimate = (() => {
+    if (!form.startTime || !form.endTime) return 0;
+    const [sh, sm] = form.startTime.split(':').map(Number);
+    const [eh, em] = form.endTime.split(':').map(Number);
+    const mins = (eh * 60 + em) - (sh * 60 + sm);
+    return mins > 0 ? mins : 0;
+  })();
+  const estimatedFuelAfter = selectedAircraft && durationMinForFuelEstimate > 0
+    ? getProjectedFuelAfter(selectedAircraft, durationMinForFuelEstimate)
+    : null;
+
   // ============================================================
   // VALIDATION FUNCTIONS
   // ============================================================
 
-  // Date must not be in the past
+  // Date must not be in the past, and must not fall on a holiday or the
+  // FTO's weekly off day.
   const validateDate = (dateStr: string): string => {
     const selected = new Date(dateStr + 'T00:00:00');
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (selected < today) return '❌ Cannot book flights in the past.';
+    const blockReason = getSchedulingBlockReason(dateStr, holidays, weeklyOffDays);
+    if (blockReason) return `❌ FTO is closed (${blockReason.label}) — cannot book flights on this date.`;
     return '';
   };
 
-  // End time must be after start time, minimum 30 min duration
+  // End time must be after start time; duration must be at least
+  // MIN_FLIGHT_DURATION_MIN and land on a FLIGHT_DURATION_INCREMENT_MIN step
+  // (45, 60, 75, 90 minutes, ...).
   const validateTimes = (startTime: string, endTime: string): string => {
     if (!startTime || !endTime) return '';
     const [sh, sm] = startTime.split(':').map(Number);
     const [eh, em] = endTime.split(':').map(Number);
-    if (eh * 60 + em <= sh * 60 + sm) return '❌ End time must be after start time.';
-    if ((eh * 60 + em) - (sh * 60 + sm) < 30) return '❌ Minimum flight duration is 30 minutes.';
+    const durationMin = (eh * 60 + em) - (sh * 60 + sm);
+    if (durationMin <= 0) return '❌ End time must be after start time.';
+    if (durationMin < MIN_FLIGHT_DURATION_MIN) return `❌ Minimum flight duration is ${MIN_FLIGHT_DURATION_MIN} minutes.`;
+    if (durationMin % FLIGHT_DURATION_INCREMENT_MIN !== 0) {
+      return `❌ Flight duration must be in ${FLIGHT_DURATION_INCREMENT_MIN}-minute increments (e.g. ${MIN_FLIGHT_DURATION_MIN}, ${MIN_FLIGHT_DURATION_MIN + FLIGHT_DURATION_INCREMENT_MIN}, ${MIN_FLIGHT_DURATION_MIN + FLIGHT_DURATION_INCREMENT_MIN * 2} min).`;
+    }
     return '';
   };
 
@@ -358,22 +404,35 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // CONFLICT DETECTION
   // ============================================================
 
-  // Aircraft conflict – with 30‑minute buffer
+  // Aircraft conflict – buffer is per-aircraft (each existing flight's own
+  // aircraft's turnaround/fueling gap, from its current fuel level), not a
+  // flat 30 minutes. Same rule the store's checkConflicts() applies at
+  // actual booking time, so this list of "already booked" aircraft always
+  // matches what submitting the form would actually allow.
   const getBookedAircraftIds = useMemo((): string[] => {
     if (!form.date || !form.startTime || !form.endTime) return [];
     const slotStart = new Date(`${form.date}T${form.startTime}:00+05:30`);
     const slotEnd = new Date(`${form.date}T${form.endTime}:00+05:30`);
-    const bufferedStart = new Date(slotStart); bufferedStart.setMinutes(bufferedStart.getMinutes() - 30);
-    const bufferedEnd = new Date(slotEnd); bufferedEnd.setMinutes(bufferedEnd.getMinutes() + 30);
     return scheduledFlights
       .filter(flight => {
         if (existingFlight && flight.id === existingFlight.id) return false;
-        const fs = new Date(flight.startTime);
-        const fe = new Date(flight.endTime);
-        return fs < bufferedEnd && fe > bufferedStart;
+        const flightAircraft = aircraft.find(a => String(a.id) === String(flight.aircraftId));
+        // Asymmetric: the gap before THAT flight is based on the aircraft's
+        // current fuel (best info we have for "back then"); the gap after it
+        // is based on the fuel projected at the end of that flight's own
+        // duration — same logic the store's checkConflicts() applies.
+        const flightDurationMin = Math.round(
+          (new Date(flight.endTime).getTime() - new Date(flight.startTime).getTime()) / 60000
+        );
+        const bufferBeforeMin = getAircraftBufferMinutes(flightAircraft?.currentFuel, turnaroundMin);
+        const projectedFuelAfter = getProjectedFuelAfter(flightAircraft, flightDurationMin);
+        const bufferAfterMin = getAircraftBufferMinutes(projectedFuelAfter, turnaroundMin);
+        const bufferedStart = new Date(flight.startTime); bufferedStart.setMinutes(bufferedStart.getMinutes() - bufferBeforeMin);
+        const bufferedEnd = new Date(flight.endTime); bufferedEnd.setMinutes(bufferedEnd.getMinutes() + bufferAfterMin);
+        return slotStart < bufferedEnd && slotEnd > bufferedStart;
       })
       .map(flight => flight.aircraftId);
-  }, [form.date, form.startTime, form.endTime, scheduledFlights, existingFlight]);
+  }, [form.date, form.startTime, form.endTime, scheduledFlights, existingFlight, aircraft, turnaroundMin]);
 
   const availableAircraft = useMemo(
     () => aircraft.filter(ac => ac.status === 'ACTIVE' && !getBookedAircraftIds.includes(String(ac.id))),
@@ -737,7 +796,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
             </div>
           </div>
           <p className="text-xs text-slate-500 -mt-2">
-            Bookable window: {slotStart}–{slotEnd} IST, {slotIntervalMin}-minute slots
+            Bookable window: {slotStart}–{slotEnd} IST, {slotIntervalMin}-minute start times. Flights must be at least {MIN_FLIGHT_DURATION_MIN} min, in {FLIGHT_DURATION_INCREMENT_MIN}-min increments.
           </p>
 
           {/* ===== DURATION ===== */}
@@ -769,7 +828,11 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                 </optgroup>
               )}
             </select>
-            {bookedAircraft.length > 0 && <p className="text-xs text-yellow-400 mt-1">🔴 {bookedAircraft.length} aircraft booked (30‑min buffer)</p>}
+            {bookedAircraft.length > 0 && (
+              <p className="text-xs text-yellow-400 mt-1">
+                🔴 {bookedAircraft.length} aircraft booked ({turnaroundMin}-min turnaround, +{FUELING_BUFFER_MIN} min if fuel ≤ {LOW_FUEL_THRESHOLD_L}L)
+              </p>
+            )}
           </div>
 
           {/* ===== STUDENT ===== */}
@@ -847,12 +910,31 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
             </div>
           )}
 
-          {/* ===== AIRCRAFT FUEL INFO (Current Fuel Level) ===== */}
+          {/* ===== AIRCRAFT FUEL INFO (Current Fuel Level + Estimated Landing Fuel) ===== */}
           {selectedAircraft && (
             <div className="bg-slate-700/50 rounded-lg p-3 text-center">
               <p className="text-xs text-slate-400">Current Fuel Level</p>
               <p className="text-2xl font-bold text-white">{selectedAircraft.currentFuel}L</p>
               <p className="text-xs text-slate-500">Capacity: {selectedAircraft.fuelCapacity}L</p>
+              {estimatedFuelAfter !== null && (
+                <p className="text-xs text-slate-400 mt-2">
+                  ⛽ Est. fuel at landing: <span className="font-semibold text-white">~{Math.round(estimatedFuelAfter)}L</span>
+                  {' '}<span className="text-slate-500">
+                    (~{getAircraftFuelBurnRate(selectedAircraft)} L/hr avg for {selectedAircraft.type}
+                    {selectedAircraft.fuelBurnRateLph != null ? '' : ', type default'} — planning estimate only, verify against actual)
+                  </span>
+                </p>
+              )}
+              {selectedAircraft.currentFuel <= LOW_FUEL_THRESHOLD_L && (
+                <p className="text-xs text-yellow-400 mt-1">
+                  ⛽ Fuel at or below {LOW_FUEL_THRESHOLD_L}L — a mandatory {FUELING_BUFFER_MIN}-min refuel window is required before/after this flight.
+                </p>
+              )}
+              {estimatedFuelAfter !== null && estimatedFuelAfter <= LOW_FUEL_THRESHOLD_L && selectedAircraft.currentFuel > LOW_FUEL_THRESHOLD_L && (
+                <p className="text-xs text-yellow-400 mt-1">
+                  ⛽ Projected to land at or below {LOW_FUEL_THRESHOLD_L}L — a mandatory {FUELING_BUFFER_MIN}-min refuel window will be required after this flight.
+                </p>
+              )}
             </div>
           )}
 

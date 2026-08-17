@@ -14,23 +14,38 @@
 'use client';
 
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
-import { useState, useEffect } from 'react';
-import { useFlightStore } from '@/lib/store';
+import { useState, useEffect, useMemo } from 'react';
+import {
+  useFlightStore, getAircraftBufferMinutes, parseTurnaroundBufferSetting, MIN_FLIGHT_DURATION_MIN,
+  getAircraftFuelBurnRate, getProjectedFuelAfter,
+} from '@/lib/store';
 import Header from '@/components/ui/Header';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import StudentProgressWidget from '@/components/dashboard/StudentProgressWidget';
 import NotificationWidget from '@/components/dashboard/NotificationWidget';
+import {
+  Plane, Calendar, ChevronRight, Users, Fuel, Cloud, Wind, Thermometer, Eye, Activity,
+  RefreshCw, Inbox, TriangleAlert, FileText, Wrench, GraduationCap, UserRound, Umbrella,
+  ChartColumnIncreasing, BookOpen,
+} from 'lucide-react';
 
 export default function DashboardPage() {
   const store = useFlightStore();
   const weather = store.weather;
   const generalWeather = store.generalWeather;
   const aircraft = store.aircraft;
+  const loadAircraft = store.loadAircraft;
   const fetchWeather = store.fetchWeather;
   const fetchGeneralWeather = store.fetchGeneralWeather;
   const notams = store.notams;
   const loadNOTAMs = store.loadNOTAMs;
+  const scheduledFlights = store.scheduledFlights;
+  const loadScheduledFlights = store.loadScheduledFlights;
+  const students = store.students;
+  const loadStudents = store.loadStudents;
+  const instructors = store.instructors;
+  const loadInstructors = store.loadInstructors;
 
   const { data: session } = useSession();
   const router = useRouter();
@@ -123,11 +138,155 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [fetchGeneralWeather, station, lat, lon, hasValidLatLon, ftoSettingsLoaded]);
 
+  // Load fleet/roster + today's bookings for the schedule table and fuel
+  // status below. Aircraft/students/instructors are loaded alongside
+  // scheduledFlights (not just scheduledFlights alone) because the store
+  // resolves aircraft registration / student name / instructor name onto
+  // each booking at load time from whatever's already in those three
+  // lists — loading them together avoids a first-load flash of
+  // "Unknown"/"None" while they're still empty.
+  useEffect(() => {
+    loadAircraft();
+    loadStudents();
+    loadInstructors();
+    loadScheduledFlights();
+  }, [loadAircraft, loadStudents, loadInstructors, loadScheduledFlights]);
+
+  // Today's flights, computed live from scheduled_flights — this used to
+  // be a hardcoded placeholder array (bug: it never reflected the real
+  // database, so clearing demo/test data didn't change what showed here).
+  // Every status is included, not just active ones, so a cancelled
+  // booking still shows (with its own badge) instead of silently
+  // vanishing from the list.
+  const todaysFlights = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const statusMeta: Record<string, { label: string; badge: string }> = {
+      SCHEDULED: { label: 'Scheduled', badge: 'badge-accent' },
+      IN_PROGRESS: { label: 'In progress', badge: 'badge-success' },
+      COMPLETED: { label: 'Completed', badge: 'badge-neutral' },
+      CANCELLED: { label: 'Cancelled', badge: 'badge-danger' },
+    };
+    const fmtTime = (iso: string) =>
+      new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    return scheduledFlights
+      .filter(f => new Date(f.startTime).toLocaleDateString('en-CA') === todayStr)
+      .slice()
+      .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+      .map(f => {
+        const ac = aircraft.find(a => String(a.id) === String(f.aircraftId));
+        const student = students.find(s => String(s.id) === String(f.studentId));
+        const instructor = instructors.find(i => String(i.id) === String(f.instructorId));
+        const meta = statusMeta[f.status] || { label: f.status, badge: 'badge-neutral' };
+        return {
+          id: f.id,
+          time: `${fmtTime(f.startTime)}-${fmtTime(f.endTime)}`,
+          aircraft: ac ? `${f.aircraftReg} (${ac.type})` : f.aircraftReg,
+          pilot: `${student?.initials || '—'}/${instructor?.initials || '—'}`,
+          sortie: f.sortieType,
+          status: meta.label,
+          badge: meta.badge,
+        };
+      });
+  }, [scheduledFlights, aircraft, students, instructors]);
+
+  // Distinct students with a non-cancelled flight today — same "flying
+  // today" definition already used by StudentProgressWidget (excludes
+  // CANCELLED, per the earlier fix so a cancelled booking doesn't still
+  // count as the student flying).
+  const studentsFlyingTodayCount = useMemo(() => {
+    const ids = new Set(
+      todaysFlights
+        .map(tf => scheduledFlights.find(f => f.id === tf.id))
+        .filter((f): f is typeof scheduledFlights[number] => !!f && !!f.studentId && f.status !== 'CANCELLED')
+        .map(f => f.studentId)
+    );
+    return ids.size;
+  }, [todaysFlights, scheduledFlights]);
+
+  // Remaining bookable slots today, across active aircraft — computed from
+  // the FTO's own configured operating window (Settings -> Daily Time
+  // Slots -> time_slot_start/_end/_interval, same defaults/keys BookingForm
+  // uses) and the same scheduling rules the store's checkConflicts()/
+  // bookFlight() apply when actually booking a flight (see lib/store.ts),
+  // so this number means the same thing here as it does at booking time:
+  //   - A slot only counts if a flight of at least MIN_FLIGHT_DURATION_MIN
+  //     could actually start there and finish before the window closes —
+  //     not just a bare, duration-less point in time (the old version's
+  //     off-by-one bug: it allowed a "slot" at exactly closing time, with
+  //     no room left for any flight at all).
+  //   - Each existing booking's own turnaround/fueling buffer is asymmetric:
+  //     the gap required before it is based on the aircraft's current fuel,
+  //     the gap required after it is based on the fuel PROJECTED at the end
+  //     of that flight (getProjectedFuelAfter) — same as the store's
+  //     checkConflicts()/bookFlight() and BookingForm now compute it, not a
+  //     single flat buffer shared by the whole fleet.
+  //   - An aircraft with too little fuel left to complete even the shortest
+  //     bookable flight (MIN_FLIGHT_DURATION_MIN) contributes zero slots —
+  //     it needs refueling before anything more can be booked on it today.
+  // Slots already in the past today don't count as "available".
+  const availableSlotsToday = useMemo(() => {
+    const slotStartStr = getFTOSetting('time_slot_start') || '06:00';
+    const slotEndStr = getFTOSetting('time_slot_end') || '22:00';
+    const slotIntervalMin = parseInt(getFTOSetting('time_slot_interval'), 10) || 30;
+    const [startH, startM] = slotStartStr.split(':').map(Number);
+    const [endH, endM] = slotEndStr.split(':').map(Number);
+    const startTotal = startH * 60 + startM;
+    const endTotal = endH * 60 + endM;
+    if (!Number.isFinite(startTotal) || !Number.isFinite(endTotal) || endTotal <= startTotal || slotIntervalMin <= 0) {
+      return 0;
+    }
+
+    const todayStr = new Date().toLocaleDateString('en-CA');
+    const now = new Date();
+    const activeAircraft = aircraft.filter(a => a.status === 'ACTIVE');
+    const turnaroundMin = parseTurnaroundBufferSetting(getFTOSetting('buffer_minutes'));
+
+    let available = 0;
+    for (const ac of activeAircraft) {
+      // Not enough fuel on board right now to fly even the shortest bookable
+      // flight — nothing on this aircraft is actually bookable today until
+      // it's refueled, regardless of how many open time slots the schedule
+      // shows.
+      const burnRate = getAircraftFuelBurnRate(ac);
+      const fuelNeededForMinFlight = burnRate * (MIN_FLIGHT_DURATION_MIN / 60);
+      if (ac.currentFuel < fuelNeededForMinFlight) continue;
+
+      const acFlightsToday = scheduledFlights.filter(f =>
+        String(f.aircraftId) === String(ac.id) &&
+        f.status !== 'CANCELLED' &&
+        new Date(f.startTime).toLocaleDateString('en-CA') === todayStr
+      );
+      // Last valid start is MIN_FLIGHT_DURATION_MIN before closing, so every
+      // slot counted here could actually fit the shortest bookable flight.
+      for (let t = startTotal; t <= endTotal - MIN_FLIGHT_DURATION_MIN; t += slotIntervalMin) {
+        const slotStartDate = new Date();
+        slotStartDate.setHours(Math.floor(t / 60), t % 60, 0, 0);
+        if (slotStartDate <= now) continue;
+        const slotEndDate = new Date(slotStartDate);
+        slotEndDate.setMinutes(slotEndDate.getMinutes() + MIN_FLIGHT_DURATION_MIN);
+        const hasConflict = acFlightsToday.some(f => {
+          const flightDurationMin = Math.round(
+            (new Date(f.endTime).getTime() - new Date(f.startTime).getTime()) / 60000
+          );
+          const bufferBeforeMin = getAircraftBufferMinutes(ac.currentFuel, turnaroundMin);
+          const projectedFuelAfter = getProjectedFuelAfter(ac, flightDurationMin);
+          const bufferAfterMin = getAircraftBufferMinutes(projectedFuelAfter, turnaroundMin);
+          const bufferedStart = new Date(f.startTime);
+          bufferedStart.setMinutes(bufferedStart.getMinutes() - bufferBeforeMin);
+          const bufferedEnd = new Date(f.endTime);
+          bufferedEnd.setMinutes(bufferedEnd.getMinutes() + bufferAfterMin);
+          return slotStartDate < bufferedEnd && slotEndDate > bufferedStart;
+        });
+        if (!hasConflict) available++;
+      }
+    }
+    return available;
+  }, [aircraft, scheduledFlights, getFTOSetting]);
 
 
   return (
     <ProtectedRoute>
-      <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+      <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
 
         {/* Shared Header with live clock */}
         <Header
@@ -140,17 +299,24 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 py-6">
 
           {/* ===== STATS CARDS ROW ===== */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 sm:gap-4 mb-6">
             {[
-              { label: 'Active Aircraft', value: `${aircraft.filter(a => a.status === 'ACTIVE').length}/${aircraft.length}`, color: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
-              { label: "Today's Flights", value: '12', color: 'text-green-400', bg: 'bg-green-500/10', border: 'border-green-500/20' },
-              { label: 'Available Slots', value: '8', color: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/20' },
-              { label: 'Students Flying', value: '3', color: 'text-yellow-400', bg: 'bg-yellow-500/10', border: 'border-yellow-500/20' },
-              { label: 'Fuel Available', value: `${aircraft.reduce((s, a) => s + a.currentFuel, 0)}L`, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
+              { label: 'Active Aircraft', value: `${aircraft.filter(a => a.status === 'ACTIVE').length}`, suffix: `/${aircraft.length}`, color: 'var(--accent)', icon: Plane },
+              { label: "Today's Flights", value: `${todaysFlights.length}`, suffix: '', color: 'var(--success)', icon: Calendar },
+              { label: 'Available Slots', value: `${availableSlotsToday}`, suffix: '', color: 'var(--text-secondary)', icon: ChevronRight },
+              { label: 'Students Flying', value: `${studentsFlyingTodayCount}`, suffix: '', color: 'var(--accent)', icon: Users },
+              { label: 'Fuel Available', value: `${aircraft.reduce((s, a) => s + a.currentFuel, 0)}`, suffix: 'L', color: 'var(--warning)', icon: Fuel },
             ].map((stat, i) => (
-              <div key={i} className={`${stat.bg} ${stat.border} border rounded-xl p-4 backdrop-blur-sm hover:scale-105 transition`}>
-                <p className="text-xs text-slate-400">{stat.label}</p>
-                <p className={`text-2xl font-bold ${stat.color} mt-1`}>{stat.value}</p>
+              <div key={i} className="surface-card p-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-secondary">{stat.label}</span>
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'color-mix(in srgb, ' + stat.color + ' 14%, transparent)' }}>
+                    <stat.icon className="w-3.5 h-3.5" style={{ stroke: stat.color }} />
+                  </div>
+                </div>
+                <p className="text-2xl font-bold mt-2" style={{ letterSpacing: '-0.02em' }}>
+                  {stat.value}<span className="text-tertiary text-sm font-medium">{stat.suffix}</span>
+                </p>
               </div>
             ))}
           </div>
@@ -162,73 +328,73 @@ export default function DashboardPage() {
             <div className="lg:col-span-2 space-y-6">
 
               {/* ----- LIVE WEATHER BRIEFING ----- */}
-              <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
+              <div className="surface-card p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-white">
-                    🌤️ Weather Briefing
+                  <h2 className="text-sm font-semibold flex items-center gap-2">
+                    <Cloud className="w-4 h-4 text-secondary" />
+                    Weather Briefing
                     {weather.isLoading && (
-                      <span className="text-xs text-slate-400 ml-2 animate-pulse">Loading...</span>
+                      <span className="text-xs text-tertiary animate-pulse font-normal">Loading...</span>
                     )}
                   </h2>
                   {ftoSettingsLoaded && station && (
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                      weather.flightRules === 'VFR' ? 'bg-green-500/20 text-green-400' :
-                      weather.flightRules === 'MVFR' ? 'bg-yellow-500/20 text-yellow-400' :
-                      weather.flightRules === 'IFR' ? 'bg-red-500/20 text-red-400' :
-                      'bg-red-500/20 text-red-400'
+                    <span className={`badge ${
+                      weather.flightRules === 'VFR' ? 'badge-success' :
+                      weather.flightRules === 'MVFR' ? 'badge-warning' :
+                      'badge-danger'
                     }`}>
                       {weather.flightRules}
                     </span>
                   )}
                   {ftoSettingsLoaded && !station && hasValidLatLon && (
-                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-600/50 text-slate-300">
+                    <span className="badge badge-neutral">
                       General (not aviation weather)
                     </span>
                   )}
                 </div>
 
                 {!ftoSettingsLoaded ? (
-                  <p className="text-slate-400 text-sm text-center py-8">Loading...</p>
+                  <p className="text-secondary text-sm text-center py-8">Loading...</p>
                 ) : station ? (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {/* METAR & TAF Text */}
                       <div className="space-y-2">
-                        <div className="bg-slate-900/50 rounded-lg p-3">
-                          <p className="text-xs text-slate-400 mb-1">METAR</p>
-                          <p className="text-sm font-mono text-green-400">{weather.metar}</p>
+                        <div className="surface-inner p-3">
+                          <p className="text-tertiary text-xs mb-1">METAR</p>
+                          <p className="text-sm font-mono" style={{ color: 'var(--success)' }}>{weather.metar}</p>
                         </div>
-                        <div className="bg-slate-900/50 rounded-lg p-3">
-                          <p className="text-xs text-slate-400 mb-1">TAF</p>
-                          <p className="text-sm font-mono text-green-400">{weather.taf}</p>
+                        <div className="surface-inner p-3">
+                          <p className="text-tertiary text-xs mb-1">TAF</p>
+                          <p className="text-sm font-mono" style={{ color: 'var(--success)' }}>{weather.taf}</p>
                         </div>
                       </div>
 
                       {/* Weather Parameters Grid */}
                       <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-slate-900/50 rounded-lg p-3">
-                          <p className="text-xs text-slate-400">Wind</p>
-                          <p className="text-lg font-bold text-white">{weather.windDirection}°/{weather.windSpeed}kt</p>
-                          <p className="text-xs text-slate-500">RWY 09 OK</p>
+                        <div className="surface-inner p-3">
+                          <p className="text-tertiary text-xs flex items-center gap-1"><Wind className="w-3 h-3" />Wind</p>
+                          <p className="text-lg font-bold mt-0.5">{weather.windDirection}°/{weather.windSpeed}kt</p>
+                          <p className="text-tertiary text-xs">RWY 09 OK</p>
                         </div>
-                        <div className="bg-slate-900/50 rounded-lg p-3">
-                          <p className="text-xs text-slate-400">Temperature</p>
-                          <p className="text-lg font-bold text-white">{weather.temperature}°C</p>
-                          <p className="text-xs text-slate-500">Dew: {weather.dewpoint}°C</p>
+                        <div className="surface-inner p-3">
+                          <p className="text-tertiary text-xs flex items-center gap-1"><Thermometer className="w-3 h-3" />Temperature</p>
+                          <p className="text-lg font-bold mt-0.5">{weather.temperature}°C</p>
+                          <p className="text-tertiary text-xs">Dew: {weather.dewpoint}°C</p>
                         </div>
-                        <div className="bg-slate-900/50 rounded-lg p-3">
-                          <p className="text-xs text-slate-400">Visibility</p>
-                          <p className="text-lg font-bold text-white">
+                        <div className="surface-inner p-3">
+                          <p className="text-tertiary text-xs flex items-center gap-1"><Eye className="w-3 h-3" />Visibility</p>
+                          <p className="text-lg font-bold mt-0.5">
                             {weather.visibility >= 9999 ? '10km+' : `${weather.visibility}m`}
                           </p>
-                          <p className="text-xs text-slate-500">
+                          <p className="text-tertiary text-xs">
                             {weather.visibility >= 5000 ? 'Good' : 'Reduced'}
                           </p>
                         </div>
-                        <div className="bg-slate-900/50 rounded-lg p-3">
-                          <p className="text-xs text-slate-400">QNH</p>
-                          <p className="text-lg font-bold text-white">{weather.qnh} hPa</p>
-                          <p className="text-xs text-slate-500">{weather.altimeter} inHg</p>
+                        <div className="surface-inner p-3">
+                          <p className="text-tertiary text-xs flex items-center gap-1"><Activity className="w-3 h-3" />QNH</p>
+                          <p className="text-lg font-bold mt-0.5">{weather.qnh} hPa</p>
+                          <p className="text-tertiary text-xs">{weather.altimeter} inHg</p>
                         </div>
                       </div>
                     </div>
@@ -237,8 +403,8 @@ export default function DashboardPage() {
                     {weather.warnings.length > 0 && (
                       <div className="mt-4 space-y-1">
                         {weather.warnings.map((warning, i) => (
-                          <div key={i} className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2">
-                            <p className="text-xs text-yellow-400">{warning}</p>
+                          <div key={i} className="rounded-lg p-2" style={{ backgroundColor: 'var(--warning-soft)', border: '1px solid var(--warning)' }}>
+                            <p className="text-xs" style={{ color: 'var(--warning-text)' }}>{warning}</p>
                           </div>
                         ))}
                       </div>
@@ -248,9 +414,9 @@ export default function DashboardPage() {
                     <div className="mt-4 flex justify-end">
                       <button
                         onClick={async () => { await fetchWeather(station); }}
-                        className="px-3 py-1.5 bg-blue-500/20 text-blue-400 rounded-lg text-xs hover:bg-blue-500/30 transition"
+                        className="pill-btn-accent px-3 py-1.5 rounded-lg text-xs hover:opacity-80 transition flex items-center gap-1.5"
                       >
-                        🔄 Refresh Weather
+                        <RefreshCw className="w-3 h-3" /> Refresh Weather
                       </button>
                     </div>
                   </>
@@ -261,54 +427,54 @@ export default function DashboardPage() {
                         those don't exist for an arbitrary coordinate — so this
                         is laid out and labeled differently from the METAR view
                         above rather than reusing its fields. */}
-                    <p className="text-xs text-slate-500 -mt-2 mb-3">
+                    <p className="text-tertiary text-xs -mt-2 mb-3">
                       Sourced from configured coordinates — general conditions only, not an official
                       aviation weather briefing.
                     </p>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                      <div className="bg-slate-900/50 rounded-lg p-3">
-                        <p className="text-xs text-slate-400">Conditions</p>
-                        <p className="text-sm font-bold text-white">{generalWeather?.conditionText || 'Loading...'}</p>
+                      <div className="surface-inner p-3">
+                        <p className="text-tertiary text-xs">Conditions</p>
+                        <p className="text-sm font-bold mt-0.5">{generalWeather?.conditionText || 'Loading...'}</p>
                       </div>
-                      <div className="bg-slate-900/50 rounded-lg p-3">
-                        <p className="text-xs text-slate-400">Wind</p>
-                        <p className="text-lg font-bold text-white">
+                      <div className="surface-inner p-3">
+                        <p className="text-tertiary text-xs">Wind</p>
+                        <p className="text-lg font-bold mt-0.5">
                           {generalWeather ? `${generalWeather.windDirection}°/${generalWeather.windSpeed}kt` : '—'}
                         </p>
                       </div>
-                      <div className="bg-slate-900/50 rounded-lg p-3">
-                        <p className="text-xs text-slate-400">Temperature</p>
-                        <p className="text-lg font-bold text-white">
+                      <div className="surface-inner p-3">
+                        <p className="text-tertiary text-xs">Temperature</p>
+                        <p className="text-lg font-bold mt-0.5">
                           {generalWeather ? `${generalWeather.temperature}°C` : '—'}
                         </p>
-                        <p className="text-xs text-slate-500">Dew: {generalWeather ? `${generalWeather.dewpoint}°C` : '—'}</p>
+                        <p className="text-tertiary text-xs">Dew: {generalWeather ? `${generalWeather.dewpoint}°C` : '—'}</p>
                       </div>
-                      <div className="bg-slate-900/50 rounded-lg p-3">
-                        <p className="text-xs text-slate-400">Pressure</p>
-                        <p className="text-lg font-bold text-white">
+                      <div className="surface-inner p-3">
+                        <p className="text-tertiary text-xs">Pressure</p>
+                        <p className="text-lg font-bold mt-0.5">
                           {generalWeather ? `${generalWeather.pressure} hPa` : '—'}
                         </p>
                       </div>
-                      <div className="bg-slate-900/50 rounded-lg p-3">
-                        <p className="text-xs text-slate-400">Cloud Cover</p>
-                        <p className="text-lg font-bold text-white">
+                      <div className="surface-inner p-3">
+                        <p className="text-tertiary text-xs">Cloud Cover</p>
+                        <p className="text-lg font-bold mt-0.5">
                           {generalWeather ? `${generalWeather.cloudCover}%` : '—'}
                         </p>
                       </div>
                     </div>
 
                     {generalWeather?.error && (
-                      <div className="mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-2">
-                        <p className="text-xs text-yellow-400">⚠️ Could not fetch weather for these coordinates</p>
+                      <div className="mt-4 rounded-lg p-2" style={{ backgroundColor: 'var(--warning-soft)', border: '1px solid var(--warning)' }}>
+                        <p className="text-xs" style={{ color: 'var(--warning-text)' }}>Could not fetch weather for these coordinates</p>
                       </div>
                     )}
 
                     <div className="mt-4 flex justify-end">
                       <button
                         onClick={async () => { await fetchGeneralWeather(lat, lon); }}
-                        className="px-3 py-1.5 bg-blue-500/20 text-blue-400 rounded-lg text-xs hover:bg-blue-500/30 transition"
+                        className="pill-btn-accent px-3 py-1.5 rounded-lg text-xs hover:opacity-80 transition flex items-center gap-1.5"
                       >
-                        🔄 Refresh Weather
+                        <RefreshCw className="w-3 h-3" /> Refresh Weather
                       </button>
                     </div>
                   </>
@@ -317,8 +483,9 @@ export default function DashboardPage() {
                      Rather than silently showing another airport's weather,
                      say so plainly and point to where it can be fixed. */
                   <div className="text-center py-8">
-                    <p className="text-slate-400 text-sm">📭 No live weather available</p>
-                    <p className="text-xs text-slate-500 mt-1">
+                    <Inbox className="w-5 h-5 text-tertiary mx-auto mb-2" />
+                    <p className="text-secondary text-sm">No live weather available</p>
+                    <p className="text-tertiary text-xs mt-1">
                       Add a Primary Airport (ICAO) code in Settings — your own, or the nearest reporting
                       station if your field doesn&apos;t have one — or set Latitude/Longitude for general
                       weather instead.
@@ -328,46 +495,66 @@ export default function DashboardPage() {
               </div>
 
               {/* ----- TODAY'S FLIGHT SCHEDULE ----- */}
-              <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
+              <div className="surface-card p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-white">📅 Today's Flight Schedule</h2>
-                  <a href="/dashboard/schedule" className="text-sm text-blue-400 hover:text-blue-300">View All →</a>
+                  <h2 className="text-sm font-semibold flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-secondary" />
+                    Today&apos;s Flight Schedule
+                  </h2>
+                  <a href="/dashboard/schedule" className="text-sm text-accent hover:opacity-80 flex items-center gap-0.5">
+                    View all <ChevronRight className="w-3.5 h-3.5" />
+                  </a>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-slate-400 border-b border-slate-700">
-                        <th className="pb-3 font-medium">Time</th>
-                        <th className="pb-3 font-medium">Aircraft</th>
-                        <th className="pb-3 font-medium">Student/Inst</th>
-                        <th className="pb-3 font-medium">Sortie</th>
-                        <th className="pb-3 font-medium">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-slate-300">
-                      {[
-                        { time: '06:00-08:00', aircraft: 'N789EF (DA40)', pilot: 'Check Ride / SM', sortie: 'CHECK RIDE', status: 'SCHEDULED', color: 'text-blue-400 bg-blue-500/20' },
-                        { time: '08:00-10:00', aircraft: 'N123AB (C172S)', pilot: 'JD / SM', sortie: 'Circuit Solo', status: 'IN PROGRESS', color: 'text-green-400 bg-green-500/20' },
-                        { time: '10:30-12:30', aircraft: 'N456CD (PA28)', pilot: 'MB / SM', sortie: 'Nav Exercise', status: 'SCHEDULED', color: 'text-blue-400 bg-blue-500/20' },
-                        { time: '14:00-16:00', aircraft: 'N789EF (DA40)', pilot: 'EW / MK', sortie: 'Stall & Recovery', status: 'SCHEDULED', color: 'text-blue-400 bg-blue-500/20' },
-                        { time: '16:30-19:00', aircraft: 'N123AB (C172S)', pilot: 'MB / SM', sortie: 'Cross Country', status: 'SCHEDULED', color: 'text-blue-400 bg-blue-500/20' },
-                      ].map((flight, i) => (
-                        <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition">
-                          <td className="py-3 text-white font-medium">{flight.time}</td>
-                          <td className="py-3">{flight.aircraft}</td>
-                          <td className="py-3">{flight.pilot}</td>
-                          <td className="py-3">{flight.sortie}</td>
-                          <td className="py-3">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${flight.color}`}>
-                              {flight.status}
-                            </span>
-                          </td>
-                        </tr>
+                {todaysFlights.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Calendar className="w-5 h-5 text-tertiary mx-auto mb-2" />
+                    <p className="text-secondary text-sm">No flights scheduled today</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Table — desktop/tablet */}
+                    <div className="hidden sm:block overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-left text-tertiary divider" style={{ borderBottomWidth: 1, borderBottomStyle: 'solid' }}>
+                            <th className="pb-3 font-medium">Time</th>
+                            <th className="pb-3 font-medium">Aircraft</th>
+                            <th className="pb-3 font-medium">Student/Inst</th>
+                            <th className="pb-3 font-medium">Sortie</th>
+                            <th className="pb-3 font-medium">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {todaysFlights.map((flight) => (
+                            <tr key={flight.id} className="divider hover:opacity-90 transition" style={{ borderTopWidth: 1, borderTopStyle: 'solid' }}>
+                              <td className="py-3 font-medium">{flight.time}</td>
+                              <td className="py-3 text-secondary">{flight.aircraft}</td>
+                              <td className="py-3 text-secondary">{flight.pilot}</td>
+                              <td className="py-3 text-secondary">{flight.sortie}</td>
+                              <td className="py-3">
+                                <span className={`badge ${flight.badge}`}>{flight.status}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Card list — mobile, narrower than a 5-column table can read well */}
+                    <div className="sm:hidden space-y-2">
+                      {todaysFlights.map((flight) => (
+                        <div key={flight.id} className="surface-inner p-3">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-medium text-sm">{flight.time}</span>
+                            <span className={`badge ${flight.badge}`}>{flight.status}</span>
+                          </div>
+                          <p className="text-secondary text-xs">{flight.aircraft} &middot; {flight.pilot}</p>
+                          <p className="text-tertiary text-xs mt-0.5">{flight.sortie}</p>
+                        </div>
                       ))}
-                      
-                    </tbody>
-                  </table>
-                </div>
+                    </div>
+                  </>
+                )}
               </div>
               {/* ----- STUDENT PROGRESS WIDGET ----- */}
               <StudentProgressWidget />
@@ -382,22 +569,28 @@ export default function DashboardPage() {
             <NotificationWidget />
             
               {/* ----- LIVE ACTIVE NOTAMS ----- */}
-              <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
-                <h2 className="text-lg font-semibold text-white mb-4">⚠️ Active NOTAMs</h2>
-                <div className="space-y-3 max-h-80 overflow-y-auto">
+              <div className="surface-card p-6">
+                <h2 className="text-sm font-semibold flex items-center gap-2 mb-4">
+                  <TriangleAlert className="w-4 h-4" style={{ stroke: 'var(--warning)' }} />
+                  Active NOTAMs
+                </h2>
+                <div className="space-y-2 max-h-80 overflow-y-auto">
                   {notams.length === 0 ? (
-                    <p className="text-xs text-slate-400">Loading NOTAMs...</p>
+                    <p className="text-xs text-secondary">Loading NOTAMs...</p>
                   ) : (
                     notams.map((notam, i) => (
-                      <div key={i} className={`border rounded-lg p-3 ${
-                        notam.priority === 'HIGH' || notam.priority === 'CRITICAL'
-                          ? 'border-red-500/20 bg-red-500/10'
-                          : notam.priority === 'MODERATE'
-                            ? 'border-yellow-500/20 bg-yellow-500/10'
-                            : 'border-slate-600 bg-slate-900/50'
-                      }`}>
-                        <p className="text-xs text-slate-300">
-                          <span className="font-medium text-white">{notam.notamNumber}</span>: {notam.text}
+                      <div
+                        key={i}
+                        className="surface-inner p-3"
+                        style={{
+                          borderLeft: `3px solid ${
+                            notam.priority === 'HIGH' || notam.priority === 'CRITICAL' ? 'var(--danger)' :
+                            notam.priority === 'MODERATE' ? 'var(--warning)' : 'var(--border)'
+                          }`,
+                        }}
+                      >
+                        <p className="text-xs text-secondary">
+                          <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{notam.notamNumber}</span> — {notam.text}
                         </p>
                       </div>
                     ))
@@ -406,69 +599,75 @@ export default function DashboardPage() {
               </div>
 
               {/* ----- QUICK ACTIONS ----- */}
-              <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
-                <h2 className="text-lg font-semibold text-white mb-4">⚡ Quick Actions</h2>
-                <div className="grid grid-cols-2 gap-2">
-                  <a href="/dashboard/schedule" className="bg-blue-500/10 text-blue-400 border border-blue-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">📅</p><p className="text-xs">Schedule</p>
-                  </a>
-                  <a href="/dashboard/aircraft" className="bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">🛩️</p><p className="text-xs">Aircraft</p>
-                  </a>
-                  <a href="/dashboard/students" className="bg-green-500/10 text-green-400 border border-green-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">👨‍✈️</p><p className="text-xs">Students</p>
-                  </a>
-                  <a href="/dashboard/fuel" className="bg-orange-500/10 text-orange-400 border border-orange-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">⛽</p><p className="text-xs">Fuel</p>
-                  </a>
-                  <a href="/dashboard/flights" className="bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">📝</p><p className="text-xs">Flights</p>
-                  </a>
-                  <a href="/dashboard/maintenance" className="bg-red-500/10 text-red-400 border border-red-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">🔧</p><p className="text-xs">Maintenance</p>
-                  </a>
-                  {/* Existing - Manage Instructors (Admin) */}
-                  <a href="/dashboard/instructors" className="bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">👨‍🏫</p>
-                    <p className="text-xs">Instructors</p>
-                  </a>
-
-                  {/* NEW - Instructor Dashboard View */}
-                  <a href="/dashboard/instructor" className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">🎓</p>
-                    <p className="text-xs">My Students</p>
-                  </a>
-                  <a href="/dashboard/availability" className="bg-teal-500/10 text-teal-400 border border-teal-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">🏖️</p><p className="text-xs">Availability</p>
-                  </a>
-                  <a href="/dashboard/progress" className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">📊</p>
-                    <p className="text-xs">Progress</p>
-                  </a>
-                  <a href="/dashboard/ground-school" className="bg-teal-500/10 text-teal-400 border border-teal-500/20 rounded-lg p-3 hover:scale-105 transition text-center cursor-pointer no-underline block">
-                    <p className="text-xl mb-1">🏫</p>
-                    <p className="text-xs">Ground School</p>
-                  </a>
-                </div>
+              <div className="surface-card p-6">
+                <h2 className="text-sm font-semibold flex items-center gap-2 mb-4">
+                  <ChevronRight className="w-4 h-4 text-secondary" />
+                  Quick Actions
+                </h2>
+                {(() => {
+                  // Each tile's `roles` list matches the `allowedRoles` the
+                  // destination page itself enforces via RoleGate — kept in
+                  // sync here so operations/maintenance (whose access is
+                  // limited to just a couple of modules) no longer see tiles
+                  // that only lead to "Not Authorized." Previously this list
+                  // wasn't filtered by role at all.
+                  const actions = [
+                    { href: '/dashboard/schedule', label: 'Schedule', icon: Calendar, accent: false, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
+                    { href: '/dashboard/aircraft', label: 'Aircraft', icon: Plane, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
+                    { href: '/dashboard/students', label: 'Students', icon: Users, accent: false, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
+                    { href: '/dashboard/fuel', label: 'Fuel', icon: Fuel, accent: false, roles: ['admin', 'instructor', 'super_admin', 'maintenance'] },
+                    { href: '/dashboard/flights', label: 'Flights', icon: FileText, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
+                    { href: '/dashboard/maintenance', label: 'Maintenance', icon: Wrench, accent: true, roles: ['admin', 'instructor', 'super_admin', 'maintenance'] },
+                    { href: '/dashboard/instructors', label: 'Instructors', icon: GraduationCap, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
+                    { href: '/dashboard/instructor', label: 'My Students', icon: UserRound, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
+                    { href: '/dashboard/availability', label: 'Availability', icon: Umbrella, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
+                    { href: '/dashboard/progress', label: 'Progress', icon: ChartColumnIncreasing, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
+                    { href: '/dashboard/ground-school', label: 'Ground School', icon: BookOpen, accent: false, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
+                  ];
+                  const userRole = session?.user?.role;
+                  const visibleActions = actions.filter(a => !userRole || a.roles.includes(userRole));
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {visibleActions.map((action) => (
+                        <a
+                          key={action.href}
+                          href={action.href}
+                          className="surface-muted rounded-lg p-3 flex flex-col gap-2 hover:opacity-80 transition text-left no-underline"
+                        >
+                          <div
+                            className="w-8 h-8 rounded-lg flex items-center justify-center"
+                            style={{ backgroundColor: action.accent ? 'var(--danger-soft)' : 'color-mix(in srgb, var(--text-secondary) 14%, transparent)' }}
+                          >
+                            <action.icon className="w-4 h-4" style={{ stroke: action.accent ? 'var(--danger)' : 'var(--text-secondary)' }} />
+                          </div>
+                          <span className="text-xs font-medium">{action.label}</span>
+                        </a>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* ----- FLEET FUEL STATUS ----- */}
-              <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
-                <h2 className="text-lg font-semibold text-white mb-4">⛽ Fleet Fuel Status</h2>
+              <div className="surface-card p-6">
+                <h2 className="text-sm font-semibold flex items-center gap-2 mb-4">
+                  <Fuel className="w-4 h-4 text-secondary" />
+                  Fleet Fuel Status
+                </h2>
                 <div className="space-y-3">
                   {aircraft.slice(0, 4).map((ac) => {
                     const pct = ac.fuelCapacity > 0 ? (ac.currentFuel / ac.fuelCapacity) * 100 : 0;
+                    const barColor = pct < 30 ? 'var(--danger)' : pct < 60 ? 'var(--warning)' : 'var(--success)';
                     return (
-                      <div key={ac.id} className="bg-slate-900/50 rounded-lg p-3">
+                      <div key={ac.id} className="surface-inner p-3">
                         <div className="flex justify-between mb-1">
-                          <span className="text-sm text-white">{ac.registration} ({ac.type})</span>
-                          <span className={`text-xs ${pct < 30 ? 'text-red-400' : pct < 60 ? 'text-yellow-400' : 'text-green-400'}`}>
+                          <span className="text-sm">{ac.registration} ({ac.type})</span>
+                          <span className="text-xs" style={{ color: barColor }}>
                             {ac.currentFuel}L / {ac.fuelCapacity}L
                           </span>
                         </div>
-                        <div className="w-full bg-slate-700 rounded-full h-2">
-                          <div className={`h-2 rounded-full ${pct < 30 ? 'bg-red-500' : pct < 60 ? 'bg-yellow-500' : 'bg-green-500'}`}
-                            style={{ width: `${Math.min(pct, 100)}%` }} />
+                        <div className="w-full rounded-full h-1.5" style={{ backgroundColor: 'var(--border)' }}>
+                          <div className="h-1.5 rounded-full" style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: barColor }} />
                         </div>
                       </div>
                     );

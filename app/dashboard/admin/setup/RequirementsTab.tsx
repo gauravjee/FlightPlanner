@@ -6,6 +6,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase-client';
+import { CircleCheck, Pencil, Plus, Save, Trash2, Lock } from 'lucide-react';
 
 interface TrainingProgram {
   id: number;
@@ -66,7 +67,7 @@ export default function RequirementsTab() {
   const loadRequirements = async () => {
     setLoading(true);
     console.log('Fetching requirements for', selectedProgram);
-    
+
     // Get template requirements (where student_id is NULL) for this program
     const { data, error } = await supabase
       .from('training_requirements')
@@ -136,26 +137,31 @@ export default function RequirementsTab() {
     }
   };
 
+  const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
+
   return (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-      <h2 className="text-lg font-semibold text-white mb-4">✅ Training Requirements</h2>
-      <p className="text-sm text-slate-400 mb-4">
+    <div className="surface-card p-6">
+      <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+        <CircleCheck className="w-4 h-4 text-secondary" /> Training Requirements
+      </h2>
+      <p className="text-sm text-secondary mb-4">
         Define the requirements students must complete for each training program. These are used to validate bookings and track progress.
       </p>
 
       {/* Program Selector */}
       <div className="mb-6">
-        <label className="block text-sm text-slate-400 mb-2">Select Training Program:</label>
+        <label className="block text-sm text-secondary mb-2">Select Training Program:</label>
         <div className="flex flex-wrap gap-2">
           {programs.map(prog => (
             <button
               key={prog.id}
               onClick={() => setSelectedProgram(prog.program_code)}
-              className={`px-4 py-2 rounded-lg text-sm transition ${
+              className="px-4 py-2 rounded-lg text-sm transition"
+              style={
                 selectedProgram === prog.program_code
-                  ? 'bg-blue-500 text-white font-medium'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
+                  ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a', fontWeight: 500 }
+                  : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' }
+              }
             >
               {prog.program_name} ({prog.program_code})
             </button>
@@ -164,57 +170,57 @@ export default function RequirementsTab() {
       </div>
 
       {/* Add/Edit Form */}
-      <div className="bg-slate-700/50 rounded-lg p-4 mb-6">
-        <h3 className="text-sm font-medium text-white mb-3">
-          {editing ? '✏️ Edit Requirement' : `➕ Add Requirement for ${selectedProgram}`}
+      <div className="surface-inner p-4 mb-6">
+        <h3 className="text-sm font-medium mb-3 flex items-center gap-1.5">
+          {editing ? <><Pencil className="w-3.5 h-3.5" /> Edit Requirement</> : <><Plus className="w-3.5 h-3.5" /> Add Requirement for {selectedProgram}</>}
         </h3>
 
         {/* Requirement Name */}
         <div className="mb-3">
-          <label className="block text-xs text-slate-400 mb-1">Requirement Name *</label>
+          <label className="block text-xs text-tertiary mb-1">Requirement Name *</label>
           <input
             type="text"
             placeholder="e.g., Air Regulations (valid 5 yrs)"
             value={form.requirement_name}
             onChange={e => setForm(p => ({ ...p, requirement_name: e.target.value }))}
-            className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+            className={inputClass}
           />
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
           {/* Sort Order */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Sort Order</label>
+            <label className="block text-xs text-tertiary mb-1">Sort Order</label>
             <input
               type="number"
               value={form.sort_order}
               onChange={e => setForm(p => ({ ...p, sort_order: parseInt(e.target.value) || 0 }))}
-              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+              className={inputClass}
             />
           </div>
 
           {/* Validity Years */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Validity (Years)</label>
+            <label className="block text-xs text-tertiary mb-1">Validity (Years)</label>
             <input
               type="number"
               step="0.5"
               placeholder="e.g., 5"
               value={form.validity_years ?? ''}
               onChange={e => setForm(p => ({ ...p, validity_years: e.target.value ? parseFloat(e.target.value) : null }))}
-              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+              className={inputClass}
             />
           </div>
 
           {/* Required Before Hours */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Required Before (Hours)</label>
+            <label className="block text-xs text-tertiary mb-1">Required Before (Hours)</label>
             <input
               type="number"
               placeholder="e.g., 150"
               value={form.required_before_hours ?? ''}
               onChange={e => setForm(p => ({ ...p, required_before_hours: e.target.value ? parseInt(e.target.value) : null }))}
-              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+              className={inputClass}
             />
           </div>
         </div>
@@ -228,8 +234,8 @@ export default function RequirementsTab() {
               onChange={e => setForm(p => ({ ...p, blocks_solo: e.target.checked }))}
               className="w-4 h-4"
             />
-            <label className="text-sm text-slate-300">
-              🔒 Blocks Solo Flying (if not completed)
+            <label className="text-sm text-secondary flex items-center gap-1">
+              <Lock className="w-3.5 h-3.5" /> Blocks Solo Flying (if not completed)
             </label>
           </div>
           <div className="flex items-center space-x-2">
@@ -239,28 +245,32 @@ export default function RequirementsTab() {
               onChange={e => setForm(p => ({ ...p, blocks_all_flights: e.target.checked }))}
               className="w-4 h-4"
             />
-            <label className="text-sm text-slate-300">
-              🔒 Blocks All Flying (if not completed)
+            <label className="text-sm text-secondary flex items-center gap-1">
+              <Lock className="w-3.5 h-3.5" /> Blocks All Flying (if not completed)
             </label>
           </div>
         </div>
 
         {/* Notes */}
         <div className="mb-3">
-          <label className="block text-xs text-slate-400 mb-1">Notes</label>
+          <label className="block text-xs text-tertiary mb-1">Notes</label>
           <input
             type="text"
             placeholder="Additional notes about this requirement"
             value={form.notes}
             onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-            className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+            className={inputClass}
           />
         </div>
 
         {/* Action Buttons */}
         <div className="flex space-x-2">
-          <button onClick={handleSave} className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600">
-            {editing ? '💾 Update Requirement' : '➕ Add Requirement'}
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold"
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+          >
+            {editing ? <><Save className="w-3.5 h-3.5" /> Update Requirement</> : <><Plus className="w-3.5 h-3.5" /> Add Requirement</>}
           </button>
           {editing && (
             <button
@@ -273,7 +283,7 @@ export default function RequirementsTab() {
                   blocks_solo: false, blocks_all_flights: false, notes: '',
                 });
               }}
-              className="px-4 py-2 bg-slate-500 text-white rounded-lg text-sm hover:bg-slate-600"
+              className="px-4 py-2 rounded-lg text-sm transition surface-inner"
             >
               Cancel
             </button>
@@ -283,16 +293,16 @@ export default function RequirementsTab() {
 
       {/* Requirements List */}
       {loading ? (
-        <p className="text-slate-400 text-center py-4">Loading...</p>
+        <p className="text-secondary text-center py-4">Loading...</p>
       ) : requirements.length === 0 ? (
-        <p className="text-slate-400 text-center py-4">
+        <p className="text-secondary text-center py-4">
           No requirements defined for {selectedProgram}. Add your first one above.
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-slate-400 border-b border-slate-700">
+              <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                 <th className="pb-3">#</th>
                 <th className="pb-3">Requirement</th>
                 <th className="pb-3">Validity</th>
@@ -302,11 +312,11 @@ export default function RequirementsTab() {
                 <th className="pb-3">Actions</th>
               </tr>
             </thead>
-            <tbody className="text-slate-300">
+            <tbody className="text-secondary">
               {requirements.map((req, index) => (
-                <tr key={req.id} className="border-b border-slate-700/50">
-                  <td className="py-3 text-xs text-slate-500">{index + 1}</td>
-                  <td className="py-3 text-white font-medium">{req.requirement_name}</td>
+                <tr key={req.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
+                  <td className="py-3 text-xs text-tertiary">{index + 1}</td>
+                  <td className="py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{req.requirement_name}</td>
                   <td className="py-3 text-xs">
                     {req.validity_years ? `${req.validity_years} yrs` : '—'}
                   </td>
@@ -315,21 +325,21 @@ export default function RequirementsTab() {
                   </td>
                   <td className="py-3">
                     {req.blocks_solo ? (
-                      <span className="text-red-400">🔒 Yes</span>
+                      <span className="flex items-center gap-1" style={{ color: 'var(--danger)' }}><Lock className="w-3.5 h-3.5" /> Yes</span>
                     ) : (
-                      <span className="text-slate-500">—</span>
+                      <span className="text-tertiary">—</span>
                     )}
                   </td>
                   <td className="py-3">
                     {req.blocks_all_flights ? (
-                      <span className="text-red-400">🔒 Yes</span>
+                      <span className="flex items-center gap-1" style={{ color: 'var(--danger)' }}><Lock className="w-3.5 h-3.5" /> Yes</span>
                     ) : (
-                      <span className="text-slate-500">—</span>
+                      <span className="text-tertiary">—</span>
                     )}
                   </td>
                   <td className="py-3">
-                    <button onClick={() => handleEdit(req)} className="text-blue-400 hover:text-blue-300 mr-2">✏️</button>
-                    <button onClick={() => handleDelete(req.id)} className="text-red-400 hover:text-red-300">🗑️</button>
+                    <button onClick={() => handleEdit(req)} className="mr-2" style={{ color: 'var(--accent)' }}><Pencil className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleDelete(req.id)} style={{ color: 'var(--danger)' }}><Trash2 className="w-3.5 h-3.5" /></button>
                   </td>
                 </tr>
               ))}

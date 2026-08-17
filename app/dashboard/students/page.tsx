@@ -10,8 +10,8 @@ import { useFlightStore } from '@/lib/store';
 import { StudentRecord } from '@/types';
 import StudentCard from '@/components/students/StudentCard';
 import StudentFormModal from '@/components/students/StudentFormModal';
-import Link from 'next/link';
 import RoleGate from '@/components/ui/RoleGate';
+import { Plus, Search, GraduationCap } from 'lucide-react';
 
 // Creating a student also creates their login (POST /api/students), which
 // is scoped server-side to admin/super_admin only — see
@@ -69,13 +69,13 @@ export default function StudentsPage() {
       // as User Management's "create user" success message.
       const result = await addStudent(student as Omit<StudentRecord, 'id'>);
       if (!result.success) {
-        alert('❌ Error creating student: ' + (result.error || 'Unknown error'));
+        alert('Error creating student: ' + (result.error || 'Unknown error'));
         return;
       }
       if (result.emailSent) {
-        setSuccessMessage(`✅ Student created! Welcome email sent to ${student.email}`);
+        setSuccessMessage(`Student created! Welcome email sent to ${student.email}`);
       } else {
-        setSuccessMessage(`⚠️ Student created but email failed: ${result.emailMessage}. Password: ${result.password}`);
+        setSuccessMessage(`Student created but email failed: ${result.emailMessage}. Password: ${result.password}`);
       }
     }
     // Reload data to reflect changes (including instructor assignment)
@@ -94,14 +94,18 @@ export default function StudentsPage() {
   return (
     <ProtectedRoute>
     <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'operations']}>
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+    <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <Header
         title="Student Records"
         subtitle="Manage student pilots"
         action={
           canCreateStudent ? (
-            <button onClick={handleAdd} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold">
-              ➕ Add Student
+            <button
+              onClick={handleAdd}
+              className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+            >
+              <Plus className="w-4 h-4" /> Add Student
             </button>
           ) : undefined
         }
@@ -109,35 +113,38 @@ export default function StudentsPage() {
 
       <div className="max-w-7xl mx-auto px-4 py-6">
         {successMessage && (
-          <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 mb-6">
-            <p className="text-sm text-green-400">{successMessage}</p>
+          <div className="rounded-lg p-3 mb-6" style={{ backgroundColor: 'var(--success-soft)', border: '1px solid var(--success)' }}>
+            <p className="text-sm" style={{ color: 'var(--success)' }}>{successMessage}</p>
           </div>
         )}
         {loadingStudents ? (
-          <div className="text-center py-20"><p className="text-slate-400 text-lg">Loading students...</p></div>
+          <div className="text-center py-20"><p className="text-secondary text-lg">Loading students...</p></div>
         ) : (
           <>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
               {[
-                { label: 'Total', value: stats.total, color: 'text-white' },
-                { label: 'Active', value: stats.active, color: 'text-green-400' },
-                { label: 'PPL', value: stats.ppl, color: 'text-blue-400' },
-                { label: 'CPL', value: stats.cpl, color: 'text-purple-400' },
-                { label: 'IR', value: stats.ir, color: 'text-cyan-400' },
+                { label: 'Total', value: stats.total, color: 'var(--text-primary)' },
+                { label: 'Active', value: stats.active, color: 'var(--success)' },
+                { label: 'PPL', value: stats.ppl, color: 'var(--accent)' },
+                { label: 'CPL', value: stats.cpl, color: 'var(--accent-strong)' },
+                { label: 'IR', value: stats.ir, color: 'var(--warning-text)' },
               ].map((stat, i) => (
-                <div key={i} className="bg-slate-800/50 border border-slate-700 rounded-lg p-3 text-center">
-                  <p className="text-xs text-slate-400">{stat.label}</p>
-                  <p className={`text-lg font-bold ${stat.color}`}>{stat.value}</p>
+                <div key={i} className="surface-inner p-3 text-center">
+                  <p className="text-xs text-tertiary">{stat.label}</p>
+                  <p className="text-lg font-bold" style={{ color: stat.color }}>{stat.value}</p>
                 </div>
               ))}
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
-              <input type="text" placeholder="🔍 Search by name or enrollment ID..."
-                value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
-                className="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" />
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-tertiary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input type="text" placeholder="Search by name or enrollment ID..."
+                  value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full surface-inner rounded-lg pl-9 pr-4 py-2 focus:outline-none focus:border-[var(--accent)]" />
+              </div>
               <select value={stageFilter} onChange={e => setStageFilter(e.target.value)}
-                className="bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-white">
+                className="surface-inner rounded-lg px-4 py-2 focus:outline-none focus:border-[var(--accent)]">
                 <option value="ALL">All Stages</option>
                 <option value="PPL">PPL</option>
                 <option value="PPL Phase 1">PPL Phase 1</option>
@@ -150,8 +157,8 @@ export default function StudentsPage() {
 
             {filteredStudents.length === 0 ? (
               <div className="text-center py-20">
-                <p className="text-6xl mb-4">👨‍✈️</p>
-                <p className="text-slate-400 text-lg">No students found</p>
+                <GraduationCap className="w-10 h-10 text-tertiary mx-auto mb-4" />
+                <p className="text-secondary text-lg">No students found</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

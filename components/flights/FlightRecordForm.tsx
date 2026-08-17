@@ -8,11 +8,36 @@ import { useFlightStore } from '@/lib/store';
 interface Props {
   onClose: () => void;
   studentId?: string;  // Optional: pre-select student
+  // Set when this form is opened to resolve a "Logbook Pending" flight (see
+  // DebriefForm.tsx / the Pending Logbook Entries panel on the Flights
+  // page) — on a successful save, the linked scheduled flight's
+  // logbookPending flag is cleared so it drops off that list.
+  scheduledFlightId?: string;
+  // Pre-fills the form from that flight's own data (aircraft/instructor/
+  // student/sortie) plus whatever the debrief captured before leaving it
+  // pending (hobbs, fuel-derived duration inputs, landings, maneuvers,
+  // notes, performance, weather) — so completing the entry later doesn't
+  // mean re-entering everything from scratch.
+  prefill?: Partial<{
+    aircraftId: string;
+    instructorId: string;
+    flightDate: string;
+    departureTime: string;
+    arrivalTime: string;
+    hobbsStart: number;
+    hobbsEnd: number;
+    landings: number;
+    sortieType: string;
+    maneuvers: string;
+    instructorNotes: string;
+    studentPerformance: number;
+    weatherConditions: string;
+  }>;
 }
 
-export default function FlightRecordForm({ onClose, studentId }: Props) {
+export default function FlightRecordForm({ onClose, studentId, scheduledFlightId, prefill }: Props) {
   const {
-    students, aircraft, instructors, sortieTypes, exercises, addFlightRecord,
+    students, aircraft, instructors, sortieTypes, exercises, addFlightRecord, updateScheduledFlight,
     loadStudents, loadAircraft, loadInstructors, loadSortieTypes, loadExercises,
   } = useFlightStore();
 
@@ -26,23 +51,23 @@ export default function FlightRecordForm({ onClose, studentId }: Props) {
   }, []);
 
   const today = new Date().toISOString().split('T')[0];
-  
+
   const [form, setForm] = useState({
     studentId: studentId || '',
-    aircraftId: '',
-    instructorId: '',
-    flightDate: today,
-    departureTime: '08:00',
-    arrivalTime: '09:30',
-    hobbsStart: 0,
-    hobbsEnd: 0,
-    landings: 1,
-    sortieType: '',
+    aircraftId: prefill?.aircraftId || '',
+    instructorId: prefill?.instructorId || '',
+    flightDate: prefill?.flightDate || today,
+    departureTime: prefill?.departureTime || '08:00',
+    arrivalTime: prefill?.arrivalTime || '09:30',
+    hobbsStart: prefill?.hobbsStart ?? 0,
+    hobbsEnd: prefill?.hobbsEnd ?? 0,
+    landings: prefill?.landings ?? 1,
+    sortieType: prefill?.sortieType || '',
     exercise: '',
-    maneuvers: '',
-    instructorNotes: '',
-    studentPerformance: 3,
-    weatherConditions: 'VMC',
+    maneuvers: prefill?.maneuvers || '',
+    instructorNotes: prefill?.instructorNotes || '',
+    studentPerformance: prefill?.studentPerformance ?? 3,
+    weatherConditions: prefill?.weatherConditions || 'VMC',
   });
 
   // Calculate total hours from departure/arrival times
@@ -102,6 +127,12 @@ export default function FlightRecordForm({ onClose, studentId }: Props) {
     });
 
     if (result.success) {
+      // Resolves the "Logbook Pending" flag on the flight this entry was
+      // completing, if it was opened that way — see the scheduledFlightId
+      // prop doc above.
+      if (scheduledFlightId) {
+        await updateScheduledFlight(scheduledFlightId, { logbookPending: false, pendingDebrief: null });
+      }
       onClose();
     } else {
       // Keep the form open with everything the user entered still intact —
@@ -117,7 +148,9 @@ export default function FlightRecordForm({ onClose, studentId }: Props) {
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
-          <h3 className="text-lg font-semibold text-white">📝 Log Flight Record</h3>
+          <h3 className="text-lg font-semibold text-white">
+            📝 {scheduledFlightId ? 'Complete Pending Logbook Entry' : 'Log Flight Record'}
+          </h3>
           <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg cursor-pointer">
             <span className="text-slate-400 text-xl">✕</span>
           </button>

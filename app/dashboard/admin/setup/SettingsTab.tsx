@@ -7,6 +7,11 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase-client';
+import { DAY_NAMES, parseWeeklyOffDays } from '@/lib/store';
+import {
+  Settings, School, Image as ImageIcon, Upload, LoaderCircle, Plane, Trash2,
+  Clock, Calendar, Save, ClipboardList, CircleCheck, CalendarOff,
+} from 'lucide-react';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -90,6 +95,13 @@ export default function SettingsTab() {
   /** Update a setting value in the form state */
   const setValue = (key: string, value: string) => {
     setFormValues(prev => ({ ...prev, [key]: value }));
+  };
+
+  /** Toggle one day (0=Sunday..6=Saturday) in the comma-separated weekly_off_days setting */
+  const toggleWeeklyOffDay = (day: number) => {
+    const current = parseWeeklyOffDays(getValue('weekly_off_days'));
+    const next = current.includes(day) ? current.filter(d => d !== day) : [...current, day].sort();
+    setValue('weekly_off_days', next.join(','));
   };
 
   // ============================================================
@@ -273,66 +285,72 @@ export default function SettingsTab() {
     loadSettings();
   };
 
+  const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
+
   // ============================================================
   // RENDER
   // ============================================================
   return (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-      <h2 className="text-lg font-semibold text-white mb-4">⚙️ FTO Settings</h2>
-      <p className="text-sm text-slate-400 mb-6">
+    <div className="surface-card p-6">
+      <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+        <Settings className="w-4 h-4 text-secondary" /> FTO Settings
+      </h2>
+      <p className="text-sm text-secondary mb-6">
         Configure your Flight Training Organization settings. These values are used throughout the application.
       </p>
 
       {loading ? (
-        <p className="text-slate-400 text-center py-8">Loading settings...</p>
+        <p className="text-secondary text-center py-8">Loading settings...</p>
       ) : (
         <div className="space-y-6">
 
           {/* ============================================================ */}
           {/* SCHOOL INFORMATION */}
           {/* ============================================================ */}
-          <div className="bg-slate-700/50 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-white mb-4">🏫 School Information</h3>
+          <div className="surface-inner p-4">
+            <h3 className="text-sm font-medium mb-4 flex items-center gap-1.5">
+              <School className="w-3.5 h-3.5" /> School Information
+            </h3>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               {/* School Name */}
               <div>
-                <label className="block text-xs text-slate-400 mb-1">School Name</label>
+                <label className="block text-xs text-tertiary mb-1">School Name</label>
                 <input
                   type="text"
                   value={getValue('school_name')}
                   onChange={e => setValue('school_name', e.target.value)}
                   placeholder="e.g., Horizon Flight Training Academy"
-                  className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+                  className={inputClass}
                 />
-                <p className="text-xs text-slate-500 mt-1">Displayed in the header and all reports</p>
+                <p className="text-xs text-tertiary mt-1">Displayed in the header and all reports</p>
               </div>
 
               {/* Location Name */}
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Location Name</label>
+                <label className="block text-xs text-tertiary mb-1">Location Name</label>
                 <input
                   type="text"
                   value={getValue('location_name')}
                   onChange={e => setValue('location_name', e.target.value)}
                   placeholder="e.g., Chennai or ABC Farm Airstrip"
-                  className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+                  className={inputClass}
                 />
-                <p className="text-xs text-slate-500 mt-1">City or airstrip name, shown in the header next to the airport code (or alone if you have no ICAO code)</p>
+                <p className="text-xs text-tertiary mt-1">City or airstrip name, shown in the header next to the airport code (or alone if you have no ICAO code)</p>
               </div>
 
               {/* Airport Code */}
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Primary Airport (ICAO) — optional</label>
+                <label className="block text-xs text-tertiary mb-1">Primary Airport (ICAO) — optional</label>
                 <input
                   type="text"
                   value={getValue('airport_code')}
                   onChange={e => setValue('airport_code', e.target.value.toUpperCase())}
                   placeholder="e.g., VOBL"
                   maxLength={4}
-                  className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+                  className={inputClass}
                 />
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-tertiary mt-1">
                   4-letter ICAO code, used for live aviation weather (METAR/TAF). If your field has no ICAO
                   code, leave this blank and enter the code of the nearest reporting station instead — its
                   weather will be shown as a reference. If you have neither, set Latitude/Longitude below for
@@ -345,41 +363,43 @@ export default function SettingsTab() {
                   separate free-text fields so partial/invalid entries don't
                   block saving the rest of the form. */}
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Latitude — optional</label>
+                <label className="block text-xs text-tertiary mb-1">Latitude — optional</label>
                 <input
                   type="text"
                   inputMode="decimal"
                   value={getValue('latitude')}
                   onChange={e => setValue('latitude', e.target.value)}
                   placeholder="e.g., 13.0827"
-                  className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+                  className={inputClass}
                 />
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-tertiary mt-1">
                   Only used when the airport code above is blank. Shows general weather (temperature, wind,
                   cloud cover) for these coordinates — not official aviation METAR/TAF data.
                 </p>
               </div>
 
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Longitude — optional</label>
+                <label className="block text-xs text-tertiary mb-1">Longitude — optional</label>
                 <input
                   type="text"
                   inputMode="decimal"
                   value={getValue('longitude')}
                   onChange={e => setValue('longitude', e.target.value)}
                   placeholder="e.g., 80.2707"
-                  className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+                  className={inputClass}
                 />
-                <p className="text-xs text-slate-500 mt-1">Used together with Latitude above.</p>
+                <p className="text-xs text-tertiary mt-1">Used together with Latitude above.</p>
               </div>
             </div>
 
             {/* ============================================================ */}
             {/* LOGO UPLOAD SECTION */}
             {/* ============================================================ */}
-            <div className="border-t border-slate-600 pt-4 mt-4">
-              <h4 className="text-sm font-medium text-white mb-3">🖼️ School Logo</h4>
-              <p className="text-xs text-slate-400 mb-4">
+            <div className="border-t pt-4 mt-4" style={{ borderColor: 'var(--border)' }}>
+              <h4 className="text-sm font-medium mb-3 flex items-center gap-1.5">
+                <ImageIcon className="w-3.5 h-3.5" /> School Logo
+              </h4>
+              <p className="text-xs text-tertiary mb-4">
                 Upload your FTO logo to customize the header. Recommended size: 200×50px. Max file size: 500KB.
                 Supported formats: PNG, JPG, SVG.
               </p>
@@ -388,32 +408,32 @@ export default function SettingsTab() {
                 {/* ----- Upload Area ----- */}
                 <div>
                   {/* File Input */}
-                  <label className="block text-xs text-slate-400 mb-2">
-                    {uploading ? '⏳ Uploading...' : '📁 Choose Logo File'}
+                  <label className="text-xs text-tertiary mb-2 flex items-center gap-1.5">
+                    {uploading ? <><LoaderCircle className="w-3.5 h-3.5 animate-spin" /> Uploading...</> : <><Upload className="w-3.5 h-3.5" /> Choose Logo File</>}
                   </label>
                   <input
                     type="file"
                     accept="image/png,image/jpeg,image/svg+xml"
                     onChange={handleLogoUpload}
                     disabled={uploading}
-                    className="w-full text-sm text-slate-400 
-                      file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 
-                      file:text-sm file:font-medium file:bg-blue-500 file:text-white 
-                      hover:file:bg-blue-600 file:cursor-pointer
+                    className="w-full text-sm text-tertiary
+                      file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0
+                      file:text-sm file:font-medium file:bg-[var(--accent)] file:text-[#04141a]
+                      hover:file:bg-[var(--accent-strong)] file:cursor-pointer
                       disabled:opacity-50 disabled:cursor-not-allowed"
                   />
 
                   {/* Manual URL Input */}
                   <div className="mt-4">
-                    <label className="block text-xs text-slate-400 mb-1">Or enter logo URL manually</label>
+                    <label className="block text-xs text-tertiary mb-1">Or enter logo URL manually</label>
                     <input
                       type="text"
                       value={getValue('logo_url')}
                       onChange={e => setValue('logo_url', e.target.value)}
                       placeholder="https://example.com/logo.png"
-                      className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+                      className={inputClass}
                     />
-                    <p className="text-xs text-slate-500 mt-1">
+                    <p className="text-xs text-tertiary mt-1">
                       Paste a URL to an externally hosted logo image
                     </p>
                   </div>
@@ -426,16 +446,16 @@ export default function SettingsTab() {
                       onChange={e => setValue('show_logo', e.target.checked ? 'true' : 'false')}
                       className="w-4 h-4"
                     />
-                    <label className="text-sm text-slate-300">Show logo in application header</label>
+                    <label className="text-sm text-secondary">Show logo in application header</label>
                   </div>
                 </div>
 
                 {/* ----- Preview Area ----- */}
                 <div className="flex flex-col items-center justify-center">
-                  <p className="text-xs text-slate-400 mb-3">Logo Preview</p>
+                  <p className="text-xs text-tertiary mb-3">Logo Preview</p>
 
                   {getValue('logo_url') ? (
-                    <div className="bg-slate-900 rounded-lg p-6 flex items-center justify-center w-full" style={{ minHeight: '120px' }}>
+                    <div className="surface-muted rounded-lg p-6 flex items-center justify-center w-full" style={{ minHeight: '120px' }}>
                       <img
                         src={getValue('logo_url')}
                         alt="School Logo"
@@ -448,16 +468,16 @@ export default function SettingsTab() {
                         }}
                       />
                       <div id="logo-fallback" style={{ display: 'none' }} className="text-center">
-                        <span className="text-4xl">✈️</span>
-                        <p className="text-xs text-red-400 mt-2">Failed to load image</p>
+                        <Plane className="w-8 h-8 mx-auto text-tertiary" />
+                        <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>Failed to load image</p>
                       </div>
                     </div>
                   ) : (
-                    <div className="bg-slate-900 rounded-lg p-6 flex items-center justify-center w-full" style={{ minHeight: '120px' }}>
+                    <div className="surface-muted rounded-lg p-6 flex items-center justify-center w-full" style={{ minHeight: '120px' }}>
                       <div className="text-center">
-                        <span className="text-4xl">✈️</span>
-                        <p className="text-xs text-slate-400 mt-2">No custom logo</p>
-                        <p className="text-xs text-slate-500">Default logo will be used</p>
+                        <Plane className="w-8 h-8 mx-auto text-tertiary" />
+                        <p className="text-xs text-secondary mt-2">No custom logo</p>
+                        <p className="text-xs text-tertiary">Default logo will be used</p>
                       </div>
                     </div>
                   )}
@@ -466,9 +486,10 @@ export default function SettingsTab() {
                   {getValue('logo_url') && (
                     <button
                       onClick={handleRemoveLogo}
-                      className="mt-4 px-4 py-2 bg-red-500/20 text-red-400 rounded-lg text-sm hover:bg-red-500/30 transition"
+                      className="mt-4 px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5"
+                      style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}
                     >
-                      🗑️ Remove Logo
+                      <Trash2 className="w-3.5 h-3.5" /> Remove Logo
                     </button>
                   )}
                 </div>
@@ -479,33 +500,35 @@ export default function SettingsTab() {
             {/* ============================================================ */}
             {/* TIME & SCHEDULING */}
             {/* ============================================================ */}
-            <div className="bg-slate-700/50 rounded-lg p-4">
-            <h3 className="text-sm font-medium text-white mb-4">🕐 Time & Scheduling</h3>
+            <div className="surface-inner p-4">
+            <h3 className="text-sm font-medium mb-4 flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5" /> Time & Scheduling
+            </h3>
 
             {/* ===== Timezone & Buffer ===== */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 {/* Timezone */}
                 <div>
-                <label className="block text-xs text-slate-400 mb-1">Timezone</label>
+                <label className="block text-xs text-tertiary mb-1">Timezone</label>
                 <select
                     value={getValue('timezone')}
                     onChange={e => setValue('timezone', e.target.value)}
-                    className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                    className={inputClass}
                 >
                     {TIMEZONE_OPTIONS.map(tz => (
                     <option key={tz.value} value={tz.value}>{tz.label}</option>
                     ))}
                 </select>
-                <p className="text-xs text-slate-500 mt-1">Used for all time displays and scheduling</p>
+                <p className="text-xs text-tertiary mt-1">Used for all time displays and scheduling</p>
                 </div>
 
                 {/* Buffer Minutes */}
                 <div>
-                <label className="block text-xs text-slate-400 mb-1">Buffer Between Flights</label>
+                <label className="block text-xs text-tertiary mb-1">Buffer Between Flights</label>
                 <select
                     value={getValue('buffer_minutes')}
                     onChange={e => setValue('buffer_minutes', e.target.value)}
-                    className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                    className={inputClass}
                 >
                     <option value="0">No buffer</option>
                     <option value="15">15 minutes</option>
@@ -515,22 +538,24 @@ export default function SettingsTab() {
                     <option value="90">1.5 hours</option>
                     <option value="120">2 hours</option>
                 </select>
-                <p className="text-xs text-slate-500 mt-1">Required gap between consecutive bookings on same aircraft</p>
+                <p className="text-xs text-tertiary mt-1">Required gap between consecutive bookings on same aircraft. An additional 15 minutes is always added automatically when that aircraft&apos;s fuel is at or below 50L, for a mandatory refuel.</p>
                 </div>
             </div>
 
             {/* ===== Time Slots ===== */}
-            <div className="border-t border-slate-600 pt-4 mt-2">
-                <h4 className="text-xs font-medium text-slate-400 mb-3">📅 Daily Time Slots</h4>
-                
+            <div className="border-t pt-4 mt-2" style={{ borderColor: 'var(--border)' }}>
+                <h4 className="text-xs font-medium text-tertiary mb-3 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5" /> Daily Time Slots
+                </h4>
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Earliest Booking Time */}
                 <div>
-                    <label className="block text-xs text-slate-400 mb-1">Earliest Booking Time</label>
+                    <label className="block text-xs text-tertiary mb-1">Earliest Booking Time</label>
                     <select
                     value={getValue('time_slot_start')}
                     onChange={e => setValue('time_slot_start', e.target.value)}
-                    className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                    className={inputClass}
                     >
                     <option value="05:00">05:00</option>
                     <option value="05:30">05:30</option>
@@ -542,16 +567,16 @@ export default function SettingsTab() {
                     <option value="08:30">08:30</option>
                     <option value="09:00">09:00</option>
                     </select>
-                    <p className="text-xs text-slate-500 mt-1">First available slot of the day</p>
+                    <p className="text-xs text-tertiary mt-1">First available slot of the day</p>
                 </div>
 
                 {/* Latest Booking Time */}
                 <div>
-                    <label className="block text-xs text-slate-400 mb-1">Latest Booking Time</label>
+                    <label className="block text-xs text-tertiary mb-1">Latest Booking Time</label>
                     <select
                     value={getValue('time_slot_end')}
                     onChange={e => setValue('time_slot_end', e.target.value)}
-                    className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                    className={inputClass}
                     >
                     <option value="17:00">17:00</option>
                     <option value="17:30">17:30</option>
@@ -567,24 +592,53 @@ export default function SettingsTab() {
                     <option value="22:30">22:30</option>
                     <option value="23:00">23:00</option>
                     </select>
-                    <p className="text-xs text-slate-500 mt-1">Last available slot of the day</p>
+                    <p className="text-xs text-tertiary mt-1">Last available slot of the day</p>
                 </div>
 
                 {/* Time Slot Interval */}
                 <div>
-                    <label className="block text-xs text-slate-400 mb-1">Time Slot Interval</label>
+                    <label className="block text-xs text-tertiary mb-1">Time Slot Interval</label>
                     <select
                     value={getValue('time_slot_interval')}
                     onChange={e => setValue('time_slot_interval', e.target.value)}
-                    className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500"
+                    className={inputClass}
                     >
                     <option value="15">15 minutes</option>
                     <option value="30">30 minutes</option>
                     <option value="60">1 hour</option>
                     </select>
-                    <p className="text-xs text-slate-500 mt-1">Time increments for booking slots</p>
+                    <p className="text-xs text-tertiary mt-1">Time increments for booking slots</p>
                 </div>
                 </div>
+            </div>
+
+            {/* ===== Weekly Off Day(s) ===== */}
+            <div className="border-t pt-4 mt-4" style={{ borderColor: 'var(--border)' }}>
+                <h4 className="text-xs font-medium text-tertiary mb-3 flex items-center gap-1.5">
+                  <CalendarOff className="w-3.5 h-3.5" /> Weekly Off Day(s)
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {DAY_NAMES.map((dayName, dayIndex) => {
+                    const isOff = parseWeeklyOffDays(getValue('weekly_off_days')).includes(dayIndex);
+                    return (
+                      <button
+                        key={dayIndex}
+                        type="button"
+                        onClick={() => toggleWeeklyOffDay(dayIndex)}
+                        className="px-3 py-2 rounded-lg text-xs font-medium transition cursor-pointer border"
+                        style={isOff
+                          ? { backgroundColor: 'var(--danger-soft)', color: 'var(--danger)', borderColor: 'var(--danger)' }
+                          : { backgroundColor: 'transparent', borderColor: 'var(--border)' }}
+                      >
+                        {dayName.slice(0, 3)}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-tertiary mt-2">
+                  Days the FTO is closed every week — flight bookings and ground-school classes cannot be scheduled on
+                  these days. Leave all unselected if the FTO operates every day.
+                </p>
             </div>
             </div>
           {/* ============================================================ */}
@@ -594,12 +648,13 @@ export default function SettingsTab() {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="px-6 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-medium disabled:opacity-50"
+              className="px-6 py-2 rounded-lg transition cursor-pointer font-medium disabled:opacity-50 flex items-center gap-1.5"
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
             >
-              {saving ? '💾 Saving...' : '💾 Save All Settings'}
+              <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save All Settings'}
             </button>
             {successMessage && (
-              <span className={`text-sm ${successMessage.includes('✅') ? 'text-green-400' : 'text-red-400'}`}>
+              <span className="text-sm" style={{ color: successMessage.includes('✅') ? 'var(--success)' : 'var(--danger)' }}>
                 {successMessage}
               </span>
             )}
@@ -608,15 +663,17 @@ export default function SettingsTab() {
           {/* ============================================================ */}
           {/* CURRENT CONFIGURATION SUMMARY */}
           {/* ============================================================ */}
-          <div className="bg-slate-700/50 rounded-lg p-4 mt-4">
-            <h3 className="text-sm font-medium text-white mb-3">📋 Current Configuration Summary</h3>
+          <div className="surface-inner p-4 mt-4">
+            <h3 className="text-sm font-medium mb-3 flex items-center gap-1.5">
+              <ClipboardList className="w-3.5 h-3.5" /> Current Configuration Summary
+            </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
               {settings.map(setting => (
-                <div key={setting.id} className="flex justify-between py-1 border-b border-slate-600/30">
-                  <span className="text-slate-400">{setting.description || setting.setting_key}:</span>
-                  <span className="text-white font-medium truncate ml-2 max-w-[200px]">
+                <div key={setting.id} className="flex justify-between py-1 border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
+                  <span className="text-tertiary">{setting.description || setting.setting_key}:</span>
+                  <span className="font-medium truncate ml-2 max-w-[200px] flex items-center gap-1" style={{ color: 'var(--text-primary)' }}>
                     {setting.setting_key === 'logo_url' && setting.setting_value
-                      ? '✅ Custom logo set'
+                      ? <><CircleCheck className="w-3.5 h-3.5" style={{ color: 'var(--success)' }} /> Custom logo set</>
                       : setting.setting_value || '—'}
                   </span>
                 </div>

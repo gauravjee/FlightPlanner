@@ -4,7 +4,7 @@
 import { StudentRecord } from '@/types';
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
-
+import { Pencil, GraduationCap, Save, Plus, X, CircleCheck } from 'lucide-react';
 
 interface Props {
   student: StudentRecord | null;
@@ -13,7 +13,7 @@ interface Props {
 }
 
 export default function StudentFormModal({ student, onSave, onClose }: Props) {
-  const { instructors, loadInstructors } = useFlightStore(); 
+  const { instructors, loadInstructors } = useFlightStore();
   const isEditing = !!student;
 
     // Load instructors if not already loaded
@@ -21,8 +21,8 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
         if (instructors.length === 0) {
           loadInstructors();
         }
-      }, [instructors.length, loadInstructors]); 
-  
+      }, [instructors.length, loadInstructors]);
+
   const [form, setForm] = useState({
     enrollmentId: '',
     name: '',
@@ -69,10 +69,10 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
 
   const generateInitials = (name: string): string => {
     if (!name.trim()) return '';
-    
+
     const parts = name.trim().split(/\s+/);
     let initials = '';
-    
+
     if (parts.length >= 2) {
       initials = (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     } else if (parts.length === 1 && parts[0].length >= 2) {
@@ -80,7 +80,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
     } else {
       initials = parts[0].toUpperCase();
     }
-    
+
     const existingInitials = getExistingInitials();
     if (existingInitials.includes(initials)) {
       let counter = 1;
@@ -91,7 +91,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
       }
       return newInitials;
     }
-    
+
     return initials;
   };
 
@@ -108,25 +108,28 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
+  const inputClass = "w-full surface-inner rounded-lg px-3 py-2 focus:outline-none focus:border-[var(--accent)]";
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 rounded-t-xl">
-          <h3 className="text-lg font-semibold text-white">
-            {isEditing ? '✏️ Edit Student' : '👨‍✈️ Add New Student'}
+    <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="surface-card w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b sticky top-0 rounded-t-xl" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            {isEditing ? <Pencil className="w-4 h-4" /> : <GraduationCap className="w-4 h-4" />}
+            {isEditing ? 'Edit Student' : 'Add New Student'}
           </h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg cursor-pointer">
-            <span className="text-slate-400 text-xl">✕</span>
+          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+            <X className="w-5 h-5 text-tertiary" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Full Name *</label>
-              <input 
-                type="text" 
-                value={form.name} 
+              <label className="block text-sm text-secondary mb-1">Full Name *</label>
+              <input
+                type="text"
+                value={form.name}
                 onChange={e => {
                   handleChange('name', e.target.value);
                   if (!initialsManuallyEdited) {
@@ -136,41 +139,43 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
                 }}
                 required
                 placeholder="e.g., John Doe"
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" 
+                className={inputClass}
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1">
-                Initials * 
-                <span className="text-xs text-slate-500 ml-1">(auto)</span>
+              <label className="block text-sm text-secondary mb-1">
+                Initials *
+                <span className="text-xs text-tertiary ml-1">(auto)</span>
               </label>
-              <input 
-                type="text" 
-                value={form.initials} 
+              <input
+                type="text"
+                value={form.initials}
                 onChange={e => {
                   handleChange('initials', e.target.value.toUpperCase());
                   setInitialsManuallyEdited(true);
                 }}
-                required 
+                required
                 maxLength={4}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" 
+                className={inputClass}
               />
               {!initialsManuallyEdited && form.name && (
-                <p className="text-xs text-green-400 mt-1">✓ Auto-generated</p>
+                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--success)' }}>
+                  <CircleCheck className="w-3 h-3" /> Auto-generated
+                </p>
               )}
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Enrollment ID *</label>
+              <label className="block text-sm text-secondary mb-1">Enrollment ID *</label>
               <input type="text" value={form.enrollmentId} onChange={e => handleChange('enrollmentId', e.target.value)} required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" />
+                className={inputClass} />
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Training Stage</label>
+              <label className="block text-sm text-secondary mb-1">Training Stage</label>
               <select value={form.trainingStage} onChange={e => handleChange('trainingStage', e.target.value)}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500">
+                className={inputClass}>
                 <option value="PPL">PPL</option>
                 <option value="PPL Phase 1">PPL Phase 1</option>
                 <option value="PPL Phase 2">PPL Phase 2</option>
@@ -182,11 +187,13 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
           </div>
           {/* Assigned Instructor */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">👨‍🏫 Assigned Instructor</label>
+            <label className="block text-xs text-secondary mb-1 flex items-center gap-1">
+              <GraduationCap className="w-3.5 h-3.5" /> Assigned Instructor
+            </label>
             <select
               value={form.assignedInstructorId || ''}
               onChange={e => setForm(p => ({ ...p, assignedInstructorId: e.target.value || undefined }))}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white"
+              className={`${inputClass} text-sm`}
             >
               <option value="">None (Unassigned)</option>
               {instructors.map(i => (
@@ -197,47 +204,49 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Total Hours</label>
+              <label className="block text-sm text-secondary mb-1">Total Hours</label>
               <input type="number" value={form.totalHours || ''} onChange={e => handleChange('totalHours', parseFloat(e.target.value) || 0)}
                 min={0} step="0.1"
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" />
+                className={inputClass} />
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Medical Expiry</label>
+              <label className="block text-sm text-secondary mb-1">Medical Expiry</label>
               <input type="date" value={form.medicalExpiry} onChange={e => handleChange('medicalExpiry', e.target.value)}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" />
+                className={inputClass} />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-400 mb-1">
+              <label className="block text-sm text-secondary mb-1">
                 Email {!isEditing && '*'}
               </label>
               <input type="email" value={form.email} onChange={e => handleChange('email', e.target.value)}
                 required={!isEditing}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" />
+                className={inputClass} />
               {!isEditing && (
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-tertiary mt-1">
                   This becomes the student&apos;s login — a password is generated and emailed to them.
                 </p>
               )}
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Phone</label>
+              <label className="block text-sm text-secondary mb-1">Phone</label>
               <input type="text" value={form.phone} onChange={e => handleChange('phone', e.target.value)}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-blue-500" />
+                className={inputClass} />
             </div>
           </div>
 
-          <div className="flex space-x-3 pt-4 border-t border-slate-700">
+          <div className="flex space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <button type="button" onClick={onClose}
-              className="flex-1 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition cursor-pointer">
+              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer surface-inner">
               Cancel
             </button>
             <button type="submit"
-              className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer">
-              {isEditing ? '💾 Save Changes' : '➕ Add Student'}
+              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5"
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>
+              {isEditing ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              {isEditing ? 'Save Changes' : 'Add Student'}
             </button>
           </div>
         </form>

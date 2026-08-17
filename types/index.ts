@@ -10,6 +10,11 @@ export interface Aircraft {
   currentFuel: number;
   status: 'ACTIVE' | 'MAINTENANCE' | 'GROUNDED';
   nextMaintenance: string;
+  // Average cruise fuel burn (liters/hour) for THIS aircraft, if the FTO has
+  // set one — overrides the type-average default from
+  // FUEL_BURN_RATE_BY_TYPE_LPH (see lib/store.ts). Optional/undefined means
+  // "use the type default".
+  fuelBurnRateLph?: number;
 }
 
 
@@ -153,6 +158,20 @@ export interface ScheduledFlight {
   weatherBriefed: boolean;
   notamBriefed: boolean;
   notes: string;
+  // Set true when a Debrief was completed with "auto-create logbook entry"
+  // unchecked — the flight is COMPLETED and aircraft state (fuel/Hobbs) was
+  // already updated, but no flight_records row exists yet and the
+  // student's hours/first-solo-date haven't been credited. Surfaced as a
+  // "Logbook Pending" badge (FlightDetailModal) and a resolvable list on
+  // the Flights page, which flips this back to false once a matching
+  // flight record is logged. See DebriefForm.tsx / FlightRecordForm.tsx.
+  logbookPending?: boolean;
+  // The debrief data captured at check-out time (hobbs/fuel/landings/
+  // maneuvers/notes/performance/weather) when logbookPending was set —
+  // kept so the eventual Log Flight entry can be pre-filled instead of
+  // re-entered from scratch. null/undefined once resolved or if the
+  // flight was never left pending.
+  pendingDebrief?: Record<string, unknown> | null;
   // Display fields (looked up)
   aircraftReg?: string;
   studentName?: string;
@@ -288,18 +307,10 @@ export interface AvailabilityRecord {
 }
 
 // Training requirement checklist item
-export interface TrainingRequirement {
-  id: string;
-  studentId: string;
-  requirementName: string;
-  requirementCategory: string;
-  isCompleted: boolean;
-  completedDate?: string;
-  completedBy?: string;
-  notes?: string;
-  sortOrder: number;
-}
-
+// (Previously declared twice — TS interface merging made the second,
+// more complete declaration effectively win at compile time, but that
+// was unintentional duplication rather than a deliberate split; merged
+// into one canonical declaration.)
 export interface TrainingRequirement {
   id: string;
   studentId: string;
@@ -312,8 +323,8 @@ export interface TrainingRequirement {
   sortOrder: number;
   validityYears?: number;
   requiredBeforeHours?: number;
-  blocksSolo?: boolean;          
-  blocksAllFlights?: boolean;    
+  blocksSolo?: boolean;
+  blocksAllFlights?: boolean;
   programCode?: string;
 }
 
@@ -343,6 +354,25 @@ export interface GroundSchoolClass {
   subjectName?: string;
   instructorName?: string;
   enrolledCount?: number;
+}
+
+// Holiday / blackout date — flight bookings and ground-school classes
+// cannot be scheduled on these dates (see findHolidayForDate in
+// lib/store.ts, used by BookingForm, ScheduleBoard, and
+// GroundSchoolCalendar). A holiday is either:
+//   - a one-time date (isRecurring: false) — matched by the exact
+//     'YYYY-MM-DD' value, or
+//   - a recurring annual holiday (isRecurring: true) — matched by
+//     month/day only, so e.g. a national holiday entered once continues
+//     to block that same calendar date every future year without needing
+//     to be re-added. The year portion of `date` for a recurring holiday
+//     is just where it was first entered; it's ignored for matching.
+export interface Holiday {
+  id: string;
+  holidayName: string;
+  date: string;          // 'YYYY-MM-DD'
+  isRecurring: boolean;
+  notes?: string;
 }
 
 // Student enrollment

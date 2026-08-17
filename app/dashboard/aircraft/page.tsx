@@ -7,8 +7,8 @@ import { useFlightStore } from '@/lib/store';
 import { Aircraft } from '@/types';
 import AircraftCard from '@/components/aircraft/AircraftCard';
 import AircraftFormModal from '@/components/aircraft/AircraftFormModal';
-import Link from 'next/link';
 import RoleGate from '@/components/ui/RoleGate';
+import { Plus, Search, Plane } from 'lucide-react';
 
 export default function AircraftPage() {
   const { aircraft, loadingAircraft, loadAircraft, addAircraft, updateAircraft, removeAircraft } = useFlightStore();
@@ -67,13 +67,17 @@ export default function AircraftPage() {
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
-        <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-          <Header 
-            title="Aircraft Fleet" 
-            subtitle="Manage your aircraft" 
+        <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
+          <Header
+            title="Aircraft Fleet"
+            subtitle="Manage your aircraft"
             action={
-              <button onClick={handleAdd} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold">
-                ➕ Add Aircraft
+              <button
+                onClick={handleAdd}
+                className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
+                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+              >
+                <Plus className="w-4 h-4" /> Add Aircraft
               </button>
             }
           />
@@ -81,38 +85,41 @@ export default function AircraftPage() {
       <div className="max-w-7xl mx-auto px-4 py-6">
         {loadingAircraft ? (
           <div className="text-center py-20">
-            <p className="text-slate-400 text-lg">Loading aircraft...</p>
+            <p className="text-secondary text-lg">Loading aircraft...</p>
           </div>
         ) : (
           <>
             <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
               {[
-                { label: 'Total', value: stats.total, color: 'text-white' },
-                { label: 'Active', value: stats.active, color: 'text-green-400' },
-                { label: 'Maintenance', value: stats.maintenance, color: 'text-yellow-400' },
-                { label: 'Grounded', value: stats.grounded, color: 'text-red-400' },
-                { label: 'Fuel', value: `${stats.totalFuel}L`, color: 'text-blue-400' },
-                { label: 'Capacity', value: `${stats.totalCapacity}L`, color: 'text-purple-400' },
+                { label: 'Total', value: stats.total, color: 'var(--text-primary)' },
+                { label: 'Active', value: stats.active, color: 'var(--success)' },
+                { label: 'Maintenance', value: stats.maintenance, color: 'var(--warning-text)' },
+                { label: 'Grounded', value: stats.grounded, color: 'var(--danger)' },
+                { label: 'Fuel', value: `${stats.totalFuel}L`, color: 'var(--accent)' },
+                { label: 'Capacity', value: `${stats.totalCapacity}L`, color: 'var(--accent-strong)' },
               ].map((stat, i) => (
-                <div key={i} className="bg-slate-800/50 border border-slate-700 rounded-lg p-3 text-center">
-                  <p className="text-xs text-slate-400">{stat.label}</p>
-                  <p className={`text-lg font-bold ${stat.color}`}>{stat.value}</p>
+                <div key={i} className="surface-inner p-3 text-center">
+                  <p className="text-xs text-tertiary">{stat.label}</p>
+                  <p className="text-lg font-bold" style={{ color: stat.color }}>{stat.value}</p>
                 </div>
               ))}
             </div>
 
             <div className="flex flex-col sm:flex-row gap-3 mb-6">
-              <input
-                type="text"
-                placeholder="🔍 Search by registration, model, or type..."
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                className="flex-1 bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-              />
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-tertiary absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Search by registration, model, or type..."
+                  value={searchTerm}
+                  onChange={e => setSearchTerm(e.target.value)}
+                  className="w-full surface-inner rounded-lg pl-9 pr-4 py-2 focus:outline-none focus:border-[var(--accent)]"
+                />
+              </div>
               <select
                 value={statusFilter}
                 onChange={e => setStatusFilter(e.target.value)}
-                className="bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-blue-500"
+                className="surface-inner rounded-lg px-4 py-2 focus:outline-none focus:border-[var(--accent)]"
               >
                 <option value="ALL">All Status</option>
                 <option value="ACTIVE">Active</option>
@@ -123,9 +130,9 @@ export default function AircraftPage() {
 
             {filteredAircraft.length === 0 ? (
               <div className="text-center py-20">
-                <p className="text-6xl mb-4">🛩️</p>
-                <p className="text-slate-400 text-lg">No aircraft found</p>
-                <p className="text-slate-500 text-sm mt-2">Try adjusting your search or add a new aircraft</p>
+                <Plane className="w-10 h-10 text-tertiary mx-auto mb-4" />
+                <p className="text-secondary text-lg">No aircraft found</p>
+                <p className="text-tertiary text-sm mt-2">Try adjusting your search or add a new aircraft</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

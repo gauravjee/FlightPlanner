@@ -37,7 +37,8 @@ import { supabase } from '@/lib/supabase-client';
 import Header from '@/components/ui/Header';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
-import { useFlightStore } from '@/lib/store';
+import { syncRequirementsFromGroundSchoolPass } from '@/lib/ground-school-sync';
+import { ArrowLeft, GraduationCap, ClipboardList, CircleCheck, X } from 'lucide-react';
 
 // ============================================================
 // Type definitions
@@ -96,9 +97,6 @@ export default function StudentProgressPage() {
   // the URL will be /dashboard/ground-school/progress?student=UUID
   const searchParams = useSearchParams();
   const studentParam = searchParams.get('student');
-
- // const { trainingRequirements, loadTrainingRequirements, toggleRequirement } = useFlightStore();
-  const { loadTrainingRequirements, toggleRequirement, trainingRequirements } = useFlightStore();
 
   // ----- State -----
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -252,27 +250,12 @@ export default function StudentProgressPage() {
     return;
   }
 
-  // 2. Also update the Requirements Checklist
-  // Load the latest requirements for this student
-  await loadTrainingRequirements(selectedStudent);
-  
-  // Find matching requirement(s) — uses includes() for names with suffixes
-  const currentReqs = useFlightStore.getState().trainingRequirements;
-  const matchingReqs = currentReqs.filter(
-    (r) =>
-      r.studentId === selectedStudent &&
-      r.requirementName.includes(subject.subject_name)
-  );
-
-  // Toggle each matching requirement to completed
-  for (const req of matchingReqs) {
-    if (!req.isCompleted) {
-      await toggleRequirement(req.id, true, 'Ground School Module');
-    }
-  }
+  // 2. Also update the Requirements Checklist — shared with the attendance
+  // page's own exam-recording flow, see lib/ground-school-sync.ts.
+  await syncRequirementsFromGroundSchoolPass(selectedStudent, subject.subject_name, 'Ground School Module');
 
   // Show success toast and reload
-  setToastMessage('✅ Subject marked as completed!');
+  setToastMessage('Subject marked as completed!');
   setTimeout(() => setToastMessage(''), 3000);
   loadEnrollments(selectedStudent);
 };
@@ -330,8 +313,8 @@ export default function StudentProgressPage() {
   if (loading) {
     return (
       <ProtectedRoute>
-        <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
-          <p className="text-slate-400">Loading...</p>
+        <main className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg)' }}>
+          <p className="text-secondary">Loading...</p>
         </main>
       </ProtectedRoute>
     );
@@ -342,9 +325,9 @@ export default function StudentProgressPage() {
       <RoleGate
         allowedRoles={['admin', 'instructor', 'super_admin', 'student', 'operations']}
       >
-        <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+        <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
           <Header
-            title="📊 Student Ground School Progress"
+            title="Student Ground School Progress"
             subtitle="Detailed per‑student theoretical training status"
             backUrl="/dashboard/ground-school"
           />
@@ -356,23 +339,24 @@ export default function StudentProgressPage() {
               <div className="mb-4">
                 <a
                   href={`/dashboard/progress?student=${selectedStudent}`}
-                  className="text-sm text-teal-400 hover:text-teal-300 transition"
+                  className="text-sm transition flex items-center gap-1 w-fit"
+                  style={{ color: 'var(--accent)' }}
                 >
-                  ← Back to Flight Progress
+                  <ArrowLeft className="w-3.5 h-3.5" /> Back to Flight Progress
                 </a>
               </div>
             )}
 
             {/* ----- Student Selector (hidden for students) ----- */}
             {userRole !== 'student' && (
-              <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 mb-6">
-                <label className="text-sm text-slate-400 block mb-2">
+              <div className="surface-card p-4 mb-6">
+                <label className="text-sm text-secondary block mb-2">
                   Select Student:
                 </label>
                 <select
                   value={selectedStudent}
                   onChange={(e) => setSelectedStudent(e.target.value)}
-                  className="w-full md:w-96 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                  className="w-full md:w-96 surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]"
                 >
                   <option value="">Choose a student...</option>
                   {students.map((s) => (
@@ -386,7 +370,7 @@ export default function StudentProgressPage() {
 
             {!selectedStudent ? (
               /* No student selected yet */
-              <div className="text-center py-20 text-slate-400">
+              <div className="text-center py-20 text-secondary">
                 {userRole === 'student'
                   ? 'No student ID found in your profile.'
                   : 'Please select a student to view their progress.'}
@@ -408,78 +392,68 @@ export default function StudentProgressPage() {
                           `Requirements Checklist: ${subj.name}`
                     );
 
+                    const attendanceColor = subj.attendanceRate >= 80 ? 'var(--success)' : subj.attendanceRate >= 50 ? 'var(--warning-text)' : 'var(--danger)';
+
                     return (
                       <div
                         key={subj.id}
-                        className={`bg-slate-800/50 border rounded-xl p-4 ${
-                          isExempted
-                            ? 'border-green-500/50'
-                            : 'border-slate-700'
-                        }`}
+                        className="surface-inner p-4"
+                        style={isExempted ? { borderColor: 'color-mix(in srgb, var(--success) 50%, transparent)' } : undefined}
                       >
                         {/* Subject name and code */}
                         <div className="flex justify-between items-start mb-2">
                           <div className="flex items-center space-x-2">
-                            <h3 className="text-white font-semibold">
+                            <h3 className="font-semibold">
                               {subj.name}
                             </h3>
                             {isExempted && (
-                              <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full">
-                                ✅ Completed
+                              <span className="badge badge-success flex items-center gap-1">
+                                <CircleCheck className="w-3 h-3" /> Completed
                               </span>
                             )}
                           </div>
-                          <span className="text-xs bg-slate-700 text-slate-300 px-2 py-0.5 rounded">
+                          <span className="text-xs px-2 py-0.5 rounded surface-muted text-secondary">
                             {subj.code}
                           </span>
                         </div>
 
                         {/* Exempted / Completed display */}
                         {isExempted ? (
-                          <div className="text-xs text-green-400 mt-2">
-                            🎓 Previously completed — no attendance required
+                          <div className="text-xs mt-2 flex items-center gap-1" style={{ color: 'var(--success)' }}>
+                            <GraduationCap className="w-3.5 h-3.5" /> Previously completed — no attendance required
                           </div>
                         ) : (
                           /* Regular progress display */
                           <>
                             {/* Attendance progress bar */}
                             <div className="mb-2">
-                              <div className="flex justify-between text-xs text-slate-400 mb-1">
+                              <div className="flex justify-between text-xs text-tertiary mb-1">
                                 <span>Attendance</span>
                                 <span>
                                   {subj.attended}/{subj.totalClasses} (
                                   {subj.attendanceRate}%)
                                 </span>
                               </div>
-                              <div className="w-full bg-slate-700 rounded-full h-1.5">
+                              <div className="w-full rounded-full h-1.5" style={{ backgroundColor: 'var(--border)' }}>
                                 <div
-                                  className={`h-1.5 rounded-full ${
-                                    subj.attendanceRate >= 80
-                                      ? 'bg-green-500'
-                                      : subj.attendanceRate >= 50
-                                      ? 'bg-yellow-500'
-                                      : 'bg-red-500'
-                                  }`}
+                                  className="h-1.5 rounded-full"
                                   style={{
                                     width: `${subj.attendanceRate}%`,
+                                    backgroundColor: attendanceColor,
                                   }}
                                 />
                               </div>
                             </div>
 
                             {/* Exam status */}
-                            <div className="text-xs text-slate-400 mt-3">
+                            <div className="text-xs text-tertiary mt-3">
                               {subj.latestScore !== null ? (
                                 <>
-                                  <span className="text-white font-medium">
+                                  <span className="font-medium" style={{ color: 'var(--text-primary)' }}>
                                     Latest Score: {subj.latestScore}%
                                   </span>{' '}
                                   <span
-                                    className={
-                                      subj.latestResult === 'PASS'
-                                        ? 'text-green-400'
-                                        : 'text-red-400'
-                                    }
+                                    style={{ color: subj.latestResult === 'PASS' ? 'var(--success)' : 'var(--danger)' }}
                                   >
                                     ({subj.latestResult || 'N/A'})
                                   </span>
@@ -487,7 +461,7 @@ export default function StudentProgressPage() {
                                   <span>Attempts: {subj.attempts}</span>
                                 </>
                               ) : (
-                                <span className="text-slate-500">
+                                <span className="text-tertiary">
                                   No exam recorded yet.
                                 </span>
                               )}
@@ -504,9 +478,9 @@ export default function StudentProgressPage() {
                                   addDirectExam(subj.id);
                                 }
                               }}
-                              className="mt-3 w-full text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 py-1.5 px-3 rounded transition"
+                              className="mt-3 w-full text-xs surface-inner py-1.5 px-3 rounded transition hover:opacity-80 text-secondary flex items-center justify-center gap-1.5"
                             >
-                              🎓 Mark as Completed
+                              <GraduationCap className="w-3.5 h-3.5" /> Mark as Completed
                             </button>
                           </>
                         )}
@@ -518,20 +492,20 @@ export default function StudentProgressPage() {
                 {/* ============================================================ */}
                 {/* CLASS & EXAM HISTORY TABLE                                   */}
                 {/* ============================================================ */}
-                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-                  <h2 className="text-lg font-semibold text-white mb-4">
-                    📋 Class & Exam History
+                <div className="surface-card p-6">
+                  <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4 text-secondary" /> Class & Exam History
                   </h2>
 
                   {enrollments.length === 0 ? (
-                    <p className="text-slate-400 text-sm">
+                    <p className="text-secondary text-sm">
                       No ground school classes found.
                     </p>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="text-left text-slate-400 border-b border-slate-700">
+                          <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                             <th className="pb-3">Subject</th>
                             <th className="pb-3">Date</th>
                             <th className="pb-3">Time</th>
@@ -544,14 +518,22 @@ export default function StudentProgressPage() {
                             <th className="pb-3">Notes</th>
                           </tr>
                         </thead>
-                        <tbody className="text-slate-300">
-                          {enrollments.map((enr) => (
+                        <tbody className="text-secondary">
+                          {enrollments.map((enr) => {
+                            const attendanceBadgeClass =
+                              enr.attendance_status === 'PRESENT' ? 'badge-success' :
+                              enr.attendance_status === 'ABSENT' ? 'badge-danger' :
+                              enr.attendance_status === 'EXCUSED' ? 'badge-warning' :
+                              enr.attendance_status === 'EXEMPTED' ? 'badge-accent' :
+                              'badge-neutral';
+                            return (
                             <tr
                               key={enr.id}
-                              className="border-b border-slate-700/50 hover:bg-slate-700/30"
+                              className="border-b transition hover:opacity-80"
+                              style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}
                             >
                               {/* Subject name */}
-                              <td className="py-3 font-medium text-white">
+                              <td className="py-3 font-medium" style={{ color: 'var(--text-primary)' }}>
                                 {enr.subject_name || '—'}
                               </td>
 
@@ -573,19 +555,7 @@ export default function StudentProgressPage() {
 
                               {/* Attendance status with colour coding */}
                               <td className="py-3">
-                                <span
-                                  className={`px-2 py-0.5 rounded text-xs ${
-                                    enr.attendance_status === 'PRESENT'
-                                      ? 'bg-green-500/20 text-green-400'
-                                      : enr.attendance_status === 'ABSENT'
-                                      ? 'bg-red-500/20 text-red-400'
-                                      : enr.attendance_status === 'EXCUSED'
-                                      ? 'bg-yellow-500/20 text-yellow-400'
-                                      : enr.attendance_status === 'EXEMPTED'
-                                      ? 'bg-indigo-500/20 text-indigo-400'
-                                      : 'bg-slate-500/20 text-slate-400'
-                                  }`}
-                                >
+                                <span className={`badge ${attendanceBadgeClass}`}>
                                   {enr.attendance_status}
                                 </span>
                               </td>
@@ -601,11 +571,7 @@ export default function StudentProgressPage() {
                               <td className="py-3">
                                 {enr.exam_result ? (
                                   <span
-                                    className={
-                                      enr.exam_result === 'PASS'
-                                        ? 'text-green-400'
-                                        : 'text-red-400'
-                                    }
+                                    style={{ color: enr.exam_result === 'PASS' ? 'var(--success)' : 'var(--danger)' }}
                                   >
                                     {enr.exam_result}
                                   </span>
@@ -629,7 +595,8 @@ export default function StudentProgressPage() {
                                 {enr.notes || '—'}
                               </td>
                             </tr>
-                          ))}
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -641,13 +608,17 @@ export default function StudentProgressPage() {
 
           {/* ----- Toast message ----- */}
           {toastMessage && (
-            <div className="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
+            <div
+              className="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce flex items-center gap-2"
+              style={{ backgroundColor: 'var(--success)', color: '#ffffff' }}
+            >
+              <CircleCheck className="w-4 h-4" />
               {toastMessage}
               <button
                 onClick={() => setToastMessage('')}
-                className="ml-3 font-bold"
+                className="ml-3"
               >
-                ✕
+                <X className="w-4 h-4" />
               </button>
             </div>
           )}

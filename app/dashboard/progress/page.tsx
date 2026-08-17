@@ -6,13 +6,24 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
+import { supabase } from '@/lib/supabase-client';
 import { StudentRecord, FlightRecord } from '@/types';
 import Header from '@/components/ui/Header';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
+import RoleGate from '@/components/ui/RoleGate';
 import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist';
+import { ChartColumn, TrendingUp, School, ArrowRight, Plane } from 'lucide-react';
 
 // ============================================================
-// TRAINING STAGE REQUIREMENTS (DGCA/CAA typical minimums)
+// TRAINING STAGE REQUIREMENTS — built-in fallback defaults (DGCA/CAA
+// typical minimums), used ONLY when a student's training stage doesn't
+// resolve to a configured row in the admin-managed `training_programs`
+// table (Admin Setup -> Training Programs -> "Progress tracking minimums"),
+// or when that program hasn't set a given metric. Previously these
+// hardcoded constants were the ONLY source for this page's six progress
+// metrics — meaning per-school customization wasn't actually possible and
+// this page could silently disagree with whatever an admin configured on
+// the Requirements tab. See loadTrainingPrograms/resolveRequirements below.
 // ============================================================
 const PPL_REQUIREMENTS = {
   totalHours: 40,
@@ -32,22 +43,35 @@ const CPL_REQUIREMENTS = {
   landings: 50,
 };
 
+// DB row shape from training_programs — see
+// add-training-program-requirement-columns.sql and TrainingProgramsTab.tsx.
+interface TrainingProgramRow {
+  program_code: string;
+  required_hours: number;
+  solo_hours: number | null;
+  cross_country_hours: number | null;
+  instrument_hours: number | null;
+  night_hours: number | null;
+  landings_required: number | null;
+}
+
 // ============================================================
-// COLOR HELPERS
+// COLOR HELPERS — mapped onto design tokens so progress bars and
+// stage labels track light/dark theme correctly.
 // ============================================================
 const getProgressColor = (percent: number): string => {
-  if (percent >= 100) return 'bg-green-500';
-  if (percent >= 75) return 'bg-blue-500';
-  if (percent >= 50) return 'bg-yellow-500';
-  if (percent >= 25) return 'bg-orange-500';
-  return 'bg-red-500';
+  if (percent >= 100) return 'var(--success)';
+  if (percent >= 75) return 'var(--accent)';
+  if (percent >= 50) return 'var(--warning-text)';
+  if (percent >= 25) return 'var(--warning)';
+  return 'var(--danger)';
 };
 
 const getStageColor = (stage: string): string => {
-  if (stage?.includes('PPL')) return 'text-blue-400';
-  if (stage?.includes('CPL')) return 'text-purple-400';
-  if (stage?.includes('IR')) return 'text-cyan-400';
-  return 'text-slate-400';
+  if (stage?.includes('PPL')) return 'var(--accent)';
+  if (stage?.includes('CPL')) return 'var(--success)';
+  if (stage?.includes('IR')) return 'var(--warning-text)';
+  return 'var(--text-secondary)';
 };
 
 // ============================================================
@@ -55,8 +79,8 @@ const getStageColor = (stage: string): string => {
 // ============================================================
 export default function ProgressPage() {
   const { data: session } = useSession();
-  const userRole = (session?.user as any)?.role;
-  const userStudentId = (session?.user as any)?.studentId;
+  const userRole = session?.user?.role;
+  const userStudentId = session?.user?.studentId;
 
   const {
     students, loadStudents,
@@ -66,11 +90,27 @@ export default function ProgressPage() {
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [selectedStage, setSelectedStage] = useState<string>('ALL');
+  // Admin-configured per-program requirement minimums — see
+  // TrainingProgramsTab.tsx ("Progress tracking minimums") and
+  // add-training-program-requirement-columns.sql. Loaded directly via
+  // Supabase (not the Zustand store) to match how that admin tab itself
+  // reads/writes this table.
+  const [trainingPrograms, setTrainingPrograms] = useState<TrainingProgramRow[]>([]);
 
   // Load data on mount
   useEffect(() => {
     loadStudents();
     loadFlightRecords();
+    (async () => {
+      const { data, error } = await supabase
+        .from('training_programs')
+        .select('program_code, required_hours, solo_hours, cross_country_hours, instrument_hours, night_hours, landings_required');
+      if (error) {
+        console.error('Error loading training programs:', error.message);
+      } else {
+        setTrainingPrograms(data || []);
+      }
+    })();
   }, [loadStudents, loadFlightRecords]);
 
   // If student is logged in, auto-select their own record
@@ -94,6 +134,21 @@ export default function ProgressPage() {
   // Get selected student object
   const selectedStudent = students.find(s => s.id === selectedStudentId);
 
+  // Resolve the admin-configured training_programs row for the selected
+  // student's stage, if any. trainingStage values look like "CPL Phase 2"
+  // or "IR" — take the leading token as the program code and match
+  // case-insensitively against training_programs.program_code, rather than
+  // the old `trainingStage.includes('CPL')` substring check (which only
+  // ever distinguished PPL vs CPL and silently defaulted every other stage,
+  // including IR/MULTI, to PPL requirements).
+  const matchedProgram = useMemo(() => {
+    const stage = selectedStudent?.trainingStage;
+    if (!stage) return undefined;
+    const code = stage.trim().split(/\s+/)[0]?.toUpperCase();
+    if (!code) return undefined;
+    return trainingPrograms.find(p => p.program_code?.toUpperCase() === code);
+  }, [selectedStudent, trainingPrograms]);
+
   // Get flights for selected student
   const studentFlights = useMemo(() => {
     if (!selectedStudentId) return [];
@@ -103,12 +158,12 @@ export default function ProgressPage() {
   // Calculate statistics
   const stats = useMemo(() => {
     const flights = studentFlights;
-    
+
     const totalHours = flights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
     const soloFlights = flights.filter(f => f.flightType === 'SOLO');
     const soloHours = soloFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
     const dualHours = totalHours - soloHours;
-    const crossCountryFlights = flights.filter(f => 
+    const crossCountryFlights = flights.filter(f =>
       f.sortieType?.includes('CROSS_COUNTRY') || f.sortieType?.includes('NAVIGATION')
     );
     const crossCountryHours = crossCountryFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
@@ -117,11 +172,23 @@ export default function ProgressPage() {
     const nightFlights = flights.filter(f => f.sortieType?.includes('NIGHT'));
     const nightHours = nightFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
     const totalLandings = flights.reduce((sum, f) => sum + (f.landings || 0), 0);
-    
-    // Determine which requirements to use
-    const requirements = selectedStudent?.trainingStage?.includes('CPL') 
-      ? CPL_REQUIREMENTS 
+
+    // Determine which requirements to use. Built-in defaults (PPL vs CPL,
+    // by trainingStage) remain the fallback baseline; matchedProgram's own
+    // per-metric columns override on a field-by-field basis when set, so a
+    // school can configure e.g. just Solo Hours for a program and still
+    // inherit sensible defaults for everything else.
+    const fallback = selectedStudent?.trainingStage?.includes('CPL')
+      ? CPL_REQUIREMENTS
       : PPL_REQUIREMENTS;
+    const requirements = {
+      totalHours: matchedProgram?.required_hours ?? fallback.totalHours,
+      soloHours: matchedProgram?.solo_hours ?? fallback.soloHours,
+      crossCountry: matchedProgram?.cross_country_hours ?? fallback.crossCountry,
+      instrument: matchedProgram?.instrument_hours ?? fallback.instrument,
+      nightHours: matchedProgram?.night_hours ?? fallback.nightHours,
+      landings: matchedProgram?.landings_required ?? fallback.landings,
+    };
 
     return {
       totalFlights: flights.length,
@@ -141,12 +208,12 @@ export default function ProgressPage() {
       landingsPercent: Math.min(100, Math.round((totalLandings / requirements.landings) * 100)),
       overallPercent: 0,
     };
-  }, [studentFlights, selectedStudent]);
+  }, [studentFlights, selectedStudent, matchedProgram]);
 
   // Calculate overall progress
   const overallPercent = stats.totalFlights > 0
     ? Math.round(
-        (stats.hoursPercent + stats.soloPercent + stats.crossCountryPercent + 
+        (stats.hoursPercent + stats.soloPercent + stats.crossCountryPercent +
          stats.instrumentPercent + stats.nightPercent + stats.landingsPercent) / 6
       )
     : 0;
@@ -179,18 +246,24 @@ export default function ProgressPage() {
 
   return (
     <ProtectedRoute>
-      <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+      {/* Includes 'student' — this page doubles as the student's own progress
+          view (see the userRole === 'student' auto-select effect above), so
+          restricting to staff-only roles would have locked students out of
+          their own data. Only operations/maintenance (who have no legitimate
+          use for this page) are excluded, matching the dashboard tile filter. */}
+      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'student']}>
+      <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
         <Header title="Student Progress" subtitle="Track training progress and achievements" />
 
         <div className="max-w-7xl mx-auto px-4 py-6">
-          
+
           {/* Student Selector (only for admin/instructor) */}
           {userRole !== 'student' && (
             <div className="flex flex-col md:flex-row gap-3 mb-6">
               <select
                 value={selectedStudentId}
                 onChange={e => setSelectedStudentId(e.target.value)}
-                className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white"
+                className="flex-1 surface-inner rounded-lg px-4 py-2 focus:outline-none focus:border-[var(--accent)]"
               >
                 <option value="">Select a student to view progress</option>
                 {students.map(s => (
@@ -202,7 +275,7 @@ export default function ProgressPage() {
               <select
                 value={selectedStage}
                 onChange={e => setSelectedStage(e.target.value)}
-                className="bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2 text-white"
+                className="surface-inner rounded-lg px-4 py-2 focus:outline-none focus:border-[var(--accent)]"
               >
                 <option value="ALL">All Stages</option>
                 <option value="PPL">PPL</option>
@@ -215,10 +288,10 @@ export default function ProgressPage() {
           {/* Show prompt if no student selected */}
           {!selectedStudentId ? (
             <div className="text-center py-20">
-              <p className="text-6xl mb-4">📊</p>
-              <p className="text-slate-400 text-lg">
-                {userRole === 'student' 
-                  ? 'Loading your progress...' 
+              <ChartColumn className="w-12 h-12 mx-auto mb-4 text-tertiary" />
+              <p className="text-secondary text-lg">
+                {userRole === 'student'
+                  ? 'Loading your progress...'
                   : 'Select a student to view their training progress'}
               </p>
             </div>
@@ -226,23 +299,23 @@ export default function ProgressPage() {
             <>
               {/* Student Info Banner */}
               {selectedStudent && (
-                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 mb-6">
+                <div className="surface-card p-6 mb-6">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-slate-700 rounded-full flex items-center justify-center">
-                        <span className="text-xl font-bold text-white">{selectedStudent.initials}</span>
+                      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ backgroundColor: 'var(--surface-muted)' }}>
+                        <span className="text-xl font-bold">{selectedStudent.initials}</span>
                       </div>
                       <div>
-                        <h2 className="text-xl font-bold text-white">{selectedStudent.name}</h2>
-                        <p className="text-sm text-slate-400">
-                          {selectedStudent.enrollmentId} | 
-                          <span className={getStageColor(selectedStudent.trainingStage)}> {selectedStudent.trainingStage}</span>
+                        <h2 className="text-xl font-bold">{selectedStudent.name}</h2>
+                        <p className="text-sm text-secondary">
+                          {selectedStudent.enrollmentId} |
+                          <span style={{ color: getStageColor(selectedStudent.trainingStage) }}> {selectedStudent.trainingStage}</span>
                         </p>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-3xl font-bold text-white">{stats.totalHours}h</p>
-                      <p className="text-xs text-slate-400">Total Flight Hours</p>
+                      <p className="text-3xl font-bold">{stats.totalHours}h</p>
+                      <p className="text-xs text-secondary">Total Flight Hours</p>
                     </div>
                   </div>
                 </div>
@@ -260,36 +333,44 @@ export default function ProgressPage() {
                 <div className="mb-6">
                   <a
                     href={`/dashboard/ground-school/progress?student=${selectedStudentId}`}
-                    className="bg-teal-500/10 border border-teal-500/20 rounded-xl p-4 hover:bg-teal-500/20 transition cursor-pointer no-underline flex items-center justify-between"
+                    className="rounded-xl p-4 transition cursor-pointer no-underline flex items-center justify-between"
+                    style={{ backgroundColor: 'var(--accent-soft)', border: '1px solid color-mix(in srgb, var(--accent) 30%, transparent)' }}
                   >
                     <div>
-                      <h3 className="text-white font-semibold flex items-center space-x-2">
-                        <span>🏫</span>
+                      <h3 className="font-semibold flex items-center space-x-2">
+                        <School className="w-4 h-4" />
                         <span>Ground School Progress</span>
                       </h3>
-                      <p className="text-sm text-slate-400 mt-1">
+                      <p className="text-sm text-secondary mt-1">
                         View detailed theoretical training status, attendance & exam results
                       </p>
                     </div>
-                    <span className="text-teal-400 text-xl">→</span>
+                    <ArrowRight className="w-5 h-5" style={{ color: 'var(--accent)' }} />
                   </a>
                 </div>
               )}
 
               {/* Overall Progress Bar */}
-              <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 mb-6">
-                <h3 className="text-lg font-semibold text-white mb-4">📈 Overall Progress</h3>
+              <div className="surface-card p-6 mb-6">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-secondary" /> Overall Progress
+                </h3>
                 <div className="flex items-center space-x-4">
-                  <div className="flex-1 bg-slate-700 rounded-full h-4">
+                  <div className="flex-1 rounded-full h-4" style={{ backgroundColor: 'var(--border)' }}>
                     <div
-                      className={`h-4 rounded-full transition-all duration-500 ${getProgressColor(overallPercent)}`}
-                      style={{ width: `${overallPercent}%` }}
+                      className="h-4 rounded-full transition-all duration-500"
+                      style={{ width: `${overallPercent}%`, backgroundColor: getProgressColor(overallPercent) }}
                     />
                   </div>
-                  <span className="text-white font-bold text-lg">{overallPercent}%</span>
+                  <span className="font-bold text-lg">{overallPercent}%</span>
                 </div>
-                <p className="text-xs text-slate-400 mt-2">
+                <p className="text-xs text-secondary mt-2">
                   {stats.totalHours}h / {stats.requirements.totalHours}h required
+                  {!matchedProgram && (
+                    <span className="text-tertiary">
+                      {' '}(no matching program configured for &ldquo;{selectedStudent?.trainingStage}&rdquo; — using built-in defaults; set one up in Admin Setup → Training Programs)
+                    </span>
+                  )}
                 </p>
               </div>
 
@@ -303,33 +384,35 @@ export default function ProgressPage() {
                   { label: 'Night Hours', value: `${stats.nightHours}h`, target: `${stats.requirements.nightHours}h`, percent: stats.nightPercent },
                   { label: 'Landings', value: stats.totalLandings.toString(), target: stats.requirements.landings.toString(), percent: stats.landingsPercent },
                 ].map((item, i) => (
-                  <div key={i} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                    <p className="text-xs text-slate-400 mb-2">{item.label}</p>
-                    <p className="text-lg font-bold text-white">{item.value}</p>
-                    <p className="text-xs text-slate-500 mb-2">Target: {item.target}</p>
-                    <div className="w-full bg-slate-700 rounded-full h-2">
+                  <div key={i} className="surface-inner p-4">
+                    <p className="text-xs text-tertiary mb-2">{item.label}</p>
+                    <p className="text-lg font-bold">{item.value}</p>
+                    <p className="text-xs text-tertiary mb-2">Target: {item.target}</p>
+                    <div className="w-full rounded-full h-2" style={{ backgroundColor: 'var(--border)' }}>
                       <div
-                        className={`h-2 rounded-full ${getProgressColor(item.percent)}`}
-                        style={{ width: `${item.percent}%` }}
+                        className="h-2 rounded-full"
+                        style={{ width: `${item.percent}%`, backgroundColor: getProgressColor(item.percent) }}
                       />
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">{item.percent}%</p>
+                    <p className="text-xs text-tertiary mt-1">{item.percent}%</p>
                   </div>
                 ))}
               </div>
 
               {/* Hours Trend Chart (Simple Bar) */}
-              <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 mb-6">
-                <h3 className="text-lg font-semibold text-white mb-4">📊 Hours Trend (Last 30 Days)</h3>
+              <div className="surface-card p-6 mb-6">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <ChartColumn className="w-4 h-4 text-secondary" /> Hours Trend (Last 30 Days)
+                </h3>
                 <div className="flex items-end space-x-1 h-32 overflow-x-auto">
                   {hoursByDate.map((day, i) => (
                     <div key={i} className="flex flex-col items-center flex-shrink-0" style={{ width: '3%', minWidth: '20px' }}>
-                      <span className="text-[10px] text-slate-400 mb-1">{day.hours > 0 ? day.hours.toFixed(1) : ''}</span>
+                      <span className="text-[10px] text-tertiary mb-1">{day.hours > 0 ? day.hours.toFixed(1) : ''}</span>
                       <div
-                        className="w-full bg-blue-500/60 rounded-t"
-                        style={{ height: `${Math.min(100, day.hours * 30)}px` }}
+                        className="w-full rounded-t"
+                        style={{ height: `${Math.min(100, day.hours * 30)}px`, backgroundColor: 'color-mix(in srgb, var(--accent) 60%, transparent)' }}
                       />
-                      <span className="text-[8px] text-slate-500 mt-1 transform -rotate-45 origin-top-left whitespace-nowrap">
+                      <span className="text-[8px] text-tertiary mt-1 transform -rotate-45 origin-top-left whitespace-nowrap">
                         {i % 5 === 0 ? day.date : ''}
                       </span>
                     </div>
@@ -338,15 +421,17 @@ export default function ProgressPage() {
               </div>
 
               {/* Recent Flights */}
-              <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-                <h3 className="text-lg font-semibold text-white mb-4">🛩️ Recent Flights</h3>
+              <div className="surface-card p-6">
+                <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Plane className="w-4 h-4 text-secondary" /> Recent Flights
+                </h3>
                 {recentFlights.length === 0 ? (
-                  <p className="text-slate-400 text-sm">No flights recorded yet.</p>
+                  <p className="text-secondary text-sm">No flights recorded yet.</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="text-left text-slate-400 border-b border-slate-700">
+                        <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                           <th className="pb-3">Date</th>
                           <th className="pb-3">Aircraft</th>
                           <th className="pb-3">Sortie</th>
@@ -356,22 +441,20 @@ export default function ProgressPage() {
                           <th className="pb-3">Instructor</th>
                         </tr>
                       </thead>
-                      <tbody className="text-slate-300">
+                      <tbody className="text-secondary">
                         {recentFlights.map(flight => (
-                          <tr key={flight.id} className="border-b border-slate-700/50">
-                            <td className="py-3 text-white">
+                          <tr key={flight.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
+                            <td className="py-3" style={{ color: 'var(--text-primary)' }}>
                               {new Date(flight.flightDate).toLocaleDateString('en-IN')}
                             </td>
                             <td className="py-3">{flight.aircraftReg}</td>
                             <td className="py-3">{flight.sortieType?.replace(/_/g, ' ')}</td>
                             <td className="py-3">
-                              <span className={`px-2 py-0.5 rounded text-xs ${
-                                flight.flightType === 'SOLO' ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-400'
-                              }`}>
+                              <span className={`badge ${flight.flightType === 'SOLO' ? 'badge-success' : 'badge-accent'}`}>
                                 {flight.flightType}
                               </span>
                             </td>
-                            <td className="py-3 text-green-400">{flight.totalHours}h</td>
+                            <td className="py-3" style={{ color: 'var(--success)' }}>{flight.totalHours}h</td>
                             <td className="py-3">{flight.landings}</td>
                             <td className="py-3">{flight.instructorName}</td>
                           </tr>
@@ -385,6 +468,7 @@ export default function ProgressPage() {
           )}
         </div>
       </main>
+      </RoleGate>
     </ProtectedRoute>
   );
 }

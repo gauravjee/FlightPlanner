@@ -17,8 +17,9 @@
 
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { useFlightStore } from '@/lib/store';
+import React, { useState, useEffect, useRef } from 'react';
+import { Calendar, Printer, Plus, Wrench, TriangleAlert, ClipboardList, X } from 'lucide-react';
+import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays } from '@/lib/store';
 import { getLocationDisplay } from '@/lib/location';
 import { FlightSlot, ScheduledFlight } from '@/types';
 import FlightDetailModal from './FlightDetailModal';
@@ -28,13 +29,18 @@ import DebriefForm from './DebriefForm';
 
 // ============================================================
 // CONSTANTS – Sortie type colors and labels (used for legend)
+// ------------------------------------------------------------
+// Mapped onto the same design tokens used everywhere else: DUAL (the
+// default/most common booking) reads as the brand accent, SOLO as
+// success (green — matches the "In progress" status color elsewhere),
+// MAINTENANCE as warning (amber). Kept as CSS var references (not
+// literal Tailwind color classes) so a theme retune updates these too.
 // ============================================================
-const SORTIE_COLORS: Record<string, string> = {
-  DUAL: 'bg-blue-600/80 border-blue-400',
-  SOLO: 'bg-green-600/80 border-green-400',
-  MAINTENANCE: 'bg-yellow-500/80 border-yellow-400',
+const SORTIE_COLOR_VARS: Record<string, string> = {
+  DUAL: 'var(--accent-strong)',
+  SOLO: 'var(--success)',
+  MAINTENANCE: 'var(--warning-text)',
 };
-
 
 const SORTIE_LABELS: Record<string, string> = {
   DUAL: 'Dual',
@@ -139,6 +145,12 @@ export default function ScheduleBoard() {
   const ftoSettings = store.ftoSettings;                    // School name / airport code for the printed schedule header
   const loadFTOSettings = store.loadFTOSettings;
   const getFTOSetting = store.getFTOSetting;
+  const holidays = store.holidays;                          // FTO-wide blackout dates
+  const loadHolidays = store.loadHolidays;
+
+  // FTO-wide weekly recurring off day(s) (Settings -> Time & Scheduling ->
+  // "Weekly Off Day(s)"), parsed from the raw comma-separated fto_settings value.
+  const weeklyOffDays = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
 
   // ----- Load data when component mounts -----
   useEffect(() => {
@@ -147,7 +159,12 @@ export default function ScheduleBoard() {
     loadInstructors();        // Load instructors for initials on blocks
     loadScheduledFlights();   // Load booked flights for Gantt blocks
     loadMaintenanceRecords(); // Load maintenance records so we can block slots for aircraft under/scheduled for maintenance
-  }, [loadAircraft, loadStudents, loadInstructors, loadScheduledFlights, loadMaintenanceRecords]);
+    loadHolidays();           // Load holiday calendar so we can block slots on closed dates
+  }, [loadAircraft, loadStudents, loadInstructors, loadScheduledFlights, loadMaintenanceRecords, loadHolidays]);
+
+  // Is the currently viewed date blocked for scheduling — a holiday or the
+  // FTO's weekly off day? null if the date is open.
+  const dateBlockReason = getSchedulingBlockReason(selectedDate, holidays, weeklyOffDays);
 
   // Loaded defensively in its own effect (not just relying on the main
   // dashboard having already loaded it) so the Print Schedule sheet below
@@ -170,6 +187,15 @@ export default function ScheduleBoard() {
   const activeAircraft = aircraft.filter(a => a.status !== 'GROUNDED'); // Only operational
   const totalHours = 17; // 5 AM to 10 PM = 17 hours
 
+  // Refs for auto-centering the Gantt horizontally on the current time when
+  // viewing today (see centerOnNow / the effect below) — scrollContainerRef
+  // is the scrollable overflow-x-auto wrapper, innerGridRef is the
+  // min-width content it scrolls. Reading real rendered widths off these
+  // (rather than assuming the 1400px minimum) keeps the centering correct
+  // on a wide desktop window where the grid stretches past 1400px.
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const innerGridRef = useRef<HTMLDivElement>(null);
+
   // ============================================================
   // HELPER FUNCTIONS
   // ============================================================
@@ -183,20 +209,20 @@ export default function ScheduleBoard() {
       // IST is UTC+5:30
       const utcHours = date.getUTCHours();
       const utcMinutes = date.getUTCMinutes();
-      
+
       // Add 5 hours 30 minutes
       let istHours = utcHours + 5;
       let istMinutes = utcMinutes + 30;
-      
+
       // Handle minute overflow
       if (istMinutes >= 60) {
         istHours += 1;
         istMinutes -= 60;
       }
-      
+
       // Handle hour overflow (wrap around 24)
       istHours = istHours % 24;
-      
+
       return `${String(istHours).padStart(2, '0')}:${String(istMinutes).padStart(2, '0')}`;
     };
 
@@ -207,7 +233,7 @@ export default function ScheduleBoard() {
   const getSlotStyle = (slot: FlightSlot | ScheduledFlight) => {
     const startDate = new Date(slot.startTime);
     const endDate = new Date(slot.endTime);
-    
+
     // Convert UTC to IST properly
     const startUtcHours = startDate.getUTCHours();
     const startUtcMinutes = startDate.getUTCMinutes();
@@ -224,7 +250,7 @@ export default function ScheduleBoard() {
     if (endIstMinutes >= 60) { endIstHours += 1; endIstMinutes -= 60; }
     endIstHours = endIstHours % 24;
     const endHour = endIstHours + endIstMinutes / 60;
-    
+
     const duration = endHour - startHour;
     if (duration <= 0) return { left: '0%', width: '0%' };
     const leftPercent = ((startHour - 5) / totalHours) * 100;
@@ -235,6 +261,57 @@ export default function ScheduleBoard() {
     };
   };
 
+  /**
+   * Current time in IST as a decimal hour (e.g. 14.5 = 14:30), or null if
+   * outside the visible 05:00–22:00 grid window. Same UTC->IST conversion
+   * used by the current-time line below and by centerOnNow, so both always
+   * agree on "now".
+   */
+  const getCurrentISTHour = (): number | null => {
+    const now = new Date();
+    const utcHours = now.getUTCHours();
+    const utcMinutes = now.getUTCMinutes();
+    let istHours = utcHours + 5;
+    let istMinutes = utcMinutes + 30;
+    if (istMinutes >= 60) { istHours += 1; istMinutes -= 60; }
+    istHours = istHours % 24;
+    const currentHourIST = istHours + istMinutes / 60;
+    return currentHourIST >= 5 && currentHourIST <= 22 ? currentHourIST : null;
+  };
+
+  // Auto-center the Gantt horizontally on "now" whenever the board is
+  // showing today — so instructors/students landing on this page
+  // (especially on a phone or tablet, where most of the 1400px-wide grid
+  // is off-screen) see the current time slot immediately instead of the
+  // 05:00 start of the day. This only sets the initial scroll position;
+  // it doesn't lock or clamp scrolling afterward, so free scrolling in
+  // either direction still works exactly as before.
+  const centerOnNow = () => {
+    const container = scrollContainerRef.current;
+    const inner = innerGridRef.current;
+    if (!container || !inner) return;
+    const currentHourIST = getCurrentISTHour();
+    if (currentHourIST === null) return;
+    const labelWidth = 140; // matches the sticky aircraft-label column's fixed w-[140px]
+    const gridWidth = inner.clientWidth - labelWidth;
+    const leftPercent = ((currentHourIST - 5) / totalHours) * 100;
+    const targetX = labelWidth + (leftPercent / 100) * gridWidth;
+    const viewportWidth = container.clientWidth;
+    const maxScrollLeft = container.scrollWidth - viewportWidth;
+    container.scrollLeft = Math.max(0, Math.min(targetX - viewportWidth / 2, maxScrollLeft));
+  };
+
+  // Center on mount and whenever the selected date becomes today (e.g.
+  // navigating back with Prev/Next). Wrapped in requestAnimationFrame so it
+  // runs after the browser has laid out the grid's real width, not the
+  // pre-paint DOM.
+  useEffect(() => {
+    if (selectedDate !== todayLocal) return;
+    const frame = requestAnimationFrame(centerOnNow);
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate, todayLocal]);
+
   // ----- Date navigation -----
   const changeDate = (days: number) => {
     const d = new Date(selectedDate + 'T00:00:00');
@@ -242,7 +319,14 @@ export default function ScheduleBoard() {
     setSelectedDate(d.toLocaleDateString('en-CA'));
   };
 
-  const goToToday = () => setSelectedDate(todayLocal);
+  const goToToday = () => {
+    setSelectedDate(todayLocal);
+    // If already viewing today, the state above won't actually change, so
+    // the selectedDate-keyed effect above won't re-fire — recenter
+    // directly here too, so "Today" always doubles as a "jump back to
+    // now" button even after the user has scrolled away.
+    requestAnimationFrame(centerOnNow);
+  };
 
   // Is the given date+"HH:MM" combination already in the past? Compared
   // against the browser's local clock — same assumption BookingForm's own
@@ -406,11 +490,14 @@ export default function ScheduleBoard() {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
-    // ----- Sortie colours for the printed report (hex values) -----
+    // ----- Sortie colours for the printed report (hex values, kept in
+    // sync with the SORTIE_COLOR_VARS tokens used on-screen — this is a
+    // separate static HTML document, so it needs the actual hex, not a
+    // CSS var reference). -----
     const sortiePrintColors: Record<string, string> = {
-      DUAL: '#2563eb',
+      DUAL: '#0891b2',
       SOLO: '#16a34a',
-      MAINTENANCE: '#ca8a04',
+      MAINTENANCE: '#b45309',
     };
 
     // ----- Build unique instructor & student lists -----
@@ -465,8 +552,8 @@ export default function ScheduleBoard() {
 
           const color = sortiePrintColors[flight.sortieType] || '#6b7280';
           // Use exercise short code if available, otherwise fall back to sortie label
-          const label = getExerciseShortCode((flight as any).exercise || '') || 
-                        SORTIE_LABELS[flight.sortieType] || 
+          const label = getExerciseShortCode((flight as any).exercise || '') ||
+                        SORTIE_LABELS[flight.sortieType] ||
                         flight.sortieType;
           const stu = flight.studentId ? students.find(s => s.id === flight.studentId) : undefined;
           const inst = instructors.find(i => i.id === flight.instructorId);
@@ -641,6 +728,14 @@ export default function ScheduleBoard() {
     const minute = snappedMinutes % 60;
     const startTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
 
+    // Reject clicks on a date the FTO is closed — a holiday or the weekly
+    // off day — before ever considering maintenance/past-time blocks.
+    if (dateBlockReason) {
+      setErrorMessage(`FTO is closed on ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} (${dateBlockReason.label}) — flights cannot be booked on this date.`);
+      setTimeout(() => setErrorMessage(''), 4000);
+      return;
+    }
+
     // Reject clicks that land inside a maintenance block — either the whole
     // day (aircraft.status === 'MAINTENANCE', or a record with no precise
     // window set) or just the portion of this date covered by a record's
@@ -653,8 +748,8 @@ export default function ScheduleBoard() {
         : maintenanceBlock!.openEnded
           ? `from ${minutesToHHMM(maintenanceBlock!.startMin)} — still in progress, no end time set yet`
           : `from ${minutesToHHMM(maintenanceBlock!.startMin)} to ${minutesToHHMM(maintenanceBlock!.endMin)}`;
-      const overdueNote = maintenanceBlock!.overdue ? ' (⚠️ past its planned finish — check the maintenance log)' : '';
-      setErrorMessage(`🔧 ${ac?.registration || 'This aircraft'} is unavailable at ${startTime} — ${maintenanceBlock!.maintenanceType} maintenance ${when}.${overdueNote}`);
+      const overdueNote = maintenanceBlock!.overdue ? ' (past its planned finish — check the maintenance log)' : '';
+      setErrorMessage(`${ac?.registration || 'This aircraft'} is unavailable at ${startTime} — ${maintenanceBlock!.maintenanceType} maintenance ${when}.${overdueNote}`);
       setTimeout(() => setErrorMessage(''), 4000);
       return;
     }
@@ -663,7 +758,7 @@ export default function ScheduleBoard() {
     // surfacing "can't book in the past" after the user opens the form,
     // fills it in, and hits Save.
     if (isSlotInPast(selectedDate, startTime)) {
-      setErrorMessage(`⏰ ${startTime} on ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} is in the past — flights cannot be booked in the past. Please pick a future time slot.`);
+      setErrorMessage(`${startTime} on ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} is in the past — flights cannot be booked in the past. Please pick a future time slot.`);
       setTimeout(() => setErrorMessage(''), 4000);
       return;
     }
@@ -688,30 +783,32 @@ export default function ScheduleBoard() {
   return (
     <>
       {/* Main Schedule Board Container */}
-      <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
+      <div className="surface-card p-4 sm:p-6">
 
         {/* ----- Header Section ----- */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-white">📅 Flight Operations Board</h2>
-            <p className="text-sm text-slate-400 mt-1">
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-secondary" /> Flight Operations Board
+            </h2>
+            <p className="text-sm text-secondary mt-1">
               {new Date(selectedDate).toLocaleDateString('en-US', {
                 weekday: 'long',
                 day: 'numeric',
                 month: 'long',
                 year: 'numeric',
               })}
-              <span className="text-xs text-slate-500 ml-2">All times in IST</span>
+              <span className="text-xs text-tertiary ml-2">All times in IST</span>
             </p>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center gap-3">
             <button
               onClick={handlePrint}
-              className="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg text-sm hover:bg-slate-600 transition cursor-pointer"
+              className="px-4 py-2 surface-inner text-secondary rounded-lg text-sm hover:text-accent transition cursor-pointer flex items-center gap-1.5"
             >
-              🖨️ Print Schedule
+              <Printer className="w-3.5 h-3.5" /> Print Schedule
             </button>
             <button
               onClick={() => {
@@ -719,65 +816,78 @@ export default function ScheduleBoard() {
                 setEditingFlight(null);
                 setShowBookingForm(true);
               }}
-              className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 transition cursor-pointer"
+              className="px-4 py-2 rounded-lg text-sm font-semibold transition cursor-pointer flex items-center gap-1.5"
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-strong), var(--accent))', color: '#ffffff' }}
             >
-              + Book Slot
+              <Plus className="w-3.5 h-3.5" /> Book Slot
             </button>
           </div>
         </div>
 
         {/* ----- Date Picker ----- */}
-        <div className="flex items-center space-x-3 mb-4">
-          <label className="text-sm text-slate-400">Date:</label>
+        <div className="flex flex-wrap items-center gap-3 mb-4">
+          <label className="text-sm text-secondary">Date:</label>
           <input
             type="date"
             value={selectedDate}
             onChange={e => setSelectedDate(e.target.value)}
-            className="bg-slate-700 border border-slate-600 rounded-lg px-3 py-1 text-white text-sm"
+            className="surface-inner rounded-lg px-3 py-1 text-sm"
+            style={{ color: 'var(--text-primary)' }}
           />
           <button
             onClick={() => changeDate(-1)}
-            className="px-3 py-1 bg-slate-700 text-slate-300 rounded text-sm hover:bg-slate-600"
+            className="px-3 py-1 surface-inner text-secondary rounded text-sm hover:text-accent transition"
           >
             ← Prev
           </button>
           <button
             onClick={goToToday}
-            className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+            className="px-3 py-1 rounded text-sm font-medium transition"
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-strong), var(--accent))', color: '#ffffff' }}
           >
             Today
           </button>
           <button
             onClick={() => changeDate(1)}
-            className="px-3 py-1 bg-slate-700 text-slate-300 rounded text-sm hover:bg-slate-600"
+            className="px-3 py-1 surface-inner text-secondary rounded text-sm hover:text-accent transition"
           >
             Next →
           </button>
         </div>
 
+        {/* ----- FTO Closed Banner (holiday / weekly off day) ----- */}
+        {dateBlockReason && (
+          <div
+            className="mb-4 px-4 py-2 rounded-lg text-sm font-medium"
+            style={{ backgroundColor: 'var(--warning-soft)', color: 'var(--warning-text)' }}
+          >
+            🚫 FTO is closed on this date ({dateBlockReason.label}) — flights and ground-school classes cannot be booked.
+          </div>
+        )}
+
         {/* ----- Grid Line Legend ----- */}
-        <div className="flex items-center space-x-6 mb-3 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 mb-3 text-xs text-tertiary">
           <div className="flex items-center space-x-2">
-            <div className="w-4 h-0 border-t border-slate-600/40" />
+            <div className="w-4 h-0 border-t" style={{ borderColor: 'var(--border)' }} />
             <span>Hour (IST)</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="w-4 h-0 border-t border-dashed border-slate-600/20" />
+            <div className="w-4 h-0 border-t border-dashed" style={{ borderColor: 'var(--border)' }} />
             <span>Half‑hour (IST)</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="w-4 h-0 border-t border-dotted border-blue-500/30" />
+            <div className="w-4 h-0 border-t border-dotted" style={{ borderColor: 'var(--accent)' }} />
             <span>UTC Hour</span>
           </div>
           <div className="flex items-center space-x-2">
-            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-            <span className="text-red-400">Current Time (IST)</span>
+            <div className="w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: 'var(--danger)' }} />
+            <span style={{ color: 'var(--danger)' }}>Current Time (IST)</span>
           </div>
         </div>
 
         {/* ----- Gantt Chart Area ----- */}
-        <div className="overflow-x-auto scrollbar-thin" style={{ overflowX: 'auto' }}>
-          <div className="min-w-[1400px]">
+        <div ref={scrollContainerRef} className="overflow-x-auto scrollbar-thin" style={{ overflowX: 'auto' }}>
+          <div ref={innerGridRef} className="min-w-[1400px]">
 
             {/* Time Header Row – Shows hours from 06:00 to 19:00 with IST and UTC labels.
                 Each label is positioned with the SAME `(idx / HOURS.length) * 100%` formula
@@ -798,16 +908,16 @@ export default function ScheduleBoard() {
                   const leftPercent = (idx / HOURS.length) * 100;
                   return (
                     <div key={hour} className="absolute top-0" style={{ left: `${leftPercent}%` }}>
-                      <span className="text-xs text-slate-400 font-medium absolute -top-0 left-0 whitespace-nowrap">
+                      <span className="text-xs text-secondary font-medium absolute -top-0 left-0 whitespace-nowrap">
                         {hour.toString().padStart(2, '0')}:00
                       </span>
-                      <span className="text-[9px] text-blue-400/50 absolute top-4 left-0 whitespace-nowrap">
+                      <span className="text-[9px] absolute top-4 left-0 whitespace-nowrap" style={{ color: 'var(--accent)', opacity: 0.6 }}>
                         {Math.floor(utcHour).toString().padStart(2, '0')}:30 UTC
                       </span>
                       {/* Tick mark pointing down at the exact x-position of this hour's
                           gridline in the row below, so the eye has an explicit connector
                           between the label and its line instead of having to infer it. */}
-                      <div className="absolute top-[26px] left-0 w-px h-2 bg-slate-500/60" />
+                      <div className="absolute top-[26px] left-0 w-px h-2" style={{ backgroundColor: 'var(--border)' }} />
                     </div>
                   );
                 })}
@@ -826,7 +936,7 @@ export default function ScheduleBoard() {
                   column beyond the header's 17, silently narrowing every column here relative
                   to the header. */}
               <div className="absolute inset-0 flex pointer-events-none z-0">
-                <div className="w-[140px] flex-shrink-0 sticky left-0 pr-3 flex flex-col justify-center z-20 bg-slate-900/80 rounded-l-lg px-2 py-1 pt-2"></div>
+                <div className="w-[140px] flex-shrink-0 sticky left-0 pr-3 flex flex-col justify-center z-20 rounded-l-lg px-2 py-1 pt-2" style={{ backgroundColor: 'var(--surface)' }}></div>
 
                 <div className="flex-1 relative">
                   {HOURS.map((hour, idx) => {
@@ -835,11 +945,11 @@ export default function ScheduleBoard() {
                     return (
                       <React.Fragment key={hour}>
                         {/* IST Hour line - solid, aligned under this hour's header label */}
-                        <div className="absolute top-0 bottom-0 border-l border-slate-600/40" style={{ left: `${leftPercent}%` }} />
+                        <div className="absolute top-0 bottom-0 border-l" style={{ left: `${leftPercent}%`, borderColor: 'var(--border)' }} />
                         {/* IST Half-hour line - dashed */}
-                        <div className="absolute top-0 bottom-0 border-l border-dashed border-slate-600/20" style={{ left: `${halfHourPercent}%` }} />
+                        <div className="absolute top-0 bottom-0 border-l border-dashed" style={{ left: `${halfHourPercent}%`, borderColor: 'var(--border)' }} />
                         {/* UTC Hour line - dotted (coincides with the IST half-hour mark, since IST = UTC + 5:30) */}
-                        <div className="absolute top-0 bottom-0 border-l border-dotted border-blue-500/30" style={{ left: `${halfHourPercent}%` }} />
+                        <div className="absolute top-0 bottom-0 border-l border-dotted" style={{ left: `${halfHourPercent}%`, borderColor: 'var(--accent)', opacity: 0.3 }} />
                       </React.Fragment>
                     );
                   })}
@@ -850,10 +960,11 @@ export default function ScheduleBoard() {
               <div className="absolute inset-0 flex flex-col pointer-events-none z-0">
                 {activeAircraft.map((ac, index) => (
                   <div key={ac.id} className="relative mb-3" style={{ minHeight: '60px' }}>
-                    <div className={`absolute inset-0 rounded-lg ${
-                      index % 2 === 0 ? 'bg-slate-800/10' : 'bg-transparent'
-                    }`} />
-                    <div className="absolute bottom-0 left-0 right-0 border-b border-slate-700/20" />
+                    <div
+                      className="absolute inset-0 rounded-lg"
+                      style={index % 2 === 0 ? { backgroundColor: 'color-mix(in srgb, var(--text-secondary) 6%, transparent)' } : undefined}
+                    />
+                    <div className="absolute bottom-0 left-0 right-0 border-b" style={{ borderColor: 'var(--border)' }} />
                   </div>
                 ))}
               </div>
@@ -883,9 +994,9 @@ export default function ScheduleBoard() {
                       <div className="w-[140px] flex-shrink-0" />
                       <div className="flex-1 relative">
                         <div className="absolute top-0 bottom-0" style={{ left: `${leftPercent}%` }}>
-                          <div className="absolute inset-0 w-0.5 bg-red-500/70" />
-                          <div className="absolute -top-1 -left-1.5 w-3 h-3 bg-red-500 rounded-full animate-pulse shadow-lg shadow-red-500/50" />
-                          <div className="absolute -top-6 -left-10 text-[10px] text-red-400 whitespace-nowrap font-medium bg-slate-900/80 px-1 rounded">
+                          <div className="absolute inset-0 w-0.5" style={{ backgroundColor: 'var(--danger)', opacity: 0.7 }} />
+                          <div className="absolute -top-1 -left-1.5 w-3 h-3 rounded-full animate-pulse" style={{ backgroundColor: 'var(--danger)', boxShadow: '0 0 12px 2px color-mix(in srgb, var(--danger) 50%, transparent)' }} />
+                          <div className="absolute -top-6 -left-10 text-[10px] whitespace-nowrap font-medium px-1 rounded" style={{ color: 'var(--danger)', backgroundColor: 'color-mix(in srgb, var(--surface) 80%, transparent)' }}>
                             {String(istHours).padStart(2, '0') + ':' + String(istMinutes).padStart(2, '0')} IST
                           </div>
                         </div>
@@ -908,6 +1019,7 @@ export default function ScheduleBoard() {
                 // scheduledTime + durationHours window is blocked.
                 const maintenanceBlock = getMaintenanceBlock(ac.id);
                 const maintenanceBlockStyle = getMaintenanceBlockStyle(maintenanceBlock);
+                const statusColor = ac.status === 'ACTIVE' ? 'var(--success)' : ac.status === 'MAINTENANCE' ? 'var(--warning)' : 'var(--danger)';
                 return (
                   <div key={ac.id} className="relative mb-3 z-10">
                     <div className="flex items-stretch" style={{ minHeight: '60px' }}>
@@ -919,19 +1031,16 @@ export default function ScheduleBoard() {
                           enough right there was no way to tell which aircraft's row you were
                           looking at. Solid background (not /80) + a higher z-index than flight
                           blocks so blocks that scroll underneath don't show through it. */}
-                      <div className="w-[140px] flex-shrink-0 sticky left-0 pr-3 flex flex-col justify-center z-40 bg-slate-900 rounded-l-lg px-2 py-1">
+                      <div className="w-[140px] flex-shrink-0 sticky left-0 pr-3 flex flex-col justify-center z-40 rounded-l-lg px-2 py-1" style={{ backgroundColor: 'var(--surface)' }}>
                         <div className="flex items-center space-x-2">
-                          <div className={`w-2 h-2 rounded-full ${
-                            ac.status === 'ACTIVE' ? 'bg-green-400' :
-                            ac.status === 'MAINTENANCE' ? 'bg-yellow-400' : 'bg-red-400'
-                          }`} />
+                          <div className="w-2 h-2 rounded-full" style={{ backgroundColor: statusColor }} />
                           <div>
-                            <p className="text-sm font-semibold text-white">{ac.registration}</p>
-                            <p className="text-xs text-slate-400">{ac.type}</p>
+                            <p className="text-sm font-semibold">{ac.registration}</p>
+                            <p className="text-xs text-secondary">{ac.type}</p>
                           </div>
                         </div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          ⏱ {ac.hobbsTime}h | ⛽ {ac.currentFuel}L
+                        <div className="text-xs text-tertiary mt-1">
+                          {ac.hobbsTime}h | {ac.currentFuel}L
                         </div>
                       </div>
 
@@ -950,12 +1059,22 @@ export default function ScheduleBoard() {
                           blocks clicks inside that window, not the whole row. */}
                       <div
                         onClick={(e) => handleGridClick(ac.id, e)}
-                        className={`flex-1 relative rounded-r-lg border transition ${
-                          maintenanceBlock?.allDay
-                            ? `bg-slate-900/20 cursor-not-allowed ${maintenanceBlock.overdue ? 'border-red-600/40' : 'border-yellow-600/30'}`
-                            : 'bg-slate-900/20 border-slate-700/20 cursor-pointer hover:bg-slate-700/10'
+                        className={`flex-1 relative border rounded-r-lg transition ${
+                          maintenanceBlock?.allDay ? 'cursor-not-allowed' : 'cursor-pointer'
                         }`}
-                        style={{ minHeight: '55px' }}
+                        style={{
+                          minHeight: '55px',
+                          // Translucent (not the opaque surface-inner fill) so the
+                          // z-0 hour/half-hour grid lines behind this row alpha-
+                          // blend through and stay visible — matching how the
+                          // pre-redesign bg-slate-900/20 background looked, and
+                          // keeping every row visually uniform with the gaps
+                          // between rows instead of blotting the lines out.
+                          backgroundColor: 'color-mix(in srgb, var(--surface-muted) 35%, transparent)',
+                          borderColor: maintenanceBlock?.allDay
+                            ? (maintenanceBlock.overdue ? 'color-mix(in srgb, var(--danger) 40%, transparent)' : 'color-mix(in srgb, var(--warning) 30%, transparent)')
+                            : 'color-mix(in srgb, var(--border) 50%, transparent)',
+                        }}
                         title={
                           maintenanceBlock?.allDay
                             ? `${ac.registration} unavailable — ${maintenanceBlock.maintenanceType} maintenance${maintenanceBlock.overdue ? ' (overdue)' : ''}`
@@ -982,17 +1101,25 @@ export default function ScheduleBoard() {
                                 : 'repeating-linear-gradient(45deg, rgba(234,179,8,0.15), rgba(234,179,8,0.15) 10px, rgba(234,179,8,0.04) 10px, rgba(234,179,8,0.04) 20px)',
                             }}
                           >
-                            <span className={`text-xs font-semibold bg-slate-900/85 px-2 py-1 rounded whitespace-nowrap ${maintenanceBlock.overdue ? 'text-red-400' : 'text-yellow-400'}`}>
-                              🔧{maintenanceBlock.allDay ? '' : ` ${minutesToHHMM(maintenanceBlock.startMin)}–${maintenanceBlock.openEnded ? '…' : minutesToHHMM(maintenanceBlock.endMin)}`} {maintenanceBlock.maintenanceType}
-                              {maintenanceBlock.openEnded ? ' (ongoing)' : ''}{maintenanceBlock.overdue ? ' ⚠️ OVERDUE' : ''}
+                            <span
+                              className="text-xs font-semibold px-2 py-1 rounded whitespace-nowrap flex items-center gap-1"
+                              style={{
+                                backgroundColor: 'color-mix(in srgb, var(--surface) 85%, transparent)',
+                                color: maintenanceBlock.overdue ? 'var(--danger)' : 'var(--warning-text)',
+                              }}
+                            >
+                              <Wrench className="w-3 h-3 flex-shrink-0" />
+                              {!maintenanceBlock.allDay && `${minutesToHHMM(maintenanceBlock.startMin)}–${maintenanceBlock.openEnded ? '…' : minutesToHHMM(maintenanceBlock.endMin)} `}
+                              {maintenanceBlock.maintenanceType}
+                              {maintenanceBlock.openEnded ? ' (ongoing)' : ''}{maintenanceBlock.overdue ? ' OVERDUE' : ''}
                             </span>
                           </div>
                         )}
 
                         {realFlights.map(flight => {
                           const style = getSlotStyle(flight);
-                          // Use sortie type color: Dual=Blue, Solo=Green, Maintenance=Yellow
-                          const colors = SORTIE_COLORS[flight.sortieType] || 'bg-gray-600/80 border-gray-400';
+                          // Use sortie type color: Dual=accent, Solo=success, Maintenance=warning
+                          const blockColor = SORTIE_COLOR_VARS[flight.sortieType] || 'var(--text-secondary)';
                           const instructor = instructors.find(i => i.id === flight.instructorId);
                           const student = flight.studentId
                             ? students.find(s => s.id === flight.studentId)
@@ -1017,37 +1144,47 @@ export default function ScheduleBoard() {
                               }}
                               onMouseEnter={() => setHoveredSlot(flight.id)}
                               onMouseLeave={() => setHoveredSlot(null)}
-                              className={`absolute top-1 bottom-1 ${colors} border rounded-md px-2 py-1
+                              className={`absolute top-1 bottom-1 border rounded-md px-2 py-1
                                 cursor-pointer transition-all duration-200
                                 hover:scale-[1.03] hover:z-30 hover:shadow-xl
                                 ${isHovered ? 'ring-2 ring-white/50 z-20 scale-[1.03] shadow-xl' : 'z-10'}
-                                ${flight.status === 'IN_PROGRESS' ? 'ring-1 ring-green-400/50' : ''}
-                                ${hasMaintenanceConflict ? 'ring-2 ring-red-500 animate-pulse' : ''}`}
-                              style={style}
-                              title={`${student?.name || flight.studentName || 'No Student'} - ${exerciseName || flight.sortieType}\n${flightStartIST} IST${hasMaintenanceConflict ? '\n⚠️ Conflicts with scheduled maintenance on this aircraft — reassign or cancel' : ''}`}
+                                ${flight.status === 'IN_PROGRESS' ? 'ring-1' : ''}
+                                ${hasMaintenanceConflict ? 'ring-2 animate-pulse' : ''}`}
+                              style={{
+                                ...style,
+                                backgroundColor: `color-mix(in srgb, ${blockColor} 80%, transparent)`,
+                                borderColor: blockColor,
+                                ...(flight.status === 'IN_PROGRESS' ? { boxShadow: `0 0 0 1px color-mix(in srgb, var(--success) 50%, transparent)` } : {}),
+                                ...(hasMaintenanceConflict ? { boxShadow: '0 0 0 2px var(--danger)' } : {}),
+                              }}
+                              title={`${student?.name || flight.studentName || 'No Student'} - ${exerciseName || flight.sortieType}\n${flightStartIST} IST${hasMaintenanceConflict ? '\nConflicts with scheduled maintenance on this aircraft — reassign or cancel' : ''}`}
                             >
                               {flight.status === 'IN_PROGRESS' && (
-                                <span className="absolute top-1 right-1 w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                                <span className="absolute top-1 right-1 w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--success)' }} />
                               )}
                               {hasMaintenanceConflict && (
-                                <span className="absolute -top-1.5 -right-1.5 text-[10px] bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center shadow-lg z-20" title="Conflicts with scheduled maintenance">
-                                  ⚠
+                                <span
+                                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full flex items-center justify-center shadow-lg z-20"
+                                  style={{ backgroundColor: 'var(--danger)' }}
+                                  title="Conflicts with scheduled maintenance"
+                                >
+                                  <TriangleAlert className="w-2.5 h-2.5" style={{ stroke: '#ffffff' }} />
                                 </span>
                               )}
                               <div className="flex flex-col justify-center h-full min-w-0">
                                 {/* Student initials / Instructor initials */}
-                                <p className="text-xs font-bold text-white truncate">
+                                <p className="text-xs font-bold truncate" style={{ color: '#ffffff' }}>
                                   {student?.initials || '—'}/
-                                  {instructor?.initials || 
-                                    (flight.sortieType === 'SOLO' ? 'SOLO' : 
+                                  {instructor?.initials ||
+                                    (flight.sortieType === 'SOLO' ? 'SOLO' :
                                      flight.sortieType === 'MAINTENANCE' ? 'MTX' : '—')}
                                 </p>
                                 {/* Exercise short code (e.g., "CCTS", "ST&RE") */}
-                                <p className="text-[10px] text-white/80 truncate font-medium">
+                                <p className="text-[10px] truncate font-medium" style={{ color: 'rgba(255,255,255,0.8)' }}>
                                   {shortCode || exerciseName}
                                 </p>
                                 {/* Date and start time */}
-                                <p className="text-[9px] text-white/60 truncate">
+                                <p className="text-[9px] truncate" style={{ color: 'rgba(255,255,255,0.6)' }}>
                                   {new Date(flight.startTime).toLocaleDateString('en-IN', {
                                     day: '2-digit',
                                     month: 'short',
@@ -1063,7 +1200,7 @@ export default function ScheduleBoard() {
                             window still leaves the rest of the day free, so the hint stays). */}
                         {realFlights.length === 0 && !maintenanceBlock?.allDay && (
                           <div className="flex items-center justify-center h-full pointer-events-none">
-                            <p className="text-xs text-slate-600">Available — click to book</p>
+                            <p className="text-xs text-tertiary">Available — click to book</p>
                           </div>
                         )}
                       </div>
@@ -1076,29 +1213,35 @@ export default function ScheduleBoard() {
         </div>
 
         {/* ----- Legend Section ----- */}
-        <div className="mt-6 pt-4 border-t border-slate-700">
+        <div className="mt-6 pt-4 border-t divider">
 
           {/* Sortie Type Legend */}
-          <h3 className="text-sm font-medium text-slate-400 mb-3">Sortie Types</h3>
+          <h3 className="text-sm font-medium text-secondary mb-3">Sortie Types</h3>
           <div className="flex flex-wrap gap-3 mb-4">
             {Object.entries(SORTIE_LABELS).map(([key, label]) => (
               <div key={key} className="flex items-center space-x-1.5">
-                <div className={`w-3 h-3 rounded ${
-                  SORTIE_COLORS[key]?.split(' ')[0] || 'bg-gray-500'
-                } border ${
-                  SORTIE_COLORS[key]?.split(' ')[1] || 'border-gray-400'
-                }`} />
-                <span className="text-xs text-slate-400">{label}</span>
+                <div
+                  className="w-3 h-3 rounded border"
+                  style={{
+                    backgroundColor: `color-mix(in srgb, ${SORTIE_COLOR_VARS[key] || 'var(--text-secondary)'} 80%, transparent)`,
+                    borderColor: SORTIE_COLOR_VARS[key] || 'var(--text-secondary)',
+                  }}
+                />
+                <span className="text-xs text-secondary">{label}</span>
               </div>
             ))}
           </div>
 
-          {/* Exercise Legend – Table format with visible short codes (3 columns) */}
-          <h3 className="text-sm font-medium text-slate-300 mb-3 mt-4">📋 Exercise Codes</h3>
-          <div className="overflow-x-auto">
+          {/* Exercise Legend – Table format with visible short codes (3 columns on desktop/tablet,
+              stacks to a simpler 1-column list on mobile since a 6-column table is unreadable
+              at phone width). */}
+          <h3 className="text-sm font-medium mb-3 mt-4 flex items-center gap-1.5">
+            <ClipboardList className="w-3.5 h-3.5 text-secondary" /> Exercise Codes
+          </h3>
+          <div className="hidden sm:block overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-left text-slate-400 border-b border-slate-700">
+                <tr className="text-left text-secondary border-b divider">
                   <th className="pb-2 pr-2 font-medium">Code</th>
                   <th className="pb-2 pr-4 font-medium">Description</th>
                   <th className="pb-2 pr-2 pl-2 font-medium">Code</th>
@@ -1107,7 +1250,7 @@ export default function ScheduleBoard() {
                   <th className="pb-2 font-medium">Description</th>
                 </tr>
               </thead>
-              <tbody className="text-slate-300">
+              <tbody>
                 {(() => {
                   const entries = Object.entries(EXERCISE_SHORT_CODES);
                   const rows: React.ReactElement[] = [];
@@ -1116,25 +1259,25 @@ export default function ScheduleBoard() {
                     const col2 = entries[i + 1];
                     const col3 = entries[i + 2];
                     rows.push(
-                      <tr key={i} className="border-b border-slate-700/30">
+                      <tr key={i} className="border-b divider">
                         {/* Column 1 */}
                         <td className="py-1.5 pr-2">
-                          <span className="text-white font-medium bg-slate-700 px-2 py-0.5 rounded text-[11px]">
+                          <span className="badge badge-neutral">
                             {col1[1]}
                           </span>
                         </td>
-                        <td className="py-1.5 pr-4 text-slate-300">
+                        <td className="py-1.5 pr-4 text-secondary">
                           {col1[0].split(' - ')[1] || col1[0]}
                         </td>
                         {/* Column 2 */}
                         {col2 && (
                           <>
                             <td className="py-1.5 pr-2 pl-2">
-                              <span className="text-white font-medium bg-slate-700 px-2 py-0.5 rounded text-[11px]">
+                              <span className="badge badge-neutral">
                                 {col2[1]}
                               </span>
                             </td>
-                            <td className="py-1.5 pr-4 text-slate-300">
+                            <td className="py-1.5 pr-4 text-secondary">
                               {col2[0].split(' - ')[1] || col2[0]}
                             </td>
                           </>
@@ -1145,11 +1288,11 @@ export default function ScheduleBoard() {
                         {col3 && (
                           <>
                             <td className="py-1.5 pl-2">
-                              <span className="text-white font-medium bg-slate-700 px-2 py-0.5 rounded text-[11px]">
+                              <span className="badge badge-neutral">
                                 {col3[1]}
                               </span>
                             </td>
-                            <td className="py-1.5 text-slate-300">
+                            <td className="py-1.5 text-secondary">
                               {col3[0].split(' - ')[1] || col3[0]}
                             </td>
                           </>
@@ -1163,6 +1306,15 @@ export default function ScheduleBoard() {
                 })()}
               </tbody>
             </table>
+          </div>
+          {/* Mobile — simple 2-column code/description list, no horizontal scroll needed */}
+          <div className="sm:hidden grid grid-cols-1 gap-1.5">
+            {Object.entries(EXERCISE_SHORT_CODES).map(([full, code]) => (
+              <div key={full} className="flex items-center gap-2 text-xs">
+                <span className="badge badge-neutral flex-shrink-0">{code}</span>
+                <span className="text-secondary truncate">{full.split(' - ')[1] || full}</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
@@ -1239,29 +1391,37 @@ export default function ScheduleBoard() {
         />
       )}
 
-      {/* Success Toast – Green notification at bottom‑right on successful booking */}
+      {/* Success Toast – Bottom‑right notification on successful booking */}
       {successMessage && (
-        <div className="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
+        <div
+          className="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-3"
+          style={{ backgroundColor: 'var(--success)', color: '#ffffff' }}
+        >
           <span>{successMessage}</span>
           <button
             onClick={() => setSuccessMessage('')}
-            className="ml-3 font-bold hover:text-green-200"
+            className="font-bold opacity-80 hover:opacity-100"
+            aria-label="Dismiss"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
-      {/* Error Toast – Red notification at bottom‑right for blocked actions
+      {/* Error Toast – Bottom‑right notification for blocked actions
           (clicking a past time slot, or an aircraft unavailable for maintenance) */}
       {errorMessage && (
-        <div className="fixed bottom-4 right-4 bg-red-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 max-w-md">
+        <div
+          className="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 max-w-md flex items-center gap-3"
+          style={{ backgroundColor: 'var(--danger)', color: '#ffffff' }}
+        >
           <span>{errorMessage}</span>
           <button
             onClick={() => setErrorMessage('')}
-            className="ml-3 font-bold hover:text-red-200"
+            className="font-bold opacity-80 hover:opacity-100 flex-shrink-0"
+            aria-label="Dismiss"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}

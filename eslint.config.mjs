@@ -12,6 +12,12 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Standalone ops scripts (run directly with `node`, not part of the
+    // Next.js app bundle) — plain CommonJS by design, not the app's
+    // TypeScript/React codebase, so the app's lint rules (e.g. requiring
+    // ES `import` over `require()`) don't apply to them.
+    "backup-before-cleanup.js",
+    "restore-from-backup.js",
   ]),
 ]);
 

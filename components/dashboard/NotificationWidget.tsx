@@ -19,6 +19,7 @@
 'use client';
 
 import { useEffect, useMemo } from 'react';
+import { Bell, CircleAlert } from 'lucide-react';
 import { useFlightStore } from '@/lib/store';
 
 interface Alert {
@@ -89,13 +90,22 @@ export default function NotificationWidget() {
   if (alerts.length === 0) return null;
 
   return (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-      <h2 className="text-lg font-semibold text-white mb-4">🔔 Recent Alerts</h2>
+    <div className="surface-card p-6">
+      <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+        <Bell className="w-4 h-4 text-secondary" /> Recent Alerts
+      </h2>
       <div className="space-y-2">
         {alerts.slice(0, 8).map(a => (
-          <div key={a.id} className={`bg-slate-900/50 rounded-lg p-3 text-xs border-l-2 ${a.level === 'critical' ? 'border-red-500' : 'border-yellow-500'}`}>
-            <p className={`font-medium ${a.level === 'critical' ? 'text-red-400' : 'text-yellow-400'}`}>
-              {a.level === 'critical' ? '🔴' : '🟡'} {a.message}
+          <div
+            key={a.id}
+            className="surface-inner p-3 text-xs"
+            style={{ borderLeft: `2px solid ${a.level === 'critical' ? 'var(--danger)' : 'var(--warning)'}` }}
+          >
+            <p
+              className="font-medium flex items-center gap-1.5"
+              style={{ color: a.level === 'critical' ? 'var(--danger)' : 'var(--warning-text)' }}
+            >
+              <CircleAlert className="w-3.5 h-3.5 flex-shrink-0" /> {a.message}
             </p>
           </div>
         ))}

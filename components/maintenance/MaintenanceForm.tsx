@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { MaintenanceRecord } from '@/types';
+import { Pencil, Wrench, X, Hourglass, TriangleAlert } from 'lucide-react';
 
 interface Props {
   record: MaintenanceRecord | null;
@@ -129,16 +130,16 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
     setError('');
     if (!form.aircraftId || !form.maintenanceType) return;
     if (form.usePreciseWindow && !form.startHour) {
-      setError('❌ Pick a Start Hour, or turn off the time window to block the whole Scheduled Date instead.');
+      setError('Pick a Start Hour, or turn off the time window to block the whole Scheduled Date instead.');
       return;
     }
     if (form.usePreciseWindow && !form.openEnded) {
       if (!form.endHour) {
-        setError('❌ Pick an End Hour, or check "Open-ended" if the finish time isn\'t known yet.');
+        setError('Pick an End Hour, or check "Open-ended" if the finish time isn\'t known yet.');
         return;
       }
       if (duration && duration.invalid) {
-        setError('❌ End must be after Start.');
+        setError('End must be after Start.');
         return;
       }
     }
@@ -161,24 +162,26 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
 
   const HOURS_24 = Array.from({ length: 24 }, (_, h) => pad2(h));
   const MINUTES_4 = ['00', '15', '30', '45'];
+  const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
-          <h3 className="text-lg font-semibold text-white">
-            {isEditing ? '✏️ Edit Maintenance' : '🔧 Log Maintenance'}
+    <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="surface-card w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b sticky top-0 z-10" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            {isEditing ? <Pencil className="w-4 h-4" /> : <Wrench className="w-4 h-4" />}
+            {isEditing ? 'Edit Maintenance' : 'Log Maintenance'}
           </h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg cursor-pointer">
-            <span className="text-slate-400 text-xl">✕</span>
+          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+            <X className="w-5 h-5 text-tertiary" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Aircraft *</label>
+            <label className="block text-xs text-secondary mb-1">Aircraft *</label>
             <select value={form.aircraftId} onChange={e => setForm(p => ({ ...p, aircraftId: e.target.value }))} required
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white">
+              className={inputClass}>
               <option value="">Select Aircraft</option>
               {aircraft.map(a => (
                 <option key={a.id} value={a.id}>{a.registration} ({a.type})</option>
@@ -188,9 +191,9 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Type *</label>
+              <label className="block text-xs text-secondary mb-1">Type *</label>
               <select value={form.maintenanceType} onChange={e => setForm(p => ({ ...p, maintenanceType: e.target.value }))} required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white">
+                className={inputClass}>
                 <option value="">Select Type</option>
                 <option value="50-Hour Inspection">50-Hour Inspection</option>
                 <option value="100-Hour Inspection">100-Hour Inspection</option>
@@ -205,9 +208,9 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Status</label>
+              <label className="block text-xs text-secondary mb-1">Status</label>
               <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value as MaintenanceRecord['status'] }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white">
+                className={inputClass}>
                 <option value="SCHEDULED">Scheduled</option>
                 <option value="IN_PROGRESS">In Progress</option>
                 <option value="COMPLETED">Completed</option>
@@ -218,14 +221,14 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Scheduled Date</label>
+              <label className="block text-xs text-secondary mb-1">Scheduled Date</label>
               <input type="date" value={form.scheduledDate} onChange={e => setForm(p => ({ ...p, scheduledDate: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white" />
+                className={inputClass} />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Completed Date</label>
+              <label className="block text-xs text-secondary mb-1">Completed Date</label>
               <input type="date" value={form.completedDate} onChange={e => setForm(p => ({ ...p, completedDate: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white" />
+                className={inputClass} />
             </div>
           </div>
 
@@ -233,28 +236,28 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
               Scheduled Date, unchanged original behavior). Turning it on
               lets you block only the actual hours the aircraft is out of
               service, across as many days as the job takes. */}
-          <div className="border border-slate-700 rounded-lg p-3 space-y-3">
+          <div className="rounded-lg p-3 space-y-3" style={{ border: '1px solid var(--border)' }}>
             <label className="flex items-center space-x-2 cursor-pointer">
               <input type="checkbox" checked={form.usePreciseWindow}
                 onChange={e => setForm(p => ({ ...p, usePreciseWindow: e.target.checked }))}
                 className="w-4 h-4" />
-              <span className="text-sm text-white font-medium">Block a specific time window (instead of the whole day)</span>
+              <span className="text-sm font-medium">Block a specific time window (instead of the whole day)</span>
             </label>
 
             {form.usePreciseWindow && (
               <>
                 <div>
-                  <p className="text-xs text-slate-400 mb-1">Start</p>
+                  <p className="text-xs text-tertiary mb-1">Start</p>
                   <div className="grid grid-cols-3 gap-2">
                     <input type="date" value={form.startDate} onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white" />
+                      className={`${inputClass} px-2 py-2`} />
                     <select value={form.startHour} onChange={e => setForm(p => ({ ...p, startHour: e.target.value }))}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
+                      className={`${inputClass} px-2 py-2`}>
                       <option value="">Hour</option>
                       {HOURS_24.map(h => <option key={h} value={h}>{h}:00</option>)}
                     </select>
                     <select value={form.startMinute} onChange={e => setForm(p => ({ ...p, startMinute: e.target.value }))}
-                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
+                      className={`${inputClass} px-2 py-2`}>
                       {MINUTES_4.map(m => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
@@ -264,22 +267,22 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
                   <input type="checkbox" checked={form.openEnded}
                     onChange={e => setForm(p => ({ ...p, openEnded: e.target.checked }))}
                     className="w-4 h-4" />
-                  <span className="text-xs text-slate-300">Open-ended — finish time not known yet (emergency / still in progress)</span>
+                  <span className="text-xs text-secondary">Open-ended — finish time not known yet (emergency / still in progress)</span>
                 </label>
 
                 {!form.openEnded && (
                   <div>
-                    <p className="text-xs text-slate-400 mb-1">End</p>
+                    <p className="text-xs text-tertiary mb-1">End</p>
                     <div className="grid grid-cols-3 gap-2">
                       <input type="date" value={form.endDate} onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))}
-                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white" />
+                        className={`${inputClass} px-2 py-2`} />
                       <select value={form.endHour} onChange={e => setForm(p => ({ ...p, endHour: e.target.value }))}
-                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
+                        className={`${inputClass} px-2 py-2`}>
                         <option value="">Hour</option>
                         {HOURS_24.map(h => <option key={h} value={h}>{h}:00</option>)}
                       </select>
                       <select value={form.endMinute} onChange={e => setForm(p => ({ ...p, endMinute: e.target.value }))}
-                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
+                        className={`${inputClass} px-2 py-2`}>
                         {MINUTES_4.map(m => <option key={m} value={m}>{m}</option>)}
                       </select>
                     </div>
@@ -288,9 +291,9 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
 
                 {/* Duration — always computed from Start/End, never entered directly */}
                 {duration && (
-                  <p className={`text-xs ${duration.invalid ? 'text-red-400' : 'text-slate-400'}`}>
+                  <p className="text-xs flex items-center gap-1" style={{ color: duration.invalid ? 'var(--danger)' : 'var(--text-secondary)' }}>
                     {duration.openEnded
-                      ? '⏳ Open-ended — will keep blocking the aircraft until an end time is set or the record is marked Completed.'
+                      ? <><Hourglass className="w-3 h-3 flex-shrink-0" /> Open-ended — will keep blocking the aircraft until an end time is set or the record is marked Completed.</>
                       : duration.invalid
                         ? 'End must be after Start.'
                         : `Duration: ${duration.days ? `${duration.days}d ` : ''}${duration.hours}h ${duration.mins}m`}
@@ -298,15 +301,15 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
                 )}
 
                 {conflicts.length > 0 && (
-                  <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 space-y-1">
-                    <p className="text-xs text-red-400 font-medium">
-                      ⚠️ Conflicts with {conflicts.length} existing booking{conflicts.length > 1 ? 's' : ''} — you&apos;ll need to reassign or cancel {conflicts.length > 1 ? 'these' : 'it'} yourself:
+                  <div className="rounded-lg p-2 space-y-1" style={{ backgroundColor: 'var(--danger-soft)', border: '1px solid color-mix(in srgb, var(--danger) 50%, transparent)' }}>
+                    <p className="text-xs font-medium flex items-center gap-1" style={{ color: 'var(--danger)' }}>
+                      <TriangleAlert className="w-3.5 h-3.5 flex-shrink-0" /> Conflicts with {conflicts.length} existing booking{conflicts.length > 1 ? 's' : ''} — you&apos;ll need to reassign or cancel {conflicts.length > 1 ? 'these' : 'it'} yourself:
                     </p>
                     {conflicts.map(f => {
                       const student = f.studentId ? students.find(s => s.id === f.studentId) : undefined;
                       const instructor = instructors.find(i => i.id === f.instructorId);
                       return (
-                        <p key={f.id} className="text-[11px] text-red-300">
+                        <p key={f.id} className="text-[11px]" style={{ color: 'var(--danger)' }}>
                           {new Date(f.startTime).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })} —{' '}
                           {student?.name || f.studentName || 'No Student'} / {instructor?.name || 'No Instructor'}
                         </p>
@@ -318,41 +321,43 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
             )}
           </div>
 
-          {error && <p className="text-xs text-red-400">{error}</p>}
+          {error && <p className="text-xs" style={{ color: 'var(--danger)' }}>{error}</p>}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Cost (₹)</label>
+              <label className="block text-xs text-secondary mb-1">Cost (₹)</label>
               <input type="number" value={form.cost || ''} onChange={e => setForm(p => ({ ...p, cost: parseFloat(e.target.value) || 0 }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white" />
+                className={inputClass} />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Performed By</label>
+              <label className="block text-xs text-secondary mb-1">Performed By</label>
               <input type="text" value={form.performedBy} onChange={e => setForm(p => ({ ...p, performedBy: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white" />
+                className={inputClass} />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Description</label>
+            <label className="block text-xs text-secondary mb-1">Description</label>
             <textarea value={form.description} onChange={e => setForm(p => ({ ...p, description: e.target.value }))}
-              rows={2} className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white" />
+              rows={2} className={inputClass} />
           </div>
 
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Notes</label>
+            <label className="block text-xs text-secondary mb-1">Notes</label>
             <textarea value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
-              rows={2} className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white" />
+              rows={2} className={inputClass} />
           </div>
 
-          <div className="flex space-x-3 pt-4 border-t border-slate-700">
+          <div className="flex space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <button type="button" onClick={onClose}
-              className="flex-1 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition cursor-pointer">
+              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer surface-inner">
               Cancel
             </button>
             <button type="submit"
-              className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold">
-              {isEditing ? '💾 Save Changes' : '🔧 Log Maintenance'}
+              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5"
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>
+              {isEditing ? <Pencil className="w-4 h-4" /> : <Wrench className="w-4 h-4" />}
+              {isEditing ? 'Save Changes' : 'Log Maintenance'}
             </button>
           </div>
         </form>

@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { AvailabilityRecord } from '@/types';
+import { Palmtree, Pencil, Save, X, GraduationCap, Plane } from 'lucide-react';
 
 interface Props {
   record: AvailabilityRecord | null;
@@ -59,29 +60,35 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
     onClose();
   };
 
+  const inputClass = "w-full surface-inner rounded-lg px-3 py-2 focus:outline-none focus:border-[var(--accent)]";
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div
+      className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+      style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+      onClick={onClose}
+    >
+      <div className="surface-card w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 z-10 rounded-t-xl">
-          <h3 className="text-lg font-semibold text-white">
-            {isEditing ? '✏️ Edit Leave Record' : '🏖️ Add Leave / Unavailability'}
+        <div className="flex items-center justify-between p-4 border-b sticky top-0 z-10" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            {isEditing ? <><Pencil className="w-4 h-4" /> Edit Leave Record</> : <><Palmtree className="w-4 h-4" /> Add Leave / Unavailability</>}
           </h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg cursor-pointer">
-            <span className="text-slate-400 text-xl">✕</span>
+          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+            <X className="w-5 h-5 text-tertiary" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           {/* Person Type */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">Person Type</label>
+            <label className="block text-sm text-secondary mb-1">Person Type</label>
             <select
               value={form.personType}
               onChange={e => {
                 setForm(p => ({ ...p, personType: e.target.value as 'instructor' | 'student', personId: '' }));
               }}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+              className={inputClass}
             >
               <option value="instructor">Instructor</option>
               <option value="student">Student</option>
@@ -90,14 +97,15 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
 
           {/* Person Selection */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">
-              {form.personType === 'instructor' ? '👨‍🏫 Instructor' : '👨‍✈️ Student'} *
+            <label className="block text-sm text-secondary mb-1 flex items-center gap-1.5">
+              {form.personType === 'instructor' ? <GraduationCap className="w-3.5 h-3.5" /> : <Plane className="w-3.5 h-3.5" />}
+              {form.personType === 'instructor' ? 'Instructor' : 'Student'} *
             </label>
             <select
               value={form.personId}
               onChange={e => setForm(p => ({ ...p, personId: e.target.value }))}
               required
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+              className={inputClass}
             >
               <option value="">Select {form.personType}</option>
               {people.map(person => (
@@ -110,11 +118,11 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
 
           {/* Leave Type */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">Leave Type</label>
+            <label className="block text-sm text-secondary mb-1">Leave Type</label>
             <select
               value={form.leaveType}
               onChange={e => setForm(p => ({ ...p, leaveType: e.target.value }))}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+              className={inputClass}
             >
               <option value="UNAVAILABLE">Unavailable</option>
               <option value="VACATION">Vacation</option>
@@ -127,24 +135,24 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
           {/* Date Range */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Start Date *</label>
+              <label className="block text-sm text-secondary mb-1">Start Date *</label>
               <input
                 type="date"
                 value={form.startDate}
                 onChange={e => setForm(p => ({ ...p, startDate: e.target.value }))}
                 required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+                className={inputClass}
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1">End Date *</label>
+              <label className="block text-sm text-secondary mb-1">End Date *</label>
               <input
                 type="date"
                 value={form.endDate}
                 onChange={e => setForm(p => ({ ...p, endDate: e.target.value }))}
                 min={form.startDate}
                 required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+                className={inputClass}
               />
             </div>
           </div>
@@ -152,33 +160,33 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
           {/* Time Range (optional) */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Start Time (optional)</label>
+              <label className="block text-sm text-secondary mb-1">Start Time (optional)</label>
               <input
                 type="time"
                 value={form.startTime}
                 onChange={e => setForm(p => ({ ...p, startTime: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+                className={inputClass}
               />
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1">End Time (optional)</label>
+              <label className="block text-sm text-secondary mb-1">End Time (optional)</label>
               <input
                 type="time"
                 value={form.endTime}
                 onChange={e => setForm(p => ({ ...p, endTime: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+                className={inputClass}
               />
             </div>
           </div>
-          <p className="text-xs text-slate-500 -mt-2">Leave blank for full-day absence</p>
+          <p className="text-xs text-tertiary -mt-2">Leave blank for full-day absence</p>
 
           {/* Status */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">Status</label>
+            <label className="block text-sm text-secondary mb-1">Status</label>
             <select
               value={form.status}
               onChange={e => setForm(p => ({ ...p, status: e.target.value }))}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+              className={inputClass}
             >
               <option value="APPROVED">Approved</option>
               <option value="PENDING">Pending</option>
@@ -188,35 +196,39 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
 
           {/* Reason */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">Reason / Notes</label>
+            <label className="block text-sm text-secondary mb-1">Reason / Notes</label>
             <textarea
               value={form.reason}
               onChange={e => setForm(p => ({ ...p, reason: e.target.value }))}
               rows={2}
               placeholder="Reason for absence..."
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+              className={inputClass}
             />
           </div>
 
           {/* Created By */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">Created By</label>
+            <label className="block text-sm text-secondary mb-1">Created By</label>
             <input
               type="text"
               value={form.createdBy}
               onChange={e => setForm(p => ({ ...p, createdBy: e.target.value }))}
               placeholder="Your name"
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+              className={inputClass}
             />
           </div>
 
           {/* Buttons */}
-          <div className="flex space-x-3 pt-4 border-t border-slate-700">
-            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition cursor-pointer">
+          <div className="flex space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+            <button type="button" onClick={onClose} className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer surface-inner">
               Cancel
             </button>
-            <button type="submit" className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold">
-              {isEditing ? '💾 Save Changes' : '🏖️ Add Leave'}
+            <button
+              type="submit"
+              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5"
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+            >
+              {isEditing ? <><Save className="w-4 h-4" /> Save Changes</> : <><Palmtree className="w-4 h-4" /> Add Leave</>}
             </button>
           </div>
         </form>

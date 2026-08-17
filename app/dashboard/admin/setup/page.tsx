@@ -23,20 +23,33 @@ import SettingsTab from './SettingsTab';
 import AircraftSetupTab from './AircraftSetupTab';
 import UserManagementTab from './UserManagementTab';
 import GroundSchoolTab from './GroundSchoolTab';
+import HolidaysTab from './HolidaysTab';
+import {
+  BookOpen, Plane, Target, ClipboardList, CircleCheck,
+  GraduationCap, Users, Settings, School, CalendarDays,
+  ChevronLeft, ChevronRight, BarChart3,
+} from 'lucide-react';
 
 // ============================================================
 // TAB CONFIGURATION
+// Each tab keeps an explicit `shortLabel` (used in the compact step
+// indicator) alongside the full `label` — previously the short form was
+// derived by splitting the emoji-prefixed label string on spaces
+// (`label.split(' ')[1]`); now that the icon is a real component instead
+// of a text-embedded emoji, that trick no longer applies, so the exact
+// same short-label text each tab produced before is spelled out here.
 // ============================================================
 const TABS = [
-  { id: 'programs', label: '📚 Training Programs', component: TrainingProgramsTab },
-  { id: 'aircraft', label: '🛩️ Aircraft Fleet', component: AircraftSetupTab },
-  { id: 'sorties', label: '🎯 Sortie Types', component: SortieTypesTab },
-  { id: 'exercises', label: '📋 Exercises', component: ExercisesTab },
-  { id: 'requirements', label: '✅ Requirements', component: RequirementsTab },
-  { id: 'roles', label: '👨‍🏫 Instructor Roles', component: RolesTab },
-  { id: 'users', label: '👥 User Management', component: UserManagementTab },
-  { id: 'settings', label: '⚙️ FTO Settings', component: SettingsTab },
-  { id: 'groundschool', label: '🏫 Ground School', component: GroundSchoolTab },
+  { id: 'programs', label: 'Training Programs', shortLabel: 'Training', icon: BookOpen, component: TrainingProgramsTab },
+  { id: 'aircraft', label: 'Aircraft Fleet', shortLabel: 'Aircraft', icon: Plane, component: AircraftSetupTab },
+  { id: 'sorties', label: 'Sortie Types', shortLabel: 'Sortie', icon: Target, component: SortieTypesTab },
+  { id: 'exercises', label: 'Exercises', shortLabel: 'Exercises', icon: ClipboardList, component: ExercisesTab },
+  { id: 'requirements', label: 'Requirements', shortLabel: 'Requirements', icon: CircleCheck, component: RequirementsTab },
+  { id: 'roles', label: 'Instructor Roles', shortLabel: 'Instructor', icon: GraduationCap, component: RolesTab },
+  { id: 'users', label: 'User Management', shortLabel: 'User', icon: Users, component: UserManagementTab },
+  { id: 'settings', label: 'FTO Settings', shortLabel: 'FTO', icon: Settings, component: SettingsTab },
+  { id: 'groundschool', label: 'Ground School', shortLabel: 'Ground', icon: School, component: GroundSchoolTab },
+  { id: 'holidays', label: 'Holiday Calendar', shortLabel: 'Holidays', icon: CalendarDays, component: HolidaysTab },
 ];
 
 export default function SetupWizardPage() {
@@ -57,10 +70,10 @@ export default function SetupWizardPage() {
 
   // Get progress color based on percentage
   const getProgressColor = (percent: number): string => {
-    if (percent >= 100) return 'bg-green-500';
-    if (percent >= 66) return 'bg-blue-500';
-    if (percent >= 33) return 'bg-yellow-500';
-    return 'bg-orange-500';
+    if (percent >= 100) return 'var(--success)';
+    if (percent >= 66) return 'var(--accent)';
+    if (percent >= 33) return 'var(--warning-text)';
+    return 'var(--warning)';
   };
 
   // ============================================================
@@ -94,9 +107,9 @@ export default function SetupWizardPage() {
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['super_admin']}>
-        <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+        <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
           <Header
-            title="🔧 Flight School Setup Wizard"
+            title="Flight School Setup Wizard"
             subtitle="Configure your FTO settings"
             backUrl="/dashboard"
           />
@@ -106,17 +119,19 @@ export default function SetupWizardPage() {
             {/* ============================================================ */}
             {/* SETUP PROGRESS BAR */}
             {/* ============================================================ */}
-            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 mb-6">
+            <div className="surface-card p-4 mb-6">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-white">📊 Setup Progress</h3>
-                <span className="text-sm text-slate-400 font-medium">{progressPercent}% Complete</span>
+                <h3 className="text-sm font-medium flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-secondary" /> Setup Progress
+                </h3>
+                <span className="text-sm text-secondary font-medium">{progressPercent}% Complete</span>
               </div>
 
               {/* Progress Bar */}
-              <div className="w-full bg-slate-700 rounded-full h-2.5">
+              <div className="w-full rounded-full h-2.5" style={{ backgroundColor: 'var(--border)' }}>
                 <div
-                  className={`h-2.5 rounded-full transition-all duration-500 ${getProgressColor(progressPercent)}`}
-                  style={{ width: `${progressPercent}%` }}
+                  className="h-2.5 rounded-full transition-all duration-500"
+                  style={{ width: `${progressPercent}%`, backgroundColor: getProgressColor(progressPercent) }}
                 />
               </div>
 
@@ -130,22 +145,25 @@ export default function SetupWizardPage() {
                       {/* Step Circle */}
                       <button
                         onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center space-x-1 px-3 py-1.5 rounded-full text-xs font-medium transition ${
+                        className="flex items-center space-x-1 px-3 py-1.5 rounded-full text-xs font-medium transition"
+                        style={
                           isActive
-                            ? 'bg-blue-500 text-white'
+                            ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }
                             : isCompleted
-                            ? 'bg-green-500/20 text-green-400'
-                            : 'bg-slate-700 text-slate-500'
-                        }`}
+                            ? { backgroundColor: 'var(--success-soft)', color: 'var(--success)' }
+                            : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-tertiary)' }
+                        }
                       >
                         <span className="w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold">
-                          {isCompleted ? '✓' : index + 1}
+                          {isCompleted ? <CircleCheck className="w-3.5 h-3.5" /> : index + 1}
                         </span>
-                        <span className="hidden sm:inline">{tab.label.split(' ')[1] || tab.label}</span>
+                        <span className="hidden sm:inline">{tab.shortLabel}</span>
                       </button>
                       {/* Arrow between steps */}
                       {index < TABS.length - 1 && (
-                        <span className="text-slate-600 mx-1">→</span>
+                        <span className="text-tertiary mx-1">
+                          <ChevronRight className="w-3 h-3" />
+                        </span>
                       )}
                     </div>
                   );
@@ -157,22 +175,26 @@ export default function SetupWizardPage() {
             {/* TAB NAVIGATION (full labels for larger screens) */}
             {/* ============================================================ */}
             <div className="flex flex-wrap gap-2 mb-6">
-              {TABS.map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-2 rounded-lg text-sm transition ${
-                    activeTab === tab.id
-                      ? 'bg-blue-500 text-white font-medium'
-                      : completedTabs.includes(tab.id)
-                      ? 'bg-green-500/10 text-green-400 border border-green-500/30'
-                      : 'bg-slate-700/50 text-slate-400 border border-slate-600/30 hover:bg-slate-700'
-                  }`}
-                >
-                  {completedTabs.includes(tab.id) && '✅ '}
-                  {tab.label}
-                </button>
-              ))}
+              {TABS.map(tab => {
+                const TabIcon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5"
+                    style={
+                      activeTab === tab.id
+                        ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a', fontWeight: 500 }
+                        : completedTabs.includes(tab.id)
+                        ? { backgroundColor: 'var(--success-soft)', color: 'var(--success)', border: '1px solid color-mix(in srgb, var(--success) 30%, transparent)' }
+                        : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }
+                    }
+                  >
+                    {completedTabs.includes(tab.id) ? <CircleCheck className="w-3.5 h-3.5" /> : <TabIcon className="w-3.5 h-3.5" />}
+                    {tab.label}
+                  </button>
+                );
+              })}
             </div>
 
             {/* ============================================================ */}
@@ -185,22 +207,22 @@ export default function SetupWizardPage() {
             {/* ============================================================ */}
             {/* 🔧 WIZARD NAVIGATION — Back / Next Buttons */}
             {/* ============================================================ */}
-            <div className="flex items-center justify-between bg-slate-800/50 border border-slate-700 rounded-xl p-4">
+            <div className="flex items-center justify-between surface-card p-4">
               {/* Back Button — hidden on first tab */}
               {isFirstTab ? (
                 <div /> // Empty placeholder to keep Next button right-aligned
               ) : (
                 <button
                   onClick={goToPrevTab}
-                  className="flex items-center space-x-2 px-5 py-2.5 bg-slate-700 text-white rounded-lg text-sm font-medium hover:bg-slate-600 transition"
+                  className="flex items-center space-x-2 px-5 py-2.5 rounded-lg text-sm font-medium transition surface-inner"
                 >
-                  <span>←</span>
+                  <ChevronLeft className="w-4 h-4" />
                   <span>Back: {TABS[currentIndex - 1]?.label}</span>
                 </button>
               )}
 
               {/* Progress indicator between buttons */}
-              <span className="text-xs text-slate-500">
+              <span className="text-xs text-tertiary">
                 Step {currentIndex + 1} of {TABS.length}
               </span>
 
@@ -208,17 +230,20 @@ export default function SetupWizardPage() {
               {isLastTab ? (
                 <button
                   onClick={() => window.location.href = '/dashboard'}
-                  className="flex items-center space-x-2 px-5 py-2.5 bg-green-500 text-white rounded-lg text-sm font-medium hover:bg-green-600 transition"
+                  className="flex items-center space-x-2 px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                  style={{ backgroundColor: 'var(--success)', color: '#ffffff' }}
                 >
-                  <span>✅ Finish Setup</span>
+                  <CircleCheck className="w-4 h-4" />
+                  <span>Finish Setup</span>
                 </button>
               ) : (
                 <button
                   onClick={goToNextTab}
-                  className="flex items-center space-x-2 px-5 py-2.5 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 transition"
+                  className="flex items-center space-x-2 px-5 py-2.5 rounded-lg text-sm font-medium transition"
+                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
                 >
                   <span>Next: {TABS[currentIndex + 1]?.label}</span>
-                  <span>→</span>
+                  <ChevronRight className="w-4 h-4" />
                 </button>
               )}
             </div>

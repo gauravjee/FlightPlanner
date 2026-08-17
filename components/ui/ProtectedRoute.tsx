@@ -6,6 +6,7 @@
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { Plane } from 'lucide-react';
 
 interface Props {
   children: React.ReactNode;
@@ -25,10 +26,12 @@ export default function ProtectedRoute({ children }: Props) {
   // Show loading spinner while checking auth
   if (status === 'loading') {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="text-center">
-          <div className="text-4xl mb-4 animate-pulse">✈️</div>
-          <p className="text-slate-400">Loading...</p>
+          <div className="brand-mark w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pulse">
+            <Plane className="w-6 h-6" style={{ stroke: '#ffffff' }} />
+          </div>
+          <p className="text-secondary text-sm">Loading...</p>
         </div>
       </div>
     );

@@ -175,14 +175,28 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
 
           {/* ----- STATUS BADGE + DURATION ----- */}
           <div className="flex items-center justify-between">
-            <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-              slot.status === 'IN_PROGRESS' ? 'bg-green-500/20 text-green-400' :
-              slot.status === 'COMPLETED' ? 'bg-blue-500/20 text-blue-400' :
-              slot.status === 'CANCELLED' ? 'bg-red-500/20 text-red-400' :
-              'bg-yellow-500/20 text-yellow-400'
-            }`}>
-              {slot.status.replace('_', ' ')}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                slot.status === 'IN_PROGRESS' ? 'bg-green-500/20 text-green-400' :
+                slot.status === 'COMPLETED' ? 'bg-blue-500/20 text-blue-400' :
+                slot.status === 'CANCELLED' ? 'bg-red-500/20 text-red-400' :
+                'bg-yellow-500/20 text-yellow-400'
+              }`}>
+                {slot.status.replace('_', ' ')}
+              </span>
+              {/* Debrief was completed with "auto-create logbook entry"
+                  unchecked — flight counts as flown, but hours/first-solo
+                  credit won't land until a logbook entry is finished for it
+                  from the Flights page. See DebriefForm.tsx. */}
+              {(slot as any).logbookPending && (
+                <span
+                  className="px-3 py-1 rounded-full text-sm font-medium bg-amber-500/20 text-amber-400"
+                  title="Flight is completed but no logbook entry has been created yet — finish it from the Flights page."
+                >
+                  📋 Logbook Pending
+                </span>
+              )}
+            </div>
             <span className="text-sm text-slate-400">{duration.toFixed(1)} hours</span>
           </div>
 

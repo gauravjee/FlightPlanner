@@ -38,10 +38,187 @@ import {
   Aircraft, Instructor, StudentRecord, FlightSlot,
   WeatherData, GeneralWeatherData, NOTAM, FuelRecord, FlightRecord,
   ScheduledFlight, TimeConflict, MaintenanceRecord,
-  AvailabilityRecord, TrainingRequirement
+  AvailabilityRecord, TrainingRequirement, Holiday
 } from '@/types';
 import { generateSchedule } from './data';
 import { supabase } from './supabase';
+
+// ============================================================
+// SCHEDULING RULES — booking-duration, turnaround & fuel-burn constants
+// ============================================================
+// Shared by the store's own conflict check (checkConflicts/bookFlight),
+// BookingForm's client-side validation, and the dashboard's "Available
+// Slots" tile, so all three always agree on what counts as a bookable gap:
+//   - A flight must be at least MIN_FLIGHT_DURATION_MIN long, in
+//     FLIGHT_DURATION_INCREMENT_MIN steps (45, 60, 75, 90 minutes, ...).
+//   - Every aircraft needs a turnaround gap of clear time immediately
+//     before and after each flight (crew/passenger changeover, walk-around,
+//     etc). This is the FTO's own configurable `buffer_minutes` setting
+//     (Settings -> Time & Scheduling -> "Buffer Between Flights") — that
+//     setting already existed in the Settings UI but nothing actually read
+//     it anywhere in the app; every conflict check silently used a
+//     hardcoded 30 minutes instead. Now wired up for real, defaulting to
+//     DEFAULT_TURNAROUND_BUFFER_MIN if the FTO hasn't set it explicitly.
+//   - If an aircraft's fuel is at or below LOW_FUEL_THRESHOLD_L — either
+//     right now, or projected to be after a given flight — an additional
+//     FUELING_BUFFER_MIN is required on top of the turnaround gap, a
+//     mandatory refuel window before it can fly again.
+export const DEFAULT_TURNAROUND_BUFFER_MIN = 15;
+export const MIN_FLIGHT_DURATION_MIN = 45;
+export const FLIGHT_DURATION_INCREMENT_MIN = 15;
+export const LOW_FUEL_THRESHOLD_L = 50;
+export const FUELING_BUFFER_MIN = 15;
+
+// Total buffer (minutes) required immediately before/after a flight, given
+// the fuel level (in liters) to evaluate against — the FTO's configured
+// turnaround gap (or DEFAULT_TURNAROUND_BUFFER_MIN if unset), plus a
+// mandatory refuel window on top of it when that fuel level is at or below
+// the low-fuel threshold. Callers pass whichever fuel level is relevant:
+// an aircraft's current reading for the gap *before* a flight, or a
+// projected post-flight level (see getProjectedFuelAfter) for the gap
+// *after* one.
+export function getAircraftBufferMinutes(
+  fuelLevelL: number | undefined,
+  turnaroundMin: number = DEFAULT_TURNAROUND_BUFFER_MIN
+): number {
+  const base = Number.isFinite(turnaroundMin) ? turnaroundMin : DEFAULT_TURNAROUND_BUFFER_MIN;
+  const lowFuel = typeof fuelLevelL === 'number' && Number.isFinite(fuelLevelL) && fuelLevelL <= LOW_FUEL_THRESHOLD_L;
+  return base + (lowFuel ? FUELING_BUFFER_MIN : 0);
+}
+
+// Parses the FTO's `buffer_minutes` setting string into a number, falling
+// back to DEFAULT_TURNAROUND_BUFFER_MIN when unset/invalid. Centralized here
+// so every call site (store, BookingForm, dashboard) parses it the same way.
+export function parseTurnaroundBufferSetting(raw: string | undefined): number {
+  const n = parseInt(raw ?? '', 10);
+  return Number.isFinite(n) ? n : DEFAULT_TURNAROUND_BUFFER_MIN;
+}
+
+// ============================================================
+// FUEL BURN RATE — estimating consumption from flight duration
+// ============================================================
+// Typical average cruise fuel burn (liters/hour) per aircraft type, used
+// ONLY as an editable starting default when an aircraft doesn't have its
+// own rate set yet (Aircraft Setup -> "Fuel Burn Rate"). These are rough,
+// commonly-cited averages for these training-fleet types, not a specific
+// airframe's certified POH figures — every FTO should verify/adjust them
+// against their own aircraft's actual logged consumption. This estimate is
+// for scheduling/planning only, never for real inflight fuel decisions.
+export const FUEL_BURN_RATE_BY_TYPE_LPH: Record<string, number> = {
+  C172S: 32, C172R: 32, C152: 20, C182: 38,
+  PA28: 32, PA44: 40, DA40: 28, DA42: 28,
+  SR20: 36, SR22: 47, BE76: 42, BE58: 68,
+};
+// Fallback when an aircraft's type isn't in the table above and it has no
+// rate of its own set.
+export const DEFAULT_FUEL_BURN_RATE_LPH = 30;
+
+// The fuel-burn rate (L/hr) to use for this aircraft: its own configured
+// rate if set, else the type-average default, else the flat fallback.
+export function getAircraftFuelBurnRate(
+  aircraft: Pick<Aircraft, 'type' | 'fuelBurnRateLph'> | undefined
+): number {
+  if (aircraft?.fuelBurnRateLph != null && Number.isFinite(aircraft.fuelBurnRateLph) && aircraft.fuelBurnRateLph > 0) {
+    return aircraft.fuelBurnRateLph;
+  }
+  const typeDefault = aircraft?.type ? FUEL_BURN_RATE_BY_TYPE_LPH[aircraft.type] : undefined;
+  return typeDefault ?? DEFAULT_FUEL_BURN_RATE_LPH;
+}
+
+// Projected fuel remaining (liters) after flying `durationMin` minutes on
+// this aircraft, starting from its current recorded fuel level. This is a
+// single-flight projection from the live `currentFuel` snapshot — it does
+// NOT simulate fuel draining across an entire day of other bookings, since
+// the app has no per-flight historical fuel record to simulate from.
+// Never negative.
+export function getProjectedFuelAfter(
+  aircraft: Pick<Aircraft, 'currentFuel' | 'type' | 'fuelBurnRateLph'> | undefined,
+  durationMin: number
+): number {
+  if (!aircraft) return 0;
+  const burnRate = getAircraftFuelBurnRate(aircraft);
+  return Math.max(0, aircraft.currentFuel - burnRate * (durationMin / 60));
+}
+
+// ============================================================
+// HOLIDAYS — FTO-wide blackout dates that block booking/scheduling
+// ============================================================
+// Shared by BookingForm (validateDate), ScheduleBoard (grid-click block +
+// banner), and GroundSchoolCalendar (openNewClass), plus the store's own
+// bookFlight/updateScheduledFlight, so every scheduling path agrees on
+// which dates the FTO is closed. See the Holiday type in types/index.ts
+// for the one-time-vs-recurring distinction.
+
+// Does `dateStr` ('YYYY-MM-DD') fall on a holiday? Checks recurring
+// holidays by month/day only (so a national holiday entered once keeps
+// blocking that date every future year) and one-time holidays by exact
+// date. Returns the matching Holiday, or null if the date is clear.
+export function findHolidayForDate(dateStr: string, holidays: Holiday[]): Holiday | null {
+  if (!dateStr) return null;
+  const monthDay = dateStr.slice(5); // 'MM-DD'
+  return holidays.find(h => (h.isRecurring ? h.date.slice(5) === monthDay : h.date === dateStr)) ?? null;
+}
+
+// "Flag for manual review, don't touch" support for addHoliday/addHolidaysBulk:
+// counts already-scheduled, non-cancelled flights and ground-school classes
+// that fall on `dateStr` ('YYYY-MM-DD'), using the same +05:30 day-bounds
+// convention as ScheduleBoard, so admins get a heads-up without anything
+// being auto-modified or auto-cancelled.
+async function countScheduleConflictsOnDate(dateStr: string): Promise<{ conflictingFlights: number; conflictingClasses: number }> {
+  const dayStart = `${dateStr}T00:00:00+05:30`;
+  const dayEnd = `${dateStr}T23:59:59.999+05:30`;
+  const [flightsRes, classesRes] = await Promise.all([
+    supabase.from('scheduled_flights').select('id', { count: 'exact', head: true })
+      .gte('start_time', dayStart).lte('start_time', dayEnd).neq('status', 'CANCELLED'),
+    supabase.from('ground_school_classes').select('id', { count: 'exact', head: true })
+      .eq('class_date', dateStr).neq('status', 'CANCELLED'),
+  ]);
+  return {
+    conflictingFlights: flightsRes.count || 0,
+    conflictingClasses: classesRes.count || 0,
+  };
+}
+
+// ============================================================
+// WEEKLY OFF DAY — FTO-wide recurring weekly closure (Settings -> Time &
+// Scheduling -> "Weekly Off Day(s)"), stored as the `weekly_off_days`
+// fto_settings key: a comma-separated list of day-of-week numbers
+// (0=Sunday..6=Saturday), e.g. "0" for Sundays-only or "0,6" for
+// Sunday+Saturday. Empty/unset means no weekly off day.
+// ============================================================
+export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// Parses the `weekly_off_days` fto_settings value into day-of-week numbers.
+export function parseWeeklyOffDays(raw: string | undefined): number[] {
+  if (!raw) return [];
+  return raw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => Number.isFinite(n) && n >= 0 && n <= 6);
+}
+
+// Is `dateStr` ('YYYY-MM-DD') a day of the week the FTO is closed every week?
+export function isWeeklyOffDay(dateStr: string, weeklyOffDays: number[]): boolean {
+  if (!dateStr || weeklyOffDays.length === 0) return false;
+  const day = new Date(dateStr + 'T00:00:00').getDay();
+  return weeklyOffDays.includes(day);
+}
+
+// Combined "is this date blocked for scheduling, and why" check, used by
+// BookingForm/ScheduleBoard/GroundSchoolCalendar and the store's own
+// bookFlight/updateScheduledFlight so every path agrees. Holidays take
+// priority for the message (more specific); falls back to the weekly-off
+// rule. Returns null if the date is open.
+export function getSchedulingBlockReason(
+  dateStr: string,
+  holidays: Holiday[],
+  weeklyOffDays: number[]
+): { type: 'holiday' | 'weekly_off'; label: string } | null {
+  const holiday = findHolidayForDate(dateStr, holidays);
+  if (holiday) return { type: 'holiday', label: holiday.holidayName };
+  if (isWeeklyOffDay(dateStr, weeklyOffDays)) {
+    const day = new Date(dateStr + 'T00:00:00').getDay();
+    return { type: 'weekly_off', label: `Weekly off (${DAY_NAMES[day]})` };
+  }
+  return null;
+}
 
 // ============================================================
 // TYPE DEFINITION
@@ -77,11 +254,23 @@ interface FlightStore {
   // sortie counts as SOLO or DUAL (see addFlightRecord / FlightRecordForm),
   // now that Flight Type is no longer a separate field.
   sortieTypes: { id: number; type_name: string; type_code: string; requires_instructor: boolean; requires_student: boolean }[];
+  // FTO-wide blackout dates — flights/ground-school classes cannot be
+  // scheduled on these (see findHolidayForDate above). Managed via Admin
+  // Setup -> Holiday Calendar.
+  holidays: Holiday[];
+  loadingHolidays: boolean;
 
 
   // ==========================================
   // UI STATE
   // ==========================================
+  // Dark/light theme. Persisted to localStorage; the actual DOM attribute
+  // (data-theme on <html>) is set both by an inline anti-flash script in
+  // app/layout.tsx on first paint and here on every change, so the two
+  // stay in sync regardless of which one ran first.
+  theme: 'dark' | 'light';
+  setTheme: (theme: 'dark' | 'light') => void;
+  toggleTheme: () => void;
   selectedSlot: FlightSlot | null;
   hoveredSlot: string | null;
   loadingAircraft: boolean;
@@ -204,6 +393,20 @@ interface FlightStore {
   getFTOSetting: (key: string) => string;
 
   // ==========================================
+  // 13. HOLIDAYS ACTIONS
+  // ==========================================
+  loadHolidays: () => Promise<void>;
+  // "Flag for manual review, don't touch" — returns how many already-scheduled
+  // flights/ground-school classes (non-cancelled) fall on the new holiday's
+  // date, so the calling UI can warn the admin. Nothing is auto-modified.
+  addHoliday: (holiday: Omit<Holiday, 'id'>) => Promise<{ success: boolean; message: string; conflictingFlights?: number; conflictingClasses?: number }>;
+  addHolidaysBulk: (holidays: Omit<Holiday, 'id'>[]) => Promise<{
+    added: number; skipped: number; skippedNames: string[];
+    conflictingFlights: number; conflictingClasses: number;
+  }>;
+  removeHoliday: (id: string) => Promise<void>;
+
+  // ==========================================
   // UI ACTIONS
   // ==========================================
   
@@ -230,6 +433,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   notams: [],
   exercises: [],
   sortieTypes: [],
+  holidays: [],
+  loadingHolidays: false,
   weather: {
     metar: 'Loading weather...',
     taf: 'Loading forecast...',
@@ -248,6 +453,22 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   trainingRequirements: [],
   ftoSettings: {},          // Start empty, loaded from database
   ftoSettingsLoaded: false,
+  // Real default lives in the inline script in app/layout.tsx (reads
+  // localStorage, falls back to 'dark') which sets data-theme before this
+  // store even initializes — 'dark' here is just a same-guess placeholder
+  // so the store's own value doesn't briefly disagree with the DOM.
+  theme: 'dark',
+  setTheme: (theme) => {
+    if (typeof window !== 'undefined') {
+      document.documentElement.setAttribute('data-theme', theme);
+      window.localStorage.setItem('fp-theme', theme);
+    }
+    set({ theme });
+  },
+  toggleTheme: () => {
+    const next = get().theme === 'dark' ? 'light' : 'dark';
+    get().setTheme(next);
+  },
   selectedSlot: null,
   hoveredSlot: null,
   loadingAircraft: false,
@@ -281,6 +502,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           currentFuel: row.current_fuel as number,
           status: row.status as Aircraft['status'],
           nextMaintenance: row.next_maintenance as string,
+          fuelBurnRateLph: row.fuel_burn_rate_lph != null ? (row.fuel_burn_rate_lph as number) : undefined,
         })),
         loadingAircraft: false,
       });
@@ -292,6 +514,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       registration: aircraft.registration, type: aircraft.type, model: aircraft.model,
       year: aircraft.year, hobbs_time: aircraft.hobbsTime, fuel_capacity: aircraft.fuelCapacity,
       current_fuel: aircraft.currentFuel, status: aircraft.status, next_maintenance: aircraft.nextMaintenance,
+      fuel_burn_rate_lph: aircraft.fuelBurnRateLph ?? null,
     }).select().single();
     if (data && !error) set(state => ({ aircraft: [...state.aircraft, { ...aircraft, id: String(data.id) }] }));
   },
@@ -307,6 +530,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (updates.currentFuel !== undefined) dbUpdates.current_fuel = updates.currentFuel;
     if (updates.status !== undefined) dbUpdates.status = updates.status;
     if (updates.nextMaintenance !== undefined) dbUpdates.next_maintenance = updates.nextMaintenance;
+    if (updates.fuelBurnRateLph !== undefined) dbUpdates.fuel_burn_rate_lph = updates.fuelBurnRateLph;
     const { error } = await supabase.from('aircraft').update(dbUpdates).eq('id', id);
     if (!error) set(state => ({ aircraft: state.aircraft.map(a => a.id === id ? { ...a, ...updates } : a) }));
   },
@@ -605,6 +829,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
             notes: row.notes as string, aircraftReg: ac?.registration || 'Unknown',
             studentName: student?.name || 'None', instructorName: inst?.name || 'Unknown',
             duration: Math.round((endTime.getTime() - startTime.getTime()) / 360000) / 10,
+            logbookPending: !!(row as any).logbook_pending,
+            pendingDebrief: (row as any).pending_debrief ?? null,
           };
         }),
         loadingSchedule: false,
@@ -613,8 +839,22 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   checkConflicts: async (aircraftId, startTime, endTime, excludeId?) => {
-    const bufferedStart = new Date(startTime); bufferedStart.setMinutes(bufferedStart.getMinutes() - 30);
-    const bufferedEnd = new Date(endTime); bufferedEnd.setMinutes(bufferedEnd.getMinutes() + 30);
+    // Buffer is per-aircraft, not a flat constant — and asymmetric: the gap
+    // required BEFORE this flight depends on the aircraft's fuel level right
+    // now, while the gap required AFTER it depends on the fuel level
+    // projected at the end of THIS flight (see getProjectedFuelAfter). Both
+    // start from the FTO's configured turnaround gap (Settings ->
+    // buffer_minutes), plus a mandatory extra refuel window whenever the
+    // relevant fuel level is at or below the low-fuel threshold. See
+    // getAircraftBufferMinutes.
+    const bufferAircraft = get().aircraft.find(a => String(a.id) === String(aircraftId));
+    const turnaroundMin = parseTurnaroundBufferSetting(get().ftoSettings['buffer_minutes']);
+    const durationMin = Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
+    const bufferBeforeMin = getAircraftBufferMinutes(bufferAircraft?.currentFuel, turnaroundMin);
+    const projectedFuelAfter = getProjectedFuelAfter(bufferAircraft, durationMin);
+    const bufferAfterMin = getAircraftBufferMinutes(projectedFuelAfter, turnaroundMin);
+    const bufferedStart = new Date(startTime); bufferedStart.setMinutes(bufferedStart.getMinutes() - bufferBeforeMin);
+    const bufferedEnd = new Date(endTime); bufferedEnd.setMinutes(bufferedEnd.getMinutes() + bufferAfterMin);
     let query = supabase.from('scheduled_flights').select('*')
       .eq('aircraft_id', aircraftId)
       .lt('start_time', bufferedEnd.toISOString())
@@ -635,9 +875,26 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   bookFlight: async (booking) => {
+    const bookingDateStr = new Date(booking.startTime).toLocaleDateString('en-CA');
+    const blockReason = getSchedulingBlockReason(bookingDateStr, get().holidays, parseWeeklyOffDays(get().ftoSettings['weekly_off_days']));
+    if (blockReason) {
+      return { success: false, message: `❌ FTO is closed (${blockReason.label}) — cannot book flights on this date.` };
+    }
     const conflict = await get().checkConflicts(booking.aircraftId, booking.startTime, booking.endTime);
     if (conflict.hasConflict) {
-      return { success: false, message: '⚠️ Time conflict with 30‑min buffer.' };
+      const conflictAircraft = get().aircraft.find(a => String(a.id) === String(booking.aircraftId));
+      const turnaroundMin = parseTurnaroundBufferSetting(get().ftoSettings['buffer_minutes']);
+      const durationMin = Math.round((new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime()) / 60000);
+      const bufferBeforeMin = getAircraftBufferMinutes(conflictAircraft?.currentFuel, turnaroundMin);
+      const projectedFuelAfter = getProjectedFuelAfter(conflictAircraft, durationMin);
+      const bufferAfterMin = getAircraftBufferMinutes(projectedFuelAfter, turnaroundMin);
+      const bufferDesc = bufferBeforeMin === bufferAfterMin
+        ? `a ${bufferBeforeMin}-min buffer before/after`
+        : `a ${bufferBeforeMin}-min buffer before and ${bufferAfterMin}-min buffer after`;
+      const lowFuelNote = (bufferBeforeMin > turnaroundMin || bufferAfterMin > turnaroundMin)
+        ? ` (includes a mandatory ${FUELING_BUFFER_MIN}-min refuel window — fuel is at or below ${LOW_FUEL_THRESHOLD_L}L)`
+        : '';
+      return { success: false, message: `⚠️ Time conflict — this aircraft needs ${bufferDesc} existing flights${lowFuelNote}.` };
     }
     const { error } = await supabase.from('scheduled_flights').insert({
       aircraft_id: booking.aircraftId, instructor_id: booking.instructorId,
@@ -657,6 +914,19 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   updateScheduledFlight: async (id, updates) => {
+    // Secondary safety net — BookingForm's validateDate() is the primary
+    // client-side gate for the edit-submit path, but this guards the
+    // authoritative store action too in case a new startTime ever reaches
+    // it another way. Silently refuses (no partial update) rather than
+    // throwing, since this action's return type is void.
+    if (updates.startTime !== undefined) {
+      const newDateStr = new Date(updates.startTime).toLocaleDateString('en-CA');
+      const blockReason = getSchedulingBlockReason(newDateStr, get().holidays, parseWeeklyOffDays(get().ftoSettings['weekly_off_days']));
+      if (blockReason) {
+        console.error(`❌ Cannot reschedule flight ${id} to ${newDateStr} — FTO is closed (${blockReason.label}).`);
+        return;
+      }
+    }
     const dbUpdates: Record<string, unknown> = {};
     if (updates.status !== undefined) dbUpdates.status = updates.status;
     if (updates.aircraftId !== undefined) dbUpdates.aircraft_id = updates.aircraftId;
@@ -669,6 +939,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
     if (updates.weatherBriefed !== undefined) dbUpdates.weather_briefed = updates.weatherBriefed;
     if (updates.notamBriefed !== undefined) dbUpdates.notam_briefed = updates.notamBriefed;
+    if (updates.logbookPending !== undefined) dbUpdates.logbook_pending = updates.logbookPending;
+    if (updates.pendingDebrief !== undefined) dbUpdates.pending_debrief = updates.pendingDebrief;
     const { error } = await supabase.from('scheduled_flights').update(dbUpdates).eq('id', id);
     if (!error) {
       set(state => ({
@@ -1077,6 +1349,84 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     } else {
       console.error('Error loading sortie types:', error);
     }
+  },
+
+  // ============================================================
+  // 13. HOLIDAYS FUNCTIONS
+  // ============================================================
+  // FTO-wide blackout dates — see the Holiday type in types/index.ts and the
+  // findHolidayForDate/getSchedulingBlockReason helpers above this store.
+  // Managed via Admin Setup -> Holiday Calendar.
+  loadHolidays: async () => {
+    set({ loadingHolidays: true });
+    const { data, error } = await supabase.from('holidays').select('*').order('holiday_date', { ascending: true });
+    if (data && !error) {
+      set({
+        holidays: data.map((row: Record<string, unknown>) => ({
+          id: String(row.id),
+          holidayName: row.holiday_name as string,
+          date: row.holiday_date as string,
+          isRecurring: !!row.is_recurring,
+          notes: (row.notes as string) || '',
+        })),
+        loadingHolidays: false,
+      });
+    } else {
+      console.error('Error loading holidays:', error);
+      set({ loadingHolidays: false });
+    }
+  },
+
+  addHoliday: async (holiday) => {
+    const { error } = await supabase.from('holidays').insert({
+      holiday_name: holiday.holidayName,
+      holiday_date: holiday.date,
+      is_recurring: holiday.isRecurring,
+      notes: holiday.notes || '',
+    });
+    if (error) {
+      console.error('Error adding holiday:', error);
+      return { success: false, message: '❌ Failed to add holiday.' };
+    }
+    await get().loadHolidays();
+    const { conflictingFlights, conflictingClasses } = await countScheduleConflictsOnDate(holiday.date);
+    const conflictNote = (conflictingFlights + conflictingClasses) > 0
+      ? ` ⚠️ ${conflictingFlights} flight(s) and ${conflictingClasses} ground-school class(es) already scheduled on this date — please review manually, nothing was changed.`
+      : '';
+    return { success: true, message: `✅ Holiday added.${conflictNote}`, conflictingFlights, conflictingClasses };
+  },
+
+  // "Append + skip duplicates" — a row is a duplicate if a holiday already
+  // exists (in the DB, or earlier in this same CSV batch) with the same
+  // date + isRecurring combination. Existing holidays are never overwritten.
+  addHolidaysBulk: async (holidaysToAdd) => {
+    const seen = new Set(get().holidays.map(h => `${h.date}|${h.isRecurring}`));
+    let added = 0, skipped = 0;
+    const skippedNames: string[] = [];
+    let conflictingFlights = 0, conflictingClasses = 0;
+    for (const h of holidaysToAdd) {
+      const key = `${h.date}|${h.isRecurring}`;
+      if (seen.has(key)) { skipped++; skippedNames.push(h.holidayName); continue; }
+      seen.add(key);
+      const { error } = await supabase.from('holidays').insert({
+        holiday_name: h.holidayName,
+        holiday_date: h.date,
+        is_recurring: h.isRecurring,
+        notes: h.notes || '',
+      });
+      if (error) { skipped++; skippedNames.push(h.holidayName); continue; }
+      added++;
+      const conflicts = await countScheduleConflictsOnDate(h.date);
+      conflictingFlights += conflicts.conflictingFlights;
+      conflictingClasses += conflicts.conflictingClasses;
+    }
+    if (added > 0) await get().loadHolidays();
+    return { added, skipped, skippedNames, conflictingFlights, conflictingClasses };
+  },
+
+  removeHoliday: async (id) => {
+    const { error } = await supabase.from('holidays').delete().eq('id', id);
+    if (!error) set(state => ({ holidays: state.holidays.filter(h => h.id !== id) }));
   },
 
   // ============================================================

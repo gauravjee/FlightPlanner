@@ -14,6 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from '@/lib/supabase-client';
+import { useFlightStore } from '@/lib/store';
 
 /**
  * Map of requirement name patterns → ground school subject names.
@@ -118,4 +119,52 @@ export async function syncGroundSchoolFromChecklist(
       console.log(`✅ Removed EXEMPTED record for "${subjectName}"`);
     }
   }
+}
+
+/**
+ * The reverse direction of syncGroundSchoolFromChecklist above: when a
+ * ground school exam is recorded as PASS, mark every matching Requirements
+ * Checklist item for that student/subject as completed.
+ *
+ * Originally this logic only existed inline in the "Direct Exam Entry" flow
+ * (Ground School Progress page), which meant the ordinary attendance-page
+ * exam-recording flow — the one instructors actually use day to day — never
+ * touched the Requirements Checklist at all. Centralized here so both call
+ * sites (Direct Exam Entry and the attendance page) share one implementation
+ * instead of drifting apart.
+ *
+ * Matching is intentionally one-directional (PASS -> completed only, never
+ * un-completes on a later FAIL) to match the existing Direct Exam Entry
+ * behavior — an instructor un-completing a checklist item is expected to go
+ * through the Requirements Checklist itself, which already supports both
+ * directions via syncGroundSchoolFromChecklist.
+ *
+ * @param studentId    UUID of the student
+ * @param subjectName  Ground school subject name (e.g. "Air Regulations")
+ * @param completedBy  Attribution shown on the requirement row
+ * @returns             Number of requirement rows that were toggled to completed
+ */
+export async function syncRequirementsFromGroundSchoolPass(
+  studentId: string,
+  subjectName: string,
+  completedBy: string
+): Promise<number> {
+  const { loadTrainingRequirements, toggleRequirement } = useFlightStore.getState();
+  await loadTrainingRequirements(studentId);
+
+  // Uses the same includes()-based name matching as the rest of this file —
+  // requirement names carry suffixes like "Air Regulations (valid 5 yrs)".
+  const currentReqs = useFlightStore.getState().trainingRequirements;
+  const matchingReqs = currentReqs.filter(
+    (r) => r.studentId === studentId && r.requirementName.includes(subjectName)
+  );
+
+  let toggledCount = 0;
+  for (const req of matchingReqs) {
+    if (!req.isCompleted) {
+      await toggleRequirement(req.id, true, completedBy);
+      toggledCount++;
+    }
+  }
+  return toggledCount;
 }

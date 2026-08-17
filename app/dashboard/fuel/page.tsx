@@ -6,8 +6,8 @@ import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import FuelLogForm from '@/components/fuel/FuelLogForm';
-import Link from 'next/link';
 import RoleGate from '@/components/ui/RoleGate';
+import { Fuel, Plane, ClipboardList } from 'lucide-react';
 
 export default function FuelPage() {
   const { aircraft, fuelRecords, loadingFuel, loadFuelRecords, loadAircraft } = useFlightStore();
@@ -27,13 +27,17 @@ export default function FuelPage() {
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'maintenance']}>
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-      <Header 
-        title="Fuel Management" 
-        subtitle="Track refueling & consumption" 
+    <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
+      <Header
+        title="Fuel Management"
+        subtitle="Track refueling & consumption"
         action={
-          <button onClick={() => setShowForm(true)} className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition cursor-pointer font-bold">
-            ⛽ Log Refueling
+          <button
+            onClick={() => setShowForm(true)}
+            className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+          >
+            <Fuel className="w-4 h-4" /> Log Refueling
           </button>
         }
       />
@@ -41,34 +45,36 @@ export default function FuelPage() {
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Current Fuel', value: `${totalCurrentFuel}L`, color: 'text-blue-400' },
-            { label: 'Total Refueled', value: `${totalFuelAdded}L`, color: 'text-green-400' },
-            { label: 'Total Cost', value: `₹${totalCost.toLocaleString('en-IN')}`, color: 'text-orange-400' },
-            { label: 'Avg Cost', value: `₹${avgCost.toFixed(2)}/L`, color: 'text-purple-400' },
+            { label: 'Current Fuel', value: `${totalCurrentFuel}L`, color: 'var(--accent)' },
+            { label: 'Total Refueled', value: `${totalFuelAdded}L`, color: 'var(--success)' },
+            { label: 'Total Cost', value: `₹${totalCost.toLocaleString('en-IN')}`, color: 'var(--warning-text)' },
+            { label: 'Avg Cost', value: `₹${avgCost.toFixed(2)}/L`, color: 'var(--accent-strong)' },
           ].map((stat, i) => (
-            <div key={i} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-              <p className="text-xs text-slate-400">{stat.label}</p>
-              <p className={`text-2xl font-bold ${stat.color} mt-1`}>{stat.value}</p>
+            <div key={i} className="surface-inner p-4">
+              <p className="text-xs text-tertiary">{stat.label}</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: stat.color }}>{stat.value}</p>
             </div>
           ))}
         </div>
 
-        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6 mb-6">
-          <h2 className="text-lg font-semibold text-white mb-4">🛩️ Fleet Fuel Status</h2>
+        <div className="surface-card p-6 mb-6">
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Plane className="w-4 h-4 text-secondary" /> Fleet Fuel Status
+          </h2>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {aircraft.map(ac => {
               const pct = ac.fuelCapacity > 0 ? (ac.currentFuel / ac.fuelCapacity) * 100 : 0;
+              const fuelColor = pct < 30 ? 'var(--danger)' : pct < 60 ? 'var(--warning-text)' : 'var(--success)';
               return (
-                <div key={ac.id} className="bg-slate-900/50 rounded-lg p-4">
+                <div key={ac.id} className="surface-inner p-4">
                   <div className="flex justify-between mb-2">
-                    <span className="text-white font-medium">{ac.registration} ({ac.type})</span>
-                    <span className={`text-sm font-bold ${pct < 30 ? 'text-red-400' : pct < 60 ? 'text-yellow-400' : 'text-green-400'}`}>
+                    <span className="font-medium">{ac.registration} ({ac.type})</span>
+                    <span className="text-sm font-bold" style={{ color: fuelColor }}>
                       {ac.currentFuel}L / {ac.fuelCapacity}L
                     </span>
                   </div>
-                  <div className="w-full bg-slate-700 rounded-full h-3">
-                    <div className={`h-3 rounded-full ${pct < 30 ? 'bg-red-500' : pct < 60 ? 'bg-yellow-500' : 'bg-green-500'}`}
-                      style={{ width: `${Math.min(pct, 100)}%` }} />
+                  <div className="w-full rounded-full h-3" style={{ backgroundColor: 'var(--border)' }}>
+                    <div className="h-3 rounded-full" style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: fuelColor }} />
                   </div>
                 </div>
               );
@@ -76,17 +82,19 @@ export default function FuelPage() {
           </div>
         </div>
 
-        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-          <h2 className="text-lg font-semibold text-white mb-4">📋 Refueling History</h2>
+        <div className="surface-card p-6">
+          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <ClipboardList className="w-4 h-4 text-secondary" /> Refueling History
+          </h2>
           {loadingFuel ? (
-            <p className="text-slate-400 text-center py-8">Loading...</p>
+            <p className="text-secondary text-center py-8">Loading...</p>
           ) : fuelRecords.length === 0 ? (
-            <p className="text-slate-400 text-center py-8">No records yet</p>
+            <p className="text-secondary text-center py-8">No records yet</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-slate-400 border-b border-slate-700">
+                  <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                     <th className="pb-3">Date</th>
                     <th className="pb-3">Aircraft</th>
                     <th className="pb-3">Added</th>
@@ -96,18 +104,18 @@ export default function FuelPage() {
                     <th className="pb-3">By</th>
                   </tr>
                 </thead>
-                <tbody className="text-slate-300">
+                <tbody className="text-secondary">
                   {fuelRecords.map(record => (
-                    <tr key={record.id} className="border-b border-slate-700/50">
-                      <td className="py-3 text-white text-xs">
+                    <tr key={record.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
+                      <td className="py-3 text-xs" style={{ color: 'var(--text-primary)' }}>
                         {new Date(record.refuelingDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                       </td>
-                      <td className="py-3 text-white text-xs">{record.aircraftReg}</td>
-                      <td className="py-3 text-green-400 font-medium">{record.fuelAddedLiters}L</td>
+                      <td className="py-3 text-xs" style={{ color: 'var(--text-primary)' }}>{record.aircraftReg}</td>
+                      <td className="py-3 font-medium" style={{ color: 'var(--success)' }}>{record.fuelAddedLiters}L</td>
                       <td className="py-3 text-xs">₹{record.fuelCostPerLiter}</td>
-                      <td className="py-3 text-orange-400 font-medium">₹{record.totalCost.toLocaleString('en-IN')}</td>
+                      <td className="py-3 font-medium" style={{ color: 'var(--warning-text)' }}>₹{record.totalCost.toLocaleString('en-IN')}</td>
                       <td className="py-3 text-xs">{record.fuelLevelBefore}L → {record.fuelLevelAfter}L</td>
-                      <td className="py-3 text-xs text-slate-400">{record.refueledBy}</td>
+                      <td className="py-3 text-xs text-tertiary">{record.refueledBy}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -54,10 +54,16 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
     setLoading(true);
 
     try {
-      // 1. Update flight status to COMPLETED
-      await updateScheduledFlight(flight.id, { status: 'COMPLETED' });
-
-      // 2. Create logbook entry if enabled
+      // 1. Create logbook entry if enabled, and mark the flight COMPLETED.
+      //
+      // "Auto-create logbook entry" unchecked no longer means the training
+      // record silently vanishes: the flight still counts as flown (status
+      // COMPLETED, aircraft fuel/Hobbs still advance below — the physical
+      // flight happened either way) but it's now explicitly flagged
+      // `logbookPending` with the debrief data captured here saved
+      // alongside it, so it shows up as a "Logbook Pending" item to finish
+      // later from the Flights page (see FlightRecordForm's
+      // scheduledFlightId/prefill props) instead of just disappearing.
       if (form.createLogbook) {
         await addFlightRecord({
           studentId: flight.studentId || '',
@@ -77,9 +83,29 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
           studentPerformance: form.studentPerformance,
           weatherConditions: form.weatherConditions,
         });
+        await updateScheduledFlight(flight.id, { status: 'COMPLETED', logbookPending: false, pendingDebrief: null });
+      } else {
+        await updateScheduledFlight(flight.id, {
+          status: 'COMPLETED',
+          logbookPending: true,
+          pendingDebrief: {
+            flightDate: todayStr,
+            departureTime: form.actualStartTime,
+            arrivalTime: form.actualEndTime,
+            hobbsStart: form.hobbsStart,
+            hobbsEnd: form.hobbsEnd,
+            landings: form.landings,
+            maneuvers: form.maneuversCompleted,
+            instructorNotes: form.instructorNotes,
+            studentPerformance: form.studentPerformance,
+            weatherConditions: form.weatherConditions,
+          },
+        });
       }
 
-      // 3. Update aircraft fuel if changed
+      // 2. Update aircraft fuel if changed — this reflects the physical
+      // state of the aircraft, so it happens regardless of the logbook
+      // toggle (the plane really did burn that fuel and advance its Hobbs).
       if (form.fuelAfter !== form.fuelBefore) {
         const { supabase } = await import('@/lib/supabase');
         await supabase
@@ -89,7 +115,11 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
       }
 
       await loadScheduledFlights();
-      onComplete('✅ Flight completed & logbook updated!');
+      onComplete(
+        form.createLogbook
+          ? '✅ Flight completed & logbook updated!'
+          : '✅ Flight checked out — logbook entry pending. Finish it later from the Flights page.'
+      );
     } catch (err) {
       console.error('Debrief error:', err);
     } finally {
@@ -239,7 +269,14 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
             <input type="checkbox" checked={form.createLogbook}
               onChange={e => setForm(p => ({ ...p, createLogbook: e.target.checked }))}
               className="w-4 h-4" />
-            <label className="text-xs text-slate-400">Auto-create logbook entry</label>
+            <label className="text-xs text-slate-400">
+              Auto-create logbook entry
+              {!form.createLogbook && (
+                <span className="block text-slate-500 mt-0.5">
+                  Unchecked: flight is still marked completed, but the logbook entry (hours, first-solo credit) stays pending until finished later from the Flights page.
+                </span>
+              )}
+            </label>
           </div>
 
           {/* Buttons */}

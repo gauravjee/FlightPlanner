@@ -19,6 +19,7 @@ import Header from '@/components/ui/Header';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import Link from 'next/link';
+import { Calendar, NotebookPen, GraduationCap, ArrowRight, Clock, Star } from 'lucide-react';
 
 export default function InstructorDashboardPage() {
   const { data: session } = useSession();
@@ -34,10 +35,10 @@ export default function InstructorDashboardPage() {
     flightRecords, loadFlightRecords,
     trainingRequirements, loadTrainingRequirements,
   } = useFlightStore();
-  
+
   // Find the instructor's database ID from their email
   const [instructorId, setInstructorId] = useState('');
-  
+
   useEffect(() => {
     if (instructorEmail && instructors.length > 0) {
       const inst = instructors.find(i => i.email === instructorEmail);
@@ -104,7 +105,7 @@ export default function InstructorDashboardPage() {
   const stats = useMemo(() => {
     const totalStudents = myStudents.length;
     const flightsToday = todayFlights.length;
-    
+
     // Hours this week
     const weekStart = new Date();
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
@@ -124,7 +125,7 @@ export default function InstructorDashboardPage() {
       const isPPL = student.trainingStage?.includes('PPL');
       const targetHours = isPPL ? 40 : 200;
       const progressPercent = Math.min(100, Math.round((totalHours / targetHours) * 100));
-      
+
       // Get requirements completion
       const studentReqs = trainingRequirements.filter(r => r.studentId === student.id);
       const completedReqs = studentReqs.filter(r => r.isCompleted).length;
@@ -146,11 +147,11 @@ export default function InstructorDashboardPage() {
   // HELPER: Progress bar color
   // ============================================================
   const getProgressColor = (percent: number): string => {
-    if (percent >= 100) return 'bg-green-500';
-    if (percent >= 75) return 'bg-blue-500';
-    if (percent >= 50) return 'bg-yellow-500';
-    if (percent >= 25) return 'bg-orange-500';
-    return 'bg-red-500';
+    if (percent >= 100) return 'var(--success)';
+    if (percent >= 75) return 'var(--accent)';
+    if (percent >= 50) return 'var(--warning-text)';
+    if (percent >= 25) return 'var(--warning)';
+    return 'var(--danger)';
   };
 
   // ============================================================
@@ -159,7 +160,7 @@ export default function InstructorDashboardPage() {
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['instructor', 'admin', 'super_admin']}>
-        <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
+        <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
           <Header
             title="Instructor Dashboard"
             subtitle={`Welcome, ${instructorName}`}
@@ -173,14 +174,14 @@ export default function InstructorDashboardPage() {
             {/* ============================================================ */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               {[
-                { label: 'My Students', value: stats.totalStudents, color: 'text-blue-400' },
-                { label: "Today's Flights", value: stats.flightsToday, color: 'text-green-400' },
-                { label: 'Hours This Week', value: `${stats.hoursThisWeek}h`, color: 'text-purple-400' },
-                { label: 'Upcoming Flights', value: upcomingFlights.length, color: 'text-yellow-400' },
+                { label: 'My Students', value: stats.totalStudents, color: 'var(--accent)' },
+                { label: "Today's Flights", value: stats.flightsToday, color: 'var(--success)' },
+                { label: 'Hours This Week', value: `${stats.hoursThisWeek}h`, color: 'var(--accent-strong)' },
+                { label: 'Upcoming Flights', value: upcomingFlights.length, color: 'var(--warning-text)' },
               ].map((stat, i) => (
-                <div key={i} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <p className="text-xs text-slate-400">{stat.label}</p>
-                  <p className={`text-2xl font-bold ${stat.color} mt-1`}>{stat.value}</p>
+                <div key={i} className="surface-inner p-4">
+                  <p className="text-xs text-tertiary">{stat.label}</p>
+                  <p className="text-2xl font-bold mt-1" style={{ color: stat.color }}>{stat.value}</p>
                 </div>
               ))}
             </div>
@@ -191,33 +192,33 @@ export default function InstructorDashboardPage() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
               {/* ----- TODAY'S SCHEDULE ----- */}
-              <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
-                <h2 className="text-lg font-semibold text-white mb-4">📅 My Today's Schedule</h2>
+              <div className="surface-card p-6">
+                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-secondary" /> My Today's Schedule
+                </h2>
                 {todayFlights.length === 0 ? (
-                  <p className="text-slate-400 text-sm">No flights scheduled for today.</p>
+                  <p className="text-secondary text-sm">No flights scheduled for today.</p>
                 ) : (
                   <div className="space-y-2">
                     {todayFlights.map(flight => {
                       const student = students.find(s => s.id === flight.studentId);
+                      const statusBadgeClass = flight.status === 'IN_PROGRESS' ? 'badge-success' :
+                        flight.status === 'SCHEDULED' ? 'badge-accent' : 'badge-neutral';
                       return (
-                        <div key={flight.id} className="bg-slate-900/50 rounded-lg p-3 flex justify-between items-center">
+                        <div key={flight.id} className="surface-inner p-3 flex justify-between items-center">
                           <div>
-                            <p className="text-white text-sm font-medium">
-                              {new Date(flight.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} - 
+                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                              {new Date(flight.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })} -
                               {new Date(flight.endTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                             </p>
-                            <p className="text-slate-400 text-xs">
+                            <p className="text-tertiary text-xs">
                               {student?.name || 'No Student'} ({student?.initials || '—'}) | {flight.aircraftReg}
                             </p>
-                            <p className="text-slate-500 text-xs">
+                            <p className="text-tertiary text-xs">
                               {(flight as any).exercise || flight.sortieType}
                             </p>
                           </div>
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            flight.status === 'IN_PROGRESS' ? 'bg-green-500/20 text-green-400' :
-                            flight.status === 'SCHEDULED' ? 'bg-blue-500/20 text-blue-400' :
-                            'bg-slate-500/20 text-slate-400'
-                          }`}>
+                          <span className={`badge ${statusBadgeClass}`}>
                             {flight.status?.replace('_', ' ')}
                           </span>
                         </div>
@@ -228,24 +229,27 @@ export default function InstructorDashboardPage() {
               </div>
 
               {/* ----- RECENT DEBRIEFS ----- */}
-              <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
-                <h2 className="text-lg font-semibold text-white mb-4">📝 Recent Debriefs</h2>
+              <div className="surface-card p-6">
+                <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                  <NotebookPen className="w-4 h-4 text-secondary" /> Recent Debriefs
+                </h2>
                 {recentDebriefs.length === 0 ? (
-                  <p className="text-slate-400 text-sm">No recent debriefs.</p>
+                  <p className="text-secondary text-sm">No recent debriefs.</p>
                 ) : (
                   <div className="space-y-3">
                     {recentDebriefs.map(record => (
-                      <div key={record.id} className="bg-slate-900/50 rounded-lg p-3 border border-slate-700/50">
+                      <div key={record.id} className="surface-inner p-3">
                         <div className="flex justify-between mb-1">
-                          <span className="text-white text-sm font-medium">{record.studentName}</span>
-                          <span className="text-xs text-slate-400">
+                          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{record.studentName}</span>
+                          <span className="text-xs text-tertiary">
                             {new Date(record.flightDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
                           </span>
                         </div>
-                        <p className="text-xs text-slate-400 mb-1">
-                          {(record as any).exercise || record.sortieType} | {record.totalHours}h | ⭐{record.studentPerformance}/5
+                        <p className="text-xs text-tertiary mb-1 flex items-center gap-1">
+                          {(record as any).exercise || record.sortieType} | {record.totalHours}h |
+                          <Star className="w-3 h-3 inline" style={{ color: 'var(--warning-text)' }} />{record.studentPerformance}/5
                         </p>
-                        <p className="text-xs text-slate-300 italic">"{record.instructorNotes}"</p>
+                        <p className="text-xs text-secondary italic">"{record.instructorNotes}"</p>
                       </div>
                     ))}
                   </div>
@@ -256,51 +260,54 @@ export default function InstructorDashboardPage() {
             {/* ============================================================ */}
             {/* MY STUDENTS & PROGRESS */}
             {/* ============================================================ */}
-            <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6 mb-6">
+            <div className="surface-card p-6 mb-6">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold text-white">👨‍✈️ My Students</h2>
-                <Link href="/dashboard/progress" className="text-sm text-blue-400 hover:text-blue-300">
-                  View All Progress →
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <GraduationCap className="w-4 h-4 text-secondary" /> My Students
+                </h2>
+                <Link href="/dashboard/progress" className="text-sm transition flex items-center gap-1" style={{ color: 'var(--accent)' }}>
+                  View All Progress <ArrowRight className="w-3.5 h-3.5" />
                 </Link>
               </div>
 
               {studentProgressList.length === 0 ? (
-                <p className="text-slate-400 text-sm">No students assigned yet.</p>
+                <p className="text-secondary text-sm">No students assigned yet.</p>
               ) : (
                 <div className="space-y-3">
                   {studentProgressList.slice(0, 8).map(item => (
-                    <div key={item.student.id} className="bg-slate-900/50 rounded-lg p-3 flex items-center space-x-4">
+                    <div key={item.student.id} className="surface-inner p-3 flex items-center space-x-4">
                       {/* Student Info */}
                       <div className="w-32 flex-shrink-0">
-                        <p className="text-sm font-medium text-white truncate">{item.student.name}</p>
-                        <p className="text-xs text-slate-500">{item.student.initials} | {item.student.trainingStage}</p>
+                        <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.student.name}</p>
+                        <p className="text-xs text-tertiary">{item.student.initials} | {item.student.trainingStage}</p>
                       </div>
                       {/* Hours Progress */}
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-slate-400">Hours</span>
-                          <span className="text-xs text-slate-400">{item.totalHours}h / {item.targetHours}h ({item.progressPercent}%)</span>
+                          <span className="text-xs text-tertiary">Hours</span>
+                          <span className="text-xs text-tertiary">{item.totalHours}h / {item.targetHours}h ({item.progressPercent}%)</span>
                         </div>
-                        <div className="w-full bg-slate-700 rounded-full h-2">
-                          <div className={`h-2 rounded-full ${getProgressColor(item.progressPercent)}`} style={{ width: `${item.progressPercent}%` }} />
+                        <div className="w-full rounded-full h-2" style={{ backgroundColor: 'var(--border)' }}>
+                          <div className="h-2 rounded-full" style={{ width: `${item.progressPercent}%`, backgroundColor: getProgressColor(item.progressPercent) }} />
                         </div>
                       </div>
                       {/* Requirements Progress */}
                       <div className="flex-1">
                         <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-slate-400">Requirements</span>
-                          <span className="text-xs text-slate-400">{item.completedReqs}/{item.totalReqs} ({item.reqPercent}%)</span>
+                          <span className="text-xs text-tertiary">Requirements</span>
+                          <span className="text-xs text-tertiary">{item.completedReqs}/{item.totalReqs} ({item.reqPercent}%)</span>
                         </div>
-                        <div className="w-full bg-slate-700 rounded-full h-2">
-                          <div className={`h-2 rounded-full ${getProgressColor(item.reqPercent)}`} style={{ width: `${item.reqPercent}%` }} />
+                        <div className="w-full rounded-full h-2" style={{ backgroundColor: 'var(--border)' }}>
+                          <div className="h-2 rounded-full" style={{ width: `${item.reqPercent}%`, backgroundColor: getProgressColor(item.reqPercent) }} />
                         </div>
                       </div>
                       {/* Quick Link */}
                       <Link
                         href={`/dashboard/progress`}
-                        className="text-xs text-blue-400 hover:text-blue-300 flex-shrink-0"
+                        className="text-xs flex-shrink-0 transition flex items-center gap-1"
+                        style={{ color: 'var(--accent)' }}
                       >
-                        Details →
+                        Details <ArrowRight className="w-3 h-3" />
                       </Link>
                     </div>
                   ))}
@@ -311,15 +318,17 @@ export default function InstructorDashboardPage() {
             {/* ============================================================ */}
             {/* UPCOMING FLIGHTS */}
             {/* ============================================================ */}
-            <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-6">
-              <h2 className="text-lg font-semibold text-white mb-4">🔜 Upcoming Flights</h2>
+            <div className="surface-card p-6">
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-secondary" /> Upcoming Flights
+              </h2>
               {upcomingFlights.length === 0 ? (
-                <p className="text-slate-400 text-sm">No upcoming flights scheduled.</p>
+                <p className="text-secondary text-sm">No upcoming flights scheduled.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-slate-400 border-b border-slate-700">
+                      <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                         <th className="pb-2">Date</th>
                         <th className="pb-2">Time</th>
                         <th className="pb-2">Student</th>
@@ -328,12 +337,13 @@ export default function InstructorDashboardPage() {
                         <th className="pb-2">Status</th>
                       </tr>
                     </thead>
-                    <tbody className="text-slate-300">
+                    <tbody className="text-secondary">
                       {upcomingFlights.map(flight => {
                         const student = students.find(s => s.id === flight.studentId);
+                        const statusBadgeClass = flight.status === 'SCHEDULED' ? 'badge-accent' : 'badge-success';
                         return (
-                          <tr key={flight.id} className="border-b border-slate-700/50">
-                            <td className="py-2 text-white text-xs">
+                          <tr key={flight.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
+                            <td className="py-2 text-xs" style={{ color: 'var(--text-primary)' }}>
                               {new Date(flight.startTime).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                             </td>
                             <td className="py-2 text-xs">
@@ -343,9 +353,7 @@ export default function InstructorDashboardPage() {
                             <td className="py-2 text-xs">{flight.aircraftReg}</td>
                             <td className="py-2 text-xs">{(flight as any).exercise || flight.sortieType}</td>
                             <td className="py-2">
-                              <span className={`px-2 py-0.5 rounded-full text-xs ${
-                                flight.status === 'SCHEDULED' ? 'bg-blue-500/20 text-blue-400' : 'bg-green-500/20 text-green-400'
-                              }`}>
+                              <span className={`badge ${statusBadgeClass}`}>
                                 {flight.status?.replace('_', ' ')}
                               </span>
                             </td>

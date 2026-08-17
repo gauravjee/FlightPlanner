@@ -17,6 +17,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { Users, UserPlus, Mail, RefreshCw, Trash2, TriangleAlert, CircleCheck } from 'lucide-react';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -132,11 +133,11 @@ export default function UserManagementTab() {
       }
 
       if (result.emailSent) {
-        setSuccessMessage(`✅ User created! Welcome email sent to ${form.email}`);
+        setSuccessMessage(`User created! Welcome email sent to ${form.email}`);
       } else if (form.sendEmail) {
-        setSuccessMessage(`⚠️ User created but email failed: ${result.emailMessage}. Password: ${result.password}`);
+        setSuccessMessage(`User created but email failed: ${result.emailMessage}. Password: ${result.password}`);
       } else {
-        setSuccessMessage(`✅ User created! Password: ${result.password} (save this - it won't be shown again)`);
+        setSuccessMessage(`User created! Password: ${result.password} (save this - it won't be shown again)`);
       }
 
       // Reset form and reload user list
@@ -216,55 +217,62 @@ export default function UserManagementTab() {
             alert('❌ Error deleting user: ' + error);
           } else {
             loadUsers();
-            setSuccessMessage(`🗑️ User ${userEmail} deleted successfully.`);
+            setSuccessMessage(`User ${userEmail} deleted successfully.`);
             setTimeout(() => setSuccessMessage(''), 3000);
           }
         }
       };
 
+  const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
+
   // ============================================================
   // RENDER
   // ============================================================
   return (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+    <div className="surface-card p-6">
       {/* ----- Header ----- */}
-      <h2 className="text-lg font-semibold text-white mb-4">👥 User Management</h2>
-      <p className="text-sm text-slate-400 mb-4">
+      <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+        <Users className="w-4 h-4 text-secondary" /> User Management
+      </h2>
+      <p className="text-sm text-secondary mb-4">
         Create user accounts for all roles. Welcome emails with credentials will be sent automatically.
         All new users must change their password on first login.
       </p>
 
       {/* ----- Success Message ----- */}
       {successMessage && (
-        <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-3 mb-4">
-          <p className="text-sm text-green-400">{successMessage}</p>
+        <div className="rounded-lg p-3 mb-4 flex items-center gap-2" style={{ backgroundColor: 'var(--success-soft)', border: '1px solid color-mix(in srgb, var(--success) 30%, transparent)' }}>
+          <CircleCheck className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--success)' }} />
+          <p className="text-sm" style={{ color: 'var(--success)' }}>{successMessage}</p>
         </div>
       )}
 
       {/* ===== CREATE USER FORM ===== */}
-      <div className="bg-slate-700/50 rounded-lg p-4 mb-6">
-        <h3 className="text-sm font-medium text-white mb-3">➕ Create New User</h3>
+      <div className="surface-inner p-4 mb-6">
+        <h3 className="text-sm font-medium mb-3 flex items-center gap-1.5">
+          <UserPlus className="w-3.5 h-3.5" /> Create New User
+        </h3>
 
         {/* Email & Name */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Email Address *</label>
+            <label className="block text-xs text-tertiary mb-1">Email Address *</label>
             <input
               type="email"
               placeholder="user@flightpro.com"
               value={form.email}
               onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+              className={inputClass}
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Full Name *</label>
+            <label className="block text-xs text-tertiary mb-1">Full Name *</label>
             <input
               type="text"
               placeholder="e.g., John Doe"
               value={form.name}
               onChange={e => setForm(p => ({ ...p, name: e.target.value }))}
-              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+              className={inputClass}
             />
           </div>
         </div>
@@ -272,19 +280,19 @@ export default function UserManagementTab() {
         {/* Role & Email Toggle */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Role</label>
+            <label className="block text-xs text-tertiary mb-1">Role</label>
             <select
               value={form.role}
               onChange={e => setForm(p => ({ ...p, role: e.target.value }))}
-              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+              className={inputClass}
             >
               {ROLES.map(r => (
                 <option key={r.value} value={r.value}>{r.label}</option>
               ))}
             </select>
-            <p className="text-xs text-slate-500 mt-1">
+            <p className="text-xs text-tertiary mt-1">
               Adding a student? Use the{' '}
-              <a href="/dashboard/students" className="text-blue-400 hover:underline">
+              <a href="/dashboard/students" className="hover:underline" style={{ color: 'var(--accent)' }}>
                 Students page
               </a>{' '}
               instead — it creates their login and training profile together.
@@ -297,8 +305,8 @@ export default function UserManagementTab() {
               onChange={e => setForm(p => ({ ...p, sendEmail: e.target.checked }))}
               className="w-4 h-4"
             />
-            <label className="text-sm text-slate-300">
-              📧 Send welcome email with credentials
+            <label className="text-sm text-secondary flex items-center gap-1">
+              <Mail className="w-3.5 h-3.5" /> Send welcome email with credentials
             </label>
           </div>
         </div>
@@ -307,22 +315,23 @@ export default function UserManagementTab() {
         <button
           onClick={handleCreateUser}
           disabled={sending}
-          className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 disabled:opacity-50 transition"
+          className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold disabled:opacity-50"
+          style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
         >
-          {sending ? '⏳ Creating & Sending...' : '➕ Create User & Send Email'}
+          <UserPlus className="w-3.5 h-3.5" /> {sending ? 'Creating & Sending...' : 'Create User & Send Email'}
         </button>
       </div>
 
       {/* ===== EXISTING USERS TABLE ===== */}
       {loading ? (
-        <p className="text-slate-400 text-center py-4">Loading users...</p>
+        <p className="text-secondary text-center py-4">Loading users...</p>
       ) : users.length === 0 ? (
-        <p className="text-slate-400 text-center py-4">No users found. Create your first user above.</p>
+        <p className="text-secondary text-center py-4">No users found. Create your first user above.</p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-slate-400 border-b border-slate-700">
+              <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                 <th className="pb-3">User</th>
                 <th className="pb-3">Role</th>
                 <th className="pb-3">Status</th>
@@ -332,47 +341,48 @@ export default function UserManagementTab() {
                 <th className="pb-3">Actions</th>
               </tr>
             </thead>
-            <tbody className="text-slate-300">
+            <tbody className="text-secondary">
               {users.map(user => (
-                <tr key={user.id} className="border-b border-slate-700/50 hover:bg-slate-700/30 transition">
+                <tr key={user.id} className="border-b transition" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
                   {/* User Info */}
                   <td className="py-3">
-                    <p className="text-white font-medium">{user.name}</p>
-                    <p className="text-xs text-slate-400">{user.email}</p>
+                    <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{user.name}</p>
+                    <p className="text-xs text-tertiary">{user.email}</p>
                   </td>
-                  
+
                   {/* Role Badge */}
                   <td className="py-3">
-                    <span className="bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded text-xs font-medium">
+                    <span className="badge badge-accent">
                       {user.role}
                     </span>
                   </td>
-                  
+
                   {/* Active/Inactive Toggle */}
                   <td className="py-3">
                     <button
                       onClick={() => toggleUserStatus(user.id, user.is_active)}
-                      className={`px-2 py-0.5 rounded text-xs font-medium transition ${
+                      className="px-2 py-0.5 rounded text-xs font-medium transition"
+                      style={
                         user.is_active
-                          ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
-                          : 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                      }`}
+                          ? { backgroundColor: 'var(--success-soft)', color: 'var(--success)' }
+                          : { backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }
+                      }
                     >
                       {user.is_active ? 'Active' : 'Inactive'}
                     </button>
                   </td>
-                  
+
                   {/* Force Password Reset Status */}
                   <td className="py-3">
                     {user.force_password_reset ? (
-                      <span className="text-yellow-400 text-xs">⚠️ Required</span>
+                      <span className="text-xs flex items-center gap-1" style={{ color: 'var(--warning-text)' }}><TriangleAlert className="w-3.5 h-3.5" /> Required</span>
                     ) : (
-                      <span className="text-green-400 text-xs">✅ Done</span>
+                      <span className="text-xs flex items-center gap-1" style={{ color: 'var(--success)' }}><CircleCheck className="w-3.5 h-3.5" /> Done</span>
                     )}
                   </td>
-                  
+
                   {/* Last Login */}
-                  <td className="py-3 text-xs text-slate-400">
+                  <td className="py-3 text-xs text-tertiary">
                     {user.last_login
                       ? new Date(user.last_login).toLocaleDateString('en-IN', {
                           day: '2-digit',
@@ -382,32 +392,34 @@ export default function UserManagementTab() {
                         })
                       : 'Never'}
                   </td>
-                  
+
                   {/* Created Date */}
-                  <td className="py-3 text-xs text-slate-400">
+                  <td className="py-3 text-xs text-tertiary">
                     {new Date(user.created_at).toLocaleDateString('en-IN', {
                       day: '2-digit',
                       month: 'short',
                       year: '2-digit',
                     })}
                   </td>
-                  
+
                   {/* Action Buttons */}
                   <td className="py-3">
-                    <div className="flex space-x-2">
+                    <div className="flex space-x-3">
                       <button
                         onClick={() => forceReset(user.id)}
-                        className="text-blue-400 hover:text-blue-300 text-xs transition"
+                        className="text-xs transition flex items-center gap-1"
+                        style={{ color: 'var(--accent)' }}
                         title="Force password reset on next login"
                       >
-                        🔄 Reset PW
+                        <RefreshCw className="w-3.5 h-3.5" /> Reset PW
                       </button>
                       <button
                         onClick={() => handleDeleteUser(user.id, user.email)}
-                        className="text-red-400 hover:text-red-300 text-xs transition"
+                        className="text-xs transition flex items-center gap-1"
+                        style={{ color: 'var(--danger)' }}
                         title="Permanently delete this user"
                       >
-                        🗑️ Delete
+                        <Trash2 className="w-3.5 h-3.5" /> Delete
                       </button>
                     </div>
                   </td>

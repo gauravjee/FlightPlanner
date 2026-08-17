@@ -15,7 +15,9 @@
 import { useState } from 'react';
 import { signIn, getSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { Plane, Mail, Lock, Eye, EyeOff, ArrowRight, Send } from 'lucide-react';
 import { logLoginAttempt } from '@/lib/auth-client';
+import ThemeToggle from '@/components/ui/ThemeToggle';
 
 export default function LoginPage() {
   // ----- Navigation -----
@@ -136,33 +138,40 @@ export default function LoginPage() {
   // RENDER
   // ============================================================
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
-      <div className="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-xl p-8 w-full max-w-md">
+    <main className="min-h-screen flex items-center justify-center p-4 relative" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="absolute top-4 right-4">
+        <ThemeToggle />
+      </div>
+      <div className="surface-card p-8 w-full max-w-md">
 
         {/* ===== LOGO & HEADER ===== */}
         <div className="text-center mb-8">
-          <div className="text-5xl mb-4">✈️</div>
-          <h1 className="text-2xl font-bold text-white">FlightPro Manager</h1>
-          <p className="text-slate-400 text-sm mt-2">
+          <div className="brand-mark w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Plane className="w-6 h-6" style={{ stroke: '#ffffff' }} />
+          </div>
+          <h1 className="text-2xl font-bold">FlightPro</h1>
+          <p className="text-secondary text-sm mt-2">
             {showForgotPassword ? 'Reset Your Password' : 'Sign in to continue'}
           </p>
         </div>
 
         {/* ===== ERROR MESSAGE (Login) ===== */}
         {error && (
-          <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 mb-4">
-            <p className="text-sm text-red-400 text-center">{error}</p>
+          <div className="rounded-lg p-3 mb-4" style={{ backgroundColor: 'var(--danger-soft)', border: '1px solid var(--danger)' }}>
+            <p className="text-sm text-center" style={{ color: 'var(--danger)' }}>{error}</p>
           </div>
         )}
 
         {/* ===== RESET MESSAGE (Forgot Password) ===== */}
         {resetMessage && (
-          <div className={`rounded-lg p-3 mb-4 ${
-            resetMessage.includes('✅')
-              ? 'bg-green-500/10 border border-green-500/20'
-              : 'bg-red-500/10 border border-red-500/20'
-          }`}>
-            <p className="text-sm text-center">{resetMessage}</p>
+          <div
+            className="rounded-lg p-3 mb-4"
+            style={{
+              backgroundColor: resetMessage.includes('✅') ? 'var(--success-soft)' : 'var(--danger-soft)',
+              border: `1px solid ${resetMessage.includes('✅') ? 'var(--success)' : 'var(--danger)'}`,
+            }}
+          >
+            <p className="text-sm text-center">{resetMessage.replace(/^[✅❌]\s*/, '')}</p>
           </div>
         )}
 
@@ -174,48 +183,43 @@ export default function LoginPage() {
 
             {/* ----- Email Field ----- */}
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                placeholder="admin@flightpro.com"
-                required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-              />
+              <label className="block text-sm text-secondary mb-1">Email</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-tertiary absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="admin@flightpro.com"
+                  required
+                  className="w-full surface-inner rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:border-[var(--accent)]"
+                  style={{ color: 'var(--text-primary)' }}
+                />
+              </div>
             </div>
 
             {/* ----- Password Field with Visibility Toggle ----- */}
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Password</label>
+              <label className="block text-sm text-secondary mb-1">Password</label>
               <div className="relative">
+                <Lock className="w-4 h-4 text-tertiary absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 pr-12 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  className="w-full surface-inner rounded-lg pl-10 pr-12 py-3 focus:outline-none focus:border-[var(--accent)]"
+                  style={{ color: 'var(--text-primary)' }}
                 />
                 {/* Eye icon toggle button */}
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition"
+                  className="text-tertiary hover:text-accent transition absolute right-3 top-1/2 -translate-y-1/2"
                   tabIndex={-1}  // Prevent focus when tabbing
                 >
-                  {showPassword ? (
-                    // Eye-off icon (password is visible)
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-                    </svg>
-                  ) : (
-                    // Eye icon (password is hidden)
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
-                  )}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -228,16 +232,17 @@ export default function LoginPage() {
                   type="checkbox"
                   checked={rememberMe}
                   onChange={e => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
+                  className="w-4 h-4 rounded"
+                  style={{ accentColor: 'var(--accent)' }}
                 />
-                <span className="text-sm text-slate-400">Remember me</span>
+                <span className="text-sm text-secondary">Remember me</span>
               </label>
 
               {/* Forgot Password Link */}
               <button
                 type="button"
                 onClick={() => setShowForgotPassword(true)}
-                className="text-sm text-blue-400 hover:text-blue-300 transition"
+                className="text-sm text-accent hover:opacity-80 transition"
               >
                 Forgot Password?
               </button>
@@ -247,9 +252,10 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-bold disabled:opacity-50"
+              className="w-full py-3 rounded-lg transition font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-strong), var(--accent))', color: '#ffffff' }}
             >
-              {loading ? 'Signing in...' : '🔐 Sign In'}
+              {loading ? 'Signing in...' : (<>Sign In <ArrowRight className="w-4 h-4" /></>)}
             </button>
           </form>
         ) : (
@@ -257,30 +263,35 @@ export default function LoginPage() {
           /* FORGOT PASSWORD FORM */
           /* ============================================================ */
           <form onSubmit={handleForgotPassword} className="space-y-4">
-            <p className="text-sm text-slate-400 text-center">
+            <p className="text-sm text-secondary text-center">
               Enter your email address and we'll send you a link to reset your password.
             </p>
 
             {/* ----- Email Field ----- */}
             <div>
-              <label className="block text-sm text-slate-400 mb-1">Email Address</label>
-              <input
-                type="email"
-                value={resetEmail}
-                onChange={e => setResetEmail(e.target.value)}
-                placeholder="your@email.com"
-                required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-              />
+              <label className="block text-sm text-secondary mb-1">Email Address</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-tertiary absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  value={resetEmail}
+                  onChange={e => setResetEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  required
+                  className="w-full surface-inner rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:border-[var(--accent)]"
+                  style={{ color: 'var(--text-primary)' }}
+                />
+              </div>
             </div>
 
             {/* ----- Send Reset Link Button ----- */}
             <button
               type="submit"
               disabled={resetLoading}
-              className="w-full py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition font-bold disabled:opacity-50"
+              className="w-full py-3 rounded-lg transition font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-strong), var(--accent))', color: '#ffffff' }}
             >
-              {resetLoading ? 'Sending...' : '📧 Send Reset Link'}
+              {resetLoading ? 'Sending...' : (<>Send Reset Link <Send className="w-4 h-4" /></>)}
             </button>
 
             {/* ----- Back to Login Link ----- */}
@@ -290,7 +301,7 @@ export default function LoginPage() {
                 setShowForgotPassword(false);
                 setResetMessage('');  // Clear any previous messages
               }}
-              className="w-full text-sm text-slate-400 hover:text-white transition text-center"
+              className="w-full text-sm text-secondary hover:text-accent transition text-center"
             >
               ← Back to Login
             </button>
@@ -298,7 +309,7 @@ export default function LoginPage() {
         )}
 
         {/* ===== FOOTER ===== */}
-        <p className="text-xs text-slate-500 text-center mt-6">
+        <p className="text-xs text-tertiary text-center mt-6">
           Flight Training Organization Management System
         </p>
       </div>

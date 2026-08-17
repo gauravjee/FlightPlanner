@@ -4,8 +4,10 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase-client';
+import Papa from 'papaparse';
+import { ClipboardList, Pencil, Plus, Save, Trash2, RefreshCw, Search, Upload, Download, LoaderCircle } from 'lucide-react';
 
 interface Exercise {
   id: number;
@@ -14,6 +16,14 @@ interface Exercise {
   full_description: string;
   is_active: boolean;
   sort_order: number;
+}
+
+// Result summary shown after a CSV bulk import — "Append + skip duplicates":
+// rows whose short_code already exists (in the DB, or earlier in the same
+// CSV batch) are skipped; existing exercises are never overwritten.
+interface CsvImportResult {
+  added: number;
+  skipped: { row: number; short_code: string; reason: string }[];
 }
 
 export default function ExercisesTab() {
@@ -28,6 +38,11 @@ export default function ExercisesTab() {
     is_active: true,
     sort_order: 99,
   });
+
+  // ----- CSV bulk import state -----
+  const [csvUploading, setCsvUploading] = useState(false);
+  const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load exercises on mount
   useEffect(() => {
@@ -59,8 +74,8 @@ export default function ExercisesTab() {
       await supabase.from('exercises').update(form).eq('id', editing.id);
     } else {
       // Check for duplicate short code
-      const exists = exercises.find(e => 
-        e.short_code === form.short_code && 
+      const exists = exercises.find(e =>
+        e.short_code === form.short_code &&
         (editing ? e.id !== editing.id : true)
       );
       if (exists) {
@@ -106,41 +121,125 @@ export default function ExercisesTab() {
       .substring(0, 6);
   };
 
+  // Downloadable CSV template — columns match what handleCsvUpload expects.
+  const downloadTemplate = () => {
+    const csv = 'exercise_name,short_code,full_description,sort_order,is_active\nCircuits & Landings,CCTS,CCTS - Circuits & Landings,10,true\n';
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'exercises_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Bulk import exercises from a CSV file — "Append + skip duplicates":
+  // new rows are inserted; any row whose short_code already exists (in the
+  // DB, or earlier in this same CSV batch) is skipped and reported.
+  // Existing exercises are never overwritten.
+  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvUploading(true);
+    setCsvResult(null);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const rows = results.data as Record<string, string>[];
+        const existingCodes = new Set(exercises.map(ex => ex.short_code.toUpperCase()));
+        const seenInBatch = new Set<string>();
+        const toInsert: (typeof form)[] = [];
+        const skipped: CsvImportResult['skipped'] = [];
+
+        rows.forEach((row, idx) => {
+          const rowNum = idx + 2; // +1 for 0-index, +1 for header row
+          const exercise_name = (row.exercise_name || '').trim();
+          const short_code = (row.short_code || '').trim().toUpperCase();
+          if (!exercise_name || !short_code) {
+            skipped.push({ row: rowNum, short_code: short_code || '(blank)', reason: 'Missing required exercise_name or short_code' });
+            return;
+          }
+          if (existingCodes.has(short_code) || seenInBatch.has(short_code)) {
+            skipped.push({ row: rowNum, short_code, reason: 'Duplicate short_code — already exists' });
+            return;
+          }
+          seenInBatch.add(short_code);
+          const sortOrder = parseInt(row.sort_order, 10);
+          toInsert.push({
+            exercise_name,
+            short_code,
+            full_description: (row.full_description || '').trim(),
+            is_active: row.is_active === undefined || row.is_active === '' ? true : /^(true|1|yes)$/i.test(row.is_active.trim()),
+            sort_order: Number.isFinite(sortOrder) ? sortOrder : 99,
+          });
+        });
+
+        let added = 0;
+        if (toInsert.length > 0) {
+          const { error } = await supabase.from('exercises').insert(toInsert);
+          if (error) {
+            console.error('Error bulk-importing exercises:', error);
+            skipped.push(...toInsert.map((row, i) => ({ row: i, short_code: row.short_code, reason: 'Insert failed: ' + error.message })));
+          } else {
+            added = toInsert.length;
+          }
+        }
+
+        setCsvResult({ added, skipped });
+        setCsvUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        if (added > 0) loadExercises();
+      },
+      error: (err) => {
+        console.error('Error parsing CSV:', err);
+        setCsvResult({ added: 0, skipped: [{ row: 0, short_code: '', reason: 'Failed to parse CSV file: ' + err.message }] });
+        setCsvUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      },
+    });
+  };
+
   // Filtered exercises
   const filteredExercises = exercises.filter(ex =>
     ex.exercise_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     ex.short_code.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
+
   return (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-      <h2 className="text-lg font-semibold text-white mb-4">📋 Exercise Codes</h2>
-      <p className="text-sm text-slate-400 mb-4">
+    <div className="surface-card p-6">
+      <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+        <ClipboardList className="w-4 h-4 text-secondary" /> Exercise Codes
+      </h2>
+      <p className="text-sm text-secondary mb-4">
         Manage the exercise codes that appear on flight blocks in the Gantt chart. These are the short codes like CCTS, ST&RE, X-CTY.
       </p>
 
       {/* Add/Edit Form */}
-      <div className="bg-slate-700/50 rounded-lg p-4 mb-6">
-        <h3 className="text-sm font-medium text-white mb-3">
-          {editing ? '✏️ Edit Exercise' : '➕ Add New Exercise'}
+      <div className="surface-inner p-4 mb-6">
+        <h3 className="text-sm font-medium mb-3 flex items-center gap-1.5">
+          {editing ? <><Pencil className="w-3.5 h-3.5" /> Edit Exercise</> : <><Plus className="w-3.5 h-3.5" /> Add New Exercise</>}
         </h3>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
           {/* Exercise Name */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Exercise Name *</label>
+            <label className="block text-xs text-tertiary mb-1">Exercise Name *</label>
             <input
               type="text"
               placeholder="e.g., Circuits & Landings"
               value={form.exercise_name}
               onChange={e => setForm(p => ({ ...p, exercise_name: e.target.value }))}
-              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+              className={inputClass}
             />
           </div>
 
           {/* Short Code */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Short Code *</label>
+            <label className="block text-xs text-tertiary mb-1">Short Code *</label>
             <div className="flex space-x-2">
               <input
                 type="text"
@@ -148,40 +247,40 @@ export default function ExercisesTab() {
                 value={form.short_code}
                 onChange={e => setForm(p => ({ ...p, short_code: e.target.value.toUpperCase() }))}
                 maxLength={6}
-                className="flex-1 bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+                className={`flex-1 ${inputClass}`}
               />
               <button
                 type="button"
                 onClick={() => setForm(p => ({ ...p, short_code: generateShortCode(p.exercise_name) }))}
-                className="px-2 py-1 bg-slate-500 text-slate-300 rounded text-xs hover:bg-slate-400"
+                className="px-2 py-1 rounded text-xs transition surface-inner text-secondary"
                 title="Auto-generate from name"
               >
-                🔄
+                <RefreshCw className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
 
           {/* Sort Order */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Sort Order</label>
+            <label className="block text-xs text-tertiary mb-1">Sort Order</label>
             <input
               type="number"
               value={form.sort_order}
               onChange={e => setForm(p => ({ ...p, sort_order: parseInt(e.target.value) || 0 }))}
-              className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+              className={inputClass}
             />
           </div>
         </div>
 
         {/* Full Description */}
         <div className="mb-3">
-          <label className="block text-xs text-slate-400 mb-1">Full Description (for dropdown)</label>
+          <label className="block text-xs text-tertiary mb-1">Full Description (for dropdown)</label>
           <input
             type="text"
             placeholder="e.g., CCTS - Circuits & Landings"
             value={form.full_description}
             onChange={e => setForm(p => ({ ...p, full_description: e.target.value }))}
-            className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white text-sm"
+            className={inputClass}
           />
         </div>
 
@@ -193,13 +292,17 @@ export default function ExercisesTab() {
             onChange={e => setForm(p => ({ ...p, is_active: e.target.checked }))}
             className="w-4 h-4"
           />
-          <label className="text-sm text-slate-300">Active (visible in booking form)</label>
+          <label className="text-sm text-secondary">Active (visible in booking form)</label>
         </div>
 
         {/* Action Buttons */}
         <div className="flex space-x-2">
-          <button onClick={handleSave} className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600">
-            {editing ? '💾 Update Exercise' : '➕ Add Exercise'}
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold"
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+          >
+            {editing ? <><Save className="w-3.5 h-3.5" /> Update Exercise</> : <><Plus className="w-3.5 h-3.5" /> Add Exercise</>}
           </button>
           {editing && (
             <button
@@ -207,7 +310,7 @@ export default function ExercisesTab() {
                 setEditing(null);
                 setForm({ exercise_name: '', short_code: '', full_description: '', is_active: true, sort_order: 99 });
               }}
-              className="px-4 py-2 bg-slate-500 text-white rounded-lg text-sm hover:bg-slate-600"
+              className="px-4 py-2 rounded-lg text-sm transition surface-inner"
             >
               Cancel
             </button>
@@ -215,29 +318,81 @@ export default function ExercisesTab() {
         </div>
       </div>
 
+      {/* Bulk Import (CSV) */}
+      <div className="surface-inner p-4 mb-6">
+        <h3 className="text-sm font-medium mb-3 flex items-center gap-1.5">
+          <Upload className="w-3.5 h-3.5" /> Bulk Import (CSV)
+        </h3>
+        <p className="text-xs text-tertiary mb-3">
+          Upload a CSV with columns <code>exercise_name, short_code, full_description, sort_order, is_active</code>.
+          New rows are added; rows with a short_code that already exists are skipped and reported below.
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label
+            className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold cursor-pointer surface-muted"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            {csvUploading ? <LoaderCircle className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            {csvUploading ? 'Importing...' : 'Upload CSV'}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              onChange={handleCsvUpload}
+              disabled={csvUploading}
+              className="hidden"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={downloadTemplate}
+            className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 surface-inner"
+          >
+            <Download className="w-3.5 h-3.5" /> Download Template
+          </button>
+        </div>
+
+        {csvResult && (
+          <div className="mt-3 text-sm">
+            <p style={{ color: 'var(--accent)' }}>
+              ✅ Added {csvResult.added} exercise{csvResult.added === 1 ? '' : 's'}.
+              {csvResult.skipped.length > 0 && ` Skipped ${csvResult.skipped.length}.`}
+            </p>
+            {csvResult.skipped.length > 0 && (
+              <ul className="mt-2 text-xs text-tertiary space-y-0.5 max-h-40 overflow-y-auto">
+                {csvResult.skipped.map((s, i) => (
+                  <li key={i}>Row {s.row} ({s.short_code}): {s.reason}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Search */}
-      <div className="mb-4">
+      <div className="mb-4 relative">
+        <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
         <input
           type="text"
-          placeholder="🔍 Search exercises by name or code..."
+          placeholder="Search exercises by name or code..."
           value={searchTerm}
           onChange={e => setSearchTerm(e.target.value)}
-          className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-white text-sm"
+          className="w-full surface-inner rounded-lg pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-[var(--accent)]"
         />
       </div>
 
       {/* Exercises List */}
       {loading ? (
-        <p className="text-slate-400 text-center py-4">Loading...</p>
+        <p className="text-secondary text-center py-4">Loading...</p>
       ) : filteredExercises.length === 0 ? (
-        <p className="text-slate-400 text-center py-4">
+        <p className="text-secondary text-center py-4">
           {searchTerm ? 'No exercises match your search.' : 'No exercises defined yet. Add your first one above.'}
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-slate-400 border-b border-slate-700">
+              <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                 <th className="pb-3">Code</th>
                 <th className="pb-3">Name</th>
                 <th className="pb-3">Description</th>
@@ -246,27 +401,27 @@ export default function ExercisesTab() {
                 <th className="pb-3">Actions</th>
               </tr>
             </thead>
-            <tbody className="text-slate-300">
+            <tbody className="text-secondary">
               {filteredExercises.map(exercise => (
-                <tr key={exercise.id} className="border-b border-slate-700/50">
+                <tr key={exercise.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
                   <td className="py-3">
-                    <span className="text-white font-medium bg-slate-700 px-2 py-0.5 rounded text-xs">
+                    <span className="font-medium surface-muted px-2 py-0.5 rounded text-xs" style={{ color: 'var(--text-primary)' }}>
                       {exercise.short_code}
                     </span>
                   </td>
-                  <td className="py-3 text-white">{exercise.exercise_name}</td>
-                  <td className="py-3 text-xs text-slate-400 max-w-[300px] truncate">
+                  <td className="py-3" style={{ color: 'var(--text-primary)' }}>{exercise.exercise_name}</td>
+                  <td className="py-3 text-xs text-tertiary max-w-[300px] truncate">
                     {exercise.full_description || '—'}
                   </td>
                   <td className="py-3 text-xs">{exercise.sort_order}</td>
                   <td className="py-3">
-                    <span className={`px-2 py-0.5 rounded text-xs ${exercise.is_active ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                    <span className={`badge ${exercise.is_active ? 'badge-success' : 'badge-danger'}`}>
                       {exercise.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
                   <td className="py-3">
-                    <button onClick={() => handleEdit(exercise)} className="text-blue-400 hover:text-blue-300 mr-2">✏️</button>
-                    <button onClick={() => handleDelete(exercise.id)} className="text-red-400 hover:text-red-300">🗑️</button>
+                    <button onClick={() => handleEdit(exercise)} className="mr-2" style={{ color: 'var(--accent)' }}><Pencil className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleDelete(exercise.id)} style={{ color: 'var(--danger)' }}><Trash2 className="w-3.5 h-3.5" /></button>
                   </td>
                 </tr>
               ))}
@@ -276,7 +431,7 @@ export default function ExercisesTab() {
       )}
 
       {/* Summary */}
-      <div className="mt-4 text-xs text-slate-500">
+      <div className="mt-4 text-xs text-tertiary">
         Showing {filteredExercises.length} of {exercises.length} exercises
       </div>
     </div>

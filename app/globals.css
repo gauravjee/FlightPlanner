@@ -1,19 +1,154 @@
 @import "tailwindcss";
 
+/* ============================================================
+   DESIGN TOKENS — dark/light theme pair
+   ------------------------------------------------------------
+   Dark is the "Aviation Instrument" identity (charcoal surfaces,
+   cyan primary accent, amber for scheduled/highlighted data).
+   Light is built as its counterpart for outdoor/field use (high
+   contrast, flat surfaces, no blur) — same cyan/amber identity,
+   not a separate palette, so toggling reads as one app changing
+   lighting rather than two different apps.
+
+   Toggled via [data-theme="light"] on <html> (see ThemeToggle +
+   the inline anti-flash script in app/layout.tsx). Defaults to
+   dark when no attribute is present.
+
+   Exact shades are a first pass — expect to retune once this is
+   running for real (tracked: green accent already asked to go
+   a shade darker than the initial mockups).
+   ============================================================ */
 @layer base {
   :root {
     --background: 222 47% 11%;
     --foreground: 210 40% 98%;
+
+    --bg: #0a0e14;
+    --surface: #10141c;
+    --surface-muted: #0a0e14;
+    --border: #232a36;
+    --text-primary: #e4e9f0;
+    --text-secondary: #7d8ba0;
+    --text-tertiary: #57647a;
+
+    --accent: #22d3ee;         /* cyan-400 — primary links/icons/actions */
+    --accent-strong: #0891b2;  /* cyan-600 — gradients, hover states */
+    --accent-soft: rgba(34, 211, 238, 0.12);
+
+    --success: #16a34a;        /* green-600 — darker than the initial mockup per feedback */
+    --success-soft: rgba(22, 163, 74, 0.16);
+    --warning: #fbbf24;
+    --warning-soft: rgba(217, 119, 6, 0.16);
+    --warning-text: #b45309;
+    --danger: #f87171;
+    --danger-soft: rgba(239, 68, 68, 0.15);
+
+    --radius-card: 10px;
   }
-  
+
+  [data-theme="light"] {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-muted: #fafafa;
+    --border: #e8e9ec;
+    --text-primary: #14161a;
+    --text-secondary: #6b7078;
+    --text-tertiary: #9a9fa8;
+
+    --accent: #0e7490;         /* cyan-700/teal — legible on white, still reads as the same brand hue */
+    --accent-strong: #22d3ee;
+    --accent-soft: rgba(14, 116, 144, 0.1);
+
+    --success: #16a34a;
+    --success-soft: rgba(22, 163, 74, 0.12);
+    --warning: #b45309;
+    --warning-soft: rgba(217, 119, 6, 0.14);
+    --warning-text: #b45309;
+    --danger: #dc2626;
+    --danger-soft: rgba(220, 38, 38, 0.1);
+  }
+
   * {
-    border-color: #334155;
+    border-color: var(--border);
   }
-  
+
   body {
-    background-color: #0f172a;
-    color: #f1f5f9;
+    background-color: var(--bg);
+    color: var(--text-primary);
     font-family: 'Inter', system-ui, sans-serif;
+  }
+}
+
+/* ------------------------------------------------------------
+   Semantic component classes — used alongside plain Tailwind
+   utilities (which still handle layout/spacing/flex/grid).
+   Kept centralized here so retuning a shade later is a one-line
+   change instead of hunting through every page.
+   ------------------------------------------------------------ */
+@layer components {
+  .surface-card {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-card);
+  }
+  .surface-muted {
+    background-color: var(--surface-muted);
+  }
+  .surface-inner {
+    background-color: var(--surface-muted);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .text-secondary {
+    color: var(--text-secondary);
+  }
+  .text-tertiary {
+    color: var(--text-tertiary);
+  }
+  .text-accent {
+    color: var(--accent);
+  }
+  .icon-accent {
+    stroke: var(--accent);
+  }
+  .divider {
+    border-color: var(--border);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+  }
+  .badge-accent {
+    background-color: var(--accent-soft);
+    color: var(--accent);
+  }
+  .badge-success {
+    background-color: var(--success-soft);
+    color: var(--success);
+  }
+  .badge-warning {
+    background-color: var(--warning-soft);
+    color: var(--warning-text);
+  }
+  .badge-danger {
+    background-color: var(--danger-soft);
+    color: var(--danger);
+  }
+  .badge-neutral {
+    background-color: var(--surface-muted);
+    color: var(--text-secondary);
+  }
+  .pill-btn-accent {
+    background-color: var(--accent-soft);
+    color: var(--accent);
+  }
+  .brand-mark {
+    background-image: linear-gradient(135deg, var(--accent), var(--accent-strong));
   }
 }
 

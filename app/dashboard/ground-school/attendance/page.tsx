@@ -7,6 +7,8 @@ import { useSession } from 'next-auth/react';
 import Header from '@/components/ui/Header';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
+import { Trash2, Plus, CircleCheck, X } from 'lucide-react';
+import { syncRequirementsFromGroundSchoolPass } from '@/lib/ground-school-sync';
 
 interface Student {
   id: string; // UUID
@@ -36,6 +38,7 @@ export default function AttendancePage() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
+  const [toastMessage, setToastMessage] = useState('');
 
   // For adding students to class
   const [availableStudents, setAvailableStudents] = useState<Student[]>([]);
@@ -108,6 +111,26 @@ export default function AttendancePage() {
 
   const updateExam = async (enrollmentId: number, field: string, value: any) => {
     await supabase.from('ground_school_enrollment').update({ [field]: value }).eq('id', enrollmentId);
+
+    // A passing exam result here should also complete the matching
+    // Requirements Checklist item(s) for that subject — previously only
+    // "Direct Exam Entry" (Ground School Progress page) did this; the
+    // everyday attendance-page exam-recording flow silently never touched
+    // the checklist at all. See lib/ground-school-sync.ts. One-directional
+    // by design (a later FAIL doesn't un-complete a checklist item) — same
+    // as the Direct Exam Entry flow this mirrors.
+    if (field === 'exam_result' && value === 'PASS') {
+      const enr = enrollments.find(e => e.id === enrollmentId);
+      const subjectName = selectedClass?.ground_school_subjects?.subject_name;
+      if (enr && subjectName) {
+        const toggledCount = await syncRequirementsFromGroundSchoolPass(enr.student_id, subjectName, 'Ground School Exam');
+        if (toggledCount > 0) {
+          setToastMessage(`Requirements Checklist updated for ${subjectName}.`);
+          setTimeout(() => setToastMessage(''), 3000);
+        }
+      }
+    }
+
     if (selectedClassId) loadEnrollments(selectedClassId);
   };
 
@@ -133,20 +156,22 @@ export default function AttendancePage() {
 
   const selectedClass = classes.find(c => c.id === selectedClassId);
 
+  const inputClass = "surface-inner rounded px-2 py-1 text-xs focus:outline-none focus:border-[var(--accent)]";
+
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'operations']}>
-        <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-          <Header title="📋 Ground School Attendance" subtitle="Track student attendance & exam results" backUrl="/dashboard/ground-school" />
+        <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
+          <Header title="Ground School Attendance" subtitle="Track student attendance & exam results" backUrl="/dashboard/ground-school" />
 
           <div className="max-w-7xl mx-auto px-4 py-6">
             {/* Class Selector */}
-            <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 mb-6">
-              <label className="text-sm text-slate-400 block mb-2">Select a Class:</label>
+            <div className="surface-card p-4 mb-6">
+              <label className="text-sm text-secondary block mb-2">Select a Class:</label>
               <select
                 value={selectedClassId || ''}
                 onChange={e => { setSelectedClassId(e.target.value ? parseInt(e.target.value) : null); setLoading(true); }}
-                className="w-full md:w-96 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                className="w-full md:w-96 surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]"
               >
                 <option value="">Choose...</option>
                 {classes.map(c => (
@@ -158,21 +183,21 @@ export default function AttendancePage() {
             </div>
 
             {!selectedClassId ? (
-              <p className="text-slate-400 text-center py-10">Select a class to view attendees.</p>
+              <p className="text-secondary text-center py-10">Select a class to view attendees.</p>
             ) : loading ? (
-              <p className="text-slate-400 text-center py-10">Loading...</p>
+              <p className="text-secondary text-center py-10">Loading...</p>
             ) : (
               <>
                 {/* Enrolled Students */}
-                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 mb-6">
-                  <h3 className="text-lg font-semibold text-white mb-3">Enrolled Students</h3>
+                <div className="surface-card p-4 mb-6">
+                  <h3 className="text-lg font-semibold mb-3">Enrolled Students</h3>
                   {enrollments.length === 0 ? (
-                    <p className="text-slate-400">No students enrolled yet.</p>
+                    <p className="text-secondary">No students enrolled yet.</p>
                   ) : (
                     <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
-                          <tr className="text-left text-slate-400 border-b border-slate-700">
+                          <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                             <th className="pb-3">Student</th>
                             <th className="pb-3">Attendance</th>
                             <th className="pb-3">Exam Score</th>
@@ -183,17 +208,17 @@ export default function AttendancePage() {
                             <th className="pb-3">Action</th>
                           </tr>
                         </thead>
-                        <tbody className="text-slate-300">
+                        <tbody className="text-secondary">
                           {enrollments.map(enr => {
                             const student = students.find(s => s.id === enr.student_id);
                             return (
-                              <tr key={enr.id} className="border-b border-slate-700/50">
-                                <td className="py-3 text-white font-medium">{student?.name || enr.student_id}</td>
+                              <tr key={enr.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
+                                <td className="py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{student?.name || enr.student_id}</td>
                                 <td className="py-3">
                                   <select
                                     value={enr.attendance_status}
                                     onChange={e => updateAttendance(enr.id, e.target.value)}
-                                    className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs"
+                                    className={inputClass}
                                   >
                                     <option value="PENDING">Pending</option>
                                     <option value="PRESENT">Present</option>
@@ -208,14 +233,14 @@ export default function AttendancePage() {
                                     max="100"
                                     value={enr.exam_score ?? ''}
                                     onChange={e => updateExam(enr.id, 'exam_score', e.target.value ? parseFloat(e.target.value) : null)}
-                                    className="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs"
+                                    className={`w-16 ${inputClass}`}
                                   />
                                 </td>
                                 <td className="py-3">
                                   <select
                                     value={enr.exam_result || ''}
                                     onChange={e => updateExam(enr.id, 'exam_result', e.target.value || null)}
-                                    className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs"
+                                    className={inputClass}
                                   >
                                     <option value="">—</option>
                                     <option value="PASS">Pass</option>
@@ -228,7 +253,7 @@ export default function AttendancePage() {
                                     type="text"
                                     value={enr.examiner}
                                     onChange={e => updateExam(enr.id, 'examiner', e.target.value)}
-                                    className="w-20 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs"
+                                    className={`w-20 ${inputClass}`}
                                     placeholder="e.g., DGCA"
                                   />
                                 </td>
@@ -237,11 +262,13 @@ export default function AttendancePage() {
                                     type="text"
                                     value={enr.notes}
                                     onChange={e => updateExam(enr.id, 'notes', e.target.value)}
-                                    className="w-32 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-white text-xs"
+                                    className={`w-32 ${inputClass}`}
                                   />
                                 </td>
                                 <td className="py-3">
-                                  <button onClick={() => removeStudent(enr.id)} className="text-red-400 hover:text-red-300">🗑️</button>
+                                  <button onClick={() => removeStudent(enr.id)} className="px-2 py-1 rounded transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}>
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
                                 </td>
                               </tr>
                             );
@@ -253,15 +280,17 @@ export default function AttendancePage() {
                 </div>
 
                 {/* Add Student to Class */}
-                <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-                  <h3 className="text-lg font-semibold text-white mb-3">➕ Enroll Additional Student</h3>
+                <div className="surface-card p-4">
+                  <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                    <Plus className="w-4 h-4 text-secondary" /> Enroll Additional Student
+                  </h3>
                   <div className="flex items-end gap-3">
                     <div className="flex-1">
-                      <label className="text-xs text-slate-400 block mb-1">Student</label>
+                      <label className="text-xs text-tertiary block mb-1">Student</label>
                       <select
                         value={selectedStudentId}
                         onChange={e => setSelectedStudentId(e.target.value)}
-                        className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                        className="w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]"
                       >
                         <option value="">Select student...</option>
                         {availableStudents.map(s => (
@@ -272,7 +301,8 @@ export default function AttendancePage() {
                     <button
                       onClick={addStudentToClass}
                       disabled={!selectedStudentId}
-                      className="px-4 py-2 bg-blue-500 text-white rounded-lg text-sm hover:bg-blue-600 disabled:opacity-50"
+                      className="px-4 py-2 rounded-lg text-sm transition disabled:opacity-50 font-semibold"
+                      style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
                     >
                       Add
                     </button>
@@ -281,6 +311,21 @@ export default function AttendancePage() {
               </>
             )}
           </div>
+
+          {/* Toast — confirms a passing exam result also completed the
+              matching Requirements Checklist item(s), so this isn't silent. */}
+          {toastMessage && (
+            <div
+              className="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 flex items-center gap-2"
+              style={{ backgroundColor: 'var(--success)', color: '#ffffff' }}
+            >
+              <CircleCheck className="w-4 h-4" />
+              {toastMessage}
+              <button onClick={() => setToastMessage('')} className="ml-3">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </main>
       </RoleGate>
     </ProtectedRoute>

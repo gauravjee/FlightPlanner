@@ -30,13 +30,27 @@
 //     `instructors` state changes during initialisation.
 //   - The `loadData` callback still depends on `subjects` and `instructors` for
 //     enrichment, but the `useEffect` that calls it now waits until both are ready.
+//
+// 🔧 Grid alignment fix (2026-08-14):
+//   - The weekly view's day-name header row and the scrollable hour grid used
+//     to be two separate flex containers stacked on top of each other. Once the
+//     grid's content was tall enough to need a vertical scrollbar, the
+//     scrollbar's width ate into the grid's available width but NOT the
+//     header's (which never scrolled), so the day columns silently drifted out
+//     of alignment with the header above them by however wide the scrollbar was.
+//   - Fixed by merging the header and the hour grid into a single scrollable
+//     container, with the header row set to `position: sticky; top: 0` instead
+//     of living outside the scroll area. Both rows now share the same box, so
+//     they always compute identical column widths — no more drift, and the
+//     header still stays pinned while the grid scrolls.
 // ---------------------------------------------------------------------------
 
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase-client';
-import { useFlightStore } from '@/lib/store';
+import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays } from '@/lib/store';
+import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Save, CircleCheck, X } from 'lucide-react';
 
 // ============================================================
 // Type definitions
@@ -63,6 +77,10 @@ interface GroundClass {
 
 // ============================================================
 // Colour palette – one colour per subject (cycles if > 8 subjects)
+// These are deliberately solid, saturated colour chips (with white text)
+// rather than design-token colours: they're categorical event tags, not
+// surface/text chrome, so they stay legible over both the dark and light
+// themes without needing a per-theme variant.
 // ============================================================
 const SUBJECT_COLORS = [
   'bg-sky-700/80 border-sky-400',          // soft blue
@@ -132,6 +150,13 @@ export default function GroundSchoolCalendar() {
   // We read instructors from the central store so the list is always up‑to‑date.
   const instructors = useFlightStore((s) => s.instructors);
   const loadInstructors = useFlightStore((s) => s.loadInstructors);
+
+  // FTO-wide blackout dates — flight bookings and ground-school classes
+  // cannot be scheduled on a holiday or the FTO's weekly off day.
+  const holidays = useFlightStore((s) => s.holidays);
+  const loadHolidays = useFlightStore((s) => s.loadHolidays);
+  const ftoSettings = useFlightStore((s) => s.ftoSettings);
+  const weeklyOffDays = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
 
   // ----- Local state -----
 
@@ -204,6 +229,14 @@ export default function GroundSchoolCalendar() {
     }
     instructorsChecked.current = true;
   }, [instructors.length, loadInstructors]);
+
+  // 1b. Ensure the holiday calendar is loaded (same "if empty" guard as
+  // instructors above — holidays rarely change, and re-running loadHolidays
+  // whenever the store re-renders would be wasteful).
+  useEffect(() => {
+    if (holidays.length === 0) loadHolidays();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 2. Load subjects once on mount (they rarely change)
   useEffect(() => {
@@ -374,6 +407,14 @@ export default function GroundSchoolCalendar() {
    * @param startTime  'HH:MM' (defaults to '09:00')
    */
   const openNewClass = (date: string, startTime = '09:00') => {
+    // Single insertion point for both the weekly-grid day-column click and
+    // the monthly-view day-cell click — reject before the modal even opens
+    // if the FTO is closed (holiday or weekly off day) on this date.
+    const blockReason = getSchedulingBlockReason(date, holidays, weeklyOffDays);
+    if (blockReason) {
+      alert(`FTO is closed on this date (${blockReason.label}) — ground school classes cannot be scheduled.`);
+      return;
+    }
     setEditingClass(null);  // we are creating, not editing
     setForm({
       subject_id: subjects[0]?.id || 0,
@@ -420,6 +461,15 @@ export default function GroundSchoolCalendar() {
       alert('End time must be after start time.');
       return;
     }
+    // Defense-in-depth: openNewClass already blocks the initial date choice,
+    // but the modal's own Date field (used for both new classes and when
+    // editing an existing one) can still be changed to a closed date before
+    // Save is clicked.
+    const blockReason = getSchedulingBlockReason(form.class_date, holidays, weeklyOffDays);
+    if (blockReason) {
+      alert(`FTO is closed on ${form.class_date} (${blockReason.label}) — ground school classes cannot be scheduled on this date.`);
+      return;
+    }
 
     const payload = { ...form };
     let error;
@@ -441,7 +491,7 @@ export default function GroundSchoolCalendar() {
     } else {
       // Success: close modal, show toast, reset filters so new class is visible
       setShowModal(false);
-      setToastMessage(editingClass ? '✅ Class updated!' : '✅ Class created!');
+      setToastMessage(editingClass ? 'Class updated!' : 'Class created!');
       setTimeout(() => setToastMessage(''), 3000);
       setFilterSubject('');
       setFilterInstructor('');
@@ -570,23 +620,24 @@ export default function GroundSchoolCalendar() {
         <div className="flex items-center space-x-2">
           <button
             onClick={view === 'week' ? goPrevWeek : goPrevMonth}
-            className="px-3 py-1 bg-slate-700 text-slate-300 rounded hover:bg-slate-600"
+            className="p-1.5 rounded transition hover:opacity-80 surface-inner"
           >
-            ←
+            <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             onClick={goToday}
-            className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+            className="px-3 py-1 rounded text-sm transition font-semibold"
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
           >
             Today
           </button>
           <button
             onClick={view === 'week' ? goNextWeek : goNextMonth}
-            className="px-3 py-1 bg-slate-700 text-slate-300 rounded hover:bg-slate-600"
+            className="p-1.5 rounded transition hover:opacity-80 surface-inner"
           >
-            →
+            <ChevronRight className="w-4 h-4" />
           </button>
-          <h2 className="text-lg font-semibold text-white ml-2">
+          <h2 className="text-lg font-semibold ml-2">
             {view === 'week'
               ? `${currentWeekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${addDays(currentWeekStart, 6).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
               : currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
@@ -594,24 +645,22 @@ export default function GroundSchoolCalendar() {
         </div>
 
         {/* View toggle (Week / Month) */}
-        <div className="flex items-center space-x-2 bg-slate-700 rounded-lg p-1">
+        <div className="flex items-center space-x-2 rounded-lg p-1" style={{ backgroundColor: 'var(--surface-muted)', border: '1px solid var(--border)' }}>
           <button
             onClick={() => setView('week')}
-            className={`px-3 py-1 rounded text-sm ${
-              view === 'week'
-                ? 'bg-blue-500 text-white'
-                : 'text-slate-300 hover:bg-slate-600'
-            }`}
+            className="px-3 py-1 rounded text-sm transition"
+            style={view === 'week'
+              ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }
+              : { color: 'var(--text-secondary)' }}
           >
             Week
           </button>
           <button
             onClick={() => setView('month')}
-            className={`px-3 py-1 rounded text-sm ${
-              view === 'month'
-                ? 'bg-blue-500 text-white'
-                : 'text-slate-300 hover:bg-slate-600'
-            }`}
+            className="px-3 py-1 rounded text-sm transition"
+            style={view === 'month'
+              ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }
+              : { color: 'var(--text-secondary)' }}
           >
             Month
           </button>
@@ -622,7 +671,7 @@ export default function GroundSchoolCalendar() {
           <select
             value={filterSubject}
             onChange={(e) => setFilterSubject(e.target.value)}
-            className="bg-slate-700 border border-slate-600 rounded px-3 py-1 text-white text-sm"
+            className="surface-inner rounded px-3 py-1 text-sm focus:outline-none focus:border-[var(--accent)]"
           >
             <option value="">All Subjects</option>
             {subjects.map((s) => (
@@ -634,7 +683,7 @@ export default function GroundSchoolCalendar() {
           <select
             value={filterInstructor}
             onChange={(e) => setFilterInstructor(e.target.value)}
-            className="bg-slate-700 border border-slate-600 rounded px-3 py-1 text-white text-sm"
+            className="surface-inner rounded px-3 py-1 text-sm focus:outline-none focus:border-[var(--accent)]"
           >
             <option value="">All Instructors</option>
             {instructors.map((inst) => (
@@ -648,7 +697,7 @@ export default function GroundSchoolCalendar() {
               setFilterSubject('');
               setFilterInstructor('');
             }}
-            className="px-2 py-1 bg-slate-600 text-slate-300 rounded text-xs hover:bg-slate-500"
+            className="px-2 py-1 rounded text-xs transition hover:opacity-80 surface-inner text-secondary"
           >
             Clear
           </button>
@@ -658,7 +707,7 @@ export default function GroundSchoolCalendar() {
             {/* Subtle loading indicator — only shown on first load */}
       {loading && initialRender && (
         <div className="text-center py-2">
-          <span className="text-xs text-slate-500 animate-pulse">Loading classes...</span>
+          <span className="text-xs text-tertiary animate-pulse">Loading classes...</span>
         </div>
       )}
 
@@ -666,109 +715,116 @@ export default function GroundSchoolCalendar() {
         <>
           {/* ===== WEEKLY VIEW ===== */}
           {view === 'week' && (
-            <div className="flex-1 bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
-              {/* Day name headers (Mon‑Sun) */}
-              <div className="flex border-b border-slate-700">
-                {/* Time gutter – empty column for hour labels */}
-                <div className="w-20 flex-shrink-0" />
-                {weekDays.map((day) => (
-                  <div
-                    key={day.dateStr}
-                    className={`flex-1 text-center py-2 border-l border-slate-700 ${
-                      day.isToday ? 'bg-blue-500/10' : ''
-                    }`}
-                  >
-                    <div className="text-xs text-slate-400">{day.dayName}</div>
+            <div className="flex-1 surface-card overflow-hidden">
+              {/* Header row and hour grid share one scroll container so their
+                  column widths always match — see the grid-alignment-fix note
+                  at the top of this file for why. */}
+              <div className="overflow-y-auto" style={{ maxHeight: '70vh' }}>
+                {/* Day name headers (Mon‑Sun) — sticky so it stays pinned while
+                    the grid below scrolls, without living in a separate box. */}
+                <div className="flex border-b sticky top-0 z-10" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+                  {/* Time gutter – empty column for hour labels */}
+                  <div className="w-20 flex-shrink-0" />
+                  {weekDays.map((day) => (
                     <div
-                      className={`text-sm font-semibold ${
-                        day.isToday ? 'text-blue-400' : 'text-white'
-                      }`}
+                      key={day.dateStr}
+                      className="flex-1 text-center py-2 border-l"
+                      style={{ borderColor: 'var(--border)', backgroundColor: day.isToday ? 'var(--accent-soft)' : undefined }}
                     >
-                      {day.dayNum}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Time grid (rows = hours, columns = days) */}
-              <div className="flex overflow-y-auto" style={{ maxHeight: '70vh' }}>
-                {/* Hour labels on the left */}
-                <div className="w-20 flex-shrink-0">
-                  {HOURS.map((hour) => (
-                    <div
-                      key={hour}
-                      className="h-16 border-b border-slate-700/50 text-xs text-slate-500 px-1"
-                    >
-                      {hour.toString().padStart(2, '0')}:00
+                      <div className="text-xs text-tertiary">{day.dayName}</div>
+                      <div
+                        className="text-sm font-semibold"
+                        style={{ color: day.isToday ? 'var(--accent)' : 'var(--text-primary)' }}
+                      >
+                        {day.dayNum}
+                      </div>
                     </div>
                   ))}
                 </div>
 
-                {/* One column per day */}
-                {weekDays.map((day) => {
-                  const dayClasses = classes.filter(
-                    (c) => c.class_date === day.dateStr
-                  );
-                  return (
-                    <div
-                      key={day.dateStr}
-                      className="flex-1 relative border-l border-slate-700"
-                      onClick={(e) => {
-                        // Only open new class if we didn't click on an event block
-                        const target = e.target as HTMLElement;
-                        if (target.classList.contains('event-block')) return;
-                        const time = getTimeFromClick(e);
-                        openNewClass(day.dateStr, time);
-                      }}
-                    >
-                      {/* Hour lines (visual only) */}
-                      {HOURS.map((hour) => (
-                        <div
-                          key={hour}
-                          className="h-16 border-b border-slate-700/50"
-                        />
-                      ))}
+                {/* Time grid (rows = hours, columns = days) */}
+                <div className="flex">
+                  {/* Hour labels on the left */}
+                  <div className="w-20 flex-shrink-0">
+                    {HOURS.map((hour) => (
+                      <div
+                        key={hour}
+                        className="h-16 border-b text-xs text-tertiary px-1"
+                        style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}
+                      >
+                        {hour.toString().padStart(2, '0')}:00
+                      </div>
+                    ))}
+                  </div>
 
-                      {/* Event blocks */}
-                      {dayClasses.map((cls) => {
-                        const style = getWeeklyEventStyle(cls);
-                        const colorClasses = getSubjectColor(cls.subject_id);
-                        return (
+                  {/* One column per day */}
+                  {weekDays.map((day) => {
+                    const dayClasses = classes.filter(
+                      (c) => c.class_date === day.dateStr
+                    );
+                    return (
+                      <div
+                        key={day.dateStr}
+                        className="flex-1 relative border-l"
+                        style={{ borderColor: 'var(--border)' }}
+                        onClick={(e) => {
+                          // Only open new class if we didn't click on an event block
+                          const target = e.target as HTMLElement;
+                          if (target.classList.contains('event-block')) return;
+                          const time = getTimeFromClick(e);
+                          openNewClass(day.dateStr, time);
+                        }}
+                      >
+                        {/* Hour lines (visual only) */}
+                        {HOURS.map((hour) => (
                           <div
-                            key={cls.id}
-                            className={`event-block absolute ${colorClasses} rounded px-2 py-1 text-white text-xs overflow-hidden cursor-pointer hover:z-10 hover:ring-2 hover:ring-white/50`}
-                            style={style}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              openEditClass(cls);
-                            }}
-                          >
-                            <div className="font-semibold truncate">
-                              {cls.subject_name}
+                            key={hour}
+                            className="h-16 border-b"
+                            style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}
+                          />
+                        ))}
+
+                        {/* Event blocks */}
+                        {dayClasses.map((cls) => {
+                          const style = getWeeklyEventStyle(cls);
+                          const colorClasses = getSubjectColor(cls.subject_id);
+                          return (
+                            <div
+                              key={cls.id}
+                              className={`event-block absolute ${colorClasses} rounded px-2 py-1 text-white text-xs overflow-hidden cursor-pointer hover:z-10 hover:ring-2 hover:ring-white/50`}
+                              style={style}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditClass(cls);
+                              }}
+                            >
+                              <div className="font-semibold truncate">
+                                {cls.subject_name}
+                              </div>
+                              <div className="truncate opacity-80">
+                                {cls.instructor_initials} ·{' '}
+                                {cls.topic || cls.start_time?.slice(0, 5)}
+                              </div>
                             </div>
-                            <div className="truncate opacity-80">
-                              {cls.instructor_initials} ·{' '}
-                              {cls.topic || cls.start_time?.slice(0, 5)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           )}
 
           {/* ===== MONTHLY VIEW ===== */}
           {view === 'month' && (
-            <div className="flex-1 bg-slate-800/50 border border-slate-700 rounded-xl overflow-hidden">
+            <div className="flex-1 surface-card overflow-hidden">
               {/* Day of week headers */}
-              <div className="grid grid-cols-7 border-b border-slate-700">
+              <div className="grid grid-cols-7 border-b" style={{ borderColor: 'var(--border)' }}>
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d) => (
                   <div
                     key={d}
-                    className="py-2 text-center text-xs text-slate-400 font-medium"
+                    className="py-2 text-center text-xs text-tertiary font-medium"
                   >
                     {d}
                   </div>
@@ -779,7 +835,8 @@ export default function GroundSchoolCalendar() {
               {monthDays.map((week, wi) => (
                 <div
                   key={wi}
-                  className="grid grid-cols-7 border-b border-slate-700/50"
+                  className="grid grid-cols-7 border-b"
+                  style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}
                 >
                   {week.map((day) => {
                     const dayClasses = classesByDate[day.dateStr] || [];
@@ -787,15 +844,18 @@ export default function GroundSchoolCalendar() {
                     return (
                       <div
                         key={day.dateStr}
-                        className={`min-h-[80px] p-1 border-r border-slate-700/50 cursor-pointer hover:bg-slate-700/30 ${
+                        className={`min-h-[80px] p-1 border-r cursor-pointer transition hover:opacity-80 ${
                           !day.isCurrentMonth ? 'opacity-40' : ''
-                        } ${isToday ? 'bg-blue-500/10' : ''}`}
+                        }`}
+                        style={{
+                          borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)',
+                          backgroundColor: isToday ? 'var(--accent-soft)' : undefined,
+                        }}
                         onClick={() => openNewClass(day.dateStr)}
                       >
                         <div
-                          className={`text-xs font-semibold mb-1 ${
-                            isToday ? 'text-blue-400' : 'text-white'
-                          }`}
+                          className="text-xs font-semibold mb-1"
+                          style={{ color: isToday ? 'var(--accent)' : 'var(--text-primary)' }}
                         >
                           {day.day}
                         </div>
@@ -823,39 +883,43 @@ export default function GroundSchoolCalendar() {
             </div>
           )}
         </>
-  
+
 
       {/* ----- Toast message (shown after create/update) ----- */}
       {toastMessage && (
-        <div className="fixed bottom-4 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce">
+        <div
+          className="fixed bottom-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce flex items-center gap-2"
+          style={{ backgroundColor: 'var(--success)', color: '#ffffff' }}
+        >
+          <CircleCheck className="w-4 h-4" />
           {toastMessage}
           <button
             onClick={() => setToastMessage('')}
-            className="ml-3 font-bold"
+            className="ml-3"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {/* ----- Modal (Add / Edit class) ----- */}
       {showModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-          <div className="bg-slate-800 border border-slate-700 rounded-xl p-6 w-full max-w-lg mx-4">
-            <h3 className="text-lg font-semibold text-white mb-4">
-              {editingClass ? '✏️ Edit Class' : '➕ New Ground Class'}
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}>
+          <div className="surface-card p-6 w-full max-w-lg mx-4">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              {editingClass ? <><Pencil className="w-4 h-4" /> Edit Class</> : <><Plus className="w-4 h-4" /> New Ground Class</>}
             </h3>
 
             <div className="grid grid-cols-2 gap-3">
               {/* Subject */}
               <div>
-                <label className="text-xs text-slate-400">Subject *</label>
+                <label className="text-xs text-tertiary">Subject *</label>
                 <select
                   value={form.subject_id}
                   onChange={(e) =>
                     setForm({ ...form, subject_id: parseInt(e.target.value) })
                   }
-                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm mt-1"
+                  className="w-full surface-inner rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[var(--accent)]"
                 >
                   <option value="">Select...</option>
                   {subjects.map((s) => (
@@ -868,13 +932,13 @@ export default function GroundSchoolCalendar() {
 
               {/* Instructor */}
               <div>
-                <label className="text-xs text-slate-400">Instructor *</label>
+                <label className="text-xs text-tertiary">Instructor *</label>
                 <select
                   value={form.instructor_id}
                   onChange={(e) =>
                     setForm({ ...form, instructor_id: e.target.value })
                   }
-                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm mt-1"
+                  className="w-full surface-inner rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[var(--accent)]"
                 >
                   <option value="">Select...</option>
                   {instructors.map((inst) => (
@@ -887,53 +951,53 @@ export default function GroundSchoolCalendar() {
 
               {/* Date */}
               <div>
-                <label className="text-xs text-slate-400">Date *</label>
+                <label className="text-xs text-tertiary">Date *</label>
                 <input
                   type="date"
                   value={form.class_date}
                   onChange={(e) =>
                     setForm({ ...form, class_date: e.target.value })
                   }
-                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm mt-1"
+                  className="w-full surface-inner rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
 
               {/* Start Time */}
               <div>
-                <label className="text-xs text-slate-400">Start Time</label>
+                <label className="text-xs text-tertiary">Start Time</label>
                 <input
                   type="time"
                   value={form.start_time}
                   onChange={(e) =>
                     setForm({ ...form, start_time: e.target.value })
                   }
-                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm mt-1"
+                  className="w-full surface-inner rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
 
               {/* End Time */}
               <div>
-                <label className="text-xs text-slate-400">End Time</label>
+                <label className="text-xs text-tertiary">End Time</label>
                 <input
                   type="time"
                   value={form.end_time}
                   onChange={(e) =>
                     setForm({ ...form, end_time: e.target.value })
                   }
-                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm mt-1"
+                  className="w-full surface-inner rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
 
               {/* Topic */}
               <div>
-                <label className="text-xs text-slate-400">Topic</label>
+                <label className="text-xs text-tertiary">Topic</label>
                 <input
                   type="text"
                   value={form.topic}
                   onChange={(e) =>
                     setForm({ ...form, topic: e.target.value })
                   }
-                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm mt-1"
+                  className="w-full surface-inner rounded px-3 py-2 text-sm mt-1 focus:outline-none focus:border-[var(--accent)]"
                   placeholder="e.g., Chapter 5"
                 />
               </div>
@@ -944,22 +1008,24 @@ export default function GroundSchoolCalendar() {
               {editingClass && (
                 <button
                   onClick={handleDelete}
-                  className="px-4 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                  className="px-4 py-2 rounded text-sm transition flex items-center gap-1.5"
+                  style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}
                 >
-                  🗑️ Delete
+                  <Trash2 className="w-3.5 h-3.5" /> Delete
                 </button>
               )}
               <button
                 onClick={() => setShowModal(false)}
-                className="px-4 py-2 bg-slate-600 text-white rounded text-sm"
+                className="px-4 py-2 rounded text-sm transition surface-inner"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSave}
-                className="px-4 py-2 bg-green-500 text-white rounded text-sm hover:bg-green-600"
+                className="px-4 py-2 rounded text-sm transition flex items-center gap-1.5 font-semibold"
+                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
               >
-                💾 Save
+                <Save className="w-3.5 h-3.5" /> Save
               </button>
             </div>
           </div>

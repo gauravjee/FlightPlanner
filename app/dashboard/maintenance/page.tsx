@@ -8,17 +8,17 @@ import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { MaintenanceRecord } from '@/types';
 import MaintenanceForm from '@/components/maintenance/MaintenanceForm';
-import Link from 'next/link';
 import RoleGate from '@/components/ui/RoleGate';
+import { Wrench, Check, Pencil, Trash2, TriangleAlert, Hourglass } from 'lucide-react';
 
 export default function MaintenancePage() {
-  const { 
-    maintenanceRecords, loadingMaintenance, 
-    loadMaintenanceRecords, addMaintenanceRecord, 
+  const {
+    maintenanceRecords, loadingMaintenance,
+    loadMaintenanceRecords, addMaintenanceRecord,
     updateMaintenanceRecord, removeMaintenanceRecord,
-    loadAircraft, aircraft 
+    loadAircraft, aircraft
   } = useFlightStore();
-  
+
   const [showForm, setShowForm] = useState(false);
   const [editingRecord, setEditingRecord] = useState<MaintenanceRecord | null>(null);
   const [filterStatus, setFilterStatus] = useState('ALL');
@@ -94,13 +94,17 @@ export default function MaintenancePage() {
   return (
     <ProtectedRoute>
       <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'maintenance']}>
-    <main className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900">
-      <Header 
-        title="Maintenance Tracking" 
-        subtitle="Aircraft maintenance records" 
+    <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
+      <Header
+        title="Maintenance Tracking"
+        subtitle="Aircraft maintenance records"
         action={
-          <button onClick={handleAdd} className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition cursor-pointer font-bold">
-            🔧 Log Maintenance
+          <button
+            onClick={handleAdd}
+            className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+          >
+            <Wrench className="w-4 h-4" /> Log Maintenance
           </button>
         }
       />
@@ -109,14 +113,14 @@ export default function MaintenancePage() {
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[
-            { label: 'Scheduled', value: scheduled, color: 'text-blue-400' },
-            { label: 'In Progress', value: inProgress, color: 'text-yellow-400' },
-            { label: 'Overdue', value: overdue, color: 'text-red-400' },
-            { label: 'Total Cost', value: `₹${totalCost.toLocaleString('en-IN')}`, color: 'text-green-400' },
+            { label: 'Scheduled', value: scheduled, color: 'var(--accent)' },
+            { label: 'In Progress', value: inProgress, color: 'var(--warning-text)' },
+            { label: 'Overdue', value: overdue, color: 'var(--danger)' },
+            { label: 'Total Cost', value: `₹${totalCost.toLocaleString('en-IN')}`, color: 'var(--success)' },
           ].map((stat, i) => (
-            <div key={i} className="bg-slate-800/50 border border-slate-700 rounded-xl p-4">
-              <p className="text-xs text-slate-400">{stat.label}</p>
-              <p className={`text-2xl font-bold ${stat.color} mt-1`}>{stat.value}</p>
+            <div key={i} className="surface-inner p-4">
+              <p className="text-xs text-tertiary">{stat.label}</p>
+              <p className="text-2xl font-bold mt-1" style={{ color: stat.color }}>{stat.value}</p>
             </div>
           ))}
         </div>
@@ -124,7 +128,7 @@ export default function MaintenancePage() {
         {/* Filters */}
         <div className="flex gap-3 mb-6">
           <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-            className="bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+            className="surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]">
             <option value="ALL">All Status</option>
             <option value="SCHEDULED">Scheduled</option>
             <option value="IN_PROGRESS">In Progress</option>
@@ -132,7 +136,7 @@ export default function MaintenancePage() {
             <option value="CANCELLED">Cancelled</option>
           </select>
           <select value={filterAircraft} onChange={e => setFilterAircraft(e.target.value)}
-            className="bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white">
+            className="surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]">
             <option value="ALL">All Aircraft</option>
             {aircraft.map(a => (
               <option key={a.id} value={a.id}>{a.registration}</option>
@@ -141,16 +145,16 @@ export default function MaintenancePage() {
         </div>
 
         {/* Records */}
-        <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+        <div className="surface-card p-6">
           {loadingMaintenance ? (
-            <p className="text-slate-400 text-center py-8">Loading...</p>
+            <p className="text-secondary text-center py-8">Loading...</p>
           ) : filteredRecords.length === 0 ? (
-            <p className="text-slate-400 text-center py-8">No maintenance records found</p>
+            <p className="text-secondary text-center py-8">No maintenance records found</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-left text-slate-400 border-b border-slate-700">
+                  <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                     <th className="pb-3">Aircraft</th>
                     <th className="pb-3">Type</th>
                     <th className="pb-3">Scheduled</th>
@@ -159,13 +163,23 @@ export default function MaintenancePage() {
                     <th className="pb-3">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="text-slate-300">
+                <tbody className="text-secondary">
                   {filteredRecords.map(record => {
                     const isActive = record.status === 'SCHEDULED' || record.status === 'IN_PROGRESS';
                     const openEnded = isActive && !!record.maintenanceStart && !record.maintenanceEnd;
+                    const statusBadgeClass = record.status === 'COMPLETED' ? 'badge-success' :
+                      record.status === 'IN_PROGRESS' ? 'badge-warning' :
+                      record.status === 'SCHEDULED' ? 'badge-accent' : 'badge-danger';
                     return (
-                    <tr key={record.id} className={`border-b border-slate-700/50 ${record.isOverdue ? 'bg-red-500/10' : ''}`}>
-                      <td className="py-3 text-white font-medium">{record.aircraftReg}</td>
+                    <tr
+                      key={record.id}
+                      className="border-b"
+                      style={{
+                        borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)',
+                        backgroundColor: record.isOverdue ? 'var(--danger-soft)' : undefined,
+                      }}
+                    >
+                      <td className="py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{record.aircraftReg}</td>
                       <td className="py-3 text-xs">{record.maintenanceType}</td>
                       <td className="py-3 text-xs">
                         {new Date(record.scheduledDate).toLocaleDateString('en-IN')}
@@ -173,28 +187,31 @@ export default function MaintenancePage() {
                             just the scheduled day, so it's clear at a glance whether this is a
                             whole-day block or just a few hours. */}
                         {record.maintenanceStart && (
-                          <p className="text-[11px] text-slate-500 mt-0.5">
+                          <p className="text-[11px] text-tertiary mt-0.5">
                             {formatISTDateTime(record.maintenanceStart)} → {record.maintenanceEnd ? formatISTDateTime(record.maintenanceEnd) : 'ongoing'}
                           </p>
                         )}
-                        {openEnded && <span className="text-yellow-400 ml-1 block text-[11px]">⏳ open-ended</span>}
-                        {record.isOverdue && <span className="text-red-400 ml-1 block text-[11px]">⚠ OVERDUE</span>}
+                        {openEnded && (
+                          <span className="ml-1 flex items-center gap-1 text-[11px]" style={{ color: 'var(--warning-text)' }}>
+                            <Hourglass className="w-3 h-3" /> open-ended
+                          </span>
+                        )}
+                        {record.isOverdue && (
+                          <span className="ml-1 flex items-center gap-1 text-[11px]" style={{ color: 'var(--danger)' }}>
+                            <TriangleAlert className="w-3 h-3" /> OVERDUE
+                          </span>
+                        )}
                       </td>
                       <td className="py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                          record.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' :
-                          record.status === 'IN_PROGRESS' ? 'bg-yellow-500/20 text-yellow-400' :
-                          record.status === 'SCHEDULED' ? 'bg-blue-500/20 text-blue-400' :
-                          'bg-red-500/20 text-red-400'
-                        }`}>{record.status.replace('_', ' ')}</span>
+                        <span className={`badge ${statusBadgeClass}`}>{record.status.replace('_', ' ')}</span>
                       </td>
                       <td className="py-3">₹{record.cost.toLocaleString('en-IN')}</td>
                       <td className="py-3">
                         <div className="flex flex-wrap gap-1">
                           {isActive && (
                             <button onClick={() => handleComplete(record)}
-                              className="px-2 py-1 bg-green-500/20 text-green-400 rounded text-xs hover:bg-green-500/30">
-                              ✓ Complete
+                              className="px-2 py-1 rounded text-xs flex items-center gap-1 transition" style={{ backgroundColor: 'var(--success-soft)', color: 'var(--success)' }}>
+                              <Check className="w-3 h-3" /> Complete
                             </button>
                           )}
                           {/* Quick-extend — only meaningful once there's an end time to push
@@ -204,22 +221,22 @@ export default function MaintenancePage() {
                           {isActive && record.maintenanceEnd && (
                             <>
                               <button onClick={() => handleExtend(record, 4 * 60 * 60 * 1000)}
-                                className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded text-xs hover:bg-orange-500/30">
+                                className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--warning-soft)', color: 'var(--warning-text)' }}>
                                 +4h
                               </button>
                               <button onClick={() => handleExtend(record, 24 * 60 * 60 * 1000)}
-                                className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded text-xs hover:bg-orange-500/30">
+                                className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--warning-soft)', color: 'var(--warning-text)' }}>
                                 +1d
                               </button>
                             </>
                           )}
                           <button onClick={() => handleEdit(record)}
-                            className="px-2 py-1 bg-blue-500/20 text-blue-400 rounded text-xs hover:bg-blue-500/30">
-                            ✏️
+                            className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
+                            <Pencil className="w-3 h-3" />
                           </button>
                           <button onClick={() => handleDelete(record.id)}
-                            className="px-2 py-1 bg-red-500/20 text-red-400 rounded text-xs hover:bg-red-500/30">
-                            🗑️
+                            className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}>
+                            <Trash2 className="w-3 h-3" />
                           </button>
                         </div>
                       </td>
