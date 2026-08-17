@@ -150,7 +150,12 @@ export default function StudentDashboardPage() {
   useSetHeader({
     title: 'Student Dashboard',
     subtitle: student ? `Welcome, ${student.name}` : 'Loading...',
-    backUrl: '/',
+    // Used to point at '/', the old landing page — now that '/' just
+    // redirects straight to /login (see app/page.tsx), that would bounce a
+    // logged-in user through the login screen. '/dashboard/student' is this
+    // page itself, which BACK_URLS_COVERED_BY_SIDEBAR in Header.tsx already
+    // hides at lg+ (Sidebar's own My Dashboard link covers it).
+    backUrl: '/dashboard/student',
   });
 
   return (

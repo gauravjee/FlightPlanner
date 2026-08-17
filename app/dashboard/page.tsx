@@ -287,7 +287,14 @@ export default function DashboardPage() {
   useSetHeader({
     title: 'FlightPro Manager',
     subtitle: 'Horizon Flight Training Academy',
-    backUrl: '/',
+    // Used to point at '/', the old landing page — now that '/' just
+    // redirects straight to /login (see app/page.tsx), that would bounce a
+    // logged-in user through the login screen. '/dashboard' is this page
+    // itself, which BACK_URLS_COVERED_BY_SIDEBAR in Header.tsx already
+    // hides at lg+ (Sidebar's own Dashboard link covers it); it still shows
+    // below lg, same as every other page that relies on the '/dashboard'
+    // default.
+    backUrl: '/dashboard',
   });
 
   return (
