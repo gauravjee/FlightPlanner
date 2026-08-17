@@ -15,11 +15,11 @@
 // fuel, not a separate "edit aircraft" action).
 
 import { NextResponse } from 'next/server';
-import { requireRole, FUEL_WRITE_ROLES } from '@/lib/api-auth';
+import { requireModuleAccess } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function POST(request: Request) {
-  const { error } = await requireRole(FUEL_WRITE_ROLES);
+  const { error } = await requireModuleAccess('fuel', 'full');
   if (error) return error;
 
   let body: Record<string, unknown>;

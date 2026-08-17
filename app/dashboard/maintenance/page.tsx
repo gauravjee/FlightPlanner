@@ -10,15 +10,19 @@ import { useFlightStore } from '@/lib/store';
 import { MaintenanceRecord } from '@/types';
 import MaintenanceForm from '@/components/maintenance/MaintenanceForm';
 import RoleGate from '@/components/ui/RoleGate';
-import { MAINTENANCE_VIEW_ROLES, MAINTENANCE_WRITE_ROLES } from '@/lib/permissions';
+import { MAINTENANCE_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
+import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Wrench, Check, Pencil, Trash2, TriangleAlert, Hourglass, Eye } from 'lucide-react';
 
 export default function MaintenancePage() {
   const { data: session } = useSession();
-  // maintenance keeps full read/write here; instructor/operations are
-  // view-only (2026-08-17 role/tab matrix). Server-side enforcement lives
-  // in app/api/maintenance-records/[id]/route.ts (MAINTENANCE_WRITE_ROLES).
-  const canWrite = MAINTENANCE_WRITE_ROLES.includes(session?.user?.role || '');
+  const overrides = useMyPermissionOverrides();
+  // maintenance keeps full read/write here by default; instructor/
+  // operations are view-only (2026-08-17 role/tab matrix) unless a
+  // super_admin has granted a per-user override. Server-side enforcement
+  // lives in app/api/maintenance-records/[id]/route.ts
+  // (requireModuleAccess('maintenance')).
+  const canWrite = canWriteModule(session?.user?.role, overrides, 'maintenance');
   const {
     maintenanceRecords, loadingMaintenance,
     loadMaintenanceRecords, addMaintenanceRecord,
@@ -118,7 +122,7 @@ export default function MaintenancePage() {
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={MAINTENANCE_VIEW_ROLES}>
+      <RoleGate allowedRoles={MAINTENANCE_VIEW_ROLES} moduleKey="maintenance">
     <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Stats */}

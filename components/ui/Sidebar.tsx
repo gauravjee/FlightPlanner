@@ -37,6 +37,8 @@ import {
   GraduationCap, UserRound, Umbrella, ChartColumnIncreasing, BookOpen,
   Settings,
 } from 'lucide-react';
+import { canViewModule, type ModuleKey } from '@/lib/permissions';
+import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 
 interface NavItem {
   href: string;
@@ -45,6 +47,11 @@ interface NavItem {
   // Kept in sync with each destination page's own RoleGate allowedRoles —
   // this list is a convenience filter, not the access control itself.
   roles: string[];
+  // Optional — for the six modules that support a per-user permission
+  // override (2026-08-17, second round), a user whose role isn't in
+  // `roles` above still sees this item if they've been granted an
+  // override for this module (see lib/permissions.ts's canViewModule).
+  moduleKey?: ModuleKey;
 }
 
 // Kept as literal arrays (not imported from lib/api-auth.ts) deliberately —
@@ -56,12 +63,12 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance'] },
   { href: '/dashboard/student', label: 'My Dashboard', icon: LayoutDashboard, roles: ['student'] },
   { href: '/dashboard/schedule', label: 'Schedule', icon: Calendar, roles: ['admin', 'instructor', 'super_admin', 'operations', 'student'] },
-  { href: '/dashboard/flights', label: 'Flight Records', icon: FileText, roles: ['admin', 'instructor', 'super_admin', 'maintenance'] },
-  { href: '/dashboard/fuel', label: 'Fuel', icon: Fuel, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'] },
-  { href: '/dashboard/maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'] },
-  { href: '/dashboard/aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'] },
-  { href: '/dashboard/students', label: 'Students', icon: Users, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
-  { href: '/dashboard/instructors', label: 'Instructors', icon: GraduationCap, roles: ['admin', 'super_admin', 'operations'] },
+  { href: '/dashboard/flights', label: 'Flight Records', icon: FileText, roles: ['admin', 'instructor', 'super_admin', 'maintenance'], moduleKey: 'flightRecords' },
+  { href: '/dashboard/fuel', label: 'Fuel', icon: Fuel, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'fuel' },
+  { href: '/dashboard/maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'maintenance' },
+  { href: '/dashboard/aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'aircraft' },
+  { href: '/dashboard/students', label: 'Students', icon: Users, roles: ['admin', 'instructor', 'super_admin', 'operations'], moduleKey: 'students' },
+  { href: '/dashboard/instructors', label: 'Instructors', icon: GraduationCap, roles: ['admin', 'super_admin', 'operations'], moduleKey: 'instructors' },
   { href: '/dashboard/instructor', label: 'My Students', icon: UserRound, roles: ['instructor', 'admin', 'super_admin'] },
   { href: '/dashboard/availability', label: 'Availability', icon: Umbrella, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
   { href: '/dashboard/progress', label: 'Progress', icon: ChartColumnIncreasing, roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
@@ -72,6 +79,10 @@ const NAV_ITEMS: NavItem[] = [
 export default function Sidebar() {
   const { data: session, status } = useSession();
   const pathname = usePathname();
+  // Called unconditionally, before the early return below, per rules of
+  // hooks — harmless no-op fetch for roles that can never have an
+  // override (the hook still only fires the request once per session).
+  const overrides = useMyPermissionOverrides();
 
   // Nothing to show until we actually know who's logged in — avoids a
   // flash of an empty nav rail while the session is still resolving (same
@@ -79,7 +90,9 @@ export default function Sidebar() {
   if (status !== 'authenticated' || !session?.user) return null;
 
   const role = (session.user as { role?: string }).role;
-  const items = NAV_ITEMS.filter((item) => role && item.roles.includes(role));
+  const items = NAV_ITEMS.filter((item) =>
+    !!role && (item.roles.includes(role) || (item.moduleKey ? canViewModule(role, overrides, item.moduleKey) : false))
+  );
 
   if (items.length === 0) return null;
 

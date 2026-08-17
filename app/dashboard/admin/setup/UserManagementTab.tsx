@@ -17,7 +17,9 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Users, UserPlus, Mail, RefreshCw, Trash2, TriangleAlert, CircleCheck } from 'lucide-react';
+import { Users, UserPlus, Mail, RefreshCw, Trash2, TriangleAlert, CircleCheck, ShieldCheck } from 'lucide-react';
+import { OVERRIDE_ELIGIBLE_ROLES, type PermissionOverrides } from '@/lib/permissions';
+import UserPermissionsModal from '@/components/admin/UserPermissionsModal';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -31,6 +33,7 @@ interface User {
   force_password_reset: boolean;
   last_login: string | null;
   created_at: string;
+  permission_overrides?: PermissionOverrides | null;
 }
 
 // ============================================================
@@ -61,6 +64,10 @@ export default function UserManagementTab() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  // Which user's "Edit Permissions" modal (if any) is currently open — see
+  // components/admin/UserPermissionsModal.tsx and the 2026-08-17
+  // (second round) per-user permission override feature.
+  const [editingPermissionsUser, setEditingPermissionsUser] = useState<User | null>(null);
 
   // Form state for creating new users
   const [form, setForm] = useState({
@@ -405,6 +412,29 @@ export default function UserManagementTab() {
                   {/* Action Buttons */}
                   <td className="py-3">
                     <div className="flex space-x-3">
+                      {/* Only instructor/operations/maintenance can ever
+                          carry a per-user override (OVERRIDE_ELIGIBLE_ROLES)
+                          — admin/super_admin already have full access
+                          everywhere, and student isn't managed from this
+                          table at all. Hidden rather than disabled so it
+                          doesn't imply there's something to configure for
+                          roles it can never apply to. */}
+                      {OVERRIDE_ELIGIBLE_ROLES.includes(user.role) && (
+                        <button
+                          onClick={() => setEditingPermissionsUser(user)}
+                          className="text-xs transition flex items-center gap-1"
+                          style={{ color: 'var(--accent)' }}
+                          title="Grant this user extra module access beyond their role's default"
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          Permissions
+                          {user.permission_overrides && Object.keys(user.permission_overrides).length > 0 && (
+                            <span className="badge badge-accent" style={{ padding: '0 6px' }}>
+                              {Object.keys(user.permission_overrides).length}
+                            </span>
+                          )}
+                        </button>
+                      )}
                       <button
                         onClick={() => forceReset(user.id)}
                         className="text-xs transition flex items-center gap-1"
@@ -428,6 +458,14 @@ export default function UserManagementTab() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {editingPermissionsUser && (
+        <UserPermissionsModal
+          user={editingPermissionsUser}
+          onClose={() => setEditingPermissionsUser(null)}
+          onSaved={loadUsers}
+        />
       )}
     </div>
   );

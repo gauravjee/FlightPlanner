@@ -1,0 +1,21 @@
+-- add-user-permission-overrides.sql
+-- Per-user permission overrides (2026-08-17, second round of the role/tab
+-- access work) — lets a super_admin grant an individual instructor/
+-- operations/maintenance user extra access to one of the six write-gated
+-- modules (Aircraft, Fuel Records, Maintenance Records, Flight Records,
+-- Instructors Roster, Students) beyond whatever their role's own default
+-- grants, without inventing a new role for one person.
+--
+-- Stored as a small JSON object keyed by module (aircraft / fuel /
+-- maintenance / flightRecords / instructors / students), each value
+-- either "view" or "full". An empty object (the default for every
+-- existing user) means no overrides — the user's role-based default
+-- access applies unchanged. See lib/permissions.ts's MODULE_ACCESS /
+-- OVERRIDE_ELIGIBLE_ROLES for how this is interpreted, and
+-- lib/api-auth.ts's requireModuleAccess() for server-side enforcement.
+--
+-- Safe to run more than once (IF NOT EXISTS) and safe on an existing,
+-- populated users table — every current row gets '{}'::jsonb, which is a
+-- no-op (same access as today) until a super_admin actually sets one from
+-- the new "Edit Permissions" action in Admin Setup -> User Management.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS permission_overrides jsonb NOT NULL DEFAULT '{}'::jsonb;

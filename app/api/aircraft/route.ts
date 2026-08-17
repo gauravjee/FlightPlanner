@@ -11,11 +11,11 @@
 // the write path, same scope as the students API before it.
 
 import { NextResponse } from 'next/server';
-import { requireRole, AIRCRAFT_WRITE_ROLES } from '@/lib/api-auth';
+import { requireModuleAccess } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function POST(request: Request) {
-  const { error } = await requireRole(AIRCRAFT_WRITE_ROLES);
+  const { error } = await requireModuleAccess('aircraft', 'full');
   if (error) return error;
 
   let body: Record<string, unknown>;

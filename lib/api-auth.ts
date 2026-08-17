@@ -25,6 +25,10 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 export * from '@/lib/permissions';
 import {
   SCHEDULE_CREATE_ROLES,
+  OVERRIDE_ELIGIBLE_ROLES,
+  getModuleAccessLevel,
+  type ModuleKey,
+  type PermissionOverrides,
 } from '@/lib/permissions';
 
 export type SessionUser = {
@@ -115,5 +119,52 @@ export async function requireScheduleCreateAccess(): Promise<
       },
       { status: 403 }
     ),
+  };
+}
+
+/**
+ * Require a session with at least `level` ('view' or 'full', default
+ * 'full') access to `moduleKey`, per lib/permissions.ts's MODULE_ACCESS —
+ * combining the session's role default with any per-user override a
+ * super_admin has granted them (see the 2026-08-17 per-user permission
+ * override feature).
+ *
+ * Only instructor/operations/maintenance sessions ever have an override
+ * (OVERRIDE_ELIGIBLE_ROLES) — for every other role this is exactly
+ * requireRole(MODULE_ACCESS[moduleKey].writeRoles) with no extra DB call.
+ * When an override lookup IS needed, it's a fresh read of the user's own
+ * row (by session email, via supabaseAdmin — never trusted from the
+ * client), not anything cached on the JWT, so a grant revoked by a
+ * super_admin takes effect on this user's very next request — same
+ * freshness guarantee requireScheduleCreateAccess() already gives
+ * can_self_book above.
+ */
+export async function requireModuleAccess(
+  moduleKey: ModuleKey,
+  level: 'view' | 'full' = 'full'
+): Promise<{ session: { user: SessionUser }; error: null } | { session: null; error: NextResponse }> {
+  const { session, error } = await requireSession();
+  if (error) return { session: null, error };
+
+  const role = session.user.role;
+
+  let overrides: PermissionOverrides | null = null;
+  if (role && OVERRIDE_ELIGIBLE_ROLES.includes(role) && session.user.email) {
+    const { data } = await supabaseAdmin
+      .from('users')
+      .select('permission_overrides')
+      .eq('email', session.user.email)
+      .maybeSingle();
+    overrides = (data?.permission_overrides as PermissionOverrides) || null;
+  }
+
+  const effectiveLevel = getModuleAccessLevel(role, overrides, moduleKey);
+  const allowed = level === 'full' ? effectiveLevel === 'full' : effectiveLevel !== 'none';
+
+  if (allowed) return { session, error: null };
+
+  return {
+    session: null,
+    error: NextResponse.json({ error: 'Not authorized for this action.' }, { status: 403 }),
   };
 }

@@ -6,7 +6,7 @@
 // lib/api-auth.ts's requireScheduleCreateAccess()).
 
 import { NextResponse } from 'next/server';
-import { requireRole, INSTRUCTORS_WRITE_ROLES } from '@/lib/api-auth';
+import { requireModuleAccess } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -24,7 +24,7 @@ const FIELD_MAP: Record<string, string> = {
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const { error } = await requireRole(INSTRUCTORS_WRITE_ROLES);
+  const { session, error } = await requireModuleAccess('instructors', 'full');
   if (error) return error;
 
   const { id } = await context.params;
@@ -43,6 +43,15 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
   }
 
+  // canSelfBook stays super_admin-only regardless of module access —
+  // Full Access to the Instructors module (whether from a role default or
+  // a per-user override) is about roster management, not about granting
+  // someone else Schedule self-booking. Silently drop it rather than 403
+  // the whole request, same as the field just wasn't sent.
+  if (session.user.role !== 'super_admin') {
+    delete dbUpdates.can_self_book;
+  }
+
   if (Object.keys(dbUpdates).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
   }
@@ -58,7 +67,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
-  const { error } = await requireRole(INSTRUCTORS_WRITE_ROLES);
+  const { error } = await requireModuleAccess('instructors', 'full');
   if (error) return error;
 
   const { id } = await context.params;

@@ -8,15 +8,18 @@ import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import FuelLogForm from '@/components/fuel/FuelLogForm';
 import RoleGate from '@/components/ui/RoleGate';
-import { FUEL_VIEW_ROLES, FUEL_WRITE_ROLES } from '@/lib/permissions';
+import { FUEL_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
+import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Fuel, Plane, ClipboardList, Eye } from 'lucide-react';
 
 export default function FuelPage() {
   const { data: session } = useSession();
-  // maintenance keeps full read/write here; instructor/operations are
-  // view-only (2026-08-17 role/tab matrix). Server-side enforcement lives
-  // in app/api/fuel-records/route.ts (FUEL_WRITE_ROLES).
-  const canWrite = FUEL_WRITE_ROLES.includes(session?.user?.role || '');
+  const overrides = useMyPermissionOverrides();
+  // maintenance keeps full read/write here by default; instructor/
+  // operations are view-only (2026-08-17 role/tab matrix) unless a
+  // super_admin has granted a per-user override. Server-side enforcement
+  // lives in app/api/fuel-records/route.ts (requireModuleAccess('fuel')).
+  const canWrite = canWriteModule(session?.user?.role, overrides, 'fuel');
   const { aircraft, fuelRecords, loadingFuel, loadFuelRecords, loadAircraft } = useFlightStore();
   const [showForm, setShowForm] = useState(false);
 
@@ -51,7 +54,7 @@ export default function FuelPage() {
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={FUEL_VIEW_ROLES}>
+      <RoleGate allowedRoles={FUEL_VIEW_ROLES} moduleKey="fuel">
     <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

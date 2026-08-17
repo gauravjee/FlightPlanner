@@ -4,7 +4,8 @@
 
 import { useSession } from 'next-auth/react';
 import { Instructor } from '@/types';
-import { INSTRUCTORS_WRITE_ROLES } from '@/lib/permissions';
+import { canWriteModule } from '@/lib/permissions';
+import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Pencil, Trash2, Eye, CalendarCheck } from 'lucide-react';
 
 interface Props {
@@ -15,11 +16,14 @@ interface Props {
 
 export default function InstructorCard({ instructor, onEdit, onDelete }: Props) {
   // Per the 2026-08-17 role/tab matrix, only admin/super_admin manage the
-  // instructor roster (operations can view it — see INSTRUCTORS_VIEW_ROLES —
-  // but not add/edit/remove). Server-side enforcement lives in
+  // instructor roster by default (operations can view it — see
+  // INSTRUCTORS_VIEW_ROLES — but not add/edit/remove), unless a
+  // super_admin has granted a per-user override (second-round
+  // permission-override feature). Server-side enforcement lives in
   // app/api/instructors/[id]/route.ts.
   const { data: session } = useSession();
-  const canWrite = INSTRUCTORS_WRITE_ROLES.includes(session?.user?.role || '');
+  const overrides = useMyPermissionOverrides();
+  const canWrite = canWriteModule(session?.user?.role, overrides, 'instructors');
 
   // Parse ratings - stored as comma-separated string in database
   const ratingsList = (instructor.ratings as string).split(',').map(r => r.trim());

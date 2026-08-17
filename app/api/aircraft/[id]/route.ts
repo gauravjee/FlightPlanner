@@ -11,7 +11,7 @@
 // would 403 for exactly the role that triggers it most often.
 
 import { NextResponse } from 'next/server';
-import { requireRole, AIRCRAFT_WRITE_ROLES } from '@/lib/api-auth';
+import { requireModuleAccess } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -30,7 +30,7 @@ const FIELD_MAP: Record<string, string> = {
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const { error } = await requireRole(AIRCRAFT_WRITE_ROLES);
+  const { error } = await requireModuleAccess('aircraft', 'full');
   if (error) return error;
 
   const { id } = await context.params;
@@ -64,7 +64,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
-  const { error } = await requireRole(AIRCRAFT_WRITE_ROLES);
+  const { error } = await requireModuleAccess('aircraft', 'full');
   if (error) return error;
 
   const { id } = await context.params;

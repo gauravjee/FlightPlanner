@@ -4,9 +4,20 @@
 // Column updates are whitelisted here (rather than trusting whatever keys
 // the client sends) so this endpoint can't be used to write to arbitrary
 // columns even if a future caller sends an unexpected field.
-
+//
+// FIX (2026-08-17, per-user permission override round): PATCH/DELETE here
+// were still gated to the broader STUDENT_STAFF_ROLES (which includes
+// operations) instead of the narrower STUDENT_WRITE_ROLES the 2026-08-17
+// role/tab matrix introduced to make operations view-only for Students —
+// this route was missed when that matrix patch touched every OTHER write
+// route. StudentCard.tsx's Edit/Remove buttons were correctly hidden from
+// operations client-side, but operations could still have called this API
+// directly and it would have gone through. Now uses requireModuleAccess,
+// which is STUDENT_WRITE_ROLES-equivalent by default and additionally
+// honors a super_admin-granted per-user override for operations/
+// instructor/maintenance users (see lib/permissions.ts).
 import { NextResponse } from 'next/server';
-import { requireRole, STUDENT_STAFF_ROLES } from '@/lib/api-auth';
+import { requireModuleAccess } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -29,7 +40,7 @@ const FIELD_MAP: Record<string, string> = {
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const { error } = await requireRole(STUDENT_STAFF_ROLES);
+  const { error } = await requireModuleAccess('students', 'full');
   if (error) return error;
 
   const { id } = await context.params;
@@ -69,7 +80,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 }
 
 export async function DELETE(_request: Request, context: RouteContext) {
-  const { error } = await requireRole(STUDENT_STAFF_ROLES);
+  const { error } = await requireModuleAccess('students', 'full');
   if (error) return error;
 
   const { id } = await context.params;

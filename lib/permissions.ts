@@ -127,3 +127,85 @@ export const AVAILABILITY_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'o
 // There's no separate WRITE constant here — this page has no create/edit/
 // delete actions of its own; progress is derived from flight records.
 export const PROGRESS_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'student', 'operations'];
+
+// ============================================================
+// PER-USER PERMISSION OVERRIDES (2026-08-17, second round)
+// ============================================================
+// For small FTOs with few staff, a super_admin can grant an individual
+// instructor/operations/maintenance user extra access to one of the six
+// modules below, beyond whatever their role's own matrix grants by
+// default — e.g. one specific maintenance user who also handles fuel
+// purchasing gets Full Access to Fuel Records without every maintenance
+// user getting it, or without a new role being invented for one person.
+// Deliberately scoped to non-staff-management roles only (see
+// OVERRIDE_ELIGIBLE_ROLES) — admin/super_admin already have full access
+// everywhere, and student is a different access model entirely (their own
+// records, not a staff module).
+//
+// MODULE_ACCESS is the single source of truth mapping each overridable
+// module to the exact VIEW/WRITE role arrays already defined above, so a
+// role's default access and an override's effect can never silently
+// disagree — both read from the same constants.
+export const MODULE_ACCESS = {
+  aircraft: { viewRoles: AIRCRAFT_VIEW_ROLES, writeRoles: AIRCRAFT_WRITE_ROLES, label: 'Aircraft' },
+  fuel: { viewRoles: FUEL_VIEW_ROLES, writeRoles: FUEL_WRITE_ROLES, label: 'Fuel Records' },
+  maintenance: { viewRoles: MAINTENANCE_VIEW_ROLES, writeRoles: MAINTENANCE_WRITE_ROLES, label: 'Maintenance Records' },
+  flightRecords: { viewRoles: FLIGHT_RECORDS_VIEW_ROLES, writeRoles: FLIGHT_RECORDS_WRITE_ROLES, label: 'Flight Records' },
+  instructors: { viewRoles: INSTRUCTORS_VIEW_ROLES, writeRoles: INSTRUCTORS_WRITE_ROLES, label: 'Instructors Roster' },
+  // NOTE: this governs editing/deleting an EXISTING student record only —
+  // it deliberately does NOT extend to creating a brand-new student, which
+  // also mints a login and stays admin/super_admin-only regardless of any
+  // override (see STUDENT_CREATION_ROLES and app/api/students/route.ts).
+  students: { viewRoles: STUDENT_STAFF_ROLES, writeRoles: STUDENT_WRITE_ROLES, label: 'Students' },
+} as const;
+
+export type ModuleKey = keyof typeof MODULE_ACCESS;
+export type ModuleAccessLevel = 'none' | 'view' | 'full';
+export type PermissionOverrides = Partial<Record<ModuleKey, 'view' | 'full'>>;
+
+// Only these three roles can ever carry an override — enforced again
+// server-side when an override is actually saved (see
+// app/api/admin/users/[id]/route.ts), this is also the single place the
+// UI checks to decide whether to show a user the "Edit Permissions"
+// action at all (see UserManagementTab.tsx).
+export const OVERRIDE_ELIGIBLE_ROLES = ['instructor', 'operations', 'maintenance'];
+
+export const MODULE_KEYS = Object.keys(MODULE_ACCESS) as ModuleKey[];
+
+/**
+ * Resolve a user's effective access level for one module: an explicit
+ * per-user override always wins if present (this is what lets an override
+ * grant access to a module the role can't otherwise see at all, not just
+ * upgrade View Only to Full Access within a module already visible);
+ * otherwise falls back to the role's own default from MODULE_ACCESS.
+ */
+export function getModuleAccessLevel(
+  role: string | undefined | null,
+  overrides: PermissionOverrides | null | undefined,
+  moduleKey: ModuleKey
+): ModuleAccessLevel {
+  const override = overrides?.[moduleKey];
+  if (override === 'full' || override === 'view') return override;
+
+  if (!role) return 'none';
+  const cfg = MODULE_ACCESS[moduleKey];
+  if (cfg.writeRoles.includes(role)) return 'full';
+  if (cfg.viewRoles.includes(role)) return 'view';
+  return 'none';
+}
+
+export function canViewModule(
+  role: string | undefined | null,
+  overrides: PermissionOverrides | null | undefined,
+  moduleKey: ModuleKey
+): boolean {
+  return getModuleAccessLevel(role, overrides, moduleKey) !== 'none';
+}
+
+export function canWriteModule(
+  role: string | undefined | null,
+  overrides: PermissionOverrides | null | undefined,
+  moduleKey: ModuleKey
+): boolean {
+  return getModuleAccessLevel(role, overrides, moduleKey) === 'full';
+}

@@ -11,14 +11,17 @@ import InstructorFormModal from '@/components/instructors/InstructorFormModal';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
-import { INSTRUCTORS_VIEW_ROLES, INSTRUCTORS_WRITE_ROLES } from '@/lib/permissions';
+import { INSTRUCTORS_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
+import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Plus, Search, GraduationCap } from 'lucide-react';
 
 export default function InstructorsPage() {
   const { data: session } = useSession();
-  // Only admin/super_admin manage the roster (2026-08-17 role/tab matrix) —
-  // operations can view it but not add/edit/remove.
-  const canWrite = INSTRUCTORS_WRITE_ROLES.includes(session?.user?.role || '');
+  const overrides = useMyPermissionOverrides();
+  // Only admin/super_admin manage the roster by default (2026-08-17
+  // role/tab matrix) — operations/instructor/maintenance can view/manage
+  // it too if a super_admin has granted a per-user override.
+  const canWrite = canWriteModule(session?.user?.role, overrides, 'instructors');
   const { instructors, loadInstructors, addInstructor, updateInstructor, removeInstructor } = useFlightStore();
   const [showForm, setShowForm] = useState(false);
   const [editingInstructor, setEditingInstructor] = useState<Instructor | null>(null);
@@ -88,7 +91,7 @@ export default function InstructorsPage() {
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={INSTRUCTORS_VIEW_ROLES}>
+      <RoleGate allowedRoles={INSTRUCTORS_VIEW_ROLES} moduleKey="instructors">
     <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Stats */}

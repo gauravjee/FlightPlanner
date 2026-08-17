@@ -12,17 +12,22 @@ import FlightRecordForm from '@/components/flights/FlightRecordForm';
 import Link from 'next/link';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
-import { FLIGHT_RECORDS_VIEW_ROLES, FLIGHT_RECORDS_WRITE_ROLES } from '@/lib/permissions';
+import { FLIGHT_RECORDS_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
+import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { FileText, NotebookPen, ClipboardList, PartyPopper, Star, ClipboardCheck, Eye } from 'lucide-react';
 import { ScheduledFlight } from '@/types';
 
 export default function FlightsPage() {
   const { data: session } = useSession();
-  // operations isn't on this tab at all; maintenance can view the logbook
-  // but not log a flight (2026-08-17 role/tab matrix). Server-side
+  const overrides = useMyPermissionOverrides();
+  // operations isn't on this tab at all by default; maintenance can view
+  // the logbook but not log a flight (2026-08-17 role/tab matrix). Either
+  // can gain access via a super_admin-granted per-user override (see
+  // OVERRIDE_ELIGIBLE_ROLES) — operations can even gain visibility into
+  // this tab entirely, not just an upgrade within it. Server-side
   // enforcement lives in app/api/flight-records/route.ts
-  // (FLIGHT_RECORDS_WRITE_ROLES).
-  const canWrite = FLIGHT_RECORDS_WRITE_ROLES.includes(session?.user?.role || '');
+  // (requireModuleAccess('flightRecords')).
+  const canWrite = canWriteModule(session?.user?.role, overrides, 'flightRecords');
   const {
     flightRecords, students, sortieTypes, exercises, loadingFlights,
     scheduledFlights,
@@ -114,7 +119,7 @@ export default function FlightsPage() {
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={FLIGHT_RECORDS_VIEW_ROLES}>
+      <RoleGate allowedRoles={FLIGHT_RECORDS_VIEW_ROLES} moduleKey="flightRecords">
     <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* ----- PENDING LOGBOOK ENTRIES ----- */}

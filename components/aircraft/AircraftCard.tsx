@@ -3,7 +3,8 @@
 
 import { useSession } from 'next-auth/react';
 import { Aircraft } from '@/types';
-import { AIRCRAFT_WRITE_ROLES } from '@/lib/permissions';
+import { canWriteModule } from '@/lib/permissions';
+import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Pencil, Trash2, Eye } from 'lucide-react';
 
 interface Props {
@@ -14,12 +15,15 @@ interface Props {
 
 export default function AircraftCard({ aircraft, onEdit, onDelete }: Props) {
   // Per the 2026-08-17 role/tab matrix, instructor/maintenance/operations
-  // can see the fleet but not add, edit, or remove an aircraft — only
-  // admin/super_admin can. Server-side enforcement lives in
-  // app/api/aircraft/[id]/route.ts (AIRCRAFT_WRITE_ROLES); this just keeps
-  // those roles from seeing controls that would 403 if clicked.
+  // can see the fleet but not add, edit, or remove an aircraft by default —
+  // only admin/super_admin can, unless a super_admin has granted one of
+  // them a per-user override (second-round permission-override feature).
+  // Server-side enforcement lives in app/api/aircraft/[id]/route.ts
+  // (requireModuleAccess('aircraft')); this just keeps those roles from
+  // seeing controls that would 403 if clicked.
   const { data: session } = useSession();
-  const canWrite = AIRCRAFT_WRITE_ROLES.includes(session?.user?.role || '');
+  const overrides = useMyPermissionOverrides();
+  const canWrite = canWriteModule(session?.user?.role, overrides, 'aircraft');
 
   const fuelPercent = (aircraft.currentFuel / aircraft.fuelCapacity) * 100;
   const maintenanceDue = new Date(aircraft.nextMaintenance);

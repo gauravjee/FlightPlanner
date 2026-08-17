@@ -285,6 +285,22 @@ interface FlightStore {
   loadingRequirements: boolean;
 
   // ==========================================
+  // 0. MY PERMISSION OVERRIDES
+  // ==========================================
+  // The CURRENT signed-in user's own per-user permission overrides (see
+  // lib/permissions.ts's MODULE_ACCESS/getModuleAccessLevel) — null until
+  // loaded, then an object (possibly empty) once it has been. Used by
+  // RoleGate/Sidebar and the write-gated components to combine with the
+  // session's role, so a super_admin-granted override actually shows up in
+  // the UI, not just in server-side enforcement. permissionOverridesFor
+  // tracks which signed-in user's email this was loaded for, so switching
+  // users mid-session (without a full page reload) triggers a re-fetch
+  // instead of showing the previous user's overrides.
+  permissionOverrides: Record<string, 'view' | 'full'> | null;
+  permissionOverridesFor: string | null;
+  loadMyPermissionOverrides: (email: string) => Promise<void>;
+
+  // ==========================================
   // 1. AIRCRAFT ACTIONS
   // ==========================================
   loadAircraft: () => Promise<void>;
@@ -481,7 +497,26 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   loadingNotams: false,
   loadingAvailability: false,
   loadingRequirements: false,
-  
+
+  // ============================================================
+  // 0. MY PERMISSION OVERRIDES
+  // ============================================================
+  permissionOverrides: null,
+  permissionOverridesFor: null,
+  loadMyPermissionOverrides: async (email) => {
+    try {
+      const res = await fetch('/api/me/permissions');
+      if (res.ok) {
+        const { overrides } = await res.json();
+        set({ permissionOverrides: overrides || {}, permissionOverridesFor: email });
+      } else {
+        set({ permissionOverrides: {}, permissionOverridesFor: email });
+      }
+    } catch (err) {
+      console.error('Error loading permission overrides:', err);
+      set({ permissionOverrides: {}, permissionOverridesFor: email });
+    }
+  },
 
   // ============================================================
   // 1. AIRCRAFT FUNCTIONS

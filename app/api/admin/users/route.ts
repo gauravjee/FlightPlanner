@@ -31,8 +31,11 @@ const ALLOWED_ROLES = ['super_admin'];
 const VALID_USER_ROLES = ['admin', 'instructor', 'operations', 'maintenance', 'super_admin'];
 
 // Never select password_hash — this list is returned straight to the
-// browser to render the User Management table.
-const SAFE_COLUMNS = 'id, email, name, role, is_active, force_password_reset, last_login, created_at';
+// browser to render the User Management table. permission_overrides is
+// included so the table can show/pre-fill each eligible user's current
+// per-user grants — see lib/permissions.ts's MODULE_ACCESS and the "Edit
+// Permissions" action in UserManagementTab.tsx.
+const SAFE_COLUMNS = 'id, email, name, role, is_active, force_password_reset, last_login, created_at, permission_overrides';
 
 export async function GET() {
   const { error } = await requireRole(ALLOWED_ROLES);

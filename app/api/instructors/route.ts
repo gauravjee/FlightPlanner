@@ -5,11 +5,11 @@
 // super_admin manage the roster itself.
 
 import { NextResponse } from 'next/server';
-import { requireRole, INSTRUCTORS_WRITE_ROLES } from '@/lib/api-auth';
+import { requireModuleAccess } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function POST(request: Request) {
-  const { error } = await requireRole(INSTRUCTORS_WRITE_ROLES);
+  const { error } = await requireModuleAccess('instructors', 'full');
   if (error) return error;
 
   let body: Record<string, unknown>;

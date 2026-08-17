@@ -107,7 +107,7 @@ export default function StudentsPage() {
 
   return (
     <ProtectedRoute>
-    <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'operations']}>
+    <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'operations']} moduleKey="students">
     <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-7xl mx-auto px-4 py-6">
         {successMessage && (

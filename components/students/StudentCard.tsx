@@ -3,7 +3,8 @@
 
 import { useSession } from 'next-auth/react';
 import { StudentRecord } from '@/types';
-import { STUDENT_WRITE_ROLES } from '@/lib/permissions';
+import { canWriteModule } from '@/lib/permissions';
+import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Pencil, Trash2, PartyPopper, TriangleAlert, CircleAlert, CircleCheck, GraduationCap, Eye } from 'lucide-react';
 
 interface Props {
@@ -28,10 +29,13 @@ const STAGE_COLOR_VARS: Record<string, string> = {
 export default function StudentCard({ student, onEdit, onDelete }: Props) {
   // Per the 2026-08-17 role/tab matrix, operations moved to view-only for
   // Students — they still see everyone (STUDENT_STAFF_ROLES) but can no
-  // longer edit or remove a student record. Server-side enforcement lives
-  // in app/api/students/[id]/route.ts (STUDENT_WRITE_ROLES).
+  // longer edit or remove a student record by default, unless a
+  // super_admin has granted a per-user override (second-round
+  // permission-override feature). Server-side enforcement lives in
+  // app/api/students/[id]/route.ts (requireModuleAccess('students')).
   const { data: session } = useSession();
-  const canWrite = STUDENT_WRITE_ROLES.includes(session?.user?.role || '');
+  const overrides = useMyPermissionOverrides();
+  const canWrite = canWriteModule(session?.user?.role, overrides, 'students');
 
   const medicalExpiry = student.medicalExpiry ? new Date(student.medicalExpiry) : null;
   const today = new Date();
