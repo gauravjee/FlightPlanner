@@ -1,8 +1,10 @@
 // components/aircraft/AircraftCard.tsx
 'use client';
 
+import { useSession } from 'next-auth/react';
 import { Aircraft } from '@/types';
-import { Pencil, Trash2 } from 'lucide-react';
+import { AIRCRAFT_WRITE_ROLES } from '@/lib/permissions';
+import { Pencil, Trash2, Eye } from 'lucide-react';
 
 interface Props {
   aircraft: Aircraft;
@@ -11,6 +13,14 @@ interface Props {
 }
 
 export default function AircraftCard({ aircraft, onEdit, onDelete }: Props) {
+  // Per the 2026-08-17 role/tab matrix, instructor/maintenance/operations
+  // can see the fleet but not add, edit, or remove an aircraft — only
+  // admin/super_admin can. Server-side enforcement lives in
+  // app/api/aircraft/[id]/route.ts (AIRCRAFT_WRITE_ROLES); this just keeps
+  // those roles from seeing controls that would 403 if clicked.
+  const { data: session } = useSession();
+  const canWrite = AIRCRAFT_WRITE_ROLES.includes(session?.user?.role || '');
+
   const fuelPercent = (aircraft.currentFuel / aircraft.fuelCapacity) * 100;
   const maintenanceDue = new Date(aircraft.nextMaintenance);
   const daysUntilMx = Math.ceil((maintenanceDue.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
@@ -79,22 +89,28 @@ export default function AircraftCard({ aircraft, onEdit, onDelete }: Props) {
       </div>
 
       {/* Actions */}
-      <div className="flex space-x-2">
-        <button
-          onClick={() => onEdit(aircraft)}
-          className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5"
-          style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}
-        >
-          <Pencil className="w-3.5 h-3.5" /> Edit
-        </button>
-        <button
-          onClick={() => onDelete(aircraft.id)}
-          className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5"
-          style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}
-        >
-          <Trash2 className="w-3.5 h-3.5" /> Remove
-        </button>
-      </div>
+      {canWrite ? (
+        <div className="flex space-x-2">
+          <button
+            onClick={() => onEdit(aircraft)}
+            className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5"
+            style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}
+          >
+            <Pencil className="w-3.5 h-3.5" /> Edit
+          </button>
+          <button
+            onClick={() => onDelete(aircraft.id)}
+            className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5"
+            style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Remove
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--surface-muted)', color: 'var(--text-tertiary)' }}>
+          <Eye className="w-3 h-3" /> View only
+        </div>
+      )}
     </div>
   );
 }

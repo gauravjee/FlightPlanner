@@ -3,8 +3,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { Instructor } from '@/types';
-import { Pencil, GraduationCap, Save, X } from 'lucide-react';
+import { Pencil, GraduationCap, Save, X, CalendarCheck } from 'lucide-react';
 
 interface Props {
   instructor: Instructor | null;
@@ -14,6 +15,12 @@ interface Props {
 
 export default function InstructorFormModal({ instructor, onSave, onClose }: Props) {
   const isEditing = !!instructor;
+  const { data: session } = useSession();
+  // Granting self-booking is a super_admin-only action (see
+  // requireScheduleCreateAccess() in lib/api-auth.ts) — admin can otherwise
+  // manage instructors, but this one field is more sensitive since it
+  // controls who can create new Schedule bookings unsupervised.
+  const isSuperAdmin = session?.user?.role === 'super_admin';
 
   const [form, setForm] = useState({
     name: '',
@@ -24,6 +31,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
     email: '',
     phone: '',
     status: 'AVAILABLE' as Instructor['status'],
+    canSelfBook: false,
   });
 
   // Populate form when editing
@@ -38,6 +46,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
         email: instructor.email || '',
         phone: instructor.phone || '',
         status: instructor.status,
+        canSelfBook: !!instructor.canSelfBook,
       });
     }
   }, [instructor]);
@@ -121,6 +130,34 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
             <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
                 className={inputClass} />
           </div>
+
+          {/* Self-booking permission — only meaningful once the instructor
+              already exists (a brand-new instructor's can_self_book always
+              defaults to false server-side, see app/api/instructors/route.ts),
+              and only a super_admin may grant it. */}
+          {isEditing && isSuperAdmin && (
+            <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--surface-muted)' }}>
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.canSelfBook}
+                  onChange={e => setForm(p => ({ ...p, canSelfBook: e.target.checked }))}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="text-sm font-medium flex items-center gap-1.5">
+                    <CalendarCheck className="w-3.5 h-3.5" /> Allow self-booking
+                  </span>
+                  <span className="block text-xs text-tertiary mt-0.5">
+                    Lets this instructor create their own new Schedule bookings, without
+                    needing an admin/super_admin/operations user to book it for them.
+                    Doesn&apos;t affect viewing the Schedule or editing/cancelling flights
+                    already assigned to them.
+                  </span>
+                </span>
+              </label>
+            </div>
+          )}
 
           <div className="flex space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <button type="button" onClick={onClose}

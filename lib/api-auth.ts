@@ -13,6 +13,19 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth-options';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+
+// Re-export the role-list constants so every existing API route that does
+// `import { requireRole, SOME_ROLES } from '@/lib/api-auth'` keeps working
+// unchanged. The constants themselves now live in lib/permissions.ts (a
+// plain-data file with no server-only imports) because 'use client' page
+// components need to import them too for RoleGate checks, and this file
+// pulls in lib/supabase-admin.ts below — which throws immediately if it's
+// ever loaded in a browser bundle. See lib/permissions.ts for details.
+export * from '@/lib/permissions';
+import {
+  SCHEDULE_CREATE_ROLES,
+} from '@/lib/permissions';
 
 export type SessionUser = {
   email?: string | null;
@@ -64,15 +77,43 @@ export async function requireRole(
   return { session, error: null };
 }
 
-// Roles that can see/manage every student, per the app's existing intended
-// policy — matches the RoleGate on app/dashboard/students/page.tsx.
-export const STUDENT_STAFF_ROLES = ['admin', 'instructor', 'super_admin', 'operations'];
+/**
+ * Require a session that's allowed to create a brand-new Schedule booking
+ * (see SCHEDULE_CREATE_ROLES above for the roles that always can). For an
+ * `instructor`, this additionally looks up their own instructors row (by
+ * session email — the same way the client resolves "which instructor row is
+ * me", e.g. app/dashboard/instructor/page.tsx) and only allows it if
+ * can_self_book is true there.
+ */
+export async function requireScheduleCreateAccess(): Promise<
+  { session: { user: SessionUser }; error: null } | { session: null; error: NextResponse }
+> {
+  const { session, error } = await requireSession();
+  if (error) return { session: null, error };
 
-// Roles that can create a brand-new student. Intentionally narrower than
-// STUDENT_STAFF_ROLES above: creating a student now also creates their
-// login (email + generated password), and login creation has always been a
-// super_admin-only action everywhere else in the app (see
-// app/api/admin/users/route.ts). instructor/operations can still view and
-// edit existing students' training profiles — they just can't mint new
-// logins.
-export const STUDENT_CREATION_ROLES = ['admin', 'super_admin'];
+  const role = session.user.role;
+  if (role && SCHEDULE_CREATE_ROLES.includes(role)) {
+    return { session, error: null };
+  }
+
+  if (role === 'instructor' && session.user.email) {
+    const { data } = await supabaseAdmin
+      .from('instructors')
+      .select('can_self_book')
+      .eq('email', session.user.email)
+      .maybeSingle();
+    if (data?.can_self_book) {
+      return { session, error: null };
+    }
+  }
+
+  return {
+    session: null,
+    error: NextResponse.json(
+      {
+        error: 'Not authorized to create a new booking. Ask a super admin to enable self-booking for your instructor profile.',
+      },
+      { status: 403 }
+    ),
+  };
+}

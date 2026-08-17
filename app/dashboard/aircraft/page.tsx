@@ -3,14 +3,20 @@
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import { Aircraft } from '@/types';
 import AircraftCard from '@/components/aircraft/AircraftCard';
 import AircraftFormModal from '@/components/aircraft/AircraftFormModal';
 import RoleGate from '@/components/ui/RoleGate';
+import { AIRCRAFT_VIEW_ROLES, AIRCRAFT_WRITE_ROLES } from '@/lib/permissions';
 import { Plus, Search, Plane } from 'lucide-react';
 
 export default function AircraftPage() {
+  const { data: session } = useSession();
+  // Only admin/super_admin can add a new aircraft (2026-08-17 role/tab
+  // matrix) — instructor/maintenance/operations are view-only here.
+  const canWrite = AIRCRAFT_WRITE_ROLES.includes(session?.user?.role || '');
   const { aircraft, loadingAircraft, loadAircraft, addAircraft, updateAircraft, removeAircraft } = useFlightStore();
   const [showForm, setShowForm] = useState(false);
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
@@ -67,7 +73,7 @@ export default function AircraftPage() {
   useSetHeader({
     title: 'Aircraft Fleet',
     subtitle: 'Manage your aircraft',
-    action: (
+    action: canWrite ? (
       <button
         onClick={handleAdd}
         className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
@@ -75,12 +81,12 @@ export default function AircraftPage() {
       >
         <Plus className="w-4 h-4" /> Add Aircraft
       </button>
-    ),
+    ) : undefined,
   });
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
+      <RoleGate allowedRoles={AIRCRAFT_VIEW_ROLES}>
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-7xl mx-auto px-4 py-6">
         {loadingAircraft ? (

@@ -2,8 +2,10 @@
 // Card component displaying instructor details with edit/delete actions
 'use client';
 
+import { useSession } from 'next-auth/react';
 import { Instructor } from '@/types';
-import { Pencil, Trash2 } from 'lucide-react';
+import { INSTRUCTORS_WRITE_ROLES } from '@/lib/permissions';
+import { Pencil, Trash2, Eye, CalendarCheck } from 'lucide-react';
 
 interface Props {
   instructor: Instructor;
@@ -12,6 +14,13 @@ interface Props {
 }
 
 export default function InstructorCard({ instructor, onEdit, onDelete }: Props) {
+  // Per the 2026-08-17 role/tab matrix, only admin/super_admin manage the
+  // instructor roster (operations can view it — see INSTRUCTORS_VIEW_ROLES —
+  // but not add/edit/remove). Server-side enforcement lives in
+  // app/api/instructors/[id]/route.ts.
+  const { data: session } = useSession();
+  const canWrite = INSTRUCTORS_WRITE_ROLES.includes(session?.user?.role || '');
+
   // Parse ratings - stored as comma-separated string in database
   const ratingsList = (instructor.ratings as string).split(',').map(r => r.trim());
 
@@ -63,17 +72,31 @@ export default function InstructorCard({ instructor, onEdit, onDelete }: Props) 
         </div>
       </div>
 
+      {/* Self-booking indicator — see requireScheduleCreateAccess() in
+          lib/api-auth.ts and the toggle in InstructorFormModal.tsx. */}
+      {instructor.canSelfBook && (
+        <div className="mb-3 flex items-center gap-1.5 text-xs" style={{ color: 'var(--success)' }}>
+          <CalendarCheck className="w-3.5 h-3.5" /> Can self-book Schedule slots
+        </div>
+      )}
+
       {/* Action buttons */}
-      <div className="flex space-x-2">
-        <button onClick={() => onEdit(instructor)}
-          className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
-          <Pencil className="w-3.5 h-3.5" /> Edit
-        </button>
-        <button onClick={() => onDelete(instructor.id)}
-          className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}>
-          <Trash2 className="w-3.5 h-3.5" /> Remove
-        </button>
-      </div>
+      {canWrite ? (
+        <div className="flex space-x-2">
+          <button onClick={() => onEdit(instructor)}
+            className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
+            <Pencil className="w-3.5 h-3.5" /> Edit
+          </button>
+          <button onClick={() => onDelete(instructor.id)}
+            className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}>
+            <Trash2 className="w-3.5 h-3.5" /> Remove
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--surface-muted)', color: 'var(--text-tertiary)' }}>
+          <Eye className="w-3 h-3" /> View only
+        </div>
+      )}
     </div>
   );
 }

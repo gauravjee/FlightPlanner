@@ -509,35 +509,39 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     } else { console.error('Error loading aircraft:', error); set({ loadingAircraft: false }); }
   },
 
+  // Writes go through app/api/aircraft/** now instead of straight to
+  // Supabase — that route enforces AIRCRAFT_WRITE_ROLES (admin/super_admin
+  // only, per the 2026-08-17 role/tab matrix: instructor/maintenance/
+  // operations can all see the fleet but are view-only here). See
+  // lib/api-auth.ts.
   addAircraft: async (aircraft) => {
-    const { data, error } = await supabase.from('aircraft').insert({
-      registration: aircraft.registration, type: aircraft.type, model: aircraft.model,
-      year: aircraft.year, hobbs_time: aircraft.hobbsTime, fuel_capacity: aircraft.fuelCapacity,
-      current_fuel: aircraft.currentFuel, status: aircraft.status, next_maintenance: aircraft.nextMaintenance,
-      fuel_burn_rate_lph: aircraft.fuelBurnRateLph ?? null,
-    }).select().single();
-    if (data && !error) set(state => ({ aircraft: [...state.aircraft, { ...aircraft, id: String(data.id) }] }));
+    const res = await fetch('/api/aircraft', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(aircraft),
+    });
+    const result = await res.json().catch(() => ({}));
+    if (res.ok) {
+      set(state => ({ aircraft: [...state.aircraft, { ...aircraft, id: String(result.aircraft.id) }] }));
+    } else {
+      console.error('Error adding aircraft:', result.error);
+    }
   },
 
   updateAircraft: async (id, updates) => {
-    const dbUpdates: Record<string, unknown> = {};
-    if (updates.registration !== undefined) dbUpdates.registration = updates.registration;
-    if (updates.type !== undefined) dbUpdates.type = updates.type;
-    if (updates.model !== undefined) dbUpdates.model = updates.model;
-    if (updates.year !== undefined) dbUpdates.year = updates.year;
-    if (updates.hobbsTime !== undefined) dbUpdates.hobbs_time = updates.hobbsTime;
-    if (updates.fuelCapacity !== undefined) dbUpdates.fuel_capacity = updates.fuelCapacity;
-    if (updates.currentFuel !== undefined) dbUpdates.current_fuel = updates.currentFuel;
-    if (updates.status !== undefined) dbUpdates.status = updates.status;
-    if (updates.nextMaintenance !== undefined) dbUpdates.next_maintenance = updates.nextMaintenance;
-    if (updates.fuelBurnRateLph !== undefined) dbUpdates.fuel_burn_rate_lph = updates.fuelBurnRateLph;
-    const { error } = await supabase.from('aircraft').update(dbUpdates).eq('id', id);
-    if (!error) set(state => ({ aircraft: state.aircraft.map(a => a.id === id ? { ...a, ...updates } : a) }));
+    const res = await fetch(`/api/aircraft/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (res.ok) set(state => ({ aircraft: state.aircraft.map(a => a.id === id ? { ...a, ...updates } : a) }));
+    else console.error('Error updating aircraft:', await res.text());
   },
 
   removeAircraft: async (id) => {
-    const { error } = await supabase.from('aircraft').delete().eq('id', id);
-    if (!error) set(state => ({ aircraft: state.aircraft.filter(a => a.id !== id) }));
+    const res = await fetch(`/api/aircraft/${id}`, { method: 'DELETE' });
+    if (res.ok) set(state => ({ aircraft: state.aircraft.filter(a => a.id !== id) }));
+    else console.error('Error removing aircraft:', await res.text());
   },
 
   getAircraftById: (id) => get().aircraft.find(a => a.id === id),
@@ -709,54 +713,33 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     } else { console.error('Error loading student flight records:', error); set({ loadingFlights: false }); }
   },
 
+  // Insert plus every side effect it used to do as separate client-side
+  // calls (crediting the student's total hours + first-solo date, advancing
+  // the aircraft's hobbs time) now all happen server-side in one request —
+  // see app/api/flight-records/route.ts. Gated to FLIGHT_RECORDS_WRITE_ROLES
+  // (admin/instructor/super_admin — operations isn't on this tab at all,
+  // maintenance is view-only, per the 2026-08-17 role/tab matrix).
   addFlightRecord: async (record) => {
-    const { error } = await supabase.from('flight_records').insert({
-      student_id: record.studentId, aircraft_id: record.aircraftId, instructor_id: record.instructorId,
-      flight_date: record.flightDate, departure_time: record.departureTime, arrival_time: record.arrivalTime,
-      hobbs_start: record.hobbsStart, hobbs_end: record.hobbsEnd, landings: record.landings,
-      flight_type: record.flightType, sortie_type: record.sortieType, exercise: record.exercise || null,
-      maneuvers: record.maneuvers, instructor_notes: record.instructorNotes,
-      student_performance: record.studentPerformance, weather_conditions: record.weatherConditions,
+    const res = await fetch('/api/flight-records', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
     });
+    const result = await res.json().catch(() => ({}));
 
-    if (error) {
+    if (!res.ok) {
       // This used to be swallowed by an `if (!error)` guard with no else —
       // the form still called onClose() as if the save worked, so a failed
       // insert (e.g. a check-constraint violation) looked identical to a
-      // successful one. Surface the real Postgres error so it's visible in
-      // the console and can be shown to whoever's using the form.
-      console.error('Error adding flight record:', error);
-      return { success: false, error: error.message };
+      // successful one. Surface the real error so it's visible in the
+      // console and can be shown to whoever's using the form.
+      console.error('Error adding flight record:', result.error);
+      return { success: false, error: result.error || 'Failed to save flight record.' };
     }
 
-    // ============================================================
-    // FIRST SOLO CELEBRATION CHECK
-    // ============================================================
-    // If this is a SOLO flight, check if it's the student's first solo
-    // If so, record the date in the students table for celebration display
-    if (record.flightType === 'SOLO' || record.sortieType === 'SOLO') {
-      const student = get().students.find(s => s.id === record.studentId);
-      if (student && !student.firstSoloDate) {
-        // Update the student's first solo date via the students API
-        // (routed through the server — see app/api/students/[id]/route.ts)
-        // rather than writing to the `students` table directly from the browser.
-        await get().updateStudent(record.studentId, { firstSoloDate: record.flightDate });
-      }
-    }
-
-    // Update total hours
-    const student = get().students.find(s => s.id === record.studentId);
-    const newTotalHours = (student?.totalHours || 0) + record.totalHours;
-    await get().updateStudent(record.studentId, { totalHours: newTotalHours });
-
-    // Carry the logged Hobbs End reading forward as the aircraft's current
-    // Hobbs meter value, same as addFuelRecord already does for
-    // current_fuel — otherwise the aircraft's Hobbs time never advances
-    // and the next flight's auto-filled Hobbs Start goes stale.
-    await supabase.from('aircraft').update({ hobbs_time: record.hobbsEnd }).eq('id', record.aircraftId);
+    // Reload data to reflect the record itself plus every side effect the
+    // API route just performed (student hours/solo date, aircraft hobbs).
     await get().loadAircraft();
-
-    // Reload data to reflect all changes
     await get().loadStudents();
     await get().loadFlightRecords();
 
@@ -789,17 +772,21 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     } else { console.error('Error loading fuel records:', error); set({ loadingFuel: false }); }
   },
 
+  // Insert plus the aircraft.current_fuel side effect now happen server-side
+  // in one request — see app/api/fuel-records/route.ts. Gated to
+  // FUEL_WRITE_ROLES (admin/super_admin/maintenance — instructor/operations
+  // can view fuel logs but not add one, per the 2026-08-17 role/tab matrix).
   addFuelRecord: async (record) => {
-    const { error } = await supabase.from('fuel_records').insert({
-      aircraft_id: record.aircraftId, fuel_added_liters: record.fuelAddedLiters,
-      fuel_cost_per_liter: record.fuelCostPerLiter, fuel_level_before: record.fuelLevelBefore,
-      fuel_level_after: record.fuelLevelAfter, fuel_type: record.fuelType,
-      refueled_by: record.refueledBy, notes: record.notes,
+    const res = await fetch('/api/fuel-records', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
     });
-    if (!error) {
-      await supabase.from('aircraft').update({ current_fuel: record.fuelLevelAfter }).eq('id', record.aircraftId);
+    if (res.ok) {
       await get().loadAircraft();
       await get().loadFuelRecords();
+    } else {
+      console.error('Error adding fuel record:', await res.text());
     }
   },
 
@@ -896,15 +883,31 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
         : '';
       return { success: false, message: `⚠️ Time conflict — this aircraft needs ${bufferDesc} existing flights${lowFuelNote}.` };
     }
-    const { error } = await supabase.from('scheduled_flights').insert({
-      aircraft_id: booking.aircraftId, instructor_id: booking.instructorId,
-      student_id: booking.studentId || null, start_time: booking.startTime, end_time: booking.endTime,
-      sortie_type: booking.sortieType, exercise: (booking as any).exercise || '',
-      status: booking.status || 'SCHEDULED',
-      weather_briefed: booking.weatherBriefed || false, notam_briefed: booking.notamBriefed || false,
-      notes: booking.notes || '',
+    // Conflict/holiday/weekly-off checks above stay client-side (scheduling
+    // validation, not an authorization boundary — see
+    // app/api/scheduled-flights/route.ts's own scope note). The actual
+    // insert, and WHO is allowed to create a new booking at all, goes
+    // through that route: admin/super_admin/operations always can; an
+    // instructor only if their own can_self_book flag is on (Instructors
+    // tab, super_admin-grantable) — see requireScheduleCreateAccess() in
+    // lib/api-auth.ts.
+    const res = await fetch('/api/scheduled-flights', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        aircraftId: booking.aircraftId, instructorId: booking.instructorId,
+        studentId: booking.studentId || null, startTime: booking.startTime, endTime: booking.endTime,
+        sortieType: booking.sortieType, exercise: (booking as any).exercise || '',
+        status: booking.status || 'SCHEDULED',
+        weatherBriefed: booking.weatherBriefed || false, notamBriefed: booking.notamBriefed || false,
+        notes: booking.notes || '',
+      }),
     });
-    if (!error) { await get().loadScheduledFlights(); return { success: true, message: '✅ Flight booked!' }; }
+    if (res.ok) { await get().loadScheduledFlights(); return { success: true, message: '✅ Flight booked!' }; }
+    const result = await res.json().catch(() => ({}));
+    if (res.status === 403) {
+      return { success: false, message: `🔒 ${result.error || 'Not authorized to create a new booking.'}` };
+    }
     return { success: false, message: '❌ Failed to book flight.' };
   },
 
@@ -994,63 +997,52 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     } else { console.error('Error loading maintenance records:', error); set({ loadingMaintenance: false }); }
   },
 
+  // Writes go through app/api/maintenance-records/** now instead of
+  // straight to Supabase — gated to MAINTENANCE_WRITE_ROLES (admin/
+  // super_admin/maintenance; instructor/operations can view but not log
+  // maintenance, per the 2026-08-17 role/tab matrix). See lib/api-auth.ts.
   addMaintenanceRecord: async (record) => {
-    const { error } = await supabase.from('maintenance_records').insert({
-      aircraft_id: record.aircraftId, maintenance_type: record.maintenanceType,
-      description: record.description, scheduled_date: record.scheduledDate,
-      completed_date: record.completedDate, status: record.status, cost: record.cost,
-      performed_by: record.performedBy, notes: record.notes,
-      maintenance_start: record.maintenanceStart ?? null, maintenance_end: record.maintenanceEnd ?? null,
+    const res = await fetch('/api/maintenance-records', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(record),
     });
-    if (!error) await get().loadMaintenanceRecords();
+    if (res.ok) await get().loadMaintenanceRecords();
+    else console.error('Error adding maintenance record:', await res.text());
   },
 
+  // The "auto-clear the aircraft's status back to ACTIVE once its last
+  // active maintenance record completes/cancels" side effect (see the long
+  // comment that used to live here) now happens server-side, inside
+  // app/api/maintenance-records/[id]/route.ts's PATCH handler — via
+  // supabaseAdmin directly on the aircraft row, NOT by calling
+  // updateAircraft/app/api/aircraft/[id] from here, since that route is
+  // gated to AIRCRAFT_WRITE_ROLES (admin/super_admin only) and would 403
+  // for the `maintenance`-role user who triggers this side effect most
+  // often. See that route's own comment for the full explanation.
   updateMaintenanceRecord: async (id, updates) => {
-    const dbUpdates: Record<string, unknown> = {};
-    if (updates.status !== undefined) dbUpdates.status = updates.status;
-    if (updates.completedDate !== undefined) dbUpdates.completed_date = updates.completedDate;
-    if (updates.cost !== undefined) dbUpdates.cost = updates.cost;
-    if (updates.performedBy !== undefined) dbUpdates.performed_by = updates.performedBy;
-    if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
-    if (updates.description !== undefined) dbUpdates.description = updates.description;
-    if (updates.scheduledDate !== undefined) dbUpdates.scheduled_date = updates.scheduledDate;
-    if (updates.maintenanceStart !== undefined) dbUpdates.maintenance_start = updates.maintenanceStart;
-    if (updates.maintenanceEnd !== undefined) dbUpdates.maintenance_end = updates.maintenanceEnd;
-    const { error } = await supabase.from('maintenance_records').update(dbUpdates).eq('id', id);
-    if (error) return;
-    set(state => ({ maintenanceRecords: state.maintenanceRecords.map(m => m.id === id ? { ...m, ...updates } : m) }));
-
-    // An aircraft's `status` field (ACTIVE/MAINTENANCE/GROUNDED, set on the
-    // Aircraft Fleet page) is separate from this maintenance log, and
-    // getMaintenanceBlock() on the schedule board treats status ===
-    // 'MAINTENANCE' as an unconditional whole-day block regardless of what
-    // the maintenance_records say. If nothing ever flips it back, an
-    // aircraft stays "under maintenance" forever even after the record that
-    // (most likely) caused it is completed or cancelled. So: whenever a
-    // record just left the active (SCHEDULED/IN_PROGRESS) state, auto-clear
-    // the aircraft's status back to ACTIVE — but only if no OTHER record for
-    // the same aircraft is still active, so a genuinely-still-blocked
-    // aircraft (or one someone deliberately grounded by hand for unrelated
-    // reasons — GROUNDED, not MAINTENANCE) isn't touched.
-    if (updates.status === 'COMPLETED' || updates.status === 'CANCELLED') {
-      const state = get();
-      const record = state.maintenanceRecords.find(m => m.id === id);
-      if (record) {
-        const stillActive = state.maintenanceRecords.some(m =>
-          m.id !== id && String(m.aircraftId) === String(record.aircraftId) &&
-          (m.status === 'SCHEDULED' || m.status === 'IN_PROGRESS')
-        );
-        const ac = state.aircraft.find(a => String(a.id) === String(record.aircraftId));
-        if (!stillActive && ac?.status === 'MAINTENANCE') {
-          await get().updateAircraft(ac.id, { status: 'ACTIVE' });
-        }
+    const res = await fetch(`/api/maintenance-records/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (res.ok) {
+      set(state => ({ maintenanceRecords: state.maintenanceRecords.map(m => m.id === id ? { ...m, ...updates } : m) }));
+      // The aircraft-status side effect happened server-side above (if
+      // applicable) — reload aircraft so the client's own copy of that
+      // status reflects it instead of going stale until the next full page load.
+      if (updates.status === 'COMPLETED' || updates.status === 'CANCELLED') {
+        await get().loadAircraft();
       }
+    } else {
+      console.error('Error updating maintenance record:', await res.text());
     }
   },
 
   removeMaintenanceRecord: async (id) => {
-    const { error } = await supabase.from('maintenance_records').delete().eq('id', id);
-    if (!error) set(state => ({ maintenanceRecords: state.maintenanceRecords.filter(m => m.id !== id) }));
+    const res = await fetch(`/api/maintenance-records/${id}`, { method: 'DELETE' });
+    if (res.ok) set(state => ({ maintenanceRecords: state.maintenanceRecords.filter(m => m.id !== id) }));
+    else console.error('Error removing maintenance record:', await res.text());
   },
 
   getMaintenanceForAircraft: (aircraftId) => get().maintenanceRecords.filter(m => m.aircraftId === aircraftId),
@@ -1068,38 +1060,49 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           licenseNumber: row.license_number as string, ratings: row.ratings as string,
           maxDailyHours: row.max_daily_hours as number, email: (row.email as string) || '',
           phone: (row.phone as string) || '', status: row.status as Instructor['status'],
+          // Defaults to false if the migration hasn't been run yet in
+          // Supabase (add-instructor-self-booking-permission.sql) — column
+          // missing/null both read as "can't self-book," the safe side.
+          canSelfBook: Boolean(row.can_self_book),
         })),
         loadingInstructors: false,
       });
     } else { console.error('Error loading instructors:', error); set({ loadingInstructors: false }); }
   },
 
+  // Writes go through app/api/instructors/** now instead of straight to
+  // Supabase — gated to INSTRUCTORS_WRITE_ROLES (admin/super_admin only;
+  // operations can view the roster, per the 2026-08-17 role/tab matrix —
+  // note this roster is separate from an instructor's own "My Students"
+  // page, which instructor still has). See lib/api-auth.ts.
   addInstructor: async (instructor) => {
-    const { data, error } = await supabase.from('instructors').insert({
-      name: instructor.name, initials: instructor.initials, license_number: instructor.licenseNumber,
-      ratings: instructor.ratings, max_daily_hours: instructor.maxDailyHours,
-      email: instructor.email, phone: instructor.phone, status: instructor.status,
-    }).select().single();
-    if (data && !error) set(state => ({ instructors: [...state.instructors, { ...instructor, id: String(data.id) }] }));
+    const res = await fetch('/api/instructors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(instructor),
+    });
+    const result = await res.json().catch(() => ({}));
+    if (res.ok) {
+      set(state => ({ instructors: [...state.instructors, { ...instructor, id: String(result.instructor.id) }] }));
+    } else {
+      console.error('Error adding instructor:', result.error);
+    }
   },
 
   updateInstructor: async (id, updates) => {
-    const dbUpdates: Record<string, unknown> = {};
-    if (updates.name !== undefined) dbUpdates.name = updates.name;
-    if (updates.initials !== undefined) dbUpdates.initials = updates.initials;
-    if (updates.licenseNumber !== undefined) dbUpdates.license_number = updates.licenseNumber;
-    if (updates.ratings !== undefined) dbUpdates.ratings = updates.ratings;
-    if (updates.maxDailyHours !== undefined) dbUpdates.max_daily_hours = updates.maxDailyHours;
-    if (updates.email !== undefined) dbUpdates.email = updates.email;
-    if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
-    if (updates.status !== undefined) dbUpdates.status = updates.status;
-    const { error } = await supabase.from('instructors').update(dbUpdates).eq('id', id);
-    if (!error) set(state => ({ instructors: state.instructors.map(i => i.id === id ? { ...i, ...updates } : i) }));
+    const res = await fetch(`/api/instructors/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates),
+    });
+    if (res.ok) set(state => ({ instructors: state.instructors.map(i => i.id === id ? { ...i, ...updates } : i) }));
+    else console.error('Error updating instructor:', await res.text());
   },
 
   removeInstructor: async (id) => {
-    const { error } = await supabase.from('instructors').delete().eq('id', id);
-    if (!error) set(state => ({ instructors: state.instructors.filter(i => i.id !== id) }));
+    const res = await fetch(`/api/instructors/${id}`, { method: 'DELETE' });
+    if (res.ok) set(state => ({ instructors: state.instructors.filter(i => i.id !== id) }));
+    else console.error('Error removing instructor:', await res.text());
   },
 
 

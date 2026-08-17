@@ -10,6 +10,7 @@ import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import AvailabilityForm from '@/components/availability/AvailabilityForm';
 import RoleGate from '@/components/ui/RoleGate';
+import { AVAILABILITY_VIEW_ROLES } from '@/lib/permissions';
 import { Palmtree, GraduationCap, Plane, ClipboardList, Pencil, Trash2 } from 'lucide-react';
 
 // ============================================================
@@ -114,7 +115,7 @@ export default function AvailabilityPage() {
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
+      <RoleGate allowedRoles={AVAILABILITY_VIEW_ROLES}>
       <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="max-w-7xl mx-auto px-4 py-6">
           {/* Stats */}

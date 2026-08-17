@@ -228,6 +228,13 @@ export interface Instructor {
   email: string;
   phone: string;
   status: 'AVAILABLE' | 'FLYING' | 'OFF_DUTY';
+  // Whether this instructor can create their own new Schedule bookings —
+  // false by default, granted per instructor by a super_admin (Instructors
+  // tab). See add-instructor-self-booking-permission.sql and
+  // requireScheduleCreateAccess() in lib/api-auth.ts. Doesn't affect
+  // viewing the Schedule or editing/debriefing/cancelling flights already
+  // assigned to them.
+  canSelfBook?: boolean;
 }
 
 // Weather data from AVWX API

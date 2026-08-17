@@ -11,6 +11,7 @@ import { StudentRecord, FlightRecord } from '@/types';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
+import { PROGRESS_VIEW_ROLES } from '@/lib/permissions';
 import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist';
 import { ChartColumn, TrendingUp, School, ArrowRight, Plane } from 'lucide-react';
 
@@ -251,9 +252,11 @@ export default function ProgressPage() {
       {/* Includes 'student' — this page doubles as the student's own progress
           view (see the userRole === 'student' auto-select effect above), so
           restricting to staff-only roles would have locked students out of
-          their own data. Only operations/maintenance (who have no legitimate
-          use for this page) are excluded, matching the dashboard tile filter. */}
-      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'student']}>
+          their own data. Per the 2026-08-17 role/tab matrix, 'operations'
+          also gets view access here (view-only in the matrix — this page has
+          no create/edit/delete actions of its own regardless of role).
+          maintenance is still excluded (no legitimate use for this page). */}
+      <RoleGate allowedRoles={PROGRESS_VIEW_ROLES}>
       <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="max-w-7xl mx-auto px-4 py-6">
 

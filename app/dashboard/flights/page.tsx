@@ -6,15 +6,23 @@ import { useSetHeader } from '@/components/ui/HeaderContext';
 import { generateStudentLogbook } from '@/lib/pdf';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import FlightRecordForm from '@/components/flights/FlightRecordForm';
 import Link from 'next/link';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
-import { FileText, NotebookPen, ClipboardList, PartyPopper, Star, ClipboardCheck } from 'lucide-react';
+import { FLIGHT_RECORDS_VIEW_ROLES, FLIGHT_RECORDS_WRITE_ROLES } from '@/lib/permissions';
+import { FileText, NotebookPen, ClipboardList, PartyPopper, Star, ClipboardCheck, Eye } from 'lucide-react';
 import { ScheduledFlight } from '@/types';
 
 export default function FlightsPage() {
+  const { data: session } = useSession();
+  // operations isn't on this tab at all; maintenance can view the logbook
+  // but not log a flight (2026-08-17 role/tab matrix). Server-side
+  // enforcement lives in app/api/flight-records/route.ts
+  // (FLIGHT_RECORDS_WRITE_ROLES).
+  const canWrite = FLIGHT_RECORDS_WRITE_ROLES.includes(session?.user?.role || '');
   const {
     flightRecords, students, sortieTypes, exercises, loadingFlights,
     scheduledFlights,
@@ -87,27 +95,35 @@ export default function FlightsPage() {
           <FileText className="w-3.5 h-3.5" /> Export Logbook
         </button>
       )}
-        <button
-          onClick={() => { setResolvingFlight(null); setShowForm(true); }}
-          className="px-4 py-2 rounded-lg transition cursor-pointer font-bold flex items-center gap-1.5"
-          style={{ backgroundColor: 'var(--success)', color: '#04141a' }}
-        >
-          <NotebookPen className="w-3.5 h-3.5" /> Log Flight
-        </button>
+        {canWrite ? (
+          <button
+            onClick={() => { setResolvingFlight(null); setShowForm(true); }}
+            className="px-4 py-2 rounded-lg transition cursor-pointer font-bold flex items-center gap-1.5"
+            style={{ backgroundColor: 'var(--success)', color: '#04141a' }}
+          >
+            <NotebookPen className="w-3.5 h-3.5" /> Log Flight
+          </button>
+        ) : (
+          <span className="px-3 py-2 surface-inner text-tertiary rounded-lg text-xs flex items-center gap-1.5">
+            <Eye className="w-3.5 h-3.5" /> View only
+          </span>
+        )}
       </div>
     ),
   });
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin']}>
+      <RoleGate allowedRoles={FLIGHT_RECORDS_VIEW_ROLES}>
     <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* ----- PENDING LOGBOOK ENTRIES ----- */}
         {/* Flights checked out with "auto-create logbook entry" unchecked —
             marked completed and flown, but the training record (hours,
-            first-solo credit) hasn't landed yet. See DebriefForm.tsx. */}
-        {pendingLogbookFlights.length > 0 && (
+            first-solo credit) hasn't landed yet. See DebriefForm.tsx.
+            canWrite-gated below (the "Complete Entry" action logs a flight,
+            same write permission as the header "Log Flight" button). */}
+        {canWrite && pendingLogbookFlights.length > 0 && (
           <div
             className="rounded-xl p-4 mb-6"
             style={{ backgroundColor: 'var(--warning-soft)', border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)' }}

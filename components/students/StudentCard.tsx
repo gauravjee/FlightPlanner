@@ -1,8 +1,10 @@
 // components/students/StudentCard.tsx
 'use client';
 
+import { useSession } from 'next-auth/react';
 import { StudentRecord } from '@/types';
-import { Pencil, Trash2, PartyPopper, TriangleAlert, CircleAlert, CircleCheck, GraduationCap } from 'lucide-react';
+import { STUDENT_WRITE_ROLES } from '@/lib/permissions';
+import { Pencil, Trash2, PartyPopper, TriangleAlert, CircleAlert, CircleCheck, GraduationCap, Eye } from 'lucide-react';
 
 interface Props {
   student: StudentRecord;
@@ -24,6 +26,13 @@ const STAGE_COLOR_VARS: Record<string, string> = {
 };
 
 export default function StudentCard({ student, onEdit, onDelete }: Props) {
+  // Per the 2026-08-17 role/tab matrix, operations moved to view-only for
+  // Students — they still see everyone (STUDENT_STAFF_ROLES) but can no
+  // longer edit or remove a student record. Server-side enforcement lives
+  // in app/api/students/[id]/route.ts (STUDENT_WRITE_ROLES).
+  const { data: session } = useSession();
+  const canWrite = STUDENT_WRITE_ROLES.includes(session?.user?.role || '');
+
   const medicalExpiry = student.medicalExpiry ? new Date(student.medicalExpiry) : null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -180,14 +189,20 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
       )}
 
       {/* Actions */}
-      <div className="flex space-x-2">
-        <button onClick={() => onEdit(student)} className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
-          <Pencil className="w-3.5 h-3.5" /> Edit
-        </button>
-        <button onClick={() => onDelete(student.id)} className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}>
-          <Trash2 className="w-3.5 h-3.5" /> Remove
-        </button>
-      </div>
+      {canWrite ? (
+        <div className="flex space-x-2">
+          <button onClick={() => onEdit(student)} className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
+            <Pencil className="w-3.5 h-3.5" /> Edit
+          </button>
+          <button onClick={() => onDelete(student.id)} className="flex-1 px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}>
+            <Trash2 className="w-3.5 h-3.5" /> Remove
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs" style={{ backgroundColor: 'var(--surface-muted)', color: 'var(--text-tertiary)' }}>
+          <Eye className="w-3 h-3" /> View only
+        </div>
+      )}
     </div>
   );
 }

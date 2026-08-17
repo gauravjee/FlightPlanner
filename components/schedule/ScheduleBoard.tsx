@@ -18,10 +18,12 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, Printer, Plus, Wrench, TriangleAlert, ClipboardList, X } from 'lucide-react';
+import { useSession } from 'next-auth/react';
+import { Calendar, Printer, Plus, Wrench, TriangleAlert, ClipboardList, X, Lock, Eye } from 'lucide-react';
 import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays } from '@/lib/store';
 import { getLocationDisplay } from '@/lib/location';
 import { FlightSlot, ScheduledFlight } from '@/types';
+import { SCHEDULE_CREATE_ROLES } from '@/lib/permissions';
 import FlightDetailModal from './FlightDetailModal';
 import BookingForm from './BookingForm';
 import DebriefForm from './DebriefForm';
@@ -127,6 +129,23 @@ export default function ScheduleBoard() {
   const aircraft = store.aircraft;               // Fleet data
   const instructors = store.instructors;         // Instructor list
   const students = store.students;               // Student list
+
+  // ----- Who's allowed to CREATE a brand-new booking (server-side gate is
+  // requireScheduleCreateAccess() in lib/api-auth.ts — this mirrors it
+  // client-side purely for UX, so the wrong role sees a clear message
+  // instead of a raw 403 after filling out the whole form). admin/
+  // super_admin/operations always can; an instructor only if their own
+  // instructors row has can_self_book set (matched by session email, same
+  // as app/dashboard/instructor/page.tsx). Doesn't affect viewing the
+  // board, or editing/debriefing/cancelling a flight already assigned to
+  // that instructor — see the FlightDetailModal onEdit handler below,
+  // which is intentionally NOT gated by this. -----
+  const { data: session } = useSession();
+  const sessionRole = session?.user?.role;
+  const currentInstructor = instructors.find(i => i.email === session?.user?.email);
+  const canCreateBooking =
+    (!!sessionRole && SCHEDULE_CREATE_ROLES.includes(sessionRole)) ||
+    (sessionRole === 'instructor' && !!currentInstructor?.canSelfBook);
 
   // UI state from store
   const selectedSlot = store.selectedSlot;       // Currently clicked slot for modal
@@ -714,6 +733,19 @@ export default function ScheduleBoard() {
   // straight from the `activeAircraft.map(...)` below, nothing here assumes
   // a fixed count.
   const handleGridClick = (aircraftId: string, e: React.MouseEvent<HTMLDivElement>) => {
+    // Not authorized to create a brand-new booking at all — see
+    // canCreateBooking above. Checked first, before any of the time/
+    // maintenance/holiday validation below, so the message is unambiguous.
+    if (!canCreateBooking) {
+      setErrorMessage(
+        sessionRole === 'instructor'
+          ? 'You don’t have permission to create a new booking. Ask a super admin to enable self-booking for your instructor profile.'
+          : 'You don’t have permission to create a new booking. This schedule is view-only for your role.'
+      );
+      setTimeout(() => setErrorMessage(''), 4000);
+      return;
+    }
+
     const rect = e.currentTarget.getBoundingClientRect();
     const clickPercent = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
     // Same 05:00–22:00 span the Gantt blocks are positioned against (HOURS
@@ -810,17 +842,30 @@ export default function ScheduleBoard() {
             >
               <Printer className="w-3.5 h-3.5" /> Print Schedule
             </button>
-            <button
-              onClick={() => {
-                setGridClickPrefill(null);
-                setEditingFlight(null);
-                setShowBookingForm(true);
-              }}
-              className="px-4 py-2 rounded-lg text-sm font-semibold transition cursor-pointer flex items-center gap-1.5"
-              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-strong), var(--accent))', color: '#ffffff' }}
-            >
-              <Plus className="w-3.5 h-3.5" /> Book Slot
-            </button>
+            {canCreateBooking ? (
+              <button
+                onClick={() => {
+                  setGridClickPrefill(null);
+                  setEditingFlight(null);
+                  setShowBookingForm(true);
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-semibold transition cursor-pointer flex items-center gap-1.5"
+                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-strong), var(--accent))', color: '#ffffff' }}
+              >
+                <Plus className="w-3.5 h-3.5" /> Book Slot
+              </button>
+            ) : sessionRole === 'instructor' ? (
+              <span
+                className="px-3 py-2 surface-inner text-tertiary rounded-lg text-xs flex items-center gap-1.5"
+                title="Ask a super admin to enable self-booking for your instructor profile."
+              >
+                <Lock className="w-3.5 h-3.5" /> Booking not enabled
+              </span>
+            ) : (
+              <span className="px-3 py-2 surface-inner text-tertiary rounded-lg text-xs flex items-center gap-1.5">
+                <Eye className="w-3.5 h-3.5" /> View only
+              </span>
+            )}
           </div>
         </div>
 

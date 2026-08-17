@@ -4,12 +4,19 @@ import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 
 import { useState, useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import FuelLogForm from '@/components/fuel/FuelLogForm';
 import RoleGate from '@/components/ui/RoleGate';
-import { Fuel, Plane, ClipboardList } from 'lucide-react';
+import { FUEL_VIEW_ROLES, FUEL_WRITE_ROLES } from '@/lib/permissions';
+import { Fuel, Plane, ClipboardList, Eye } from 'lucide-react';
 
 export default function FuelPage() {
+  const { data: session } = useSession();
+  // maintenance keeps full read/write here; instructor/operations are
+  // view-only (2026-08-17 role/tab matrix). Server-side enforcement lives
+  // in app/api/fuel-records/route.ts (FUEL_WRITE_ROLES).
+  const canWrite = FUEL_WRITE_ROLES.includes(session?.user?.role || '');
   const { aircraft, fuelRecords, loadingFuel, loadFuelRecords, loadAircraft } = useFlightStore();
   const [showForm, setShowForm] = useState(false);
 
@@ -27,7 +34,7 @@ export default function FuelPage() {
   useSetHeader({
     title: 'Fuel Management',
     subtitle: 'Track refueling & consumption',
-    action: (
+    action: canWrite ? (
       <button
         onClick={() => setShowForm(true)}
         className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
@@ -35,12 +42,16 @@ export default function FuelPage() {
       >
         <Fuel className="w-4 h-4" /> Log Refueling
       </button>
+    ) : (
+      <span className="px-3 py-2 surface-inner text-tertiary rounded-lg text-xs flex items-center gap-1.5">
+        <Eye className="w-3.5 h-3.5" /> View only
+      </span>
     ),
   });
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'maintenance']}>
+      <RoleGate allowedRoles={FUEL_VIEW_ROLES}>
     <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-7xl mx-auto px-4 py-6">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
