@@ -35,7 +35,7 @@ import { useSession } from 'next-auth/react';
 import {
   LayoutDashboard, Calendar, Plane, Users, Fuel, FileText, Wrench,
   GraduationCap, UserRound, Umbrella, ChartColumnIncreasing, BookOpen,
-  Settings,
+  Settings,ClipboardList,
 } from 'lucide-react';
 import { canViewModule, type ModuleKey } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
@@ -73,6 +73,11 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/availability', label: 'Availability', icon: Umbrella, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
   { href: '/dashboard/progress', label: 'Progress', icon: ChartColumnIncreasing, roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
   { href: '/dashboard/ground-school', label: 'Ground School', icon: BookOpen, roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
+  // roles here hand-synced to lib/permissions.ts's REPORTS_VIEW_ROLES —
+  // instructor/maintenance can see a generated report but only
+  // admin/super_admin/operations can generate/save one (see
+  // REPORTS_WRITE_ROLES, enforced in the Reports pages themselves).
+  { href: '/dashboard/reports', label: 'Reports', icon: ClipboardList, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance'] },
   { href: '/dashboard/admin/setup', label: 'Admin Setup', icon: Settings, roles: ['super_admin'] },
 ];
 

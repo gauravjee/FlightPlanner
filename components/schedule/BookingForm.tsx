@@ -100,6 +100,28 @@ const EXERCISES = [
 ];
 
 // ============================================================
+// EXERCISES THAT REQUIRE SOLO RELEASE
+// ============================================================
+// These specific exercises — general-flying solo checks, cross-country
+// distance qualifiers, and instrument exercises — are solo-phase
+// training by definition: a student only reaches them after being
+// released to fly solo, even if a particular session ends up flown
+// Dual (e.g. a dual check ride ahead of a first solo cross-country).
+// So this gate checks the EXERCISE selected, not the booking's Dual/
+// Solo setting — picking Dual doesn't bypass it. Matched against the
+// short code before " - " in each EXERCISES entry above, not the
+// free-text description, so this stays in sync automatically if the
+// descriptions ever get tweaked.
+const SOLO_RELEASE_EXERCISE_CODES = new Set([
+  'GF', 'GFT.D', 'GFT.N', '120NM', '250NM', '300NM', 'IF', 'IRT', 'X-CTY',
+]);
+
+function exerciseRequiresSoloRelease(exercise: string): boolean {
+  const code = exercise.split(' - ')[0]?.trim();
+  return !!code && SOLO_RELEASE_EXERCISE_CODES.has(code);
+}
+
+// ============================================================
 // MAIN COMPONENT
 // ============================================================
 export default function BookingForm({ onClose, onSuccess, existingFlight, prefill }: Props) {
@@ -302,6 +324,13 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   const isSolo = form.sortieType === 'SOLO';
   const isMaintenance = form.sortieType === 'MAINTENANCE';
 
+  // True for an actual Solo booking, OR a Dual/Solo booking of one of the
+  // solo-release-gated exercises (see SOLO_RELEASE_EXERCISE_CODES) — used
+  // to widen the solo-readiness requirement check below beyond just
+  // isSolo. Exercise is always '' for Maintenance, so this is naturally
+  // false there without a separate isMaintenance guard.
+  const exerciseRequiresSolo = exerciseRequiresSoloRelease(form.exercise);
+
   // Clear instructor when switching to Solo
   useEffect(() => {
     if (isSolo && form.instructorId) {
@@ -417,6 +446,12 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
       .filter(flight => {
         if (existingFlight && flight.id === existingFlight.id) return false;
         const flightAircraft = aircraft.find(a => String(a.id) === String(flight.aircraftId));
+
+        // cancelFlight() now soft-cancels (keeps the row) instead of
+        // deleting it, so a cancelled flight must be explicitly excluded
+        // here too or the aircraft would look permanently booked.
+        if (flight.status === 'CANCELLED') return false;
+
         // Asymmetric: the gap before THAT flight is based on the aircraft's
         // current fuel (best info we have for "back then"); the gap after it
         // is based on the fuel projected at the end of that flight's own
@@ -453,6 +488,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     if (form.studentId && !isMaintenance) {
       const conflict = scheduledFlights.some(flight => {
         if (existingFlight && flight.id === existingFlight.id) return false;
+        if (flight.status === 'CANCELLED') return false;
         if (flight.studentId !== form.studentId) return false;
         const fs = new Date(flight.startTime); const fe = new Date(flight.endTime);
         return fs < slotEnd && fe > slotStart;
@@ -463,6 +499,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     if (form.instructorId && !isSolo) {
       const conflict = scheduledFlights.some(flight => {
         if (existingFlight && flight.id === existingFlight.id) return false;
+        if (flight.status === 'CANCELLED') return false;
         if (flight.instructorId !== form.instructorId) return false;
         const fs = new Date(flight.startTime); const fe = new Date(flight.endTime);
         return fs < slotEnd && fe > slotStart;
@@ -559,17 +596,23 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     // ===== CHECK STUDENT REQUIREMENTS =====
     // Two layers, both against the same freshly-loaded requirements list:
     //   1. The two specific checks that already existed here (SPL for any
-    //      flight, FRTOL(R) for solo), kept by name match so this doesn't
-    //      silently stop enforcing them if those particular requirement
-    //      templates don't (yet) have blocksAllFlights/blocksSolo ticked
-    //      in Admin Setup -> Requirements.
+    //      flight, FRTOL(R) for solo — FRTOL(R) stays isSolo-only, since
+    //      that's specifically about a student handling radio calls
+    //      alone, not about which exercise), kept by name match so this
+    //      doesn't silently stop enforcing them if those particular
+    //      requirement templates don't (yet) have blocksAllFlights/
+    //      blocksSolo ticked in Admin Setup -> Requirements.
     //   2. A generic check across every requirement: any incomplete
     //      requirement flagged blocksAllFlights blocks every sortie type;
-    //      blocksSolo additionally blocks SOLO specifically. This is what
-    //      makes the Lock flags configured on the Requirements tab (fully
-    //      modeled in the DB/UI, but never actually enforced anywhere
-    //      until now) actually stop a booking — for any requirement an
-    //      admin marks blocking, not just these two hardcoded ones.
+    //      blocksSolo additionally blocks SOLO — and, as of 2026-08-19,
+    //      also blocks Dual/Solo bookings of the solo-release-gated
+    //      exercises (SOLO_RELEASE_EXERCISE_CODES) — those exercises are
+    //      solo-phase training regardless of what Dual/Solo is set to on
+    //      this particular booking. This is what makes the Lock flags
+    //      configured on the Requirements tab (fully modeled in the
+    //      DB/UI, but never actually enforced anywhere until now)
+    //      actually stop a booking — for any requirement an admin marks
+    //      blocking, not just these two hardcoded ones.
     // Every early return below must setLoading(false) first — this runs
     // after the setLoading(true) above, unlike the validation checks
     // earlier in this handler.
@@ -604,10 +647,11 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
         return;
       }
 
-      if (isSolo) {
+      if (isSolo || exerciseRequiresSolo) {
         const blockingSolo = studentReqs.find(r => r.blocksSolo && !r.isCompleted);
         if (blockingSolo) {
-          setError(`❌ Student cannot fly solo until "${blockingSolo.requirementName}" is completed.`);
+          const reason = isSolo ? 'fly solo' : `fly the "${form.exercise}" exercise`;
+          setError(`❌ Student cannot ${reason} until "${blockingSolo.requirementName}" is completed.`);
           setLoading(false);
           return;
         }

@@ -196,7 +196,12 @@ export default function ScheduleBoard() {
   }, [ftoSettings, loadFTOSettings]);
 
   // ----- Filter flights for the selected date -----
+ // Excludes CANCELLED: cancelFlight() now soft-cancels (keeps the row,
+  // for the Daily Flying Report's cancellation stats) instead of deleting
+  // it, so the grid needs its own filter now to avoid rendering a ghost
+  // block for a slot that's actually free again.
   const filteredFlights = scheduledFlights.filter(flight => {
+    if (flight.status === 'CANCELLED') return false;
     const flightDate = new Date(flight.startTime).toLocaleDateString('en-CA');
     return flightDate === selectedDate;
   });

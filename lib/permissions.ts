@@ -209,3 +209,29 @@ export function canWriteModule(
 ): boolean {
   return getModuleAccessLevel(role, overrides, moduleKey) === 'full';
 }
+
+// ============================================================
+// REPORTS (2026-08-18) — DGCA-facing compliance reports, starting with
+// the Daily Flying Report.
+// ============================================================
+// Not part of the six-module MODULE_ACCESS/per-user-override system above
+// — these are operational/compliance documents, not a data table with its
+// own CRUD, so a per-user override didn't seem like the right fit. Default
+// assumption (not yet confirmed against a real DGCA requirement, flagged
+// for review): everyone who works the flight line day-to-day — including
+// maintenance, who needs to reach this page to log a safety incident even
+// though they have no write access to the report itself — can SEE the
+// day's report, but actually generating/saving the official snapshot for
+// a date is restricted to the roles who already run day-to-day operations
+// (admin/super_admin/operations).
+export const REPORTS_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'operations', 'maintenance'];
+export const REPORTS_WRITE_ROLES = ['admin', 'super_admin', 'operations'];
+
+// Logging a new safety incident follows the same (deliberately broad) set
+// as REPORTS_VIEW_ROLES — anyone who can see the Daily Flying Report page
+// can also log an incident from it, since that's the only place this
+// action lives today. Kept as its own named constant (rather than every
+// call site just reusing REPORTS_VIEW_ROLES directly) so the two can be
+// pulled apart later without hunting down every reference, if incident
+// reporting ever needs a different rule than viewing the report does.
+export const INCIDENT_REPORT_ROLES = REPORTS_VIEW_ROLES;

@@ -1,10 +1,10 @@
 // lib/pdf.ts
-// PDF generation service for student logbooks and daily operations sheets
+// PDF generation service for student logbooks and the Daily Flying Report
 // Uses jsPDF for PDF creation and jsPDF-AutoTable for tables
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { FlightRecord, Aircraft, StudentRecord, ScheduledFlight } from '@/types';
+import { FlightRecord, StudentRecord } from '@/types';
 
 /**
  * Generate a student logbook PDF with all flight records
@@ -138,135 +138,123 @@ export function generateStudentLogbook(student: StudentRecord, flights: FlightRe
 }
 
 /**
- * Generate a daily operations sheet with all scheduled flights
- * 
- * @param date - The date for the ops sheet
- * @param flights - Array of scheduled flights for the day
- * @param aircraft - Fleet data for fuel status
- * @param weatherMetar - Current METAR string
+ * Generate the FTO Daily Flying Report PDF — the exact format supplied by
+ * the FTO: a header (Date/Airport), a per-flight table, and a footer
+ * block of day-level totals. Operates on an already-computed
+ * DailyFlyingReport (see app/api/reports/daily-flying/route.ts for how
+ * rows/stats are derived) rather than raw records, so the PDF always
+ * matches whatever was actually saved/reviewed on screen.
+ *
+ * Supersedes the old generateDailyOpsSheet, which was built earlier but
+ * never wired up to any button — this is its real replacement, shaped to
+ * the FTO's actual specified format instead of a guessed one.
+ *
+ * @param report - The generated/saved Daily Flying Report
  */
-export function generateDailyOpsSheet(
-  date: string,
-  flights: ScheduledFlight[],
-  aircraft: Aircraft[],
-  weatherMetar: string = ''
-): void {
+export function generateDailyFlyingReport(report: {
+  reportDate: string;
+  airportCode?: string;
+  rows: { aircraft: string; student: string; instructor: string; sortie: string; start: string; end: string; hours: number; type: string; exercise: string; remarks: string }[];
+  stats: {
+    totalAircraftHours: number; totalStudentHours: number; totalInstructorHours: number;
+    dualHours: number; soloHours: number; crossCountryHours: number; nightHours: number;
+    aircraftGrounded: number; flightsCancelled: number; weatherCancellations: number;
+    maintenanceCancellations: number; otherCancellations: number; safetyIncidents: number;
+  };
+  remarks?: string;
+}): void {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
-  
+
   // ============================================================
   // HEADER
   // ============================================================
   doc.setFillColor(30, 41, 59);
   doc.rect(0, 0, pageWidth, 30, 'F');
-  
+
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.text('FlightPro Manager - Daily Operations Sheet', 14, 15);
-  
+  doc.text('FTO Daily Flying Report', 14, 15);
+
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Date: ${new Date(date).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}`, 14, 25);
-  
+  const dateLabel = new Date(report.reportDate).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  doc.text(`Date: ${dateLabel}`, 14, 24);
+  doc.text(`Airport: ${report.airportCode || 'N/A'}`, pageWidth - 14, 24, { align: 'right' });
+
   // ============================================================
-  // WEATHER
+  // FLIGHT TABLE
   // ============================================================
-  doc.setTextColor(0, 0, 0);
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Weather Briefing', 14, 42);
-  
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'normal');
-  if (weatherMetar) {
-    doc.text(`METAR: ${weatherMetar}`, 14, 50);
-  }
-  
-  // ============================================================
-  // FLIGHT SCHEDULE TABLE
-  // ============================================================
-  const tableData = flights.map(f => [
-    f.aircraftReg || 'N/A',
-    new Date(f.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
-    new Date(f.endTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' }),
-    f.studentName || 'N/A',
-    f.instructorName || 'N/A',
-    f.sortieType?.replace(/_/g, ' ') || 'N/A',
-    f.status || 'N/A',
+  const tableData = report.rows.map(r => [
+    r.aircraft, r.student, r.instructor, r.sortie, r.start, r.end,
+    r.hours.toFixed(1), r.type, r.exercise, r.remarks,
   ]);
-  
+
   autoTable(doc, {
-    startY: 58,
-    head: [['Aircraft', 'Start', 'End', 'Student', 'Instructor', 'Sortie', 'Status']],
+    startY: 38,
+    head: [['Aircraft', 'Student', 'Instructor', 'Sortie', 'Start', 'End', 'Hours', 'Dual/Solo', 'Exercise', 'Remarks']],
     body: tableData,
     theme: 'grid',
-    headStyles: {
-      fillColor: [30, 41, 59],
-      textColor: [255, 255, 255],
-      fontSize: 8,
-      fontStyle: 'bold',
-    },
-    bodyStyles: {
-      fontSize: 8,
-      textColor: [0, 0, 0],
-    },
-    alternateRowStyles: {
-      fillColor: [241, 245, 249],
-    },
+    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 7, textColor: [0, 0, 0] },
+    alternateRowStyles: { fillColor: [241, 245, 249] },
     margin: { left: 14, right: 14 },
   });
-  
+
   // ============================================================
-  // FLEET FUEL STATUS
+  // FOOTER SUMMARY
   // ============================================================
-  const finalY = (doc as any).lastAutoTable?.finalY || 100;
-  
-  doc.setFontSize(10);
+  const finalY = (doc as any).lastAutoTable?.finalY || 45;
+  const s = report.stats;
+  const summaryLines = [
+    `Total Aircraft Hours: ${s.totalAircraftHours.toFixed(1)}h`,
+    `Total Student Flying Hours: ${s.totalStudentHours.toFixed(1)}h`,
+    `Total Instructor Hours: ${s.totalInstructorHours.toFixed(1)}h`,
+    `Dual Hours: ${s.dualHours.toFixed(1)}h`,
+    `Solo Hours: ${s.soloHours.toFixed(1)}h`,
+    `Cross-Country Hours: ${s.crossCountryHours.toFixed(1)}h`,
+    `Night Hours: ${s.nightHours.toFixed(1)}h`,
+    `Aircraft Grounded: ${s.aircraftGrounded}`,
+    `Flights Cancelled: ${s.flightsCancelled}`,
+    `  Weather Cancellations: ${s.weatherCancellations}`,
+    `  Maintenance Cancellations: ${s.maintenanceCancellations}`,
+    `  Other Cancellations: ${s.otherCancellations}`,
+    `Safety Incidents: ${s.safetyIncidents}`,
+  ];
+
+  doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
-  doc.text('Fleet Fuel Status', 14, finalY + 15);
-  
-  const fuelData = aircraft.map(a => [
-    a.registration,
-    a.type,
-    `${a.currentFuel}L / ${a.fuelCapacity}L`,
-    `${Math.round((a.currentFuel / a.fuelCapacity) * 100)}%`,
-  ]);
-  
-  autoTable(doc, {
-    startY: finalY + 20,
-    head: [['Aircraft', 'Type', 'Fuel Level', 'Percentage']],
-    body: fuelData,
-    theme: 'grid',
-    headStyles: {
-      fillColor: [30, 41, 59],
-      textColor: [255, 255, 255],
-      fontSize: 8,
-      fontStyle: 'bold',
-    },
-    bodyStyles: {
-      fontSize: 8,
-      textColor: [0, 0, 0],
-    },
-    margin: { left: 14, right: 14 },
-  });
-  
+  doc.setTextColor(0, 0, 0);
+  doc.text('Summary', 14, finalY + 12);
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  const colSplit = Math.ceil(summaryLines.length / 2);
+  summaryLines.slice(0, colSplit).forEach((line, i) => doc.text(line, 14, finalY + 20 + i * 6));
+  summaryLines.slice(colSplit).forEach((line, i) => doc.text(line, 105, finalY + 20 + i * 6));
+
+  const remarksY = finalY + 20 + colSplit * 6 + 8;
+  doc.setFont('helvetica', 'bold');
+  doc.text('Remarks:', 14, remarksY);
+  doc.setFont('helvetica', 'normal');
+  const remarksText = doc.splitTextToSize(report.remarks?.trim() || 'None', pageWidth - 28);
+  doc.text(remarksText, 14, remarksY + 7);
+
   // ============================================================
   // SIGN-OFF
   // ============================================================
-  const signY = (doc as any).lastAutoTable?.finalY + 20 || finalY + 80;
+  const signY = remarksY + 7 + remarksText.length * 5 + 15;
   doc.line(14, signY, 80, signY);
   doc.line(120, signY, 190, signY);
   doc.setFontSize(9);
-  doc.setTextColor(0, 0, 0);
   doc.text('Operations Officer', 14, signY + 7);
   doc.text('Chief Flight Instructor', 120, signY + 7);
-  
+
   // Footer
   doc.setFontSize(8);
   doc.setTextColor(128, 128, 128);
-  doc.text(`Generated by FlightPro Manager | ${new Date().toLocaleString('en-IN')}`, 14, 285);
-  
-  // Save
-  doc.save(`Daily_Ops_${date}.pdf`);
+  doc.text(`Generated by FlightPro Manager | ${new Date().toLocaleString('en-IN')}`, 14, 290);
+
+  doc.save(`Daily_Flying_Report_${report.reportDate}.pdf`);
 }

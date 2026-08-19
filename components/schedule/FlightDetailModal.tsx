@@ -16,7 +16,7 @@
 
 import { useFlightStore } from '@/lib/store';
 import { FlightSlot } from '@/types';
-
+import { useState } from 'react';
 // ============================================================
 // PROPS
 // ============================================================
@@ -36,7 +36,7 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
     getStudentById,           // Find student by ID
     weather,                  // Current weather data
     notams,                   // Active NOTAMs
-    cancelFlight,             // Cancel a flight (hard delete)
+    cancelFlight,             // Cancel a flight (soft-cancel: sets status=CANCELLED + a reason)
     loadScheduledFlights,     // Reload schedule after changes
     updateScheduledFlight,    // Update flight status (Check-In)
   } = useFlightStore();
@@ -47,6 +47,9 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   const aircraft = getAircraftById(slot.aircraftId);       // Aircraft for this flight
   const instructor = getInstructorById(slot.instructorId);  // Instructor for this flight
   const student = slot.studentId ? getStudentById(slot.studentId) : undefined; // Student (if any)
+
+  const [showCancelReason, setShowCancelReason] = useState(false); // Check Cancellation Reason modal visibility
+  
 
   // Calculate flight duration in hours
   const duration = (new Date(slot.endTime).getTime() - new Date(slot.startTime).getTime()) / 3600000;
@@ -69,17 +72,16 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   // ============================================================
 
   /**
-   * Cancel the flight (hard delete from database)
-   * Asks for confirmation before proceeding
-   * Reloads schedule after cancellation
+   * Cancel the flight — soft-cancel (status set to CANCELLED, row kept)
+   * with a reason, so the Daily Flying Report can count Weather vs.
+   * Maintenance vs. Other cancellations. Reloads schedule afterward.
    */
-  const handleCancel = async () => {
-    if (window.confirm('Are you sure you want to cancel this flight? This action cannot be undone.')) {
-      await cancelFlight(slot.id);
-      await loadScheduledFlights();
-      onClose();
-    }
+  const handleCancel = async (reason: 'WEATHER' | 'MAINTENANCE' | 'OTHER') => {
+    await cancelFlight(slot.id, reason);
+    await loadScheduledFlights();
+    onClose();
   };
+
 
   /**
    * Handle Edit button click
@@ -398,12 +400,29 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
             </button>
           )}
 
-          {/* ----- CANCEL FLIGHT BUTTON ----- */}
+         {/* ----- CANCEL FLIGHT BUTTON / REASON PICKER ----- */}
           {/* Hidden for COMPLETED and CANCELLED flights */}
-          {slot.status !== 'COMPLETED' && slot.status !== 'CANCELLED' && (
-            <button onClick={handleCancel} className="px-4 py-2 text-sm bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
+          {slot.status !== 'COMPLETED' && slot.status !== 'CANCELLED' && !showCancelReason && (
+            <button onClick={() => setShowCancelReason(true)} className="px-4 py-2 text-sm bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
               Cancel Flight
             </button>
+          )}
+          {showCancelReason && (
+            <div className="flex flex-wrap items-center gap-2 surface-inner rounded-lg px-3 py-2">
+              <span className="text-xs text-tertiary">Cancel — reason?</span>
+              <button onClick={() => handleCancel('WEATHER')} className="px-3 py-1.5 text-xs bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
+                🌧️ Weather
+              </button>
+              <button onClick={() => handleCancel('MAINTENANCE')} className="px-3 py-1.5 text-xs bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
+                🔧 Maintenance
+              </button>
+              <button onClick={() => handleCancel('OTHER')} className="px-3 py-1.5 text-xs bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
+                Other
+              </button>
+              <button onClick={() => setShowCancelReason(false)} className="px-3 py-1.5 text-xs surface-inner rounded-lg hover:opacity-80 transition cursor-pointer">
+                Never mind
+              </button>
+            </div>
           )}
 
           {/* ----- PRINT BRIEF BUTTON ----- */}

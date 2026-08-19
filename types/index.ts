@@ -172,11 +172,84 @@ export interface ScheduledFlight {
   // re-entered from scratch. null/undefined once resolved or if the
   // flight was never left pending.
   pendingDebrief?: Record<string, unknown> | null;
+  // Why this booking was cancelled — 'WEATHER' | 'MAINTENANCE' | 'OTHER',
+  // set by cancelFlight() (lib/store.ts). null/undefined for a flight
+  // that isn't cancelled, or was cancelled before this field existed.
+  // Feeds the Daily Flying Report's cancellation-by-reason counts.
+  cancellationReason?: string | null;
   // Display fields (looked up)
   aircraftReg?: string;
   studentName?: string;
   instructorName?: string;
   duration?: number;
+}
+
+// Safety incident — minimal log (2026-08-18), not the full DGCA-format
+// Incident Report (a separate, larger, not-yet-built report). Just enough
+// to record that something happened, feeding the Daily Flying Report's
+// "Safety incidents" count. See app/api/safety-incidents/route.ts.
+export interface SafetyIncident {
+  id: string;
+  incidentDate: string;   // 'YYYY-MM-DD'
+  incidentTime?: string;  // free-text, e.g. '14:30' — not enforced HH:MM
+  aircraftId?: string;
+  aircraftReg?: string;
+  studentId?: string;
+  studentName?: string;
+  instructorId?: string;
+  instructorName?: string;
+  description: string;
+  severity: 'MINOR' | 'MAJOR' | 'CRITICAL';
+  reportedBy?: string;
+  createdAt?: string;
+}
+
+// One row of the Daily Flying Report's flight table — a flattened,
+// report-shaped view of a completed/scheduled flight for one day, not the
+// same shape as FlightRecord/ScheduledFlight (this is what actually gets
+// frozen into daily_flying_reports.rows once generated).
+export interface DailyFlyingReportRow {
+  aircraft: string;
+  student: string;
+  instructor: string;
+  sortie: string;
+  start: string;
+  end: string;
+  hours: number;
+  type: 'DUAL' | 'SOLO' | string;
+  exercise: string;
+  remarks: string;
+}
+
+export interface DailyFlyingReportStats {
+  totalAircraftHours: number;
+  totalStudentHours: number;
+  totalInstructorHours: number;
+  dualHours: number;
+  soloHours: number;
+  crossCountryHours: number;
+  nightHours: number;
+  aircraftGrounded: number;
+  flightsCancelled: number;
+  weatherCancellations: number;
+  maintenanceCancellations: number;
+  otherCancellations: number;
+  safetyIncidents: number;
+}
+
+// A saved Daily Flying Report snapshot (daily_flying_reports table) — see
+// add-reports-module.sql for why this is stored rather than always
+// recomputed live.
+export interface DailyFlyingReport {
+  id: string;
+  reportDate: string;
+  airportCode?: string;
+  rows: DailyFlyingReportRow[];
+  stats: DailyFlyingReportStats;
+  remarks: string;
+  generatedBy?: string;
+  generatedAt: string;
+  updatedAt?: string;
 }
 
 // Conflict check result

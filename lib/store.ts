@@ -42,6 +42,7 @@ import {
 } from '@/types';
 import { generateSchedule } from './data';
 import { supabase } from './supabase';
+import { flightHoursFromTimes } from './flight-classification';
 
 // ============================================================
 // SCHEDULING RULES — booking-duration, turnaround & fuel-burn constants
@@ -352,7 +353,7 @@ interface FlightStore {
   loadScheduledFlights: () => Promise<void>;
   bookFlight: (booking: Omit<ScheduledFlight, 'id' | 'aircraftReg' | 'studentName' | 'instructorName' | 'duration'>) => Promise<{success: boolean; message: string}>;
   checkConflicts: (aircraftId: string, startTime: string, endTime: string, excludeId?: string) => Promise<TimeConflict>;
-  cancelFlight: (id: string) => Promise<void>;
+  cancelFlight: (id: string, reason?: 'WEATHER' | 'MAINTENANCE' | 'OTHER') => Promise<void>;
   updateScheduledFlight: (id: string, updates: Partial<ScheduledFlight>) => Promise<void>;
 
   // ==========================================
@@ -690,10 +691,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           const inst = instructors.find(i => i.id === String(row.instructor_id));
           const calcHours = (): number => {
             if (row.total_hours) return row.total_hours as number;
-            const arr = row.arrival_time as string; const dep = row.departure_time as string;
-            if (!arr || !dep) return 0;
-            const [ah, am] = arr.split(':').map(Number); const [dh, dm] = dep.split(':').map(Number);
-            return Math.round(((ah * 60 + am) - (dh * 60 + dm)) / 6) / 10;
+            return flightHoursFromTimes(row.departure_time as string, row.arrival_time as string);
           };
           return {
             id: String(row.id), studentId: String(row.student_id), aircraftId: String(row.aircraft_id),
@@ -725,10 +723,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           const inst = instructors.find(i => i.id === String(row.instructor_id));
           const calcHours = (): number => {
             if (row.total_hours) return row.total_hours as number;
-            const arr = row.arrival_time as string; const dep = row.departure_time as string;
-            if (!arr || !dep) return 0;
-            const [ah, am] = arr.split(':').map(Number); const [dh, dm] = dep.split(':').map(Number);
-            return Math.round(((ah * 60 + am) - (dh * 60 + dm)) / 6) / 10;
+            return flightHoursFromTimes(row.departure_time as string, row.arrival_time as string);
           };
           return {
             id: String(row.id), studentId: String(row.student_id), aircraftId: String(row.aircraft_id),
@@ -853,6 +848,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
             duration: Math.round((endTime.getTime() - startTime.getTime()) / 360000) / 10,
             logbookPending: !!(row as any).logbook_pending,
             pendingDebrief: (row as any).pending_debrief ?? null,
+            cancellationReason: (row as any).cancellation_reason ?? null,
           };
         }),
         loadingSchedule: false,
@@ -880,7 +876,13 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     let query = supabase.from('scheduled_flights').select('*')
       .eq('aircraft_id', aircraftId)
       .lt('start_time', bufferedEnd.toISOString())
-      .gt('end_time', bufferedStart.toISOString());
+      .gt('end_time', bufferedStart.toISOString())
+      // A cancelled flight used to be hard-deleted, so it could never
+      // reach this query. Now that cancelFlight() soft-cancels (see
+      // below), a cancelled row stays in the table — it must not count
+      // as still occupying the aircraft, or every cancellation would
+      // permanently and falsely block that time slot forever after.
+      .neq('status', 'CANCELLED');
     if (excludeId) query = query.neq('id', excludeId);
     const { data, error } = await query;
     if (error) return { hasConflict: false, conflictingFlights: [] };
@@ -946,9 +948,28 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     return { success: false, message: '❌ Failed to book flight.' };
   },
 
-  cancelFlight: async (id) => {
-    const { error } = await supabase.from('scheduled_flights').delete().eq('id', id);
-    if (!error) set(state => ({ scheduledFlights: state.scheduledFlights.filter(f => f.id !== id) }));
+  // Soft-cancel — used to be a hard DELETE, which meant a cancelled
+  // booking left no trace at all (no count, no reason, nothing the Daily
+  // Flying Report could ever total up). Now sets status='CANCELLED' +
+  // cancellation_reason and keeps the row. The CANCELLED status is
+  // already handled everywhere else that reads scheduledFlights
+  // (dashboard widgets, MaintenanceForm's conflict check, checkConflicts
+  // above) — this was the one place that never actually produced it.
+  // Local state keeps the row (mapped, not filtered out) so consumers
+  // that want to show cancelled flights (e.g. a day's full history) can,
+  // while every place that means "still active" already excludes
+  // CANCELLED explicitly (see ScheduleBoard.tsx, BookingForm.tsx).
+  cancelFlight: async (id, reason) => {
+    const { error } = await supabase.from('scheduled_flights')
+      .update({ status: 'CANCELLED', cancellation_reason: reason ?? null })
+      .eq('id', id);
+    if (!error) {
+      set(state => ({
+        scheduledFlights: state.scheduledFlights.map(f =>
+          f.id === id ? { ...f, status: 'CANCELLED' } : f
+        ),
+      }));
+    }
   },
 
   updateScheduledFlight: async (id, updates) => {

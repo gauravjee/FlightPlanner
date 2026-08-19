@@ -14,6 +14,7 @@ import RoleGate from '@/components/ui/RoleGate';
 import { PROGRESS_VIEW_ROLES } from '@/lib/permissions';
 import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist';
 import { ChartColumn, TrendingUp, School, ArrowRight, Plane } from 'lucide-react';
+import { isCrossCountrySortie, isInstrumentSortie, isNightSortie } from '@/lib/flight-classification';
 
 // ============================================================
 // TRAINING STAGE REQUIREMENTS — built-in fallback defaults (DGCA/CAA
@@ -164,13 +165,11 @@ export default function ProgressPage() {
     const soloFlights = flights.filter(f => f.flightType === 'SOLO');
     const soloHours = soloFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
     const dualHours = totalHours - soloHours;
-    const crossCountryFlights = flights.filter(f =>
-      f.sortieType?.includes('CROSS_COUNTRY') || f.sortieType?.includes('NAVIGATION')
-    );
+    const crossCountryFlights = flights.filter(f => isCrossCountrySortie(f.sortieType));
     const crossCountryHours = crossCountryFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
-    const instrumentFlights = flights.filter(f => f.sortieType?.includes('INSTRUMENT'));
+    const instrumentFlights = flights.filter(f => isInstrumentSortie(f.sortieType));
     const instrumentHours = instrumentFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
-    const nightFlights = flights.filter(f => f.sortieType?.includes('NIGHT'));
+    const nightFlights = flights.filter(f => isNightSortie(f.sortieType));
     const nightHours = nightFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
     const totalLandings = flights.reduce((sum, f) => sum + (f.landings || 0), 0);
 
