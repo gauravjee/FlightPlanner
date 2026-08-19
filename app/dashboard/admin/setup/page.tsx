@@ -44,7 +44,12 @@ const TABS = [
   { id: 'aircraft', label: 'Aircraft Fleet', shortLabel: 'Aircraft', icon: Plane, component: AircraftSetupTab },
   { id: 'sorties', label: 'Sortie Types', shortLabel: 'Sortie', icon: Target, component: SortieTypesTab },
   { id: 'exercises', label: 'Exercises', shortLabel: 'Exercises', icon: ClipboardList, component: ExercisesTab },
-  { id: 'requirements', label: 'Requirements', shortLabel: 'Requirements', icon: CircleCheck, component: RequirementsTab },
+  // Label expanded 2026-08-19 (was just "Requirements") — this tab is where
+  // blocking rules like Solo Release actually get configured and synced to
+  // students, but nothing about the plain "Requirements" label signals
+  // that; a user looking for it went to the Exercises tab first instead.
+  // shortLabel stays short for the compact step indicator.
+  { id: 'requirements', label: 'Requirements & Solo Release', shortLabel: 'Requirements', icon: CircleCheck, component: RequirementsTab },
   { id: 'roles', label: 'Instructor Roles', shortLabel: 'Instructor', icon: GraduationCap, component: RolesTab },
   { id: 'users', label: 'User Management', shortLabel: 'User', icon: Users, component: UserManagementTab },
   { id: 'settings', label: 'FTO Settings', shortLabel: 'FTO', icon: Settings, component: SettingsTab },

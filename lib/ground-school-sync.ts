@@ -17,30 +17,34 @@ import { supabase } from '@/lib/supabase-client';
 import { useFlightStore } from '@/lib/store';
 
 /**
- * Map of requirement name patterns → ground school subject names.
- * The keys are substrings that appear in the database requirement_name.
- * The values are the corresponding ground school subject names used in
- * the ground_school_subjects table and the notes field.
- */
-const REQUIREMENT_TO_SUBJECT: Record<string, string> = {
-  'Air Regulations': 'Air Regulations',
-  'Air Navigation': 'Air Navigation',
-  'Aviation Meteorology': 'Aviation Meteorology',
-  'Technical General': 'Technical General',
-  'Technical Specific': 'Technical Specific',
-  'RTR(A)': 'RTR(A)',
-};
-
-/**
  * Extract the ground school subject name from a requirement name.
- * Handles suffixes like "(valid 5 yrs)", "(10 yrs / Lifetime)", etc.
+ * Handles suffixes like "(valid 5 yrs)", "(10 yrs / Lifetime)", etc. by
+ * matching requirementName against the live ground_school_subjects table
+ * (Admin Setup -> Ground School) using includes(), rather than a hardcoded
+ * requirement-name-pattern -> subject-name map.
+ *
+ * 2026-08-19: this used to be a fixed 6-entry table that had to be kept in
+ * sync by hand with whatever Admin Setup's Ground School tab actually
+ * showed — a subject renamed, added, or removed there would silently stop
+ * (or wrongly start) matching here. Reading the subject names straight from
+ * the database means this always agrees with Admin Setup.
  *
  * @param requirementName  Full requirement name from the database
  * @returns  Matching ground school subject name, or null if not a ground school subject
  */
-function getGroundSchoolSubject(requirementName: string): string | null {
-  for (const [pattern, subjectName] of Object.entries(REQUIREMENT_TO_SUBJECT)) {
-    if (requirementName.includes(pattern)) {
+export async function getGroundSchoolSubject(requirementName: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('ground_school_subjects')
+    .select('subject_name');
+
+  if (error) {
+    console.error('Error loading ground school subjects:', error.message);
+    return null;
+  }
+
+  for (const row of data || []) {
+    const subjectName = row.subject_name as string | null;
+    if (subjectName && requirementName.includes(subjectName)) {
       return subjectName;
     }
   }
@@ -54,14 +58,24 @@ function getGroundSchoolSubject(requirementName: string): string | null {
  * @param studentId        UUID of the student
  * @param requirementName  Full requirement name from training_requirements table
  * @param completed        true = mark as exempted, false = remove exemption
+ * @param examData         2026-08-19: this subject is examined by DGCA, not
+ *                          the FTO — the student's actual DGCA roll number
+ *                          and score, collected by the caller (see
+ *                          RequirementsChecklist.tsx's DGCA modal) before
+ *                          calling this with completed=true. Falls back to
+ *                          a 100/no-roll-number placeholder if omitted, for
+ *                          any caller that hasn't been updated to collect
+ *                          it — but the one real caller in this app always
+ *                          passes it now.
  */
 export async function syncGroundSchoolFromChecklist(
   studentId: string,
   requirementName: string,
-  completed: boolean
+  completed: boolean,
+  examData?: { rollNumber: string; score: number }
 ): Promise<void> {
   // Extract the core ground school subject name using includes() matching
-  const subjectName = getGroundSchoolSubject(requirementName);
+  const subjectName = await getGroundSchoolSubject(requirementName);
 
   // If no match, this isn't a ground school subject — skip
   if (!subjectName) {
@@ -88,11 +102,12 @@ export async function syncGroundSchoolFromChecklist(
             class_id: null,
             student_id: studentId,
             attendance_status: 'EXEMPTED',
-            exam_score: 100,
+            exam_score: examData?.score ?? 100,
             exam_result: 'PASS',
             exam_date: new Date().toISOString().split('T')[0],
             attempts: 1,
             examiner: 'Requirements Checklist',
+            dgca_roll_number: examData?.rollNumber ?? null,
             notes: `Requirements Checklist: ${subjectName}`,
           },
         ]);
@@ -141,13 +156,11 @@ export async function syncGroundSchoolFromChecklist(
  *
  * @param studentId    UUID of the student
  * @param subjectName  Ground school subject name (e.g. "Air Regulations")
- * @param completedBy  Attribution shown on the requirement row
  * @returns             Number of requirement rows that were toggled to completed
  */
 export async function syncRequirementsFromGroundSchoolPass(
   studentId: string,
-  subjectName: string,
-  completedBy: string
+  subjectName: string
 ): Promise<number> {
   const { loadTrainingRequirements, toggleRequirement } = useFlightStore.getState();
   await loadTrainingRequirements(studentId);
@@ -159,10 +172,20 @@ export async function syncRequirementsFromGroundSchoolPass(
     (r) => r.studentId === studentId && r.requirementName.includes(subjectName)
   );
 
+  // 2026-08-19: toggleRequirement no longer accepts a completedBy argument
+  // at all — it's a server-side API route now (see lib/store.ts and
+  // app/api/admin/requirements/toggle/route.ts), and the server always
+  // derives completedBy from the verified session making the request, i.e.
+  // whichever instructor/admin is actually recording this exam pass. That
+  // replaces the two callers' previous hardcoded placeholder strings
+  // ('Ground School Module', 'Ground School Exam') with the real person's
+  // name — an improvement, not just a mechanical signature change, since
+  // "by Ground School Module" never read as a real audit attribution
+  // anyway.
   let toggledCount = 0;
   for (const req of matchingReqs) {
     if (!req.isCompleted) {
-      await toggleRequirement(req.id, true, completedBy);
+      await toggleRequirement(req.id, true);
       toggledCount++;
     }
   }

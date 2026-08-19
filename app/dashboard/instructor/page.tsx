@@ -15,11 +15,19 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
+import { supabase } from '@/lib/supabase-client';
+import { matchTrainingProgram } from '@/lib/training-programs';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import Link from 'next/link';
 import { Calendar, NotebookPen, GraduationCap, ArrowRight, Clock, Star } from 'lucide-react';
+
+interface TrainingProgramHours {
+  program_code: string;
+  program_name: string;
+  required_hours: number;
+}
 
 export default function InstructorDashboardPage() {
   const { data: session } = useSession();
@@ -33,11 +41,17 @@ export default function InstructorDashboardPage() {
     students, loadStudents,
     scheduledFlights, loadScheduledFlights,
     flightRecords, loadFlightRecords,
-    trainingRequirements, loadTrainingRequirements,
+    trainingRequirements, loadTrainingRequirementsForStudents,
   } = useFlightStore();
 
   // Find the instructor's database ID from their email
   const [instructorId, setInstructorId] = useState('');
+
+  // Admin-configured per-program required hours (Admin Setup -> Training
+  // Programs) — see lib/training-programs.ts. Loaded the same way
+  // components/dashboard/StudentProgressWidget.tsx and
+  // app/dashboard/progress/page.tsx do.
+  const [trainingPrograms, setTrainingPrograms] = useState<TrainingProgramHours[]>([]);
 
   useEffect(() => {
     if (instructorEmail && instructors.length > 0) {
@@ -56,7 +70,16 @@ export default function InstructorDashboardPage() {
     loadStudents();
     loadScheduledFlights();
     loadFlightRecords();
-    loadTrainingRequirements();
+    (async () => {
+      const { data, error } = await supabase
+        .from('training_programs')
+        .select('program_code, program_name, required_hours');
+      if (error) {
+        console.error('Error loading training programs:', error.message);
+      } else {
+        setTrainingPrograms(data || []);
+      }
+    })();
   }, []);
 
   // ============================================================
@@ -93,6 +116,20 @@ export default function InstructorDashboardPage() {
     return students.filter(s => s.assignedInstructorId === instructorId);
   }, [students, instructorId]);
 
+  // Training requirements, scoped to just this instructor's students.
+  // Previously this page called loadTrainingRequirements() with no
+  // studentId, which pulls the ENTIRE table — every student's requirement
+  // rows plus every other instructor's — into the browser and filtered it
+  // client-side afterward. loadTrainingRequirementsForStudents (lib/store.ts)
+  // queries only these students' rows instead. Re-runs whenever the
+  // assigned-student list changes (e.g. instructorId resolves after the
+  // session loads).
+  useEffect(() => {
+    if (myStudents.length > 0) {
+      loadTrainingRequirementsForStudents(myStudents.map(s => s.id));
+    }
+  }, [myStudents, loadTrainingRequirementsForStudents]);
+
   // Recent debriefs (completed flights with instructor notes)
   const recentDebriefs = useMemo(() => {
     return flightRecords
@@ -122,8 +159,16 @@ export default function InstructorDashboardPage() {
     return myStudents.map(student => {
       const studentFlights = flightRecords.filter(f => f.studentId === student.id);
       const totalHours = studentFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
+      // Admin-configured per-program required hours (Admin Setup -> Training
+      // Programs), matched via lib/training-programs.ts — same helper and
+      // same PPL=40h/other=200h built-in fallback (only used when no
+      // matching training_programs row exists) as
+      // components/dashboard/StudentProgressWidget.tsx and
+      // app/dashboard/progress/page.tsx, so all three agree on a given
+      // student's target hours.
+      const matchedProgram = matchTrainingProgram(student.trainingStage, trainingPrograms);
       const isPPL = student.trainingStage?.includes('PPL');
-      const targetHours = isPPL ? 40 : 200;
+      const targetHours = matchedProgram?.required_hours ?? (isPPL ? 40 : 200);
       const progressPercent = Math.min(100, Math.round((totalHours / targetHours) * 100));
 
       // Get requirements completion
@@ -141,7 +186,7 @@ export default function InstructorDashboardPage() {
         reqPercent: Math.round((completedReqs / totalReqs) * 100),
       };
     }).sort((a, b) => b.progressPercent - a.progressPercent);
-  }, [myStudents, flightRecords, trainingRequirements]);
+  }, [myStudents, flightRecords, trainingRequirements, trainingPrograms]);
 
   // ============================================================
   // HELPER: Progress bar color

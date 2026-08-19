@@ -6,7 +6,8 @@
 // on that program (matched by the leading token of their trainingStage —
 // same convention used everywhere else in the app, see
 // lib/requirements-provisioning.ts's resolveProgramCode). Inserts any
-// template requirement (student_id IS NULL) a matching student doesn't
+// template requirement (from training_requirement_templates — see
+// split-training-requirement-templates.sql) a matching student doesn't
 // already have; never touches or deletes an existing row.
 //
 // Two situations this is for:

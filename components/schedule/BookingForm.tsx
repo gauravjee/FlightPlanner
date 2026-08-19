@@ -67,39 +67,6 @@ const todayLocal = new Date().toLocaleDateString('en-CA');   // local date in YY
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
 // ============================================================
-// FTO EXERCISE LIST
-// ============================================================
-const EXERCISES = [
-  '120NM - 120NM Xcty Check',
-  '250NM - 250NM Xcty Check',
-  '300NM - 300 Nm Cross-Country',
-  'AIREX - Air Experience',
-  'C&D - Climb & Descend',
-  'CCTS - Circuits & Landings',
-  'CHK - Check',
-  'CRTV - Corrective',
-  'CT&DT - Climbing turn & Descending turn',
-  'EMGCY - Emergencies',
-  'EOC - Effect of Controls',
-  'FAM - Familiarisation',
-  'GF - General Flying',
-  'GFT.D - General Flying Test DAY',
-  'GFT.N - General Flying Test NIGHT',
-  'IF - Instrument Flying',
-  'IRT - Instrument Rating Test',
-  'PC - Progress Check',
-  'PPC - Pilot Proficiency Check',
-  'RRT - Recurrent Training',
-  'S&L - Straight & Level',
-  'SIDE/FRDW SLIP - SLIP',
-  'ST.TRN - Steep Turns',
-  'ST&RE - Stall & Recovery',
-  'TO & Climb - TO & Climb',
-  'TRN - Turns',
-  'X-CTY - Cross-Country',
-];
-
-// ============================================================
 // EXERCISES THAT REQUIRE SOLO RELEASE
 // ============================================================
 // These specific exercises — general-flying solo checks, cross-country
@@ -109,9 +76,11 @@ const EXERCISES = [
 // Dual (e.g. a dual check ride ahead of a first solo cross-country).
 // So this gate checks the EXERCISE selected, not the booking's Dual/
 // Solo setting — picking Dual doesn't bypass it. Matched against the
-// short code before " - " in each EXERCISES entry above, not the
-// free-text description, so this stays in sync automatically if the
-// descriptions ever get tweaked.
+// short code before " - " in the stored "CODE - Name" exercise value
+// (see the Exercise <select> below, sourced from the `exercises` DB
+// table), not the free-text name, so this stays in sync automatically
+// if an exercise's name is ever edited in Admin Setup -> Exercises —
+// only the short code (GF, GFT.D, etc.) needs to stay stable.
 const SOLO_RELEASE_EXERCISE_CODES = new Set([
   'GF', 'GFT.D', 'GFT.N', '120NM', '250NM', '300NM', 'IF', 'IRT', 'X-CTY',
 ]);
@@ -133,8 +102,10 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     updateScheduledFlight,
     loadTrainingRequirements,
     getRequirementsForStudent,
+    loadingRequirements,
     ftoSettings, loadFTOSettings,
     holidays, loadHolidays,
+    exercises, loadExercises,
   } = useFlightStore();
 
   // ----- Initial data load -----
@@ -143,6 +114,14 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     if (students.length === 0) loadStudents();
     if (Object.keys(ftoSettings).length === 0) loadFTOSettings();
     if (holidays.length === 0) loadHolidays();
+    // Exercise dropdown used to be a hardcoded EXERCISES array (removed
+    // 2026-08-19) that didn't reflect anything added/edited/removed via
+    // Admin Setup -> Exercises — the two lists could silently drift.
+    // Now sourced live from the same `exercises` store slice
+    // FlightRecordForm.tsx already uses, so there's exactly one place
+    // exercises are managed. See the Exercise <select> below for the
+    // "CODE - Name" value format this preserves.
+    if (exercises.length === 0) loadExercises();
     loadScheduledFlights();
   }, []);
 
@@ -352,8 +331,34 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     }
   }, [isMaintenance]);
 
+  // Eagerly load the selected student's requirements as soon as they're
+  // picked (not just at submit time) — powers the live "Solo Release"
+  // status badge shown under the Student field below. handleSubmit's own
+  // requirement check further down does its own loadTrainingRequirements
+  // call regardless, so this is purely for the earlier, informational
+  // badge — it doesn't change what's actually enforced at submit time.
+  useEffect(() => {
+    if (form.studentId && !isMaintenance) {
+      loadTrainingRequirements(form.studentId);
+    }
+  }, [form.studentId, isMaintenance, loadTrainingRequirements]);
+
   // Selected aircraft object for fuel display
   const selectedAircraft = aircraft.find(a => String(a.id) === String(form.aircraftId));
+
+  // ----- Live Solo Release status for the selected student -----
+  // "Released for solo" = no incomplete requirement flagged Blocks Solo —
+  // the exact same rule handleSubmit enforces further down. This is purely
+  // informational (shown before the user fills out the rest of the form);
+  // the real enforcement still happens in handleSubmit. `trainingRequirements`
+  // is a single-active-student cache in the store (see loadTrainingRequirements
+  // in lib/store.ts, which replaces the whole array with just one student's
+  // rows), so `reqsMatchSelectedStudent` guards against the brief window
+  // right after switching students where the array may still hold the
+  // previous student's rows.
+  const selectedStudentReqs = (!isMaintenance && form.studentId) ? getRequirementsForStudent(form.studentId) : [];
+  const reqsMatchSelectedStudent = selectedStudentReqs.length > 0 && selectedStudentReqs.every(r => r.studentId === form.studentId);
+  const blockingSoloReqs = selectedStudentReqs.filter(r => r.blocksSolo && !r.isCompleted);
 
   // Estimated fuel remaining at the end of THIS booking, from the selected
   // aircraft's current fuel level and its (per-aircraft, else per-type)
@@ -871,12 +876,12 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
               <option value="">Select Aircraft</option>
               {availableAircraft.length > 0 && (
                 <optgroup label="✅ AVAILABLE">
-                  {availableAircraft.map(a => <option key={a.id} value={a.id}>{a.registration} ({a.type}) — {a.currentFuel}L</option>)}
+                  {availableAircraft.map(a => <option key={a.id} value={a.id}>{a.registration} ({a.isSimulator ? 'Simulator' : a.model}) — {a.currentFuel}L</option>)}
                 </optgroup>
               )}
               {bookedAircraft.length > 0 && (
                 <optgroup label="🔴 ALREADY BOOKED">
-                  {bookedAircraft.map(a => <option key={a.id} value={a.id} disabled className="text-red-400">{a.registration} ({a.type}) — BOOKED</option>)}
+                  {bookedAircraft.map(a => <option key={a.id} value={a.id} disabled className="text-red-400">{a.registration} ({a.isSimulator ? 'Simulator' : a.model}) — BOOKED</option>)}
                 </optgroup>
               )}
             </select>
@@ -913,6 +918,21 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
             {/* Student conflict warning */}
             {form.studentId && !isMaintenance && checkPersonConflict().includes('student') && (
               <p className="text-xs text-red-400 mt-1">⚠️ This student is already booked at this time</p>
+            )}
+            {/* Solo Release status — informational only; the actual block
+                happens in handleSubmit below using the same blocksSolo
+                rule. Surfaced here so it's visible before filling out the
+                rest of the form, not just as a submit-time error. */}
+            {form.studentId && !isMaintenance && (
+              loadingRequirements && !reqsMatchSelectedStudent ? (
+                <p className="text-xs text-slate-500 mt-1">Checking solo release status…</p>
+              ) : reqsMatchSelectedStudent && blockingSoloReqs.length > 0 ? (
+                <p className="text-xs text-red-400 mt-1">
+                  🔒 Not released for solo — missing: {blockingSoloReqs.map(r => r.requirementName).join(', ')}
+                </p>
+              ) : reqsMatchSelectedStudent ? (
+                <p className="text-xs text-green-400 mt-1">✅ Released for solo</p>
+              ) : null
             )}
           </div>
 
@@ -957,7 +977,15 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                 required={!isMaintenance}
                 className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
                 <option value="">Select Exercise</option>
-                {EXERCISES.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+                {/* Value is "CODE - Name" (not just the short code) — matches
+                    what's already stored in scheduled_flights.exercise /
+                    flight_records.exercise from the old hardcoded list, so
+                    existing bookings, FlightDetailModal, and the Daily
+                    Flying Report keep displaying and matching correctly. */}
+                {exercises.map(ex => {
+                  const label = `${ex.short_code} - ${ex.exercise_name}`;
+                  return <option key={ex.short_code} value={label} title={ex.full_description}>{label}</option>;
+                })}
               </select>
             </div>
           )}
@@ -972,7 +1000,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                 <p className="text-xs text-slate-400 mt-2">
                   ⛽ Est. fuel at landing: <span className="font-semibold text-white">~{Math.round(estimatedFuelAfter)}L</span>
                   {' '}<span className="text-slate-500">
-                    (~{getAircraftFuelBurnRate(selectedAircraft)} L/hr avg for {selectedAircraft.type}
+                    (~{getAircraftFuelBurnRate(selectedAircraft)} L/hr avg for {selectedAircraft.model}
                     {selectedAircraft.fuelBurnRateLph != null ? '' : ', type default'} — planning estimate only, verify against actual)
                   </span>
                 </p>

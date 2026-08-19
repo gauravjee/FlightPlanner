@@ -40,7 +40,6 @@ import {
   ScheduledFlight, TimeConflict, MaintenanceRecord,
   AvailabilityRecord, TrainingRequirement, Holiday
 } from '@/types';
-import { generateSchedule } from './data';
 import { supabase } from './supabase';
 import { flightHoursFromTimes } from './flight-classification';
 
@@ -98,24 +97,27 @@ export function parseTurnaroundBufferSetting(raw: string | undefined): number {
 // ============================================================
 // FUEL BURN RATE — estimating consumption from flight duration
 // ============================================================
-// Typical average cruise fuel burn (liters/hour) per aircraft type, used
-// ONLY as an editable starting default when an aircraft doesn't have its
-// own rate set yet (Aircraft Setup -> "Fuel Burn Rate"). These are rough,
-// commonly-cited averages for these training-fleet types, not a specific
-// airframe's certified POH figures — every FTO should verify/adjust them
-// against their own aircraft's actual logged consumption. This estimate is
-// for scheduling/planning only, never for real inflight fuel decisions.
+// 2026-08-19: previously keyed by the specific model code that `type` used
+// to hold (e.g. 'C172S': 32, 'DA42': 28) — now that `type` holds just the
+// engine category ('Single Engine' | 'Multi Engine', see
+// restructure-aircraft-type-model.sql), this is a coarser 2-bucket
+// default. Every EXISTING aircraft had its prior effective rate frozen
+// into its own fuel_burn_rate_lph column by that same migration, so this
+// coarser default only actually applies to aircraft added AFTER that
+// migration ran and left blank — existing aircraft are unaffected. As
+// before, this is only an editable starting default (Aircraft Setup ->
+// "Fuel Burn Rate") — every FTO should verify/adjust per aircraft. For
+// scheduling/planning only, never for real inflight fuel decisions.
 export const FUEL_BURN_RATE_BY_TYPE_LPH: Record<string, number> = {
-  C172S: 32, C172R: 32, C152: 20, C182: 38,
-  PA28: 32, PA44: 40, DA40: 28, DA42: 28,
-  SR20: 36, SR22: 47, BE76: 42, BE58: 68,
+  'Single Engine': 32,
+  'Multi Engine': 50,
 };
-// Fallback when an aircraft's type isn't in the table above and it has no
-// rate of its own set.
+// Fallback when an aircraft's type isn't in the table above (e.g. blank)
+// and it has no rate of its own set.
 export const DEFAULT_FUEL_BURN_RATE_LPH = 30;
 
 // The fuel-burn rate (L/hr) to use for this aircraft: its own configured
-// rate if set, else the type-average default, else the flat fallback.
+// rate if set, else the engine-category default, else the flat fallback.
 export function getAircraftFuelBurnRate(
   aircraft: Pick<Aircraft, 'type' | 'fuelBurnRateLph'> | undefined
 ): number {
@@ -241,7 +243,6 @@ interface FlightStore {
   // when there's no ICAO/reference station to source real METAR/TAF from.
   // null until fetchGeneralWeather() has been called at least once.
   generalWeather: GeneralWeatherData | null;
-  schedule: FlightSlot[];
   availabilityRecords: AvailabilityRecord[];
   trainingRequirements: TrainingRequirement[];
   ftoSettings: Record<string, string>;      // FTO settings as key-value pairs
@@ -398,7 +399,13 @@ interface FlightStore {
   // 11. TRAINING REQUIREMENTS ACTIONS
   // ==========================================
   loadTrainingRequirements: (studentId?: string) => Promise<void>;
-  toggleRequirement: (id: string, isCompleted: boolean, completedBy?: string) => Promise<void>;
+  // 2026-08-19: for pages that legitimately need several specific students'
+  // requirements at once (e.g. the Instructor Dashboard's per-student
+  // progress list) — NOT for "give me everything." Replaces
+  // trainingRequirements with just this set, same replace-whole-array
+  // semantics as loadTrainingRequirements. See app/dashboard/instructor/page.tsx.
+  loadTrainingRequirementsForStudents: (studentIds: string[]) => Promise<void>;
+  toggleRequirement: (id: string, isCompleted: boolean) => Promise<void>;
   addRequirement: (requirement: Omit<TrainingRequirement, 'id'>) => Promise<void>;
   removeRequirement: (id: string) => Promise<void>;
   getRequirementsForStudent: (studentId: string) => TrainingRequirement[];
@@ -430,7 +437,24 @@ interface FlightStore {
   setSelectedSlot: (slot: FlightSlot | null) => void;
   setHoveredSlot: (id: string | null) => void;
   getInstructorById: (id: string) => Instructor | undefined;
-  getSlotsForAircraft: (aircraftId: string) => FlightSlot[];
+}
+
+// Shared row -> TrainingRequirement mapper, used by both
+// loadTrainingRequirements (one student, or — historically — everything)
+// and loadTrainingRequirementsForStudents (an explicit set of students).
+// Factored out so the two can't drift apart on field mapping.
+function mapTrainingRequirementRow(row: Record<string, unknown>): TrainingRequirement {
+  return {
+    id: String(row.id), studentId: String(row.student_id),
+    templateId: row.template_id != null ? String(row.template_id) : undefined,
+    requirementName: row.requirement_name as string, requirementCategory: row.requirement_category as string,
+    isCompleted: row.is_completed as boolean, completedDate: row.completed_date as string || undefined,
+    completedBy: row.completed_by as string || undefined, notes: row.notes as string || undefined,
+    sortOrder: row.sort_order as number, validityYears: row.validity_years as number || undefined,
+    requiredBeforeHours: row.required_before_hours as number || undefined,
+    blocksSolo: row.blocks_solo as boolean, blocksAllFlights: row.blocks_all_flights as boolean,
+    programCode: row.program_code as string,
+  };
 }
 
 // ============================================================
@@ -465,7 +489,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     isLoading: true, error: null,
   },
   generalWeather: null,
-  schedule: generateSchedule(),
   availabilityRecords: [],
   trainingRequirements: [],
   ftoSettings: {},          // Start empty, loaded from database
@@ -539,6 +562,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           status: row.status as Aircraft['status'],
           nextMaintenance: row.next_maintenance as string,
           fuelBurnRateLph: row.fuel_burn_rate_lph != null ? (row.fuel_burn_rate_lph as number) : undefined,
+          isSimulator: !!row.is_simulator,
         })),
         loadingAircraft: false,
       });
@@ -1275,26 +1299,62 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     const { data, error } = await query;
     if (data && !error) {
       set({
-        trainingRequirements: data.map((row: Record<string, unknown>) => ({
-          id: String(row.id), studentId: String(row.student_id),
-          requirementName: row.requirement_name as string, requirementCategory: row.requirement_category as string,
-          isCompleted: row.is_completed as boolean, completedDate: row.completed_date as string || undefined,
-          completedBy: row.completed_by as string || undefined, notes: row.notes as string || undefined,
-          sortOrder: row.sort_order as number, validityYears: row.validity_years as number || undefined,
-          requiredBeforeHours: row.required_before_hours as number || undefined,
-          blocksSolo: row.blocks_solo as boolean, blocksAllFlights: row.blocks_all_flights as boolean,
-          programCode: row.program_code as string,
-        })),
+        trainingRequirements: data.map(mapTrainingRequirementRow),
         loadingRequirements: false,
       });
     } else { console.error('Error loading training requirements:', error); set({ loadingRequirements: false }); }
   },
 
-  toggleRequirement: async (id, isCompleted, completedBy) => {
-    const updates: Record<string, unknown> = { is_completed: isCompleted };
-    if (isCompleted) { updates.completed_date = new Date().toISOString().split('T')[0]; if (completedBy) updates.completed_by = completedBy; }
-    else { updates.completed_date = null; updates.completed_by = null; }
-    await supabase.from('training_requirements').update(updates).eq('id', id);
+  // 2026-08-19: added alongside the training_requirements/
+  // training_requirement_templates split (see
+  // split-training-requirement-templates.sql) to fix
+  // app/dashboard/instructor/page.tsx calling loadTrainingRequirements()
+  // with NO student filter at all — which pulled every student's
+  // requirements (completion status, audit trail) school-wide into any
+  // instructor's browser just to build a progress list for their own
+  // assigned students. This scopes the query to exactly the students
+  // asked for via .in(), instead of "everything" or "exactly one."
+  loadTrainingRequirementsForStudents: async (studentIds: string[]) => {
+    if (studentIds.length === 0) {
+      set({ trainingRequirements: [] });
+      return;
+    }
+    set({ loadingRequirements: true });
+    const { data, error } = await supabase
+      .from('training_requirements')
+      .select('*')
+      .in('student_id', studentIds)
+      .order('sort_order', { ascending: true });
+    if (data && !error) {
+      set({
+        trainingRequirements: data.map(mapTrainingRequirementRow),
+        loadingRequirements: false,
+      });
+    } else { console.error('Error loading training requirements for students:', error); set({ loadingRequirements: false }); }
+  },
+
+  // Routes through a server-side API route (requireRole-gated to
+  // REQUIREMENTS_WRITE_ROLES, completedBy derived from the verified
+  // session) instead of writing to Supabase directly from the client — see
+  // app/api/admin/requirements/toggle/route.ts. Previously this took a
+  // completedBy argument from the caller and wrote it straight to Supabase;
+  // that meant both "who's allowed to toggle a requirement" and "who gets
+  // credited for it" were enforced client-side only, and a modified client
+  // could claim to be anyone. 2026-08-19 hardening: the caller no longer
+  // supplies completedBy at all — the server is the only source of truth
+  // for it now, read back from the API response below.
+  toggleRequirement: async (id, isCompleted) => {
+    const res = await fetch('/api/admin/requirements/toggle', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, isCompleted }),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      console.error('Error toggling training requirement:', errBody.error || res.statusText);
+      return;
+    }
+    const { completedBy } = await res.json();
     set(state => ({
       trainingRequirements: state.trainingRequirements.map(r =>
         r.id === id ? { ...r, isCompleted, completedDate: isCompleted ? new Date().toISOString().split('T')[0] : undefined, completedBy: isCompleted ? completedBy : undefined } : r
@@ -1303,8 +1363,14 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   addRequirement: async (requirement) => {
+    // student_id is required (2026-08-19: training_requirements now only
+    // ever holds real per-student assignments — see
+    // split-training-requirement-templates.sql). template_id is optional;
+    // this action has no current callers that set it, so a row added this
+    // way just isn't linked back to a template, same as before the split.
     const { data, error } = await supabase.from('training_requirements').insert({
-      student_id: requirement.studentId || null, requirement_name: requirement.requirementName,
+      student_id: requirement.studentId, template_id: requirement.templateId || null,
+      requirement_name: requirement.requirementName,
       requirement_category: requirement.requirementCategory, is_completed: false,
       sort_order: requirement.sortOrder || 99, notes: requirement.notes || '',
       validity_years: requirement.validityYears, required_before_hours: requirement.requiredBeforeHours,
@@ -1494,5 +1560,4 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   setSelectedSlot: (slot) => set({ selectedSlot: slot }),
   setHoveredSlot: (id) => set({ hoveredSlot: id }),
   getInstructorById: (id) => get().instructors.find(i => i.id === id),
-  getSlotsForAircraft: (aircraftId) => get().schedule.filter(s => s.aircraftId === aircraftId),
 }));

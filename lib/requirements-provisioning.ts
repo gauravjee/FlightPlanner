@@ -1,8 +1,12 @@
 // lib/requirements-provisioning.ts
 // ---------------------------------------------------------------------------
 // Shared server-side helper for keeping a student's `training_requirements`
-// rows in sync with their training program's TEMPLATE rows (student_id IS
-// NULL, managed in Admin Setup -> Requirements -> RequirementsTab.tsx).
+// rows in sync with their training program's templates, now in their own
+// `training_requirement_templates` table (managed in Admin Setup ->
+// Requirements -> RequirementsTab.tsx) — see
+// split-training-requirement-templates.sql. Previously templates were the
+// student_id-IS-NULL rows of this same table; splitting them out means
+// every row here is guaranteed a real per-student assignment.
 //
 // Why this exists: student creation (POST /api/students) always wrote the
 // `students` row and the linked `users` login, but never copied the
@@ -24,11 +28,12 @@
 //     of template edits to already-provisioned students, so re-running the
 //     sync is the way to pick those up.
 //
-// This schema has no foreign key linking a per-student requirement row back
-// to "which template it came from" — adding one would mean a migration.
-// Matching by requirement_name (case-insensitive) within the same student
-// is the closest available substitute, and is good enough to avoid
-// duplicate inserts on a re-sync without one.
+// 2026-08-19: newly-provisioned rows now carry a real template_id back to
+// the template they came from (training_requirement_templates.id), instead
+// of relying purely on name matching. requirement_name matching (case-
+// insensitive) is still used to detect "does this student already have
+// this one" so re-syncing stays idempotent — that check doesn't need the
+// FK, just a good-enough duplicate guard.
 // ---------------------------------------------------------------------------
 
 import { supabaseAdmin } from '@/lib/supabase-admin';
@@ -66,9 +71,8 @@ export async function provisionRequirementsForStudent(
   }
 
   const { data: templates, error: templateError } = await supabaseAdmin
-    .from('training_requirements')
-    .select('*')
-    .is('student_id', null);
+    .from('training_requirement_templates')
+    .select('*');
 
   if (templateError) {
     console.error('Error loading requirement templates:', templateError);
@@ -103,6 +107,7 @@ export async function provisionRequirementsForStudent(
     .filter((t: Record<string, unknown>) => !existingNames.has(String(t.requirement_name || '').toLowerCase()))
     .map((t: Record<string, unknown>) => ({
       student_id: studentId,
+      template_id: t.id,
       requirement_name: t.requirement_name,
       requirement_category: t.requirement_category,
       program_code: t.program_code,

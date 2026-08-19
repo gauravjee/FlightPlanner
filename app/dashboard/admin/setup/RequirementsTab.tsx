@@ -14,13 +14,18 @@ interface TrainingProgram {
   program_code: string;
 }
 
+// 2026-08-19: this used to be a "template" row shape shared with
+// per-student rows in one table (training_requirements, filtered by
+// student_id IS NULL) — see split-training-requirement-templates.sql.
+// Templates now live in their own table with their own shape, so
+// student_id/is_completed — which templates never actually had meaningful
+// values for — are gone rather than left as always-undefined optional
+// fields.
 interface Requirement {
   id: number;
-  student_id?: string;
   requirement_name: string;
   requirement_category: string;
   program_code: string;
-  is_completed?: boolean;
   sort_order: number;
   validity_years: number | null;
   required_before_hours: number | null;
@@ -76,11 +81,12 @@ export default function RequirementsTab() {
     setLoading(true);
     console.log('Fetching requirements for', selectedProgram);
 
-    // Get template requirements (where student_id is NULL) for this program
+    // Templates now live in their own table — see
+    // split-training-requirement-templates.sql — instead of being the
+    // student_id-IS-NULL rows of the shared training_requirements table.
     const { data, error } = await supabase
-      .from('training_requirements')
+      .from('training_requirement_templates')
       .select('*')
-      .is('student_id', null)
       .eq('program_code', selectedProgram)
       .order('sort_order', { ascending: true });
 
@@ -98,12 +104,9 @@ export default function RequirementsTab() {
     if (!form.requirement_name) return;
 
     if (editing) {
-      await supabase.from('training_requirements').update(form).eq('id', editing.id);
+      await supabase.from('training_requirement_templates').update(form).eq('id', editing.id);
     } else {
-      await supabase.from('training_requirements').insert({
-        ...form,
-        student_id: null, // Template requirement (not for a specific student)
-      });
+      await supabase.from('training_requirement_templates').insert(form);
     }
 
     setEditing(null);
@@ -165,7 +168,7 @@ export default function RequirementsTab() {
   // Delete
   const handleDelete = async (id: number) => {
     if (window.confirm('Delete this requirement template? This will not affect existing student requirements.')) {
-      await supabase.from('training_requirements').delete().eq('id', id);
+      await supabase.from('training_requirement_templates').delete().eq('id', id);
       loadRequirements();
     }
   };

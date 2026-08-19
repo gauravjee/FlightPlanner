@@ -180,7 +180,7 @@ export default function DashboardPage() {
         return {
           id: f.id,
           time: `${fmtTime(f.startTime)}-${fmtTime(f.endTime)}`,
-          aircraft: ac ? `${f.aircraftReg} (${ac.type})` : f.aircraftReg,
+          aircraft: ac ? `${f.aircraftReg} (${ac.isSimulator ? 'Simulator' : ac.model})` : f.aircraftReg,
           pilot: `${student?.initials || '—'}/${instructor?.initials || '—'}`,
           sortie: f.sortieType,
           status: meta.label,
@@ -667,7 +667,7 @@ export default function DashboardPage() {
                     return (
                       <div key={ac.id} className="surface-inner p-3">
                         <div className="flex justify-between mb-1">
-                          <span className="text-sm">{ac.registration} ({ac.type})</span>
+                          <span className="text-sm">{ac.registration} ({ac.isSimulator ? 'Simulator' : ac.model})</span>
                           <span className="text-xs" style={{ color: barColor }}>
                             {ac.currentFuel}L / {ac.fuelCapacity}L
                           </span>

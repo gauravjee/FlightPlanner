@@ -27,6 +27,10 @@ interface Enrollment {
   attempts: number;
   examiner: string;
   notes: string;
+  // 2026-08-19: this exam is conducted by DGCA, not the FTO — required by
+  // the app before a PASS can be recorded (see updateExam below). See
+  // add-dgca-roll-number-to-ground-school.sql.
+  dgca_roll_number: string | null;
   // joined
   student_name?: string;
   student_initials?: string;
@@ -110,6 +114,18 @@ export default function AttendancePage() {
   };
 
   const updateExam = async (enrollmentId: number, field: string, value: any) => {
+    // 2026-08-19: this subject's exam is conducted by DGCA, not the FTO —
+    // a PASS recorded here needs to be traceable to the student's actual
+    // DGCA roll number. Block (don't write) rather than silently save an
+    // untraceable pass if the roll number hasn't been entered yet.
+    if (field === 'exam_result' && value === 'PASS') {
+      const enr = enrollments.find(e => e.id === enrollmentId);
+      if (!enr?.dgca_roll_number?.trim()) {
+        alert('Enter the DGCA roll number for this student before recording a pass — this exam is conducted by DGCA, not the FTO.');
+        return;
+      }
+    }
+
     await supabase.from('ground_school_enrollment').update({ [field]: value }).eq('id', enrollmentId);
 
     // A passing exam result here should also complete the matching
@@ -123,7 +139,9 @@ export default function AttendancePage() {
       const enr = enrollments.find(e => e.id === enrollmentId);
       const subjectName = selectedClass?.ground_school_subjects?.subject_name;
       if (enr && subjectName) {
-        const toggledCount = await syncRequirementsFromGroundSchoolPass(enr.student_id, subjectName, 'Ground School Exam');
+        // completedBy dropped 2026-08-19 — the server derives it from the
+        // signed-in session instead of a hardcoded placeholder string.
+        const toggledCount = await syncRequirementsFromGroundSchoolPass(enr.student_id, subjectName);
         if (toggledCount > 0) {
           setToastMessage(`Requirements Checklist updated for ${subjectName}.`);
           setTimeout(() => setToastMessage(''), 3000);
@@ -204,6 +222,7 @@ export default function AttendancePage() {
                             <th className="pb-3">Result</th>
                             <th className="pb-3">Attempts</th>
                             <th className="pb-3">Examiner</th>
+                            <th className="pb-3">DGCA Roll No.</th>
                             <th className="pb-3">Notes</th>
                             <th className="pb-3">Action</th>
                           </tr>
@@ -255,6 +274,15 @@ export default function AttendancePage() {
                                     onChange={e => updateExam(enr.id, 'examiner', e.target.value)}
                                     className={`w-20 ${inputClass}`}
                                     placeholder="e.g., DGCA"
+                                  />
+                                </td>
+                                <td className="py-3">
+                                  <input
+                                    type="text"
+                                    value={enr.dgca_roll_number ?? ''}
+                                    onChange={e => updateExam(enr.id, 'dgca_roll_number', e.target.value)}
+                                    className={`w-24 ${inputClass}`}
+                                    placeholder="Required for PASS"
                                   />
                                 </td>
                                 <td className="py-3">

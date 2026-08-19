@@ -75,6 +75,11 @@ interface EnrollmentRecord {
   attempts: number;
   examiner: string;
   notes: string;
+  // 2026-08-19: these subjects (Air Regulations, Air Navigation, etc.) are
+  // externally examined by DGCA — the FTO only delivers the coaching/
+  // classes, not the exam itself. This ties a recorded pass back to the
+  // real DGCA exam record. See add-dgca-roll-number-to-ground-school.sql.
+  dgca_roll_number: string | null;
   // Enriched fields (joined client‑side from classes array)
   class_date?: string;
   start_time?: string;
@@ -106,6 +111,16 @@ export default function StudentProgressPage() {
   const [selectedStudent, setSelectedStudent] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
+
+  // 2026-08-19: Direct Exam Entry used to fire immediately on a confirm()
+  // dialog with hardcoded exam_score=100/exam_result=PASS — no real DGCA
+  // exam data was ever collected. This now opens a small form instead,
+  // which sets these two fields (subjectId/subjectName identify which
+  // subject the open modal is for; null = closed).
+  const [directExamModal, setDirectExamModal] = useState<{ subjectId: number; subjectName: string } | null>(null);
+  const [directExamRollNumber, setDirectExamRollNumber] = useState('');
+  const [directExamScore, setDirectExamScore] = useState('');
+  const [directExamError, setDirectExamError] = useState('');
 
   // ============================================================
   // Load static data (subjects, students, classes)
@@ -223,42 +238,76 @@ export default function StudentProgressPage() {
   // Creates a special enrollment record with EXEMPTED status.
   // Uses the same notes format as the Requirements Checklist sync
   // so both modules recognize the completion.
+  //
+  // 2026-08-19: this subject is examined by DGCA, not the FTO — a "pass"
+  // recorded here should reflect the student's actual DGCA exam (roll
+  // number + score they received), not a hardcoded 100/PASS fired off a
+  // single confirm() dialog with zero real data collected. This now takes
+  // the roll number and score from the modal form below instead.
   // ============================================================
-  const addDirectExam = async (subjectId: number) => {
-  if (!selectedStudent) return;
+  const addDirectExam = async (subjectId: number, rollNumber: string, score: number) => {
+    if (!selectedStudent) return;
 
-  const subject = subjects.find((s) => s.id === subjectId);
-  if (!subject) return;
+    const subject = subjects.find((s) => s.id === subjectId);
+    if (!subject) return;
 
-  // 1. Create EXEMPTED enrollment in ground_school_enrollment
-  const { error } = await supabase.from('ground_school_enrollment').insert([
-    {
-      class_id: null,
-      student_id: selectedStudent,
-      attendance_status: 'EXEMPTED',
-      exam_score: 100,
-      exam_result: 'PASS',
-      exam_date: new Date().toISOString().split('T')[0],
-      attempts: 1,
-      examiner: 'Ground School Module',
-      notes: `Requirements Checklist: ${subject.subject_name}`,
-    },
-  ]);
+    // 1. Create EXEMPTED enrollment in ground_school_enrollment
+    const { error } = await supabase.from('ground_school_enrollment').insert([
+      {
+        class_id: null,
+        student_id: selectedStudent,
+        attendance_status: 'EXEMPTED',
+        exam_score: score,
+        exam_result: 'PASS',
+        exam_date: new Date().toISOString().split('T')[0],
+        attempts: 1,
+        // 'Direct Exam Entry' describes where this record came from (this
+        // flow, vs. an actual class), not who examined the student — DGCA
+        // conducts the real exam, the FTO has no examiner of its own here.
+        examiner: 'Direct Exam Entry',
+        dgca_roll_number: rollNumber,
+        notes: `Requirements Checklist: ${subject.subject_name}`,
+      },
+    ]);
 
-  if (error) {
-    alert('Error: ' + error.message);
-    return;
-  }
+    if (error) {
+      alert('Error: ' + error.message);
+      return;
+    }
 
-  // 2. Also update the Requirements Checklist — shared with the attendance
-  // page's own exam-recording flow, see lib/ground-school-sync.ts.
-  await syncRequirementsFromGroundSchoolPass(selectedStudent, subject.subject_name, 'Ground School Module');
+    // 2. Also update the Requirements Checklist — shared with the attendance
+    // page's own exam-recording flow, see lib/ground-school-sync.ts.
+    // completedBy dropped 2026-08-19 — the server now derives it from the
+    // signed-in session instead of this call site's own placeholder string.
+    await syncRequirementsFromGroundSchoolPass(selectedStudent, subject.subject_name);
 
-  // Show success toast and reload
-  setToastMessage('Subject marked as completed!');
-  setTimeout(() => setToastMessage(''), 3000);
-  loadEnrollments(selectedStudent);
-};
+    // Show success toast and reload
+    setToastMessage('Subject marked as completed!');
+    setTimeout(() => setToastMessage(''), 3000);
+    loadEnrollments(selectedStudent);
+  };
+
+  // Validates and submits the Direct Exam Entry modal form.
+  const submitDirectExam = async () => {
+    if (!directExamModal) return;
+    const rollNumber = directExamRollNumber.trim();
+    const score = parseFloat(directExamScore);
+
+    if (!rollNumber) {
+      setDirectExamError('DGCA roll number is required to record a pass.');
+      return;
+    }
+    if (directExamScore === '' || Number.isNaN(score) || score < 0 || score > 100) {
+      setDirectExamError('Enter a valid exam score (0–100).');
+      return;
+    }
+
+    setDirectExamError('');
+    await addDirectExam(directExamModal.subjectId, rollNumber, score);
+    setDirectExamModal(null);
+    setDirectExamRollNumber('');
+    setDirectExamScore('');
+  };
 
   // ============================================================
   // Derived: progress per subject
@@ -470,13 +519,10 @@ export default function StudentProgressPage() {
                             {/* Quick action: Mark as previously completed */}
                             <button
                               onClick={() => {
-                                if (
-                                  confirm(
-                                    `Mark ${subj.name} as previously completed? This will exempt the student from attendance requirements.`
-                                  )
-                                ) {
-                                  addDirectExam(subj.id);
-                                }
+                                setDirectExamError('');
+                                setDirectExamRollNumber('');
+                                setDirectExamScore('');
+                                setDirectExamModal({ subjectId: subj.id, subjectName: subj.name });
                               }}
                               className="mt-3 w-full text-xs surface-inner py-1.5 px-3 rounded transition hover:opacity-80 text-secondary flex items-center justify-center gap-1.5"
                             >
@@ -515,6 +561,7 @@ export default function StudentProgressPage() {
                             <th className="pb-3">Result</th>
                             <th className="pb-3">Attempts</th>
                             <th className="pb-3">Examiner</th>
+                            <th className="pb-3">DGCA Roll No.</th>
                             <th className="pb-3">Notes</th>
                           </tr>
                         </thead>
@@ -590,6 +637,11 @@ export default function StudentProgressPage() {
                                 {enr.examiner || '—'}
                               </td>
 
+                              {/* DGCA roll number */}
+                              <td className="py-3 text-xs">
+                                {enr.dgca_roll_number || '—'}
+                              </td>
+
                               {/* Notes (truncated) */}
                               <td className="py-3 text-xs max-w-[120px] truncate">
                                 {enr.notes || '—'}
@@ -620,6 +672,89 @@ export default function StudentProgressPage() {
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
+          )}
+
+          {/* ----- Direct Exam Entry modal ----- */}
+          {/* 2026-08-19: replaces the old one-click confirm() flow, which
+              hardcoded exam_score=100/exam_result=PASS with no real DGCA
+              exam data collected at all. This subject is examined by
+              DGCA, not the FTO, so a recorded pass needs the student's
+              actual DGCA roll number and the score they received. */}
+          {directExamModal && (
+            <div
+              className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+              style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+              onClick={() => setDirectExamModal(null)}
+            >
+              <div
+                className="surface-card w-full max-w-md shadow-2xl"
+                onClick={e => e.stopPropagation()}
+              >
+                <div
+                  className="flex items-center justify-between p-4 border-b rounded-t-xl"
+                  style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}
+                >
+                  <h3 className="text-lg font-semibold flex items-center gap-2">
+                    <GraduationCap className="w-4 h-4" /> Mark {directExamModal.subjectName} as Completed
+                  </h3>
+                  <button onClick={() => setDirectExamModal(null)} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+                    <X className="w-5 h-5 text-tertiary" />
+                  </button>
+                </div>
+
+                <div className="p-4 space-y-4">
+                  <p className="text-sm text-secondary">
+                    {directExamModal.subjectName} is examined by DGCA, not the FTO — enter the student&apos;s
+                    actual DGCA exam result to record this as completed and exempt them from attendance.
+                  </p>
+
+                  <div>
+                    <label className="block text-sm text-secondary mb-1">DGCA Roll Number *</label>
+                    <input
+                      type="text"
+                      value={directExamRollNumber}
+                      onChange={e => setDirectExamRollNumber(e.target.value)}
+                      placeholder="e.g., DGCA-2026-00123"
+                      className="w-full surface-inner rounded-lg px-3 py-2 focus:outline-none focus:border-[var(--accent)]"
+                      autoFocus
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm text-secondary mb-1">Exam Score Received *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      value={directExamScore}
+                      onChange={e => setDirectExamScore(e.target.value)}
+                      placeholder="e.g., 85"
+                      className="w-full surface-inner rounded-lg px-3 py-2 focus:outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+
+                  {directExamError && (
+                    <p className="text-xs" style={{ color: 'var(--danger)' }}>{directExamError}</p>
+                  )}
+
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={submitDirectExam}
+                      className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold"
+                      style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+                    >
+                      <CircleCheck className="w-3.5 h-3.5" /> Record Pass
+                    </button>
+                    <button
+                      onClick={() => setDirectExamModal(null)}
+                      className="px-4 py-2 rounded-lg text-sm transition surface-inner"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </main>

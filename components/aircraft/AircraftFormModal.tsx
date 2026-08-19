@@ -6,6 +6,14 @@ import { useState, useEffect } from 'react';
 import { Pencil, Plus, Save, X } from 'lucide-react';
 import { FUEL_BURN_RATE_BY_TYPE_LPH, DEFAULT_FUEL_BURN_RATE_LPH } from '@/lib/store';
 
+// 2026-08-19: `type` is the engine category, a genuinely fixed 2-value
+// enum — see restructure-aircraft-type-model.sql. Previously this was a
+// hardcoded, independently-drifted copy of AircraftSetupTab.tsx's own
+// model-code list (7 codes here vs. 12 there — a real inconsistency this
+// also fixes). The specific model/variant now belongs entirely to the
+// free-text "Model" field below.
+const ENGINE_TYPES = ['Single Engine', 'Multi Engine'];
+
 interface Props {
   aircraft: Aircraft | null;
   onSave: (aircraft: Aircraft) => void;
@@ -26,6 +34,7 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
     currentFuel: 200,
     status: 'ACTIVE',
     nextMaintenance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    isSimulator: false,
   });
 
   // Whether the Fuel Burn Rate field should keep auto-following the Type
@@ -37,7 +46,7 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
 
   useEffect(() => {
     if (aircraft) {
-      setForm(aircraft);
+      setForm({ ...aircraft, isSimulator: !!aircraft.isSimulator });
       setAutoBurnRate(aircraft.fuelBurnRateLph == null);
     } else {
       setForm({
@@ -51,6 +60,7 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
         currentFuel: 200,
         status: 'ACTIVE',
         nextMaintenance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        isSimulator: false,
       });
       setAutoBurnRate(true);
     }
@@ -131,13 +141,9 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
                 className={inputClass}
               >
                 <option value="">Select Type</option>
-                <option value="C172S">C172S</option>
-                <option value="C152">C152</option>
-                <option value="PA28">PA28</option>
-                <option value="DA40">DA40</option>
-                <option value="DA42">DA42</option>
-                <option value="SR20">SR20</option>
-                <option value="SR22">SR22</option>
+                {ENGINE_TYPES.map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -151,6 +157,21 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
                 className={inputClass}
               />
             </div>
+          </div>
+
+          {/* Is Simulator — flags this entry as a flight simulator/
+              training device rather than a real aircraft, so flights
+              logged against it count toward Simulator Hours on the
+              Progress page instead of real flight time. */}
+          <div>
+            <label className="flex items-center gap-2 text-sm text-secondary cursor-pointer w-fit">
+              <input
+                type="checkbox"
+                checked={!!form.isSimulator}
+                onChange={e => setForm(prev => ({ ...prev, isSimulator: e.target.checked }))}
+              />
+              This is a flight simulator / training device (not a real aircraft)
+            </label>
           </div>
 
           {/* Year & Status */}

@@ -3,9 +3,28 @@
 // Shows: students flying today, nearing checkride, and needing attention
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plane, Target, TriangleAlert, PartyPopper, ChevronRight } from 'lucide-react';
 import { useFlightStore } from '@/lib/store';
+import { supabase } from '@/lib/supabase-client';
+import { matchTrainingProgram } from '@/lib/training-programs';
+
+// Admin-configured per-program required hours (Admin Setup -> Training
+// Programs). This widget used to hardcode targetHours as 40 for any stage
+// containing "PPL" and 200 for everything else — meaning it silently
+// ignored whatever an admin actually configured on that tab (unlike the
+// full Progress page, which already reads training_programs), and treated
+// every non-PPL stage as a 200h program including IR/MULTI. Uses the same
+// matchTrainingProgram helper as app/dashboard/progress/page.tsx (see
+// lib/training-programs.ts) so both pages agree on a given student's
+// target hours and both support per-phase rows (e.g. "PPL Phase 1" vs
+// "PPL Phase 2" configured as distinct training_programs rows), not just
+// one shared row per leading program code.
+interface TrainingProgramHours {
+  program_code: string;
+  program_name: string;
+  required_hours: number;
+}
 
 export default function StudentProgressWidget() {
   const {
@@ -14,11 +33,23 @@ export default function StudentProgressWidget() {
     scheduledFlights, loadScheduledFlights
   } = useFlightStore();
 
+  const [trainingPrograms, setTrainingPrograms] = useState<TrainingProgramHours[]>([]);
+
   // Load data on mount
   useEffect(() => {
     loadStudents();
     loadFlightRecords();
     loadScheduledFlights();
+    (async () => {
+      const { data, error } = await supabase
+        .from('training_programs')
+        .select('program_code, program_name, required_hours');
+      if (error) {
+        console.error('Error loading training programs:', error.message);
+      } else {
+        setTrainingPrograms(data || []);
+      }
+    })();
   }, [loadStudents, loadFlightRecords, loadScheduledFlights]);
 
   // ============================================================
@@ -31,9 +62,16 @@ export default function StudentProgressWidget() {
         const studentFlights = flightRecords.filter(f => f.studentId === student.id);
         const totalHours = studentFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
 
-        // Determine target hours based on training stage
+        // Determine target hours: admin-configured training_programs row
+        // for this student's stage — an exact match (e.g. a school-defined
+        // "PPL Phase 1" row) if one exists, else the leading-token match
+        // (e.g. "CPL" from "CPL Phase 2") against a general program row —
+        // falling back to the same PPL=40h / other=200h built-in default
+        // this widget always used, only now scoped correctly to just the
+        // fallback case instead of being the only source of truth.
+        const matchedProgram = matchTrainingProgram(student.trainingStage, trainingPrograms);
         const isPPL = student.trainingStage?.includes('PPL');
-        const targetHours = isPPL ? 40 : 200;
+        const targetHours = matchedProgram?.required_hours ?? (isPPL ? 40 : 200);
         const progressPercent = Math.min(100, Math.round((totalHours / targetHours) * 100));
 
         // Get today's flight for this student. Excludes CANCELLED bookings —
@@ -77,7 +115,7 @@ export default function StudentProgressWidget() {
           recentFlights,
         };
       });
-  }, [students, flightRecords, scheduledFlights]);
+  }, [students, flightRecords, scheduledFlights, trainingPrograms]);
 
   // ============================================================
   // GROUP STUDENTS BY CATEGORY

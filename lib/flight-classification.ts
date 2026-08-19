@@ -33,6 +33,21 @@ export function isNightSortie(sortieType: string | null | undefined): boolean {
   return !!sortieType && sortieType.includes('NIGHT');
 }
 
+// 2026-08-19: unlike the three helpers above, Multi Engine and Simulator
+// hours are properties of WHICH AIRCRAFT was flown, not which sortie/
+// maneuver was performed — a cross-country flight in a multi-engine
+// aircraft still counts as multi-engine time, and vice versa. So these two
+// take the aircraft record itself (looked up via the flight's aircraftId),
+// not a sortieType string. See restructure-aircraft-type-model.sql for how
+// `type`/`isSimulator` got their current meaning on the aircraft table.
+export function isMultiEngineFlight(aircraft: { type?: string | null } | null | undefined): boolean {
+  return aircraft?.type === 'Multi Engine';
+}
+
+export function isSimulatorFlight(aircraft: { isSimulator?: boolean | null } | null | undefined): boolean {
+  return !!aircraft?.isSimulator;
+}
+
 // Same fallback the client store's loadFlightRecords() already used when a
 // flight_record row's own total_hours column is empty (which is every
 // row today — see app/api/flight-records/route.ts's POST, which never

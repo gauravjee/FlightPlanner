@@ -4,7 +4,7 @@
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import { StudentRecord } from '@/types';
@@ -41,6 +41,21 @@ export default function StudentsPage() {
     const matchesStage = stageFilter === 'ALL' || s.trainingStage === stageFilter;
     return matchesSearch && matchesStage;
   });
+
+  // 2026-08-19: this Training Stage filter used to be a hardcoded 6-value
+  // list (PPL, PPL Phase 1, PPL Phase 2, CPL, IR, MULTI) — a SECOND,
+  // independent copy of the same stage list StudentFormModal.tsx's Training
+  // Stage dropdown used to hardcode (that one is now DB-backed off
+  // training_programs). This filter never got the same treatment and kept
+  // offering stages nobody was actually configured with (or hiding stages
+  // that were). Derived from the students actually loaded instead — this
+  // always matches what's real, with no separate list to keep in sync
+  // (a training_programs lookup wouldn't be right here either: a filter
+  // should reflect what students ARE, not what programs are configured).
+  const stageOptions = useMemo(() => {
+    const unique = Array.from(new Set(students.map(s => s.trainingStage).filter((s): s is string => !!s)));
+    return unique.sort((a, b) => a.localeCompare(b));
+  }, [students]);
 
   const stats = {
     total: students.length,
@@ -144,12 +159,9 @@ export default function StudentsPage() {
               <select value={stageFilter} onChange={e => setStageFilter(e.target.value)}
                 className="surface-inner rounded-lg px-4 py-2 focus:outline-none focus:border-[var(--accent)]">
                 <option value="ALL">All Stages</option>
-                <option value="PPL">PPL</option>
-                <option value="PPL Phase 1">PPL Phase 1</option>
-                <option value="PPL Phase 2">PPL Phase 2</option>
-                <option value="CPL">CPL</option>
-                <option value="IR">IR</option>
-                <option value="MULTI">MULTI</option>
+                {stageOptions.map(stage => (
+                  <option key={stage} value={stage}>{stage}</option>
+                ))}
               </select>
             </div>
 

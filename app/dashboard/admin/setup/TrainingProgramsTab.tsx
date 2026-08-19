@@ -21,6 +21,14 @@ interface TrainingProgram {
   instrument_hours: number | null;
   night_hours: number | null;
   landings_required: number | null;
+  // 2026-08-19: unlike the five fields above, these two have NO built-in
+  // fallback on the Progress page — they're CPL-specific (or whichever
+  // programs an admin sets them on), not universal like Solo/Cross-Country/
+  // Instrument/Night. Leaving them blank hides that metric's card entirely
+  // on the Progress page instead of applying a number that may not even
+  // apply to the program. See add-multi-engine-simulator-hours-to-training-programs.sql.
+  multi_engine_hours: number | null;
+  simulator_hours: number | null;
   description: string;
   is_active: boolean;
   sort_order: number;
@@ -39,6 +47,8 @@ export default function TrainingProgramsTab() {
     instrument_hours: null as number | null,
     night_hours: null as number | null,
     landings_required: null as number | null,
+    multi_engine_hours: null as number | null,
+    simulator_hours: null as number | null,
     description: '',
     is_active: true,
     sort_order: 99,
@@ -82,6 +92,7 @@ export default function TrainingProgramsTab() {
     setForm({
       program_name: '', program_code: '', required_hours: 40,
       solo_hours: null, cross_country_hours: null, instrument_hours: null, night_hours: null, landings_required: null,
+      multi_engine_hours: null, simulator_hours: null,
       description: '', is_active: true, sort_order: 99,
     });
     loadPrograms();
@@ -99,6 +110,8 @@ export default function TrainingProgramsTab() {
       instrument_hours: program.instrument_hours,
       night_hours: program.night_hours,
       landings_required: program.landings_required,
+      multi_engine_hours: program.multi_engine_hours,
+      simulator_hours: program.simulator_hours,
       description: program.description,
       is_active: program.is_active,
       sort_order: program.sort_order,
@@ -190,6 +203,18 @@ export default function TrainingProgramsTab() {
                 onChange={e => setForm(p => ({ ...p, landings_required: e.target.value === '' ? null : parseInt(e.target.value) }))}
                 className={inputClass} />
             </div>
+            <div>
+              <label className="block text-xs text-tertiary mb-1">Multi Engine Hours</label>
+              <input type="number" placeholder="e.g., 15" value={form.multi_engine_hours ?? ''}
+                onChange={e => setForm(p => ({ ...p, multi_engine_hours: e.target.value === '' ? null : parseFloat(e.target.value) }))}
+                className={inputClass} />
+            </div>
+            <div>
+              <label className="block text-xs text-tertiary mb-1">Simulator Hours</label>
+              <input type="number" placeholder="e.g., 20" value={form.simulator_hours ?? ''}
+                onChange={e => setForm(p => ({ ...p, simulator_hours: e.target.value === '' ? null : parseFloat(e.target.value) }))}
+                className={inputClass} />
+            </div>
           </div>
         </div>
 
@@ -205,6 +230,7 @@ export default function TrainingProgramsTab() {
             <button onClick={() => { setEditing(null); setForm({
                 program_name: '', program_code: '', required_hours: 40,
                 solo_hours: null, cross_country_hours: null, instrument_hours: null, night_hours: null, landings_required: null,
+                multi_engine_hours: null, simulator_hours: null,
                 description: '', is_active: true, sort_order: 99,
               }); }}
               className="px-4 py-2 rounded-lg text-sm transition surface-inner">
@@ -245,6 +271,8 @@ export default function TrainingProgramsTab() {
                       prog.instrument_hours != null ? `Instr ${prog.instrument_hours}h` : null,
                       prog.night_hours != null ? `Night ${prog.night_hours}h` : null,
                       prog.landings_required != null ? `${prog.landings_required} landings` : null,
+                      prog.multi_engine_hours != null ? `Multi ${prog.multi_engine_hours}h` : null,
+                      prog.simulator_hours != null ? `Sim ${prog.simulator_hours}h` : null,
                     ].filter(Boolean).join(' · ') || '— (using defaults)'}
                   </td>
                   <td className="py-3">

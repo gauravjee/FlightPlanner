@@ -50,50 +50,22 @@ const SORTIE_LABELS: Record<string, string> = {
   MAINTENANCE: 'Maintenance',
 };
 
-// ============================================================
-// EXERCISE SHORT CODES – maps full exercise names to short codes
-// ============================================================
-const EXERCISE_SHORT_CODES: Record<string, string> = {
-  '120NM - 120NM Xcty Check': '120NM',
-  '250NM - 250NM Xcty Check': '250NM',
-  '300NM - 300 Nm Cross-Country': '300NM',
-  'AIREX - Air Experience': 'AIREX',
-  'C&D - Climb & Descend': 'C&D',
-  'CCTS - Circuits & Landings': 'CCTS',
-  'CHK - Check': 'CHK',
-  'CRTV - Corrective': 'CRTV',
-  'CT&DT - Climbing turn & Descending turn': 'CT&DT',
-  'EMGCY - Emergencies': 'EMGCY',
-  'EOC - Effect of Controls': 'EOC',
-  'FAM - Familiarisation': 'FAM',
-  'GF - General Flying': 'GF',
-  'GFT.D - General Flying Test DAY': 'GFT.D',
-  'GFT.N - General Flying Test NIGHT': 'GFT.N',
-  'IF - Instrument Flying': 'IF',
-  'IRT - Instrument Rating Test': 'IRT',
-  'PC - Progress Check': 'PC',
-  'PPC - Pilot Proficiency Check': 'PPC',
-  'RRT - Recurrent Training': 'RRT',
-  'S&L - Straight & Level': 'S&L',
-  'SIDE/FRDW SLIP - SLIP': 'SLIP',
-  'ST.TRN - Steep Turns': 'ST.TRN',
-  'ST&RE - Stall & Recovery': 'ST&RE',
-  'TO & Climb - TO & Climb': 'TO_CLB',
-  'TRN - Turns': 'TRN',
-  'X-CTY - Cross-Country': 'X-CTY',
-};
-
 /**
- * Extract the short code from a full exercise name
+ * Extract the short code from a full exercise name.
  * Example: "CCTS - Circuits & Landings" → "CCTS"
+ *
+ * Used to label flight blocks on the Gantt chart from a booked flight's
+ * stored exercise string alone (there's no easy join back to the
+ * `exercises` table from a flight row). This used to consult a hardcoded
+ * EXERCISE_SHORT_CODES map first (removed 2026-08-19, same round the
+ * Exercise Codes legend below was switched to the live `exercises` table)
+ * — that map was really only ever re-deriving what's already in the
+ * stored "CODE - Name" string, since BookingForm has always constructed
+ * that value as `${short_code} - ${exercise_name}`. Splitting on " - "
+ * here does exactly that, with no separate list to fall out of sync.
  */
 const getExerciseShortCode = (fullExercise: string): string => {
   if (!fullExercise) return '';
-  // Check if we have a mapped short code
-  if (EXERCISE_SHORT_CODES[fullExercise]) {
-    return EXERCISE_SHORT_CODES[fullExercise];
-  }
-  // Otherwise extract the part before " - "
   const dashIndex = fullExercise.indexOf(' - ');
   if (dashIndex > 0) {
     return fullExercise.substring(0, dashIndex);
@@ -166,6 +138,17 @@ export default function ScheduleBoard() {
   const getFTOSetting = store.getFTOSetting;
   const holidays = store.holidays;                          // FTO-wide blackout dates
   const loadHolidays = store.loadHolidays;
+  const exercises = store.exercises;                        // Exercise codes (Admin Setup -> Exercises), for the legend below
+  const loadExercises = store.loadExercises;
+
+  // Same "CODE - Name" / short-code tuple shape the legend table and print
+  // report were already built around, now sourced from the live exercises
+  // table instead of a hardcoded EXERCISE_SHORT_CODES map (removed
+  // 2026-08-19) — a new exercise added in Admin Setup -> Exercises shows
+  // up here automatically instead of needing a matching code change.
+  const exerciseEntries: [string, string][] = exercises.map(
+    ex => [`${ex.short_code} - ${ex.exercise_name}`, ex.short_code]
+  );
 
   // FTO-wide weekly recurring off day(s) (Settings -> Time & Scheduling ->
   // "Weekly Off Day(s)"), parsed from the raw comma-separated fto_settings value.
@@ -179,7 +162,8 @@ export default function ScheduleBoard() {
     loadScheduledFlights();   // Load booked flights for Gantt blocks
     loadMaintenanceRecords(); // Load maintenance records so we can block slots for aircraft under/scheduled for maintenance
     loadHolidays();           // Load holiday calendar so we can block slots on closed dates
-  }, [loadAircraft, loadStudents, loadInstructors, loadScheduledFlights, loadMaintenanceRecords, loadHolidays]);
+    if (exercises.length === 0) loadExercises(); // Load exercise codes for the legend below
+  }, [loadAircraft, loadStudents, loadInstructors, loadScheduledFlights, loadMaintenanceRecords, loadHolidays, exercises.length, loadExercises]);
 
   // Is the currently viewed date blocked for scheduling — a holiday or the
   // FTO's weekly off day? null if the date is open.
@@ -617,7 +601,6 @@ export default function ScheduleBoard() {
 
     // ----- Exercise legend rows -----
     let exerciseLegendRows = '';
-    const exerciseEntries = Object.entries(EXERCISE_SHORT_CODES);
     for (let i = 0; i < exerciseEntries.length; i += 2) {
       const left = exerciseEntries[i];
       const right = exerciseEntries[i + 1];
@@ -1302,7 +1285,7 @@ export default function ScheduleBoard() {
               </thead>
               <tbody>
                 {(() => {
-                  const entries = Object.entries(EXERCISE_SHORT_CODES);
+                  const entries = exerciseEntries;
                   const rows: React.ReactElement[] = [];
                   for (let i = 0; i < entries.length; i += 3) {
                     const col1 = entries[i];
@@ -1359,7 +1342,7 @@ export default function ScheduleBoard() {
           </div>
           {/* Mobile — simple 2-column code/description list, no horizontal scroll needed */}
           <div className="sm:hidden grid grid-cols-1 gap-1.5">
-            {Object.entries(EXERCISE_SHORT_CODES).map(([full, code]) => (
+            {exerciseEntries.map(([full, code]) => (
               <div key={full} className="flex items-center gap-2 text-xs">
                 <span className="badge badge-neutral flex-shrink-0">{code}</span>
                 <span className="text-secondary truncate">{full.split(' - ')[1] || full}</span>

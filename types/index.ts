@@ -2,7 +2,17 @@
 export interface Aircraft {
   id: string;
   registration: string;
+  // 2026-08-19: engine category — 'Single Engine' | 'Multi Engine'. Used to
+  // be a hardcoded specific-model code (e.g. 'C172S', 'PA44') until that
+  // was found to be conflating "which airframe" with "engine count", which
+  // blocked auto-totaling CPL's Multi Engine Hours requirement from real
+  // flight records the same way Solo/Cross-Country/Instrument/Night
+  // already do. The specific model now lives in `model` below. See
+  // restructure-aircraft-type-model.sql and lib/flight-classification.ts's
+  // isMultiEngineFlight().
   type: string;
+  // Free-text specific model/variant, e.g. "Cessna 172S Skyhawk", "Piper
+  // Seneca II" — display/identification only, not used in any lookup.
   model: string;
   year: number;
   hobbsTime: number;
@@ -11,10 +21,15 @@ export interface Aircraft {
   status: 'ACTIVE' | 'MAINTENANCE' | 'GROUNDED';
   nextMaintenance: string;
   // Average cruise fuel burn (liters/hour) for THIS aircraft, if the FTO has
-  // set one — overrides the type-average default from
+  // set one — overrides the engine-category default from
   // FUEL_BURN_RATE_BY_TYPE_LPH (see lib/store.ts). Optional/undefined means
   // "use the type default".
   fuelBurnRateLph?: number;
+  // 2026-08-19: true if this row represents a flight simulator/training
+  // device rather than a real aircraft. Any flight logged against it
+  // counts toward a student's Simulator Hours — see
+  // isSimulatorFlight() in lib/flight-classification.ts.
+  isSimulator?: boolean;
 }
 
 
@@ -394,6 +409,10 @@ export interface AvailabilityRecord {
 export interface TrainingRequirement {
   id: string;
   studentId: string;
+  // 2026-08-19: which training_requirement_templates row this was
+  // provisioned from, if any — see split-training-requirement-templates.sql.
+  // Undefined for rows added directly to a student with no template.
+  templateId?: string;
   requirementName: string;
   requirementCategory: string;
   isCompleted: boolean;

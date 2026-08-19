@@ -19,8 +19,8 @@
 import { useEffect, useState } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { useSession } from 'next-auth/react';
-import { syncGroundSchoolFromChecklist } from '@/lib/ground-school-sync'; // ← NEW IMPORT
-import { ClipboardList, Lock, TriangleAlert, ChevronDown, ChevronRight } from 'lucide-react';
+import { syncGroundSchoolFromChecklist, getGroundSchoolSubject } from '@/lib/ground-school-sync';
+import { ClipboardList, Lock, TriangleAlert, ChevronDown, ChevronRight, GraduationCap, X } from 'lucide-react';
 import { TrainingRequirement } from '@/types';
 
 interface Props {
@@ -36,6 +36,21 @@ export default function RequirementsChecklist({ studentId }: Props) {
   } = useFlightStore();
 
   const [loading, setLoading] = useState(false);
+
+  // 2026-08-19: checking a ground-school-linked requirement here used to
+  // silently create a fake EXEMPTED exam record (100%/PASS, no DGCA data)
+  // via syncGroundSchoolFromChecklist — the same gap already fixed on
+  // Ground School -> Progress and the attendance page's exam editor, just
+  // missed here since this is a third, independent entry point into the
+  // same underlying sync. dgcaModal holds which requirement is pending
+  // entry; null = no modal open. Only shown when CHECKING a requirement
+  // that resolves to a real ground school subject — unchecking, and any
+  // non-ground-school requirement, still toggles immediately with no
+  // extra step.
+  const [dgcaModal, setDgcaModal] = useState<{ id: string; requirementName: string; subjectName: string } | null>(null);
+  const [dgcaRollNumber, setDgcaRollNumber] = useState('');
+  const [dgcaScore, setDgcaScore] = useState('');
+  const [dgcaError, setDgcaError] = useState('');
 
   // Categories the user has explicitly collapsed. Starts empty (everything
   // expanded) rather than collapsed-by-default, so a category containing an
@@ -104,22 +119,85 @@ export default function RequirementsChecklist({ studentId }: Props) {
   const handleToggle = async (
     id: string,
     currentStatus: boolean,
-    requirementName: string
+    requirementName: string,
+    examData?: { rollNumber: string; score: number }
   ) => {
     setLoading(true);
 
-    // Update the requirement in the training_requirements table
-    await toggleRequirement(id, !currentStatus, 'Instructor');
+    // Update the requirement in the training_requirements table. As of
+    // 2026-08-19 this goes through a server-side API route (see
+    // lib/store.ts's toggleRequirement -> PATCH /api/admin/requirements/
+    // toggle) that enforces REQUIREMENTS_WRITE_ROLES and derives
+    // completedBy from the verified session itself — not from anything
+    // passed in here. This used to hardcode the literal string 'Instructor'
+    // client-side regardless of who was actually signed in (fixed earlier
+    // the same day by deriving it here instead), then got hardened further
+    // so the client can't influence that identity at all, only the server
+    // can. This is the only call site of toggleRequirement in the app, so
+    // it affects every requirement, including "Solo Release" — the whole
+    // point of that one is knowing exactly which instructor/admin granted
+    // it, and now that can't be spoofed by a modified client either.
+    await toggleRequirement(id, !currentStatus);
 
     // Cross‑sync: if this is a ground school subject, update ground_school_enrollment
-    // (non‑ground‑school requirements are silently ignored by the sync function)
+    // (non‑ground‑school requirements are silently ignored by the sync function).
+    // examData (DGCA roll number + score) is only ever set when completing
+    // — see handleCheckboxClick below, which collects it via a modal before
+    // calling this at all.
     await syncGroundSchoolFromChecklist(
       studentId,
       requirementName,
-      !currentStatus
+      !currentStatus,
+      examData
     );
 
     setLoading(false);
+  };
+
+  // Dispatches a checkbox click: unchecking, or checking a non-ground-school
+  // requirement, toggles immediately as before. Checking a requirement that
+  // resolves to a real ground school subject opens the DGCA modal instead —
+  // this subject is examined by DGCA, not the FTO, so a completion needs
+  // the student's actual roll number and score, not a silent fake pass.
+  const handleCheckboxClick = async (req: TrainingRequirement) => {
+    if (!canEdit || loading) return;
+
+    if (req.isCompleted) {
+      handleToggle(req.id, true, req.requirementName);
+      return;
+    }
+
+    const subjectName = await getGroundSchoolSubject(req.requirementName);
+    if (subjectName) {
+      setDgcaError('');
+      setDgcaRollNumber('');
+      setDgcaScore('');
+      setDgcaModal({ id: req.id, requirementName: req.requirementName, subjectName });
+    } else {
+      handleToggle(req.id, false, req.requirementName);
+    }
+  };
+
+  // Validates and submits the DGCA modal, then completes the requirement.
+  const submitDgcaModal = async () => {
+    if (!dgcaModal) return;
+    const rollNumber = dgcaRollNumber.trim();
+    const score = parseFloat(dgcaScore);
+
+    if (!rollNumber) {
+      setDgcaError('DGCA roll number is required to record a pass.');
+      return;
+    }
+    if (dgcaScore === '' || Number.isNaN(score) || score < 0 || score > 100) {
+      setDgcaError('Enter a valid exam score (0–100).');
+      return;
+    }
+
+    setDgcaError('');
+    await handleToggle(dgcaModal.id, false, dgcaModal.requirementName, { rollNumber, score });
+    setDgcaModal(null);
+    setDgcaRollNumber('');
+    setDgcaScore('');
   };
 
   // ============================================================
@@ -215,10 +293,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
                       <div className="flex items-center space-x-3 min-w-0">
                         {/* Checkbox (or clickable icon) */}
                         <button
-                          onClick={() =>
-                            canEdit &&
-                            handleToggle(req.id, req.isCompleted, req.requirementName)
-                          }
+                          onClick={() => handleCheckboxClick(req)}
                           disabled={!canEdit || loading}
                           className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                             req.isCompleted
@@ -288,6 +363,83 @@ export default function RequirementsChecklist({ studentId }: Props) {
           );
         })}
       </div>
+
+      {/* ----- DGCA exam entry modal ----- */}
+      {/* 2026-08-19: this subject is examined by DGCA, not the FTO — a
+          completion recorded here needs the student's actual DGCA roll
+          number and score, not a silent 100%/PASS with no roll number
+          (the same fix already applied to Ground School -> Progress's
+          "Mark as Completed" and the attendance page's exam editor). */}
+      {dgcaModal && (
+        <div
+          className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setDgcaModal(null)}
+        >
+          <div
+            className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <GraduationCap className="w-4 h-4" /> Complete {dgcaModal.requirementName}
+              </h3>
+              <button onClick={() => setDgcaModal(null)} className="p-2 rounded-lg hover:bg-slate-700 cursor-pointer">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-slate-400">
+                {dgcaModal.subjectName} is examined by DGCA, not the FTO — enter the student&apos;s
+                actual DGCA exam result to mark this complete.
+              </p>
+
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">DGCA Roll Number *</label>
+                <input
+                  type="text"
+                  value={dgcaRollNumber}
+                  onChange={e => setDgcaRollNumber(e.target.value)}
+                  placeholder="e.g., DGCA-2026-00123"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-slate-500"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">Exam Score Received *</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={dgcaScore}
+                  onChange={e => setDgcaScore(e.target.value)}
+                  placeholder="e.g., 85"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-slate-500"
+                />
+              </div>
+
+              {dgcaError && <p className="text-xs text-red-400">{dgcaError}</p>}
+
+              <div className="flex space-x-2">
+                <button
+                  onClick={submitDgcaModal}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-500 hover:bg-green-600 text-white transition"
+                >
+                  Record Pass
+                </button>
+                <button
+                  onClick={() => setDgcaModal(null)}
+                  className="px-4 py-2 rounded-lg text-sm bg-slate-700 hover:bg-slate-600 text-white transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

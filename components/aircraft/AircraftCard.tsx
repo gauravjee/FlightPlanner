@@ -57,7 +57,7 @@ export default function AircraftCard({ aircraft, onEdit, onDelete }: Props) {
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div className="surface-inner p-3">
           <p className="text-xs text-tertiary">Type</p>
-          <p className="text-sm font-medium">{aircraft.type}</p>
+          <p className="text-sm font-medium">{aircraft.isSimulator ? 'Simulator' : aircraft.type}</p>
         </div>
         <div className="surface-inner p-3">
           <p className="text-xs text-tertiary">Year</p>

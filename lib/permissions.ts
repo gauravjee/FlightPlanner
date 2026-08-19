@@ -129,6 +129,23 @@ export const AVAILABILITY_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'o
 export const PROGRESS_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'student', 'operations'];
 
 // ============================================================
+// TRAINING REQUIREMENTS (2026-08-19)
+// ============================================================
+// Who can toggle a training_requirements row complete/incomplete — shown on
+// the Progress page's Requirements Checklist (components/dashboard/
+// RequirementsChecklist.tsx). Same role list the UI's own canEdit check
+// already used, but this is now also enforced server-side (see
+// app/api/admin/requirements/toggle/route.ts) rather than being a UI-only
+// restriction — the write used to go straight from the browser to Supabase,
+// which meant anyone who could reach the Supabase REST API directly could
+// bypass canEdit entirely. Matters most for the safety-sensitive "Solo
+// Release" requirement, but applies to every requirement toggle.
+// Intentionally its own constant rather than reusing STUDENT_WRITE_ROLES —
+// same values today, but a different feature area; they shouldn't
+// accidentally move together if one changes for reasons specific to it.
+export const REQUIREMENTS_WRITE_ROLES = ['admin', 'instructor', 'super_admin'];
+
+// ============================================================
 // PER-USER PERMISSION OVERRIDES (2026-08-17, second round)
 // ============================================================
 // For small FTOs with few staff, a super_admin can grant an individual

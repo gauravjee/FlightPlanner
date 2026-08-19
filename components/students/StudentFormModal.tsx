@@ -2,8 +2,9 @@
 'use client';
 
 import { StudentRecord } from '@/types';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useFlightStore } from '@/lib/store';
+import { supabase } from '@/lib/supabase-client';
 import { Pencil, GraduationCap, Save, Plus, X, CircleCheck } from 'lucide-react';
 
 interface Props {
@@ -27,7 +28,11 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
     enrollmentId: '',
     name: '',
     initials: '',
-    trainingStage: 'PPL',
+    // 2026-08-19: no longer defaults to a hardcoded 'PPL' — that assumed a
+    // program that may not actually be configured. Starts unset; the
+    // Training Stage field below requires an explicit choice from
+    // whatever's really in training_programs (see stageOptions).
+    trainingStage: '',
     totalHours: 0,
     medicalExpiry: '',
     email: '',
@@ -37,6 +42,49 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
     status: 'ACTIVE',
     assignedInstructorId: undefined as string | undefined,
   });
+
+  // Training-stage options come entirely from Admin Setup -> Training
+  // Programs — no hardcoded fallback list. This used to start from a fixed
+  // 6-value list (PPL, PPL Phase 1, PPL Phase 2, CPL, IR, MULTI) merged
+  // with the database, which caused real confusion: it was impossible to
+  // tell, just by looking at the dropdown, which values were genuinely
+  // configured programs and which were placeholder defaults nobody had
+  // actually set up (2026-08-19: this is exactly what happened with "PPL
+  // Phase 1"/"PPL Phase 2"/"MULTI" showing up despite training_programs
+  // only having PPL/CPL/IR/SPL rows). Now it only ever shows what's real.
+  const [stageOptions, setStageOptions] = useState<string[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from('training_programs')
+        .select('program_code, program_name, is_active, sort_order')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      if (error) {
+        console.error('Error loading training programs for stage dropdown:', error.message);
+        return;
+      }
+      const dbValues = (data || [])
+        .map(p => p.program_code || p.program_name)
+        .filter((v): v is string => !!v);
+      setStageOptions(dbValues);
+    })();
+  }, []);
+
+  // Always keep whatever's currently selected/being edited in the list,
+  // even if it doesn't match any configured program (e.g. legacy data
+  // predating a program being renamed or removed). This isn't a hardcoded
+  // list — it's just reflecting the real value on the record, so it never
+  // disappears out from under an in-progress edit. Derived at render time
+  // (not a second setState-in-effect) since it only ever adds one value.
+  const visibleStageOptions = useMemo(() => {
+    const current = form.trainingStage || student?.trainingStage;
+    if (current && !stageOptions.includes(current)) {
+      return [...stageOptions, current];
+    }
+    return stageOptions;
+  }, [stageOptions, form.trainingStage, student]);
 
   const [initialsManuallyEdited, setInitialsManuallyEdited] = useState(false);
 
@@ -173,16 +221,20 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
                 className={inputClass} />
             </div>
             <div>
-              <label className="block text-sm text-secondary mb-1">Training Stage</label>
-              <select value={form.trainingStage} onChange={e => handleChange('trainingStage', e.target.value)}
-                className={inputClass}>
-                <option value="PPL">PPL</option>
-                <option value="PPL Phase 1">PPL Phase 1</option>
-                <option value="PPL Phase 2">PPL Phase 2</option>
-                <option value="CPL">CPL</option>
-                <option value="IR">IR</option>
-                <option value="MULTI">MULTI</option>
-              </select>
+              <label className="block text-sm text-secondary mb-1">Training Stage {!isEditing && '*'}</label>
+              {visibleStageOptions.length === 0 ? (
+                <p className="text-xs" style={{ color: 'var(--warning-text)' }}>
+                  No training programs configured yet — add one in Admin Setup → Training Programs first.
+                </p>
+              ) : (
+                <select value={form.trainingStage} onChange={e => handleChange('trainingStage', e.target.value)}
+                  required={!isEditing} className={inputClass}>
+                  {!form.trainingStage && <option value="" disabled>Select a stage...</option>}
+                  {visibleStageOptions.map(stage => (
+                    <option key={stage} value={stage}>{stage}</option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
           {/* Assigned Instructor */}

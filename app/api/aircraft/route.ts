@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 
   const {
     registration, type, model, year, hobbsTime, fuelCapacity,
-    currentFuel, status, nextMaintenance, fuelBurnRateLph,
+    currentFuel, status, nextMaintenance, fuelBurnRateLph, isSimulator,
   } = body as Record<string, unknown>;
 
   if (!registration || !type || !model) {
@@ -44,6 +44,7 @@ export async function POST(request: Request) {
       status,
       next_maintenance: nextMaintenance,
       fuel_burn_rate_lph: fuelBurnRateLph ?? null,
+      is_simulator: isSimulator ?? false,
     })
     .select()
     .single();

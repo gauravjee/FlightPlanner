@@ -7,14 +7,14 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase-client';
-import { StudentRecord, FlightRecord } from '@/types';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { PROGRESS_VIEW_ROLES } from '@/lib/permissions';
 import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist';
 import { ChartColumn, TrendingUp, School, ArrowRight, Plane } from 'lucide-react';
-import { isCrossCountrySortie, isInstrumentSortie, isNightSortie } from '@/lib/flight-classification';
+import { isCrossCountrySortie, isInstrumentSortie, isNightSortie, isMultiEngineFlight, isSimulatorFlight } from '@/lib/flight-classification';
+import { matchTrainingProgram } from '@/lib/training-programs';
 
 // ============================================================
 // TRAINING STAGE REQUIREMENTS — built-in fallback defaults (DGCA/CAA
@@ -46,15 +46,26 @@ const CPL_REQUIREMENTS = {
 };
 
 // DB row shape from training_programs — see
-// add-training-program-requirement-columns.sql and TrainingProgramsTab.tsx.
+// add-training-program-requirement-columns.sql,
+// add-multi-engine-simulator-hours-to-training-programs.sql, and
+// TrainingProgramsTab.tsx.
 interface TrainingProgramRow {
   program_code: string;
+  program_name: string;
   required_hours: number;
   solo_hours: number | null;
   cross_country_hours: number | null;
   instrument_hours: number | null;
   night_hours: number | null;
   landings_required: number | null;
+  // 2026-08-19: unlike the five fields above, these two have NO built-in
+  // PPL/CPL fallback — they don't apply to every training stage the way
+  // Solo/Cross-Country/Instrument/Night do. NULL means "not tracked for
+  // this program" and the Progress page hides that metric's card entirely
+  // rather than silently applying a CPL-shaped number to e.g. a PPL
+  // student. See add-multi-engine-simulator-hours-to-training-programs.sql.
+  multi_engine_hours: number | null;
+  simulator_hours: number | null;
 }
 
 // ============================================================
@@ -87,7 +98,10 @@ export default function ProgressPage() {
   const {
     students, loadStudents,
     flightRecords, loadFlightRecords,
-    instructors
+    instructors,
+    aircraft, loadAircraft,
+    trainingRequirements, loadTrainingRequirements,
+    getRequirementsForStudent,
   } = useFlightStore();
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
@@ -103,17 +117,18 @@ export default function ProgressPage() {
   useEffect(() => {
     loadStudents();
     loadFlightRecords();
+    loadAircraft();
     (async () => {
       const { data, error } = await supabase
         .from('training_programs')
-        .select('program_code, required_hours, solo_hours, cross_country_hours, instrument_hours, night_hours, landings_required');
+        .select('program_code, program_name, required_hours, solo_hours, cross_country_hours, instrument_hours, night_hours, landings_required, multi_engine_hours, simulator_hours');
       if (error) {
         console.error('Error loading training programs:', error.message);
       } else {
         setTrainingPrograms(data || []);
       }
     })();
-  }, [loadStudents, loadFlightRecords]);
+  }, [loadStudents, loadFlightRecords, loadAircraft]);
 
   // If student is logged in, auto-select their own record
   useEffect(() => {
@@ -136,20 +151,41 @@ export default function ProgressPage() {
   // Get selected student object
   const selectedStudent = students.find(s => s.id === selectedStudentId);
 
+  // Load the selected student's requirements so the Solo Release status
+  // badge below can render as soon as a student is picked, without waiting
+  // for the RequirementsChecklist widget further down the page to mount
+  // and load them itself. `trainingRequirements` is a single-active-student
+  // cache in the store (loadTrainingRequirements replaces the whole array
+  // with just one student's rows — see lib/store.ts), so this and the
+  // checklist widget end up loading the same data; harmless, just one
+  // extra request, and it's what lets the badge show up in the banner
+  // above the checklist instead of only inside it.
+  useEffect(() => {
+    if (selectedStudentId) loadTrainingRequirements(selectedStudentId);
+  }, [selectedStudentId, loadTrainingRequirements]);
+
+  // "Released for solo" = no incomplete requirement flagged Blocks Solo —
+  // same rule BookingForm.tsx enforces at booking time. Guards against the
+  // brief window right after switching students where the cache may still
+  // hold the previous student's rows.
+  const selectedStudentReqs = selectedStudentId ? getRequirementsForStudent(selectedStudentId) : [];
+  const soloReqsMatchSelectedStudent = selectedStudentReqs.length > 0 && selectedStudentReqs.every(r => r.studentId === selectedStudentId);
+  const blockingSoloReqs = selectedStudentReqs.filter(r => r.blocksSolo && !r.isCompleted);
+
   // Resolve the admin-configured training_programs row for the selected
-  // student's stage, if any. trainingStage values look like "CPL Phase 2"
-  // or "IR" — take the leading token as the program code and match
-  // case-insensitively against training_programs.program_code, rather than
-  // the old `trainingStage.includes('CPL')` substring check (which only
-  // ever distinguished PPL vs CPL and silently defaulted every other stage,
-  // including IR/MULTI, to PPL requirements).
-  const matchedProgram = useMemo(() => {
-    const stage = selectedStudent?.trainingStage;
-    if (!stage) return undefined;
-    const code = stage.trim().split(/\s+/)[0]?.toUpperCase();
-    if (!code) return undefined;
-    return trainingPrograms.find(p => p.program_code?.toUpperCase() === code);
-  }, [selectedStudent, trainingPrograms]);
+  // student's stage, if any. Tries an exact match against the full stage
+  // string first (e.g. "PPL Phase 1" against a row coded/named exactly
+  // that), so a school can configure different targets per phase; falls
+  // back to matching just the leading token (e.g. "PPL" from "PPL Phase 1"
+  // or "CPL" from "CPL Phase 2") against a general program row for any
+  // stage that doesn't have its own specific row. See lib/training-programs.ts.
+  // (This replaced the old `trainingStage.includes('CPL')` substring check,
+  // which only ever distinguished PPL vs CPL and silently defaulted every
+  // other stage, including IR/MULTI, to PPL requirements.)
+  const matchedProgram = useMemo(
+    () => matchTrainingProgram(selectedStudent?.trainingStage, trainingPrograms),
+    [selectedStudent, trainingPrograms]
+  );
 
   // Get flights for selected student
   const studentFlights = useMemo(() => {
@@ -160,6 +196,7 @@ export default function ProgressPage() {
   // Calculate statistics
   const stats = useMemo(() => {
     const flights = studentFlights;
+    const aircraftById = new Map(aircraft.map(a => [a.id, a]));
 
     const totalHours = flights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
     const soloFlights = flights.filter(f => f.flightType === 'SOLO');
@@ -172,6 +209,13 @@ export default function ProgressPage() {
     const nightFlights = flights.filter(f => isNightSortie(f.sortieType));
     const nightHours = nightFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
     const totalLandings = flights.reduce((sum, f) => sum + (f.landings || 0), 0);
+    // 2026-08-19: Multi Engine / Simulator hours are classified by WHICH
+    // AIRCRAFT was flown (looked up via aircraftId), not by sortieType —
+    // see isMultiEngineFlight/isSimulatorFlight in lib/flight-classification.ts.
+    const multiEngineFlights = flights.filter(f => isMultiEngineFlight(aircraftById.get(f.aircraftId)));
+    const multiEngineHours = multiEngineFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
+    const simulatorFlights = flights.filter(f => isSimulatorFlight(aircraftById.get(f.aircraftId)));
+    const simulatorHours = simulatorFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
 
     // Determine which requirements to use. Built-in defaults (PPL vs CPL,
     // by trainingStage) remain the fallback baseline; matchedProgram's own
@@ -188,6 +232,11 @@ export default function ProgressPage() {
       instrument: matchedProgram?.instrument_hours ?? fallback.instrument,
       nightHours: matchedProgram?.night_hours ?? fallback.nightHours,
       landings: matchedProgram?.landings_required ?? fallback.landings,
+      // No PPL/CPL built-in fallback for these two — NULL means "not
+      // configured for this program" and the UI hides the card entirely
+      // instead of applying a number that may not even apply to this stage.
+      multiEngine: matchedProgram?.multi_engine_hours ?? null,
+      simulator: matchedProgram?.simulator_hours ?? null,
     };
 
     return {
@@ -198,6 +247,8 @@ export default function ProgressPage() {
       crossCountryHours: Math.round(crossCountryHours * 10) / 10,
       instrumentHours: Math.round(instrumentHours * 10) / 10,
       nightHours: Math.round(nightHours * 10) / 10,
+      multiEngineHours: Math.round(multiEngineHours * 10) / 10,
+      simulatorHours: Math.round(simulatorHours * 10) / 10,
       totalLandings,
       requirements,
       hoursPercent: Math.min(100, Math.round((totalHours / requirements.totalHours) * 100)),
@@ -206,16 +257,31 @@ export default function ProgressPage() {
       instrumentPercent: Math.min(100, Math.round((instrumentHours / requirements.instrument) * 100)),
       nightPercent: Math.min(100, Math.round((nightHours / requirements.nightHours) * 100)),
       landingsPercent: Math.min(100, Math.round((totalLandings / requirements.landings) * 100)),
+      // null when the program hasn't configured this metric — the card
+      // and its contribution to overallPercent both get skipped below.
+      multiEnginePercent: requirements.multiEngine != null
+        ? Math.min(100, Math.round((multiEngineHours / requirements.multiEngine) * 100))
+        : null,
+      simulatorPercent: requirements.simulator != null
+        ? Math.min(100, Math.round((simulatorHours / requirements.simulator) * 100))
+        : null,
       overallPercent: 0,
     };
-  }, [studentFlights, selectedStudent, matchedProgram]);
+  }, [studentFlights, selectedStudent, matchedProgram, aircraft]);
 
-  // Calculate overall progress
-  const overallPercent = stats.totalFlights > 0
-    ? Math.round(
-        (stats.hoursPercent + stats.soloPercent + stats.crossCountryPercent +
-         stats.instrumentPercent + stats.nightPercent + stats.landingsPercent) / 6
-      )
+  // Calculate overall progress — averages whichever metrics actually apply
+  // to this student's program. The original six (Total/Solo/Cross-Country/
+  // Instrument/Night/Landings) always apply; Multi Engine and Simulator
+  // only join the average when the matched program has configured them
+  // (their percent is null otherwise), so a PPL student with no
+  // multi-engine target isn't dragged down by a metric that doesn't apply.
+  const applicablePercents = [
+    stats.hoursPercent, stats.soloPercent, stats.crossCountryPercent,
+    stats.instrumentPercent, stats.nightPercent, stats.landingsPercent,
+    stats.multiEnginePercent, stats.simulatorPercent,
+  ].filter((p): p is number => p != null);
+  const overallPercent = stats.totalFlights > 0 && applicablePercents.length > 0
+    ? Math.round(applicablePercents.reduce((sum, p) => sum + p, 0) / applicablePercents.length)
     : 0;
 
   // Recent flights (last 5)
@@ -320,6 +386,24 @@ export default function ProgressPage() {
                       <p className="text-xs text-secondary">Total Flight Hours</p>
                     </div>
                   </div>
+                  {/* Solo Release status — surfaced here at the top of the
+                      page (not just buried in the Requirements Checklist
+                      below) since it's the one status instructors most
+                      often need at a glance. Same blocksSolo rule
+                      BookingForm.tsx enforces at booking time. */}
+                  {soloReqsMatchSelectedStudent && (
+                    <div className="mt-4 pt-4 border-t divider">
+                      {blockingSoloReqs.length > 0 ? (
+                        <p className="text-sm flex items-center gap-1.5" style={{ color: 'var(--danger)' }}>
+                          🔒 Not released for solo — missing: {blockingSoloReqs.map(r => r.requirementName).join(', ')}
+                        </p>
+                      ) : (
+                        <p className="text-sm flex items-center gap-1.5" style={{ color: 'var(--success)' }}>
+                          ✅ Released for solo
+                        </p>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
                 {/* Student Progress Checklist */}
@@ -385,6 +469,16 @@ export default function ProgressPage() {
                   { label: 'Instrument', value: `${stats.instrumentHours}h`, target: `${stats.requirements.instrument}h`, percent: stats.instrumentPercent },
                   { label: 'Night Hours', value: `${stats.nightHours}h`, target: `${stats.requirements.nightHours}h`, percent: stats.nightPercent },
                   { label: 'Landings', value: stats.totalLandings.toString(), target: stats.requirements.landings.toString(), percent: stats.landingsPercent },
+                  // Multi Engine / Simulator only show up when the matched
+                  // program has configured a target for them — these aren't
+                  // universal like the six above (e.g. a PPL student
+                  // typically has no Multi Engine target at all).
+                  ...(stats.requirements.multiEngine != null && stats.multiEnginePercent != null
+                    ? [{ label: 'Multi Engine', value: `${stats.multiEngineHours}h`, target: `${stats.requirements.multiEngine}h`, percent: stats.multiEnginePercent }]
+                    : []),
+                  ...(stats.requirements.simulator != null && stats.simulatorPercent != null
+                    ? [{ label: 'Simulator', value: `${stats.simulatorHours}h`, target: `${stats.requirements.simulator}h`, percent: stats.simulatorPercent }]
+                    : []),
                 ].map((item, i) => (
                   <div key={i} className="surface-inner p-4">
                     <p className="text-xs text-tertiary mb-2">{item.label}</p>

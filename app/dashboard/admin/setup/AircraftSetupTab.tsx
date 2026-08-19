@@ -22,14 +22,15 @@ interface Aircraft {
   current_fuel: number;
   status: string;
   next_maintenance: string;
+  is_simulator: boolean;
 }
 
-// Common aircraft types for quick selection
-const AIRCRAFT_TYPES = [
-  'C172S', 'C172R', 'C152', 'C182',
-  'PA28', 'PA44', 'DA40', 'DA42',
-  'SR20', 'SR22', 'BE76', 'BE58',
-];
+// 2026-08-19: `type` is the engine category, a genuinely fixed 2-value
+// enum (not a DB-staleness situation like the old hardcoded model-code
+// list this replaced — see restructure-aircraft-type-model.sql). The
+// specific model/variant now goes in the free-text "Model" field below,
+// e.g. "Cessna 172S Skyhawk".
+const ENGINE_TYPES = ['Single Engine', 'Multi Engine'];
 
 export default function AircraftSetupTab() {
   const [aircraft, setAircraft] = useState<Aircraft[]>([]);
@@ -40,7 +41,7 @@ export default function AircraftSetupTab() {
   // Form state for adding/editing
   const [form, setForm] = useState({
     registration: '',
-    type: 'C172S',
+    type: 'Single Engine',
     model: '',
     year: new Date().getFullYear(),
     hobbs_time: 0,
@@ -48,6 +49,7 @@ export default function AircraftSetupTab() {
     current_fuel: 200,
     status: 'ACTIVE',
     next_maintenance: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    is_simulator: false,
   });
 
   // Load aircraft on mount
@@ -98,6 +100,7 @@ export default function AircraftSetupTab() {
         current_fuel: form.current_fuel,
         status: form.status,
         next_maintenance: form.next_maintenance,
+        is_simulator: form.is_simulator,
       }).eq('id', editing.id);
       setSuccessMessage('Aircraft updated!');
     } else {
@@ -111,6 +114,7 @@ export default function AircraftSetupTab() {
         current_fuel: form.current_fuel,
         status: form.status,
         next_maintenance: form.next_maintenance,
+        is_simulator: form.is_simulator,
       });
       setSuccessMessage('Aircraft added!');
     }
@@ -134,6 +138,7 @@ export default function AircraftSetupTab() {
       current_fuel: ac.current_fuel,
       status: ac.status,
       next_maintenance: ac.next_maintenance,
+      is_simulator: !!ac.is_simulator,
     });
   };
 
@@ -151,7 +156,7 @@ export default function AircraftSetupTab() {
   const resetForm = () => {
     setForm({
       registration: '',
-      type: 'C172S',
+      type: 'Single Engine',
       model: '',
       year: new Date().getFullYear(),
       hobbs_time: 0,
@@ -159,6 +164,7 @@ export default function AircraftSetupTab() {
       current_fuel: 200,
       status: 'ACTIVE',
       next_maintenance: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      is_simulator: false,
     });
   };
 
@@ -233,7 +239,7 @@ export default function AircraftSetupTab() {
               onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
               className={inputClass}
             >
-              {AIRCRAFT_TYPES.map(t => (
+              {ENGINE_TYPES.map(t => (
                 <option key={t} value={t}>{t}</option>
               ))}
             </select>
@@ -248,6 +254,20 @@ export default function AircraftSetupTab() {
               className={inputClass}
             />
           </div>
+        </div>
+
+        {/* Row 1b: Is Simulator — flag this entry as a flight simulator/
+            training device rather than a real aircraft, so flights logged
+            against it count toward Simulator Hours on the Progress page. */}
+        <div className="mb-3">
+          <label className="flex items-center gap-2 text-xs text-tertiary cursor-pointer w-fit">
+            <input
+              type="checkbox"
+              checked={form.is_simulator}
+              onChange={e => setForm(p => ({ ...p, is_simulator: e.target.checked }))}
+            />
+            This is a flight simulator / training device (not a real aircraft)
+          </label>
         </div>
 
         {/* Row 2: Year, Fuel Capacity, Current Fuel */}
@@ -363,7 +383,7 @@ export default function AircraftSetupTab() {
               {aircraft.map(ac => (
                 <tr key={ac.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
                   <td className="py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{ac.registration}</td>
-                  <td className="py-3">{ac.type}</td>
+                  <td className="py-3">{ac.is_simulator ? 'Simulator' : ac.type}</td>
                   <td className="py-3 text-xs max-w-[150px] truncate">{ac.model || '—'}</td>
                   <td className="py-3">{ac.year}</td>
                   <td className="py-3">{ac.hobbs_time}h</td>

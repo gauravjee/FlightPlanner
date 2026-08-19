@@ -13,18 +13,25 @@ interface Props {
   onDelete: (id: string) => void;
 }
 
-// Distinct categorical colors per training stage, mirroring the pattern
-// established for Schedule Board sortie types (SORTIE_COLOR_VARS) — mapped
-// onto the existing semantic tokens rather than introducing new hardcoded
-// hues, so this still tracks the light/dark theme correctly.
-const STAGE_COLOR_VARS: Record<string, string> = {
-  'PPL': 'var(--accent)',
-  'PPL Phase 1': 'var(--accent)',
-  'PPL Phase 2': 'var(--accent-strong)',
-  'CPL': 'var(--success)',
-  'IR': 'var(--warning-text)',
-  'MULTI': 'var(--text-secondary)',
-};
+// Distinct categorical colors per training stage, mapped onto existing
+// semantic tokens so this tracks the light/dark theme correctly.
+//
+// 2026-08-19: this used to be an exact-match lookup keyed on six hardcoded
+// stage strings — it silently fell back to gray for ANY stage value that
+// didn't match one of those six exactly, including any custom program an
+// admin added in Admin Setup -> Training Programs (see
+// StudentFormModal.tsx, whose stage dropdown now pulls from that table).
+// Switched to substring matching, the same approach already used by
+// getStageColor in app/dashboard/progress/page.tsx, so a stage color no
+// longer depends on an enumerated list staying in sync with the database.
+function getStageColor(stage: string | undefined): string {
+  if (!stage) return 'var(--text-secondary)';
+  if (stage.includes('Phase 2')) return 'var(--accent-strong)';
+  if (stage.includes('PPL')) return 'var(--accent)';
+  if (stage.includes('CPL')) return 'var(--success)';
+  if (stage.includes('IR')) return 'var(--warning-text)';
+  return 'var(--text-secondary)';
+}
 
 export default function StudentCard({ student, onEdit, onDelete }: Props) {
   // Per the 2026-08-17 role/tab matrix, operations moved to view-only for
@@ -59,7 +66,7 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
     }
   }
 
-  const stageColor = STAGE_COLOR_VARS[student.trainingStage] || 'var(--text-secondary)';
+  const stageColor = getStageColor(student.trainingStage);
 
   const medicalBoxStyle = medicalStatus === 'expired'
     ? { backgroundColor: 'var(--danger-soft)', border: '1px solid var(--danger)' }
