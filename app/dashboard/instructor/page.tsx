@@ -239,7 +239,7 @@ export default function InstructorDashboardPage() {
               {/* ----- TODAY'S SCHEDULE ----- */}
               <div className="surface-card p-6">
                 <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-secondary" /> My Today's Schedule
+                  <Calendar className="w-4 h-4 text-secondary" /> My Today&apos;s Schedule
                 </h2>
                 {todayFlights.length === 0 ? (
                   <p className="text-secondary text-sm">No flights scheduled for today.</p>
@@ -294,7 +294,7 @@ export default function InstructorDashboardPage() {
                           {(record as any).exercise || record.sortieType} | {record.totalHours}h |
                           <Star className="w-3 h-3 inline" style={{ color: 'var(--warning-text)' }} />{record.studentPerformance}/5
                         </p>
-                        <p className="text-xs text-secondary italic">"{record.instructorNotes}"</p>
+                        <p className="text-xs text-secondary italic">&quot;{record.instructorNotes}&quot;</p>
                       </div>
                     ))}
                   </div>

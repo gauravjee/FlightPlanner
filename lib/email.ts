@@ -16,6 +16,7 @@ const roleLabels: Record<string, string> = {
   super_admin: 'Super Admin',
   maintenance: 'Maintenance Team',
   operations: 'Operations Team',
+  safety_officer: 'Safety Officer',
 };
 
 // ============================================================

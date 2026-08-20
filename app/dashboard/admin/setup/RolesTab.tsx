@@ -26,11 +26,6 @@ export default function RolesTab() {
     is_active: true,
   });
 
-  // Load roles on mount
-  useEffect(() => {
-    loadRoles();
-  }, []);
-
   const loadRoles = async () => {
     setLoading(true);
     console.log('Fetching instructor roles...');
@@ -47,6 +42,11 @@ export default function RolesTab() {
     }
     setLoading(false);
   };
+
+  // Load roles on mount
+  useEffect(() => {
+    loadRoles();
+  }, []);
 
   // Add or update role
   const handleSave = async () => {

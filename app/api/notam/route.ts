@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
     const data = await res.json();
     return Response.json(data);
-  } catch (error) {
+  } catch {
     return Response.json({ error: 'Failed to fetch NOTAMs' }, { status: 500 });
   }
 }

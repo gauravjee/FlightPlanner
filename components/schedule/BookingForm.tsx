@@ -34,6 +34,7 @@ import {
   getSchedulingBlockReason, parseWeeklyOffDays,
 } from '@/lib/store';
 import { ScheduledFlight } from '@/types';
+import { isSPLRequirement } from '@/lib/spl';
 
 // ============================================================
 // PROPS
@@ -299,7 +300,6 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // ============================================================
 
   // Sortie type helpers
-  const isDual = form.sortieType === 'DUAL';
   const isSolo = form.sortieType === 'SOLO';
   const isMaintenance = form.sortieType === 'MAINTENANCE';
 
@@ -625,9 +625,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
       await loadTrainingRequirements(form.studentId);
       const studentReqs = getRequirementsForStudent(form.studentId);
 
-      const spl = studentReqs.find(r =>
-        r.requirementName.includes('Student Pilot License')
-      );
+      const spl = studentReqs.find(r => isSPLRequirement(r.requirementName));
       if (spl && !spl.isCompleted) {
         setError('❌ Student cannot fly without a valid Student Pilot License (SPL).');
         setLoading(false);

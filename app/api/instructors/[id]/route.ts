@@ -15,6 +15,7 @@ const FIELD_MAP: Record<string, string> = {
   name: 'name',
   initials: 'initials',
   licenseNumber: 'license_number',
+  licenseExpiryDate: 'license_expiry_date',
   ratings: 'ratings',
   maxDailyHours: 'max_daily_hours',
   email: 'email',
@@ -36,11 +37,27 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
 
+  // 2026-08-20: licenseNumber (CPL number) can't be cleared to blank on
+  // edit either — same reasoning as the POST route's check. A field that's
+  // simply not sent (undefined) is untouched as normal; only an explicit
+  // blank/whitespace-only value is rejected.
+  if (body.licenseNumber !== undefined && (typeof body.licenseNumber !== 'string' || !body.licenseNumber.trim())) {
+    return NextResponse.json({ error: 'CPL license number cannot be blank.' }, { status: 400 });
+  }
+
   const dbUpdates: Record<string, unknown> = {};
   for (const [clientKey, dbKey] of Object.entries(FIELD_MAP)) {
     if (body[clientKey] !== undefined) {
       dbUpdates[dbKey] = body[clientKey];
     }
+  }
+
+  // license_expiry_date is a `date` column — Postgres rejects '' as an
+  // invalid date literal, unlike license_number (text) which tolerates it.
+  // Clearing the expiry date in the form sends '', which needs to become
+  // null here rather than being passed straight through.
+  if (dbUpdates.license_expiry_date === '') {
+    dbUpdates.license_expiry_date = null;
   }
 
   // canSelfBook stays super_admin-only regardless of module access —

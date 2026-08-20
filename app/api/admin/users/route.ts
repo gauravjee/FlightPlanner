@@ -16,19 +16,23 @@
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { requireRole } from '@/lib/api-auth';
+import { VALID_USER_ROLES } from '@/lib/permissions';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { sendWelcomeEmailServer } from '@/lib/email';
 import { generatePassword } from '@/lib/password';
 
 const ALLOWED_ROLES = ['super_admin'];
 
-// 'student' is intentionally NOT accepted here anymore. Creating a user
-// with role='student' through this route used to leave `student_id` unset
-// forever (nothing else in the app ever set it), so a student created this
-// way could log in but the student portal couldn't find their training
-// profile. Students are now created as a single unit — login + profile
-// together — via POST /api/students. See that route for details.
-const VALID_USER_ROLES = ['admin', 'instructor', 'operations', 'maintenance', 'super_admin'];
+// 'student' is intentionally NOT a valid value in VALID_USER_ROLES.
+// Creating a user with role='student' through this route used to leave
+// `student_id` unset forever (nothing else in the app ever set it), so a
+// student created this way could log in but the student portal couldn't
+// find their training profile. Students are now created as a single unit —
+// login + profile together — via POST /api/students. See that route for
+// details. VALID_USER_ROLES now lives in lib/permissions.ts (2026-08-20,
+// edit-user round) so the create form, the edit-user modal, and both this
+// route and PATCH .../[id] all share one list instead of three
+// hand-maintained copies.
 
 // Never select password_hash — this list is returned straight to the
 // browser to render the User Management table. permission_overrides is

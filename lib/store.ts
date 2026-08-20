@@ -325,7 +325,12 @@ interface FlightStore {
     emailMessage?: string;
     password?: string;
   }>;
-  updateStudent: (id: string, updates: Partial<StudentRecord>) => Promise<void>;
+  // 2026-08-20: returns whether the save succeeded (used by the SPL-number
+  // capture modal in RequirementsChecklist.tsx to avoid marking the SPL
+  // requirement complete if the number itself failed to save) — the one
+  // pre-existing caller (app/dashboard/students/page.tsx) just awaits it
+  // without reading the return value, so this stays backward-compatible.
+  updateStudent: (id: string, updates: Partial<StudentRecord>) => Promise<boolean>;
   removeStudent: (id: string) => Promise<void>;
   getStudentById: (id: string) => StudentRecord | undefined;
   assignInstructor: (studentId: string, instructorId: string) => Promise<void>;
@@ -649,6 +654,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           assignedInstructorId: instructorId || undefined,
           assignedInstructorName: instructor?.name || undefined,        // ← LOOKED UP
           assignedInstructorInitials: instructor?.initials || undefined, // ← LOOKED UP
+          splNumber: (row.spl_number as string) || undefined,
+          splExpiryDate: (row.spl_expiry_date as string) || undefined,
         };
       });
       
@@ -687,8 +694,12 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates),
     });
-    if (res.ok) set(state => ({ students: state.students.map(s => s.id === id ? { ...s, ...updates } : s) }));
-    else console.error('Error updating student:', await res.text());
+    if (res.ok) {
+      set(state => ({ students: state.students.map(s => s.id === id ? { ...s, ...updates } : s) }));
+      return true;
+    }
+    console.error('Error updating student:', await res.text());
+    return false;
   },
 
   removeStudent: async (id) => {
@@ -1144,6 +1155,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           // Supabase (add-instructor-self-booking-permission.sql) — column
           // missing/null both read as "can't self-book," the safe side.
           canSelfBook: Boolean(row.can_self_book),
+          licenseExpiryDate: (row.license_expiry_date as string) || undefined,
         })),
         loadingInstructors: false,
       });

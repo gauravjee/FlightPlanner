@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const tafData = tafRes.ok ? await tafRes.json() : [];
 
     return Response.json({ metar: metarData[0] || null, taf: tafData[0] || null });
-  } catch (error) {
+  } catch {
     return Response.json({ error: 'Failed to fetch weather' }, { status: 500 });
   }
 }

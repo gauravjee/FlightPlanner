@@ -9,7 +9,6 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import FlightRecordForm from '@/components/flights/FlightRecordForm';
-import Link from 'next/link';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { FLIGHT_RECORDS_VIEW_ROLES, canWriteModule } from '@/lib/permissions';

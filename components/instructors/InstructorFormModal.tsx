@@ -26,6 +26,8 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
     name: '',
     initials: '',
     licenseNumber: '',
+    // CPL expiry date (2026-08-20), paired with licenseNumber above.
+    licenseExpiryDate: '',
     ratings: 'CFI',
     maxDailyHours: 8,
     email: '',
@@ -41,6 +43,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
         name: instructor.name,
         initials: instructor.initials,
         licenseNumber: instructor.licenseNumber,
+        licenseExpiryDate: instructor.licenseExpiryDate || '',
         ratings: instructor.ratings,
         maxDailyHours: instructor.maxDailyHours,
         email: instructor.email || '',
@@ -89,8 +92,24 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-secondary mb-1">License Number *</label>
+              <label className="block text-xs text-secondary mb-1">
+                License Number * <span className="text-tertiary">(CPL)</span>
+              </label>
               <input type="text" value={form.licenseNumber} onChange={e => setForm(p => ({ ...p, licenseNumber: e.target.value }))} required
+                className={inputClass} />
+            </div>
+            <div>
+              <label className="block text-xs text-secondary mb-1">CPL Expiry Date</label>
+              <input type="date" value={form.licenseExpiryDate} onChange={e => setForm(p => ({ ...p, licenseExpiryDate: e.target.value }))}
+                className={inputClass} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-secondary mb-1">Ratings (comma-separated)</label>
+              <input type="text" value={form.ratings} onChange={e => setForm(p => ({ ...p, ratings: e.target.value }))}
+                placeholder="CFI, CFII, MEI"
                 className={inputClass} />
             </div>
             <div>
@@ -102,13 +121,6 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
                 <option value="OFF_DUTY">Off Duty</option>
               </select>
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs text-secondary mb-1">Ratings (comma-separated)</label>
-            <input type="text" value={form.ratings} onChange={e => setForm(p => ({ ...p, ratings: e.target.value }))}
-              placeholder="CFI, CFII, MEI"
-              className={inputClass} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">

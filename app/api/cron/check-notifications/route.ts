@@ -32,13 +32,13 @@ import { Resend } from 'resend';
 // send no emails, and no one would know it was actually just failing
 // closed. See the explicit check at the top of GET() below, which fails
 // loudly (500 + a console.error) instead of running degraded.
-var supabase = createClient(
+const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
   process.env.SUPABASE_SERVICE_KEY || ''
 );
 
 // Resend client for sending emails (uses server-side API key)
-var resend = new Resend(process.env.RESEND_API_KEY || '');
+const resend = new Resend(process.env.RESEND_API_KEY || '');
 
 // ============================================================
 // MAIN GET HANDLER
@@ -90,14 +90,14 @@ export async function GET(request: Request) {
   }
 
   // Array to collect all notification messages for the response
-  var notifications: string[] = [];
-  
+  const notifications: string[] = [];
+
   // Get today's date at midnight for comparison
-  var today = new Date();
+  const today = new Date();
   today.setHours(0, 0, 0, 0);
-  
+
   // Get the request URL for building dynamic dashboard links
-  var requestUrl = request.url;
+  const requestUrl = request.url;
 
   try {
     // ============================================================
@@ -106,14 +106,14 @@ export async function GET(request: Request) {
     // Load all aircraft once so we can look up registration numbers
     // for maintenance alerts (avoids foreign key join issues)
     // ============================================================
-    var aircraftResult = await supabase
+    const aircraftResult = await supabase
       .from('aircraft')
       .select('id, registration');
-    
-    var aircraftMap: Record<string, string> = {};
+
+    const aircraftMap: Record<string, string> = {};
     if (aircraftResult.data) {
-      for (var a = 0; a < aircraftResult.data.length; a++) {
-        var ac = aircraftResult.data[a];
+      for (let a = 0; a < aircraftResult.data.length; a++) {
+        const ac = aircraftResult.data[a];
         aircraftMap[String(ac.id)] = ac.registration;
       }
     }
@@ -123,10 +123,10 @@ export async function GET(request: Request) {
     // ============================================================
     // Find all active students whose medical expires within 30 days
     // ============================================================
-    var thirtyDaysFromNow = new Date(today);
+    const thirtyDaysFromNow = new Date(today);
     thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
 
-    var medicalResult = await supabase
+    const medicalResult = await supabase
       .from('students')
       .select('*')
       .eq('status', 'ACTIVE')
@@ -134,21 +134,21 @@ export async function GET(request: Request) {
       .lte('medical_expiry', thirtyDaysFromNow.toISOString().split('T')[0]);
 
     if (medicalResult.data) {
-      for (var i = 0; i < medicalResult.data.length; i++) {
-        var student = medicalResult.data[i];
-        var daysLeft = Math.ceil(
+      for (let i = 0; i < medicalResult.data.length; i++) {
+        const student = medicalResult.data[i];
+        const daysLeft = Math.ceil(
           (new Date(student.medical_expiry).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
         );
-        
+
         // Add to response notifications
         notifications.push(
           '🟡 ' + student.name + ': Medical expiring in ' + daysLeft + ' days (' + student.medical_expiry + ')'
         );
-        
+
         // Send email to admins
         await sendAdminAlert(
           'Medical Certificate Expiring',
-          student.name + ' (' + student.initials + ') medical certificate expires in ' + 
+          student.name + ' (' + student.initials + ') medical certificate expires in ' +
           daysLeft + ' days on ' + student.medical_expiry + '. Please ensure renewal is scheduled.',
           requestUrl
         );
@@ -160,23 +160,23 @@ export async function GET(request: Request) {
     // ============================================================
     // Find all active students whose medical has already expired
     // ============================================================
-    var expiredResult = await supabase
+    const expiredResult = await supabase
       .from('students')
       .select('*')
       .eq('status', 'ACTIVE')
       .lt('medical_expiry', today.toISOString().split('T')[0]);
 
     if (expiredResult.data) {
-      for (var j = 0; j < expiredResult.data.length; j++) {
-        var expiredStudent = expiredResult.data[j];
-        
+      for (let j = 0; j < expiredResult.data.length; j++) {
+        const expiredStudent = expiredResult.data[j];
+
         notifications.push(
           '🔴 ' + expiredStudent.name + ': Medical EXPIRED (' + expiredStudent.medical_expiry + ')'
         );
-        
+
         await sendAdminAlert(
           '🚨 Medical Certificate EXPIRED',
-          expiredStudent.name + ' (' + expiredStudent.initials + ') medical certificate EXPIRED on ' + 
+          expiredStudent.name + ' (' + expiredStudent.initials + ') medical certificate EXPIRED on ' +
           expiredStudent.medical_expiry + '. Student is GROUNDED until renewed.',
           requestUrl
         );
@@ -188,10 +188,10 @@ export async function GET(request: Request) {
     // ============================================================
     // Find all scheduled maintenance due within the next 7 days
     // ============================================================
-    var sevenDaysFromNow = new Date(today);
+    const sevenDaysFromNow = new Date(today);
     sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
 
-    var dueMxResult = await supabase
+    const dueMxResult = await supabase
       .from('maintenance_records')
       .select('*')
       .eq('status', 'SCHEDULED')
@@ -199,17 +199,17 @@ export async function GET(request: Request) {
       .lte('scheduled_date', sevenDaysFromNow.toISOString().split('T')[0]);
 
     if (dueMxResult.data) {
-      for (var k = 0; k < dueMxResult.data.length; k++) {
-        var mxRecord = dueMxResult.data[k];
-        var dueAcReg = aircraftMap[String(mxRecord.aircraft_id)] || 'Unknown';
-        
+      for (let k = 0; k < dueMxResult.data.length; k++) {
+        const mxRecord = dueMxResult.data[k];
+        const dueAcReg = aircraftMap[String(mxRecord.aircraft_id)] || 'Unknown';
+
         notifications.push(
           '🟡 ' + dueAcReg + ': ' + mxRecord.maintenance_type + ' due on ' + mxRecord.scheduled_date
         );
-        
+
         await sendAdminAlert(
           'Maintenance Due Soon',
-          'Aircraft ' + dueAcReg + ': ' + mxRecord.maintenance_type + 
+          'Aircraft ' + dueAcReg + ': ' + mxRecord.maintenance_type +
           ' is scheduled for ' + mxRecord.scheduled_date + ' (within 7 days). Please prepare for maintenance.',
           requestUrl
         );
@@ -221,26 +221,26 @@ export async function GET(request: Request) {
     // ============================================================
     // Find all maintenance that was scheduled before today but not completed
     // ============================================================
-    var overdueMxResult = await supabase
+    const overdueMxResult = await supabase
       .from('maintenance_records')
       .select('*')
       .in('status', ['SCHEDULED', 'IN_PROGRESS'])
       .lt('scheduled_date', today.toISOString().split('T')[0]);
 
     if (overdueMxResult.data) {
-      for (var m = 0; m < overdueMxResult.data.length; m++) {
-        var overdueRecord = overdueMxResult.data[m];
-        var overdueAcReg = aircraftMap[String(overdueRecord.aircraft_id)] || 'Unknown';
-        
+      for (let m = 0; m < overdueMxResult.data.length; m++) {
+        const overdueRecord = overdueMxResult.data[m];
+        const overdueAcReg = aircraftMap[String(overdueRecord.aircraft_id)] || 'Unknown';
+
         notifications.push(
-          '🔴 ' + overdueAcReg + ': ' + overdueRecord.maintenance_type + 
+          '🔴 ' + overdueAcReg + ': ' + overdueRecord.maintenance_type +
           ' OVERDUE (was due ' + overdueRecord.scheduled_date + ')'
         );
-        
+
         await sendAdminAlert(
           '🚨 Maintenance OVERDUE',
-          'Aircraft ' + overdueAcReg + ': ' + overdueRecord.maintenance_type + 
-          ' was scheduled for ' + overdueRecord.scheduled_date + 
+          'Aircraft ' + overdueAcReg + ': ' + overdueRecord.maintenance_type +
+          ' was scheduled for ' + overdueRecord.scheduled_date +
           ' and is now OVERDUE. Immediate action required.',
           requestUrl
         );
@@ -253,7 +253,7 @@ export async function GET(request: Request) {
     // Record all notifications in the notification_log table for audit
     // ============================================================
     if (notifications.length > 0) {
-      for (var n = 0; n < notifications.length; n++) {
+      for (let n = 0; n < notifications.length; n++) {
         await supabase.from('notification_log').insert({
           type: 'ALERT',
           subject: 'Automated Alert',
@@ -271,11 +271,11 @@ export async function GET(request: Request) {
       checked: new Date().toISOString(),
       notifications: notifications.length > 0 ? notifications : ['✅ All clear - no alerts found'],
     });
-    
+
   } catch (error) {
     // Log the actual error to the server console for debugging
     console.error('Notification check error:', error);
-    
+
     // Return a generic error to the client (don't expose internal details)
     return NextResponse.json(
       { error: 'Internal server error' },
@@ -301,19 +301,19 @@ async function sendAdminAlert(subject: string, message: string, requestUrl?: str
     // ============================================================
     // BUILD DYNAMIC DASHBOARD URL
     // ============================================================
-    // Works for both localhost (http://localhost:3000) and 
+    // Works for both localhost (http://localhost:3000) and
     // production (https://flightplanner-xi.vercel.app)
     // ============================================================
-    var dashboardUrl = 'http://localhost:3000/dashboard';
+    let dashboardUrl = 'http://localhost:3000/dashboard';
     if (requestUrl) {
-      var url = new URL(requestUrl);
+      const url = new URL(requestUrl);
       dashboardUrl = url.protocol + '//' + url.host + '/dashboard';
     }
 
     // ============================================================
     // GET ADMIN EMAILS FROM DATABASE
     // ============================================================
-    var result = await supabase
+    const result = await supabase
       .from('users')
       .select('email')
       .in('role', ['admin', 'super_admin'])
@@ -328,28 +328,28 @@ async function sendAdminAlert(subject: string, message: string, requestUrl?: str
     // ============================================================
     // SEND EMAIL TO EACH ADMIN
     // ============================================================
-    for (var i = 0; i < result.data.length; i++) {
-      var admin = result.data[i];
-      
+    for (let i = 0; i < result.data.length; i++) {
+      const admin = result.data[i];
+
       // Build email subject line
-      var emailSubject = 'FlightPro Alert: ' + subject;
-      
+      const emailSubject = 'FlightPro Alert: ' + subject;
+
       // Build clean HTML email body with inline styles
-      var emailHtml = 
+      const emailHtml =
         '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">' +
-          
+
           // Header with logo
           '<div style="text-align: center; margin-bottom: 20px;">' +
             '<h1 style="color: #1e40af; margin: 0;">✈️ FlightPro Manager</h1>' +
             '<p style="color: #64748b; font-size: 12px;">Automated Alert Notification</p>' +
           '</div>' +
-          
+
           // Alert content box
           '<div style="background: #f8fafc; border-radius: 8px; padding: 20px; margin-bottom: 20px;">' +
             '<h2 style="color: #1e293b; margin-top: 0;">' + subject + '</h2>' +
             '<p style="color: #334155; font-size: 16px; line-height: 1.5;">' + message + '</p>' +
           '</div>' +
-          
+
           // Dashboard button
           '<div style="text-align: center; margin: 25px 0;">' +
             '<a href="' + dashboardUrl + '" style="background: #2563eb; color: white; padding: 12px 30px; ' +
@@ -357,7 +357,7 @@ async function sendAdminAlert(subject: string, message: string, requestUrl?: str
               'Go to Dashboard →' +
             '</a>' +
           '</div>' +
-          
+
           // Footer
           '<div style="border-top: 1px solid #e2e8f0; padding-top: 15px; margin-top: 20px;">' +
             '<p style="color: #94a3b8; font-size: 12px; margin: 0;">' +
@@ -365,7 +365,7 @@ async function sendAdminAlert(subject: string, message: string, requestUrl?: str
               'Please do not reply to this email.' +
             '</p>' +
           '</div>' +
-          
+
         '</div>';
 
       // Send via Resend API
@@ -375,7 +375,7 @@ async function sendAdminAlert(subject: string, message: string, requestUrl?: str
         subject: emailSubject,
         html: emailHtml,
       });
-      
+
       console.log('✅ Alert email sent to:', admin.email);
     }
   } catch (err) {

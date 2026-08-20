@@ -219,6 +219,33 @@ export interface SafetyIncident {
   createdAt?: string;
 }
 
+// Breath Analyser (BA) test — one row per person tested, per the FTO's
+// prescribed register format (CAR Section 5, Series F, Part III). The
+// Reports page's "Breath Analyser Register" card. See
+// app/api/ba-tests/route.ts and add-ba-test-and-license-numbers.sql.
+// person/licenseNumber are denormalized at entry time (same convention as
+// SafetyIncident's studentId/studentName pair above) — a later edit to
+// someone's profile doesn't rewrite a past BA test record.
+export interface BATest {
+  id: string;
+  testDate: string;        // 'YYYY-MM-DD'
+  aircraftId?: string;
+  aircraftReg?: string;
+  safetyOfficerId?: string;
+  safetyOfficerName: string;
+  personType: 'STUDENT' | 'INSTRUCTOR';
+  personId?: string;
+  personName: string;
+  licenseNumber?: string;  // SPL No (student) or CPL No (instructor)
+  reportingTime?: string;  // free-text, e.g. '06:30' — not enforced HH:MM
+  baTime?: string;
+  baPercentage?: number;
+  baEquipment?: string;
+  recordedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 // One row of the Daily Flying Report's flight table — a flattened,
 // report-shaped view of a completed/scheduled flight for one day, not the
 // same shape as FlightRecord/ScheduledFlight (this is what actually gets
@@ -323,6 +350,10 @@ export interface Instructor {
   // viewing the Schedule or editing/debriefing/cancelling flights already
   // assigned to them.
   canSelfBook?: boolean;
+  // CPL (Commercial Pilot License) expiry date (2026-08-20) — paired with
+  // licenseNumber above. Nullable: not every instructor record has this
+  // filled in yet. See add-license-expiry-dates.sql.
+  licenseExpiryDate?: string;
 }
 
 // Weather data from AVWX API
@@ -382,6 +413,13 @@ export interface StudentRecord {
   assignedInstructorId?: string;       // UUID of assigned instructor
   assignedInstructorName?: string;     // Display name (looked up)
   assignedInstructorInitials?: string; // Display initials (looked up)
+  // Student Pilot License number (2026-08-20) — shown as the "License
+  // Number" on the Breath Analyser Register when this student is the
+  // person tested. See add-ba-test-and-license-numbers.sql.
+  splNumber?: string;
+  // SPL expiry date (2026-08-20) — paired with splNumber above. See
+  // add-license-expiry-dates.sql.
+  splExpiryDate?: string;
 }
 
 // Availability / Leave record

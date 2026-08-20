@@ -49,11 +49,6 @@ export default function SettingsTab() {
   const [successMessage, setSuccessMessage] = useState('');
   const [formValues, setFormValues] = useState<Record<string, string>>({});
 
-  // ----- Load settings on mount -----
-  useEffect(() => {
-    loadSettings();
-  }, []);
-
   /**
    * Load all FTO settings from the database
    * Builds a form values object for easy access
@@ -82,6 +77,11 @@ export default function SettingsTab() {
     }
     setLoading(false);
   };
+
+  // ----- Load settings on mount -----
+  useEffect(() => {
+    loadSettings();
+  }, []);
 
   // ============================================================
   // SETTING HELPERS
@@ -204,7 +204,7 @@ export default function SettingsTab() {
       console.log('📤 Uploading logo:', fileName);
 
       // Upload to Supabase Storage bucket 'fto-logos'
-      const { data, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('fto-logos')
         .upload(fileName, file, {
           cacheControl: '3600',     // Cache for 1 hour

@@ -43,10 +43,11 @@ const REPORT_CARDS = [
     status: 'planned' as const,
   },
   {
+    href: '/dashboard/reports/breath-analyser',
     icon: Wind,
     title: 'Breath Analyser Register',
-    description: 'Pre-flight breath analyser test log per CAR Section 5, Series F, Part III — not yet built; needs the actual prescribed register format confirmed before building.',
-    status: 'planned' as const,
+    description: 'Pre-flight breath analyser test log per CAR Section 5, Series F, Part III — Aircraft, Safety Officer, Student/Instructor, License Number, BA Time/Percentage/Equipment.',
+    status: 'live' as const,
   },
   {
     icon: TriangleAlert,

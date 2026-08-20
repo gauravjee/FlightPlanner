@@ -60,7 +60,7 @@ interface NavItem {
 // hand-synced to the matching *_VIEW_ROLES constants there; see the
 // 2026-08-17 role/tab matrix for the source of truth these mirror.
 const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance'] },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
   { href: '/dashboard/student', label: 'My Dashboard', icon: LayoutDashboard, roles: ['student'] },
   { href: '/dashboard/schedule', label: 'Schedule', icon: Calendar, roles: ['admin', 'instructor', 'super_admin', 'operations', 'student'] },
   { href: '/dashboard/flights', label: 'Flight Records', icon: FileText, roles: ['admin', 'instructor', 'super_admin', 'maintenance'], moduleKey: 'flightRecords' },
@@ -77,7 +77,9 @@ const NAV_ITEMS: NavItem[] = [
   // instructor/maintenance can see a generated report but only
   // admin/super_admin/operations can generate/save one (see
   // REPORTS_WRITE_ROLES, enforced in the Reports pages themselves).
-  { href: '/dashboard/reports', label: 'Reports', icon: ClipboardList, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance'] },
+  // safety_officer (2026-08-20) added so that role can reach the Breath
+  // Analyser Register — see BA_TEST_WRITE_ROLES.
+  { href: '/dashboard/reports', label: 'Reports', icon: ClipboardList, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
   { href: '/dashboard/admin/setup', label: 'Admin Setup', icon: Settings, roles: ['super_admin'] },
 ];
 

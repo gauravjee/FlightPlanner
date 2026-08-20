@@ -20,7 +20,8 @@ import { useEffect, useState } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { useSession } from 'next-auth/react';
 import { syncGroundSchoolFromChecklist, getGroundSchoolSubject } from '@/lib/ground-school-sync';
-import { ClipboardList, Lock, TriangleAlert, ChevronDown, ChevronRight, GraduationCap, X } from 'lucide-react';
+import { isSPLRequirement } from '@/lib/spl';
+import { ClipboardList, Lock, TriangleAlert, ChevronDown, ChevronRight, GraduationCap, IdCard, X } from 'lucide-react';
 import { TrainingRequirement } from '@/types';
 
 interface Props {
@@ -33,6 +34,8 @@ export default function RequirementsChecklist({ studentId }: Props) {
     trainingRequirements,
     loadTrainingRequirements,
     toggleRequirement,
+    students,
+    updateStudent,
   } = useFlightStore();
 
   const [loading, setLoading] = useState(false);
@@ -51,6 +54,20 @@ export default function RequirementsChecklist({ studentId }: Props) {
   const [dgcaRollNumber, setDgcaRollNumber] = useState('');
   const [dgcaScore, setDgcaScore] = useState('');
   const [dgcaError, setDgcaError] = useState('');
+
+  // 2026-08-20: checking the "Student Pilot License" requirement used to
+  // mark a student SPL-complete with no actual SPL number captured
+  // anywhere — the number could only ever be entered separately, on the
+  // Student profile form, and nothing tied the two together. Same shape as
+  // the DGCA modal above: only shown when CHECKING this specific
+  // requirement AND the student doesn't already have a number on file
+  // (entering it on the Student form first skips the modal entirely —
+  // it's already captured). Server-side enforcement of the same rule lives
+  // in app/api/admin/requirements/toggle/route.ts, so this can't be
+  // bypassed by calling that route directly.
+  const [splModal, setSplModal] = useState<{ id: string; requirementName: string } | null>(null);
+  const [splNumberInput, setSplNumberInput] = useState('');
+  const [splError, setSplError] = useState('');
 
   // Categories the user has explicitly collapsed. Starts empty (everything
   // expanded) rather than collapsed-by-default, so a category containing an
@@ -167,6 +184,24 @@ export default function RequirementsChecklist({ studentId }: Props) {
       return;
     }
 
+    // SPL takes priority over the ground-school check below — it's never a
+    // ground school subject, but checking name-match order explicitly here
+    // keeps this dispatcher from depending on which check happens to run
+    // first if that ever changes.
+    if (isSPLRequirement(req.requirementName)) {
+      const student = students.find(s => s.id === studentId);
+      if (student?.splNumber?.trim()) {
+        // Already on file (entered directly on the Student profile form,
+        // at creation or later) — nothing more to capture.
+        handleToggle(req.id, false, req.requirementName);
+      } else {
+        setSplError('');
+        setSplNumberInput('');
+        setSplModal({ id: req.id, requirementName: req.requirementName });
+      }
+      return;
+    }
+
     const subjectName = await getGroundSchoolSubject(req.requirementName);
     if (subjectName) {
       setDgcaError('');
@@ -198,6 +233,33 @@ export default function RequirementsChecklist({ studentId }: Props) {
     setDgcaModal(null);
     setDgcaRollNumber('');
     setDgcaScore('');
+  };
+
+  // Validates and saves the SPL modal's number onto the student's profile
+  // (same field/API path as editing it directly on the Student form), then
+  // completes the requirement. If the profile save fails, the requirement
+  // is deliberately NOT marked complete — surfacing the failure here rather
+  // than silently toggling with no number on file, since the toggle route
+  // now re-checks for a number server-side anyway (see toggle/route.ts) and
+  // would reject it regardless.
+  const submitSplModal = async () => {
+    if (!splModal) return;
+    const splNumber = splNumberInput.trim();
+
+    if (!splNumber) {
+      setSplError('SPL Number is required to mark this complete.');
+      return;
+    }
+
+    setSplError('');
+    const saved = await updateStudent(studentId, { splNumber });
+    if (!saved) {
+      setSplError('Failed to save the SPL Number — try again.');
+      return;
+    }
+    await handleToggle(splModal.id, false, splModal.requirementName);
+    setSplModal(null);
+    setSplNumberInput('');
   };
 
   // ============================================================
@@ -431,6 +493,69 @@ export default function RequirementsChecklist({ studentId }: Props) {
                 </button>
                 <button
                   onClick={() => setDgcaModal(null)}
+                  className="px-4 py-2 rounded-lg text-sm bg-slate-700 hover:bg-slate-600 text-white transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ----- SPL Number capture modal ----- */}
+      {/* 2026-08-20: a student can't be marked SPL-complete with no SPL
+          Number on file — enforced here (only shown when one isn't already
+          on the profile) and re-checked server-side in
+          app/api/admin/requirements/toggle/route.ts. */}
+      {splModal && (
+        <div
+          className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
+          onClick={() => setSplModal(null)}
+        >
+          <div
+            className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-slate-700">
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <IdCard className="w-4 h-4" /> Complete {splModal.requirementName}
+              </h3>
+              <button onClick={() => setSplModal(null)} className="p-2 rounded-lg hover:bg-slate-700 cursor-pointer">
+                <X className="w-5 h-5 text-slate-400" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              <p className="text-sm text-slate-400">
+                No SPL Number is on file for this student yet — enter it to mark this complete.
+                This saves to the student&apos;s profile the same as editing it there directly.
+              </p>
+
+              <div>
+                <label className="block text-sm text-slate-400 mb-1">SPL Number *</label>
+                <input
+                  type="text"
+                  value={splNumberInput}
+                  onChange={e => setSplNumberInput(e.target.value)}
+                  placeholder="e.g., SPL-2026-0142"
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-slate-500"
+                  autoFocus
+                />
+              </div>
+
+              {splError && <p className="text-xs text-red-400">{splError}</p>}
+
+              <div className="flex space-x-2">
+                <button
+                  onClick={submitSplModal}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold bg-green-500 hover:bg-green-600 text-white transition"
+                >
+                  Save &amp; Complete
+                </button>
+                <button
+                  onClick={() => setSplModal(null)}
                   className="px-4 py-2 rounded-lg text-sm bg-slate-700 hover:bg-slate-600 text-white transition"
                 >
                   Cancel

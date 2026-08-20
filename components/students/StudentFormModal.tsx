@@ -41,6 +41,12 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
     joinedDate: new Date().toISOString().split('T')[0],
     status: 'ACTIVE',
     assignedInstructorId: undefined as string | undefined,
+    // Student Pilot License number (2026-08-20) — shown as the "License
+    // Number" on the Breath Analyser Register when this student is the
+    // person tested. Optional — not every student has flown solo yet.
+    splNumber: '',
+    // SPL expiry date (2026-08-20), paired with splNumber above.
+    splExpiryDate: '',
   });
 
   // Training-stage options come entirely from Admin Setup -> Training
@@ -103,6 +109,8 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
         joinedDate: student.joinedDate || '',
         status: student.status,
         assignedInstructorId: student.assignedInstructorId,
+        splNumber: student.splNumber || '',
+        splExpiryDate: student.splExpiryDate || '',
       });
       setInitialsManuallyEdited(true);
     }
@@ -267,6 +275,26 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
                 className={inputClass} />
             </div>
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-secondary mb-1">
+                SPL Number
+                <span className="text-xs text-tertiary ml-1">(Student Pilot License)</span>
+              </label>
+              <input type="text" value={form.splNumber} onChange={e => handleChange('splNumber', e.target.value)}
+                placeholder="e.g., SPL-2026-0142"
+                className={inputClass} />
+            </div>
+            <div>
+              <label className="block text-sm text-secondary mb-1">SPL Expiry Date</label>
+              <input type="date" value={form.splExpiryDate} onChange={e => handleChange('splExpiryDate', e.target.value)}
+                className={inputClass} />
+            </div>
+          </div>
+          <p className="text-xs text-tertiary -mt-3">
+            Shown as this student&apos;s License Number on the Breath Analyser Register. Leave blank until they&apos;ve been issued one.
+          </p>
 
           <div className="grid grid-cols-2 gap-3">
             <div>

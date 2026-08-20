@@ -127,7 +127,7 @@ export default function LoginPage() {
       } else {
         setResetMessage('❌ ' + (data.error || 'Something went wrong. Please try again.'));
       }
-    } catch (err) {
+    } catch {
       setResetMessage('❌ Network error. Please try again later.');
     } finally {
       setResetLoading(false);
@@ -264,7 +264,7 @@ export default function LoginPage() {
           /* ============================================================ */
           <form onSubmit={handleForgotPassword} className="space-y-4">
             <p className="text-sm text-secondary text-center">
-              Enter your email address and we'll send you a link to reset your password.
+              Enter your email address and we&apos;ll send you a link to reset your password.
             </p>
 
             {/* ----- Email Field ----- */}

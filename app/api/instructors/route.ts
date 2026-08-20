@@ -3,6 +3,15 @@
 // full roster — separate from an individual instructor's own "My
 // Students" page). Per the 2026-08-17 role/tab matrix, only admin/
 // super_admin manage the roster itself.
+//
+// 2026-08-20: licenseNumber (the instructor's CPL number — reused directly
+// as their CPL number for the Breath Analyser Register, see
+// add-ba-test-and-license-numbers.sql) was already required client-side in
+// InstructorFormModal.tsx (HTML `required` + a JS guard), but this route
+// itself accepted a blank/missing value with no complaint — a client-only
+// check isn't real protection in this app (same lesson as the Requirements
+// Checklist toggle route and the SPL number check below). Enforced here too
+// now, matching name/initials.
 
 import { NextResponse } from 'next/server';
 import { requireModuleAccess } from '@/lib/api-auth';
@@ -19,11 +28,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
 
-  const { name, initials, licenseNumber, ratings, maxDailyHours, email, phone, status } =
+  const { name, initials, licenseNumber, licenseExpiryDate, ratings, maxDailyHours, email, phone, status } =
     body as Record<string, unknown>;
 
   if (!name || !initials) {
     return NextResponse.json({ error: 'name and initials are required.' }, { status: 400 });
+  }
+  if (typeof licenseNumber !== 'string' || !licenseNumber.trim()) {
+    return NextResponse.json({ error: 'CPL license number is required.' }, { status: 400 });
   }
 
   const { data, error: dbError } = await supabaseAdmin
@@ -31,6 +43,10 @@ export async function POST(request: Request) {
     .insert({
       name, initials,
       license_number: licenseNumber,
+      // 2026-08-20: license_expiry_date pairs with license_number above —
+      // optional (not every existing instructor record will have this
+      // filled in immediately), unlike license_number itself.
+      license_expiry_date: licenseExpiryDate || null,
       ratings,
       max_daily_hours: maxDailyHours,
       email, phone, status,

@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import Link from 'next/link';
 import { signOut, useSession } from 'next-auth/react';
-import { ArrowLeft, Plane, Wrench, Crown, GraduationCap, ClipboardList, UserRound, KeyRound, LogOut, LayoutDashboard } from 'lucide-react';
+import { ArrowLeft, Plane, Wrench, Crown, GraduationCap, ClipboardList, UserRound, KeyRound, LogOut, LayoutDashboard, ShieldCheck } from 'lucide-react';
 import { useFlightStore } from '@/lib/store';
 import { getLocationDisplay } from '@/lib/location';
 import ThemeToggle from './ThemeToggle';
@@ -70,6 +70,7 @@ function RoleIcon({ role, className }: { role: string; className?: string }) {
   if (role === 'admin') return <Crown className={className} />;
   if (role === 'instructor') return <GraduationCap className={className} />;
   if (role === 'operations') return <ClipboardList className={className} />;
+  if (role === 'safety_officer') return <ShieldCheck className={className} />;
   return <UserRound className={className} />;
 }
 

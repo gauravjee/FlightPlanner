@@ -44,11 +44,6 @@ export default function ExercisesTab() {
   const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Load exercises on mount
-  useEffect(() => {
-    loadExercises();
-  }, []);
-
   const loadExercises = async () => {
     setLoading(true);
     console.log('Fetching exercises...');
@@ -65,6 +60,11 @@ export default function ExercisesTab() {
     }
     setLoading(false);
   };
+
+  // Load exercises on mount
+  useEffect(() => {
+    loadExercises();
+  }, []);
 
   // Add or update exercise
   const handleSave = async () => {

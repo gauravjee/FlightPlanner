@@ -24,16 +24,6 @@ export default function GroundSchoolPage() {
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState<string>('');
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  useEffect(() => {
-    if (userRole === 'student' && userStudentId) {
-      setSelectedStudent(userStudentId);
-    }
-  }, [userRole, userStudentId]);
-
   const loadData = async () => {
     setLoading(true);
     const [subjRes, enrollRes, classRes] = await Promise.all([
@@ -46,6 +36,16 @@ export default function GroundSchoolPage() {
     setClasses(classRes.data || []);
     setLoading(false);
   };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    if (userRole === 'student' && userStudentId) {
+      setSelectedStudent(userStudentId);
+    }
+  }, [userRole, userStudentId]);
 
   // Calculate progress per subject
   const subjectProgress = useMemo(() => {

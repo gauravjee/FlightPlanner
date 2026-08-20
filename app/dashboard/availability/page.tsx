@@ -37,7 +37,7 @@ export default function AvailabilityPage() {
   const {
     availabilityRecords, loadingAvailability,
     loadAvailability, addAvailability, updateAvailability, removeAvailability,
-    instructors, students, loadInstructors, loadStudents
+    loadInstructors, loadStudents
   } = useFlightStore();
 
   const [showForm, setShowForm] = useState(false);

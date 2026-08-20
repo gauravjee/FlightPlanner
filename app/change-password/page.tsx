@@ -13,14 +13,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import Header from '@/components/ui/Header';
 import { Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 export default function ChangePasswordPage() {
-  const router = useRouter();
   const { data: session } = useSession();
 
   // ============================================================

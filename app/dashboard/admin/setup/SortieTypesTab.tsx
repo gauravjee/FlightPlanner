@@ -45,11 +45,6 @@ export default function SortieTypesTab() {
     is_active: true,
   });
 
-  // Load sortie types on mount
-  useEffect(() => {
-    loadSortieTypes();
-  }, []);
-
   const loadSortieTypes = async () => {
     setLoading(true);
     console.log('Fetching sortie types...');
@@ -66,6 +61,11 @@ export default function SortieTypesTab() {
     }
     setLoading(false);
   };
+
+  // Load sortie types on mount
+  useEffect(() => {
+    loadSortieTypes();
+  }, []);
 
   // Add or update sortie type
   const handleSave = async () => {

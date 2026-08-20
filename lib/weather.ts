@@ -49,7 +49,7 @@ export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherDat
       qnh: metar.altim || 1013,
       altimeter: metar.altim || 29.92,
       flightRules: metar.fltcat || 'VFR',
-      warnings: getWarnings(metar, taf),
+      warnings: getWarnings(metar),
       time: metar.obsTime || new Date().toISOString(),
       station: station,
       isLoading: false,
@@ -72,7 +72,7 @@ function getCeiling(clouds: any): number {
   return bases.length > 0 ? Math.min(...bases) : 99999;
 }
 
-function getWarnings(metar: any, taf: any): string[] {
+function getWarnings(metar: any): string[] {
   const warnings: string[] = [];
   const visMeters = metar.visib ? metar.visib * 1609.34 : 99999;
   if (visMeters < 5000) warnings.push('⚠️ Reduced visibility');

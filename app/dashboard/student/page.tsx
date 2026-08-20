@@ -238,7 +238,7 @@ export default function StudentDashboardPage() {
                   </span>
                 </p>
                 <p className="text-xs mt-2 flex items-center gap-1 justify-center" style={{ color: 'var(--warning-text)', opacity: 0.7 }}>
-                  This is where every pilot's journey truly begins! <Plane className="w-3.5 h-3.5" />
+                  This is where every pilot&apos;s journey truly begins! <Plane className="w-3.5 h-3.5" />
                 </p>
               </div>
             )}
@@ -359,7 +359,7 @@ export default function StudentDashboardPage() {
                         {/* Instructor Notes */}
                         <div className="surface-muted rounded p-2 mt-2">
                           <p className="text-xs text-tertiary mb-1">Instructor: {record.instructorName}</p>
-                          <p className="text-sm text-secondary italic">"{record.instructorNotes}"</p>
+                          <p className="text-sm text-secondary italic">&quot;{record.instructorNotes}&quot;</p>
                         </div>
                         {/* Maneuvers */}
                         {record.maneuvers && (

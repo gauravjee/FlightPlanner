@@ -54,11 +54,6 @@ export default function TrainingProgramsTab() {
     sort_order: 99,
   });
 
-  // Load programs
-  useEffect(() => {
-    loadPrograms();
-  }, []);
-
   const loadPrograms = async () => {
   setLoading(true);
   console.log('Fetching training programs...');
@@ -77,6 +72,11 @@ export default function TrainingProgramsTab() {
 
   setLoading(false);
 };
+
+  // Load programs
+  useEffect(() => {
+    loadPrograms();
+  }, []);
 
   // Add / Update program
   const handleSave = async () => {

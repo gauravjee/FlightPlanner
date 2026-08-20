@@ -103,7 +103,8 @@ export async function POST(request: Request) {
 
   const {
     enrollmentId, name, initials, trainingStage, totalHours,
-    medicalExpiry, email, phone, dateOfBirth, joinedDate, status,
+    medicalExpiry, email, phone, dateOfBirth, joinedDate, status, splNumber,
+    splExpiryDate,
   } = body as Record<string, unknown>;
 
   if (!name || !initials) {
@@ -165,6 +166,8 @@ export async function POST(request: Request) {
       date_of_birth: dateOfBirth,
       joined_date: joinedDate,
       status,
+      spl_number: splNumber || null,
+      spl_expiry_date: splExpiryDate || null,
     })
     .select()
     .single();

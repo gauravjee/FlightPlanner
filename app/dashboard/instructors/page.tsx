@@ -13,7 +13,7 @@ import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { INSTRUCTORS_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
-import { Plus, Search, GraduationCap } from 'lucide-react';
+import { Search, GraduationCap } from 'lucide-react';
 
 export default function InstructorsPage() {
   const { data: session } = useSession();

@@ -26,6 +26,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, REQUIREMENTS_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { isSPLRequirement } from '@/lib/spl';
 
 export async function PATCH(request: Request) {
   const { session, error } = await requireRole(REQUIREMENTS_WRITE_ROLES);
@@ -42,6 +43,48 @@ export async function PATCH(request: Request) {
   const isCompleted = typeof body.isCompleted === 'boolean' ? body.isCompleted : undefined;
   if (!id || isCompleted === undefined) {
     return NextResponse.json({ error: 'id and isCompleted are required.' }, { status: 400 });
+  }
+
+  // 2026-08-20: if this completes the "Student Pilot License" requirement,
+  // require a real SPL number to already be on the student's profile first.
+  // RequirementsChecklist.tsx's SPL modal captures/saves the number before
+  // ever calling this route — but that's a client-side convenience, not a
+  // guarantee. Re-check here server-side, the same reasoning already applied
+  // to completedBy above and to the DGCA roll number elsewhere: a modified
+  // or direct client call to this route must not be able to mark a student
+  // as SPL-complete with no license number on file.
+  if (isCompleted) {
+    const { data: reqRow, error: reqLookupError } = await supabaseAdmin
+      .from('training_requirements')
+      .select('student_id, requirement_name')
+      .eq('id', id)
+      .maybeSingle();
+
+    if (reqLookupError) {
+      console.error('Error looking up requirement before toggle:', reqLookupError);
+      return NextResponse.json({ error: 'Failed to update requirement.' }, { status: 500 });
+    }
+
+    if (reqRow && isSPLRequirement(reqRow.requirement_name as string)) {
+      const { data: studentRow, error: studentLookupError } = await supabaseAdmin
+        .from('students')
+        .select('spl_number')
+        .eq('id', reqRow.student_id)
+        .maybeSingle();
+
+      if (studentLookupError) {
+        console.error('Error looking up student SPL number:', studentLookupError);
+        return NextResponse.json({ error: 'Failed to update requirement.' }, { status: 500 });
+      }
+
+      const splNumber = (studentRow?.spl_number as string | null) || '';
+      if (!splNumber.trim()) {
+        return NextResponse.json(
+          { error: "This student's SPL Number must be on file before this requirement can be marked complete." },
+          { status: 400 }
+        );
+      }
+    }
   }
 
   // Always the verified signed-in user — same name-then-email fallback

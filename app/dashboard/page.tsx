@@ -14,7 +14,7 @@
 'use client';
 
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   useFlightStore, getAircraftBufferMinutes, parseTurnaroundBufferSetting, MIN_FLIGHT_DURATION_MIN,
   getAircraftFuelBurnRate, getProjectedFuelAfter,
@@ -58,7 +58,7 @@ export default function DashboardPage() {
   }, [session, router]);
 
   // Fetch FTO settings on page load
-  const { ftoSettings, ftoSettingsLoaded, loadFTOSettings, getFTOSetting } = useFlightStore();
+  const { ftoSettingsLoaded, loadFTOSettings, getFTOSetting } = useFlightStore();
 
   useEffect(() => {
     loadFTOSettings();

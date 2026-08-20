@@ -582,7 +582,7 @@ export default function GroundSchoolCalendar() {
       isToday: boolean;
     }[][] = [];
 
-    let current = new Date(start);
+    const current = new Date(start);
     while (current <= end) {
       const week: any[] = [];
       for (let i = 0; i < 7; i++) {

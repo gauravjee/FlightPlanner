@@ -241,7 +241,14 @@ export function canWriteModule(
 // day's report, but actually generating/saving the official snapshot for
 // a date is restricted to the roles who already run day-to-day operations
 // (admin/super_admin/operations).
-export const REPORTS_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'operations', 'maintenance'];
+//
+// 'safety_officer' (2026-08-20, added for the Breath Analyser Register —
+// see BA_TEST_WRITE_ROLES below) is included here too so that role can
+// reach the Reports landing page and see the Daily Flying Report/Safety
+// Incident log at the same view-only level maintenance already has —
+// there's no reason to carve out a narrower view for them just for the
+// pages they don't write to.
+export const REPORTS_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'];
 export const REPORTS_WRITE_ROLES = ['admin', 'super_admin', 'operations'];
 
 // Logging a new safety incident follows the same (deliberately broad) set
@@ -252,3 +259,42 @@ export const REPORTS_WRITE_ROLES = ['admin', 'super_admin', 'operations'];
 // pulled apart later without hunting down every reference, if incident
 // reporting ever needs a different rule than viewing the report does.
 export const INCIDENT_REPORT_ROLES = REPORTS_VIEW_ROLES;
+
+// ============================================================
+// BREATH ANALYSER (BA) TEST REGISTER (2026-08-20)
+// ============================================================
+// Who can view the register — same broad set as the rest of Reports.
+// Who can add/edit an entry — deliberately narrower, per the FTO's own
+// spec: super_admin, admin, operations, and the new 'safety_officer' role
+// (created for this feature — see VALID_USER_ROLES in
+// app/api/admin/users/route.ts and the role dropdown in
+// UserManagementTab.tsx). Notably does NOT include 'instructor' or
+// 'maintenance', even though both can view the register — this was an
+// explicit, narrower choice by the FTO, not an oversight.
+export const BA_TEST_VIEW_ROLES = REPORTS_VIEW_ROLES;
+export const BA_TEST_WRITE_ROLES = ['admin', 'super_admin', 'operations', 'safety_officer'];
+
+// ============================================================
+// USER ACCOUNTS (login roles) — super_admin-only User Management tab
+// ============================================================
+// The set of roles a login account can be created/edited into from
+// app/dashboard/admin/setup/UserManagementTab.tsx. 'student' is
+// deliberately excluded — students are created as a single unit (login +
+// training profile together) from the Students page, not here; see the
+// note by the role dropdown in UserManagementTab.tsx.
+//
+// Previously duplicated as two separately-hand-maintained lists (one with
+// labels in UserManagementTab.tsx, one values-only in
+// app/api/admin/users/route.ts) that had to be kept in sync by hand —
+// centralized here (2026-08-20, edit-user round) so both the create form,
+// the new edit-user modal, and both API routes (POST for create, PATCH
+// .../[id] for edit) share one source of truth.
+export const USER_ROLE_OPTIONS: { value: string; label: string }[] = [
+  { value: 'admin', label: '👑 Admin' },
+  { value: 'instructor', label: '👨‍🏫 Instructor' },
+  { value: 'operations', label: '📋 Operations' },
+  { value: 'maintenance', label: '🔧 Maintenance' },
+  { value: 'safety_officer', label: '🦺 Safety Officer' },
+  { value: 'super_admin', label: '🔧 Super Admin' },
+];
+export const VALID_USER_ROLES: string[] = USER_ROLE_OPTIONS.map(r => r.value);

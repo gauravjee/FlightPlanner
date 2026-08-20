@@ -31,14 +31,14 @@ export default function GroundSchoolTab() {
     is_active: true,
   });
 
-  useEffect(() => { loadSubjects(); }, []);
-
   const loadSubjects = async () => {
     setLoading(true);
     const { data } = await supabase.from('ground_school_subjects').select('*').order('sort_order');
     setSubjects(data || []);
     setLoading(false);
   };
+
+  useEffect(() => { loadSubjects(); }, []);
 
   const handleSave = async () => {
     if (!form.subject_name || !form.subject_code) return;

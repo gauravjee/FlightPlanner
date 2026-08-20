@@ -14,6 +14,25 @@ import { FUEL_BURN_RATE_BY_TYPE_LPH, DEFAULT_FUEL_BURN_RATE_LPH } from '@/lib/st
 // free-text "Model" field below.
 const ENGINE_TYPES = ['Single Engine', 'Multi Engine'];
 
+// Default (blank-new-aircraft) form values. Pulled into a function so
+// useState can use it as a lazy initializer — nextMaintenance's
+// Date.now()-based default is then only computed once on mount, not on
+// every render the way a literal `new Date(Date.now() + ...)` inline in
+// useState's argument would be.
+const getDefaultForm = (): Aircraft => ({
+  id: '',
+  registration: '',
+  type: '',
+  model: '',
+  year: new Date().getFullYear(),
+  hobbsTime: 0,
+  fuelCapacity: 200,
+  currentFuel: 200,
+  status: 'ACTIVE',
+  nextMaintenance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  isSimulator: false,
+});
+
 interface Props {
   aircraft: Aircraft | null;
   onSave: (aircraft: Aircraft) => void;
@@ -23,19 +42,7 @@ interface Props {
 export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) {
   const isEditing = !!aircraft;
 
-  const [form, setForm] = useState<Aircraft>({
-    id: '',
-    registration: '',
-    type: '',
-    model: '',
-    year: new Date().getFullYear(),
-    hobbsTime: 0,
-    fuelCapacity: 200,
-    currentFuel: 200,
-    status: 'ACTIVE',
-    nextMaintenance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    isSimulator: false,
-  });
+  const [form, setForm] = useState<Aircraft>(getDefaultForm);
 
   // Whether the Fuel Burn Rate field should keep auto-following the Type
   // dropdown's per-type default (FUEL_BURN_RATE_BY_TYPE_LPH). True for a new

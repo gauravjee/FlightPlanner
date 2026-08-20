@@ -32,6 +32,25 @@ interface Aircraft {
 // e.g. "Cessna 172S Skyhawk".
 const ENGINE_TYPES = ['Single Engine', 'Multi Engine'];
 
+// Default form values for adding a new aircraft. Pulled out into a function
+// (rather than inlined into useState's initial value) so next_maintenance's
+// Date.now()-based default is only ever computed lazily — on mount via
+// useState(getDefaultForm), and on demand from resetForm() — instead of on
+// every render, which is what a literal `new Date(Date.now() + ...)` inside
+// useState's argument would do.
+const getDefaultForm = () => ({
+  registration: '',
+  type: 'Single Engine',
+  model: '',
+  year: new Date().getFullYear(),
+  hobbs_time: 0,
+  fuel_capacity: 200,
+  current_fuel: 200,
+  status: 'ACTIVE',
+  next_maintenance: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  is_simulator: false,
+});
+
 export default function AircraftSetupTab() {
   const [aircraft, setAircraft] = useState<Aircraft[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,23 +58,7 @@ export default function AircraftSetupTab() {
   const [successMessage, setSuccessMessage] = useState('');
 
   // Form state for adding/editing
-  const [form, setForm] = useState({
-    registration: '',
-    type: 'Single Engine',
-    model: '',
-    year: new Date().getFullYear(),
-    hobbs_time: 0,
-    fuel_capacity: 200,
-    current_fuel: 200,
-    status: 'ACTIVE',
-    next_maintenance: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    is_simulator: false,
-  });
-
-  // Load aircraft on mount
-  useEffect(() => {
-    loadAircraft();
-  }, []);
+  const [form, setForm] = useState(getDefaultForm);
 
   const loadAircraft = async () => {
     setLoading(true);
@@ -71,6 +74,11 @@ export default function AircraftSetupTab() {
     }
     setLoading(false);
   };
+
+  // Load aircraft on mount
+  useEffect(() => {
+    loadAircraft();
+  }, []);
 
   // Add or update aircraft
   const handleSave = async () => {
@@ -154,25 +162,13 @@ export default function AircraftSetupTab() {
 
   // Reset form to defaults
   const resetForm = () => {
-    setForm({
-      registration: '',
-      type: 'Single Engine',
-      model: '',
-      year: new Date().getFullYear(),
-      hobbs_time: 0,
-      fuel_capacity: 200,
-      current_fuel: 200,
-      status: 'ACTIVE',
-      next_maintenance: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      is_simulator: false,
-    });
+    setForm(getDefaultForm());
   };
 
   // Stats
   const activeCount = aircraft.filter(a => a.status === 'ACTIVE').length;
   const maintenanceCount = aircraft.filter(a => a.status === 'MAINTENANCE').length;
   const totalFuel = aircraft.reduce((sum, a) => sum + a.current_fuel, 0);
-  const totalCapacity = aircraft.reduce((sum, a) => sum + a.fuel_capacity, 0);
 
   const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
 

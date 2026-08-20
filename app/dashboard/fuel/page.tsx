@@ -32,7 +32,6 @@ export default function FuelPage() {
   const totalCost = fuelRecords.reduce((sum, r) => sum + r.totalCost, 0);
   const avgCost = totalFuelAdded > 0 ? totalCost / totalFuelAdded : 0;
   const totalCurrentFuel = aircraft.reduce((sum, a) => sum + a.currentFuel, 0);
-  const totalCapacity = aircraft.reduce((sum, a) => sum + a.fuelCapacity, 0);
 
   useSetHeader({
     title: 'Fuel Management',

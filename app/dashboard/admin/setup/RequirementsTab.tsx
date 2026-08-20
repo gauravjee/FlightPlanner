@@ -59,19 +59,6 @@ export default function RequirementsTab() {
     notes: '',
   });
 
-  // Load data on mount
-  useEffect(() => {
-    loadPrograms();
-    loadRequirements();
-  }, []);
-
-  // Reload when program changes
-  useEffect(() => {
-    loadRequirements();
-    setForm(p => ({ ...p, program_code: selectedProgram, requirement_category: selectedProgram }));
-    setSyncResult(null);
-  }, [selectedProgram]);
-
   const loadPrograms = async () => {
     const { data } = await supabase.from('training_programs').select('*').order('sort_order');
     setPrograms(data || []);
@@ -98,6 +85,19 @@ export default function RequirementsTab() {
     }
     setLoading(false);
   };
+
+  // Load data on mount
+  useEffect(() => {
+    loadPrograms();
+    loadRequirements();
+  }, []);
+
+  // Reload when program changes
+  useEffect(() => {
+    loadRequirements();
+    setForm(p => ({ ...p, program_code: selectedProgram, requirement_category: selectedProgram }));
+    setSyncResult(null);
+  }, [selectedProgram]);
 
   // Add or update requirement
   const handleSave = async () => {

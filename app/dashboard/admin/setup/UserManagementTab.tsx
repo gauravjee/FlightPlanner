@@ -17,9 +17,10 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { Users, UserPlus, Mail, RefreshCw, Trash2, TriangleAlert, CircleCheck, ShieldCheck } from 'lucide-react';
-import { OVERRIDE_ELIGIBLE_ROLES, type PermissionOverrides } from '@/lib/permissions';
+import { Users, UserPlus, Mail, RefreshCw, Trash2, TriangleAlert, CircleCheck, ShieldCheck, Pencil } from 'lucide-react';
+import { OVERRIDE_ELIGIBLE_ROLES, USER_ROLE_OPTIONS, type PermissionOverrides } from '@/lib/permissions';
 import UserPermissionsModal from '@/components/admin/UserPermissionsModal';
+import UserEditModal from '@/components/admin/UserEditModal';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -44,13 +45,13 @@ interface User {
 // `students` training-profile row (and vice versa for the old "Add Student"
 // flow) — the two records had no way to link up. Students are now created
 // as a single unit, login + profile together, from the Students page.
-const ROLES = [
-  { value: 'admin', label: '👑 Admin' },
-  { value: 'instructor', label: '👨‍🏫 Instructor' },
-  { value: 'operations', label: '📋 Operations' },
-  { value: 'maintenance', label: '🔧 Maintenance' },
-  { value: 'super_admin', label: '🔧 Super Admin' },
-];
+//
+// The role list itself now lives in lib/permissions.ts as
+// USER_ROLE_OPTIONS (2026-08-20, edit-user round) — it used to be
+// hand-duplicated here and, separately, as a values-only copy in
+// app/api/admin/users/route.ts. Both this create form and the new
+// "Edit" action's UserEditModal now share the one list.
+const ROLES = USER_ROLE_OPTIONS;
 
 // ============================================================
 // MAIN COMPONENT
@@ -68,6 +69,9 @@ export default function UserManagementTab() {
   // components/admin/UserPermissionsModal.tsx and the 2026-08-17
   // (second round) per-user permission override feature.
   const [editingPermissionsUser, setEditingPermissionsUser] = useState<User | null>(null);
+  // Which user's "Edit" (name/email/role) modal is currently open — see
+  // components/admin/UserEditModal.tsx (2026-08-20).
+  const [editingUser, setEditingUser] = useState<User | null>(null);
 
   // Form state for creating new users
   const [form, setForm] = useState({
@@ -76,11 +80,6 @@ export default function UserManagementTab() {
     role: 'instructor',  // Default role
     sendEmail: true,     // Whether to send welcome email
   });
-
-  // ----- Load existing users on mount -----
-  useEffect(() => {
-    loadUsers();
-  }, []);
 
   /**
    * Load all users from the database
@@ -105,6 +104,11 @@ export default function UserManagementTab() {
     }
     setLoading(false);
   };
+
+  // ----- Load existing users on mount -----
+  useEffect(() => {
+    loadUsers();
+  }, []);
 
   // ============================================================
   // CREATE USER
@@ -436,6 +440,14 @@ export default function UserManagementTab() {
                         </button>
                       )}
                       <button
+                        onClick={() => setEditingUser(user)}
+                        className="text-xs transition flex items-center gap-1"
+                        style={{ color: 'var(--accent)' }}
+                        title="Edit name, email, or role"
+                      >
+                        <Pencil className="w-3.5 h-3.5" /> Edit
+                      </button>
+                      <button
                         onClick={() => forceReset(user.id)}
                         className="text-xs transition flex items-center gap-1"
                         style={{ color: 'var(--accent)' }}
@@ -464,6 +476,14 @@ export default function UserManagementTab() {
         <UserPermissionsModal
           user={editingPermissionsUser}
           onClose={() => setEditingPermissionsUser(null)}
+          onSaved={loadUsers}
+        />
+      )}
+
+      {editingUser && (
+        <UserEditModal
+          user={editingUser}
+          onClose={() => setEditingUser(null)}
           onSaved={loadUsers}
         />
       )}

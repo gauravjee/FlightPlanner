@@ -98,9 +98,8 @@ export default function ProgressPage() {
   const {
     students, loadStudents,
     flightRecords, loadFlightRecords,
-    instructors,
     aircraft, loadAircraft,
-    trainingRequirements, loadTrainingRequirements,
+    loadTrainingRequirements,
     getRequirementsForStudent,
   } = useFlightStore();
 
@@ -334,7 +333,7 @@ export default function ProgressPage() {
                 className="flex-1 surface-inner rounded-lg px-4 py-2 focus:outline-none focus:border-[var(--accent)]"
               >
                 <option value="">Select a student to view progress</option>
-                {students.map(s => (
+                {visibleStudents.map(s => (
                   <option key={s.id} value={s.id}>
                     {s.name} ({s.initials}) — {s.trainingStage} | {s.totalHours}h
                   </option>

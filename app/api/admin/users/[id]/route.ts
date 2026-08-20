@@ -4,7 +4,7 @@
 
 import { NextResponse } from 'next/server';
 import { requireRole, MODULE_KEYS, OVERRIDE_ELIGIBLE_ROLES } from '@/lib/api-auth';
-import type { ModuleKey } from '@/lib/permissions';
+import { VALID_USER_ROLES, type ModuleKey } from '@/lib/permissions';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 const ALLOWED_ROLES = ['super_admin'];
@@ -13,7 +13,7 @@ const VALID_OVERRIDE_VALUES = ['view', 'full'];
 type RouteContext = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const { error } = await requireRole(ALLOWED_ROLES);
+  const { session, error } = await requireRole(ALLOWED_ROLES);
   if (error) return error;
 
   const { id } = await context.params;
@@ -34,6 +34,49 @@ export async function PATCH(request: Request, context: RouteContext) {
   // action: 'forceReset' expects { forcePasswordReset: true }
   if (typeof body.forcePasswordReset === 'boolean') {
     dbUpdates.force_password_reset = body.forcePasswordReset;
+  }
+
+  // action: 'editUser' (2026-08-20) expects any of { name?, email?, role? }
+  // — the "Edit" action added to UserManagementTab.tsx's user table, opening
+  // UserEditModal. Each field is independently optional (undefined = left
+  // untouched), same convention as every other field on this route — the
+  // modal only sends what the admin actually changed.
+  if (body.name !== undefined) {
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) {
+      return NextResponse.json({ error: 'Name cannot be blank.' }, { status: 400 });
+    }
+    dbUpdates.name = name;
+  }
+  if (body.email !== undefined) {
+    const email = typeof body.email === 'string' ? body.email.trim() : '';
+    if (!email) {
+      return NextResponse.json({ error: 'Email cannot be blank.' }, { status: 400 });
+    }
+    dbUpdates.email = email;
+  }
+  if (body.role !== undefined) {
+    if (typeof body.role !== 'string' || !VALID_USER_ROLES.includes(body.role)) {
+      return NextResponse.json({ error: 'Invalid role.' }, { status: 400 });
+    }
+    if (body.role !== 'super_admin') {
+      // A super_admin can't demote their OWN account away from super_admin
+      // here — same reasoning as the self-delete guard on DELETE below:
+      // this table is the only way to grant/revoke super_admin, so a
+      // self-demotion could lock every super_admin out with no way back in
+      // short of direct DB access. Identity comes from the verified
+      // session (by email, matching the self-delete guard's own
+      // convention), not anything the client could tamper with.
+      const { data: selfCheck } = await supabaseAdmin
+        .from('users')
+        .select('email')
+        .eq('id', id)
+        .maybeSingle();
+      if (selfCheck?.email === session.user.email) {
+        return NextResponse.json({ error: 'You cannot change your own role away from Super Admin.' }, { status: 400 });
+      }
+    }
+    dbUpdates.role = body.role;
   }
 
   // action: 'setPermissionOverrides' expects
@@ -100,6 +143,13 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   if (dbError) {
     console.error('Error updating user:', dbError);
+    // 23505 = unique_violation — the realistic failure mode of the new
+    // editUser email field (two accounts can't share an email); surfaced
+    // with a specific message instead of the generic one below so the
+    // admin isn't left guessing what "Failed to update user" means.
+    if (dbError.code === '23505') {
+      return NextResponse.json({ error: 'That email address is already in use by another account.' }, { status: 409 });
+    }
     return NextResponse.json({ error: 'Failed to update user.' }, { status: 500 });
   }
 
