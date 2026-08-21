@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
 
-  const { name, initials, licenseNumber, licenseExpiryDate, ratings, maxDailyHours, email, phone, status } =
+  const { name, initials, licenseNumber, licenseExpiryDate, licenseIssueDate, ratings, maxDailyHours, email, phone, status } =
     body as Record<string, unknown>;
 
   if (!name || !initials) {
@@ -43,10 +43,12 @@ export async function POST(request: Request) {
     .insert({
       name, initials,
       license_number: licenseNumber,
-      // 2026-08-20: license_expiry_date pairs with license_number above —
-      // optional (not every existing instructor record will have this
-      // filled in immediately), unlike license_number itself.
+      // 2026-08-20: license_expiry_date/license_issue_date pair with
+      // license_number above — optional (not every existing instructor
+      // record will have these filled in immediately), unlike
+      // license_number itself.
       license_expiry_date: licenseExpiryDate || null,
+      license_issue_date: licenseIssueDate || null,
       ratings,
       max_daily_hours: maxDailyHours,
       email, phone, status,

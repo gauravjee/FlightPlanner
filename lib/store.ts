@@ -656,6 +656,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           assignedInstructorInitials: instructor?.initials || undefined, // ← LOOKED UP
           splNumber: (row.spl_number as string) || undefined,
           splExpiryDate: (row.spl_expiry_date as string) || undefined,
+          splIssueDate: (row.spl_issue_date as string) || undefined,
         };
       });
       
@@ -1156,6 +1157,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           // missing/null both read as "can't self-book," the safe side.
           canSelfBook: Boolean(row.can_self_book),
           licenseExpiryDate: (row.license_expiry_date as string) || undefined,
+          licenseIssueDate: (row.license_issue_date as string) || undefined,
         })),
         loadingInstructors: false,
       });

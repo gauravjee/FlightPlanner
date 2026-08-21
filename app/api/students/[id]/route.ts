@@ -39,6 +39,7 @@ const FIELD_MAP: Record<string, string> = {
   assignedInstructorId: 'assigned_instructor_id',
   splNumber: 'spl_number',
   splExpiryDate: 'spl_expiry_date',
+  splIssueDate: 'spl_issue_date',
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -64,12 +65,15 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
   }
 
-  // spl_expiry_date is a `date` column — Postgres rejects '' as an invalid
-  // date literal, unlike spl_number (text) which tolerates it. Clearing the
-  // expiry date in the form sends '', which needs to become null here
-  // rather than being passed straight through.
+  // spl_expiry_date/spl_issue_date are `date` columns — Postgres rejects ''
+  // as an invalid date literal, unlike spl_number (text) which tolerates
+  // it. Clearing either date in the form sends '', which needs to become
+  // null here rather than being passed straight through.
   if (dbUpdates.spl_expiry_date === '') {
     dbUpdates.spl_expiry_date = null;
+  }
+  if (dbUpdates.spl_issue_date === '') {
+    dbUpdates.spl_issue_date = null;
   }
 
   if (Object.keys(dbUpdates).length === 0) {

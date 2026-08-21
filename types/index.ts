@@ -354,6 +354,10 @@ export interface Instructor {
   // licenseNumber above. Nullable: not every instructor record has this
   // filled in yet. See add-license-expiry-dates.sql.
   licenseExpiryDate?: string;
+  // CPL issue date (2026-08-20, second round) — paired with licenseNumber
+  // above, alongside licenseExpiryDate. Nullable, same reasoning. See
+  // add-license-issue-dates.sql.
+  licenseIssueDate?: string;
 }
 
 // Weather data from AVWX API
@@ -420,6 +424,9 @@ export interface StudentRecord {
   // SPL expiry date (2026-08-20) — paired with splNumber above. See
   // add-license-expiry-dates.sql.
   splExpiryDate?: string;
+  // SPL issue date (2026-08-20, second round) — paired with splNumber
+  // above, alongside splExpiryDate. See add-license-issue-dates.sql.
+  splIssueDate?: string;
 }
 
 // Availability / Leave record

@@ -35,7 +35,7 @@ import { useSession } from 'next-auth/react';
 import {
   LayoutDashboard, Calendar, Plane, Users, Fuel, FileText, Wrench,
   GraduationCap, UserRound, Umbrella, ChartColumnIncreasing, BookOpen,
-  Settings,ClipboardList,
+  Settings, ClipboardList, Wind,
 } from 'lucide-react';
 import { canViewModule, type ModuleKey } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
@@ -73,12 +73,25 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/availability', label: 'Availability', icon: Umbrella, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
   { href: '/dashboard/progress', label: 'Progress', icon: ChartColumnIncreasing, roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
   { href: '/dashboard/ground-school', label: 'Ground School', icon: BookOpen, roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
+  // BA Test Register (2026-08-20, session 3) — was previously reachable
+  // only via a card on the Reports landing page; the user asked for a
+  // direct top-level link too, since it's a form staff fill in daily, not
+  // just a report to browse. Placed directly ABOVE "Reports" per explicit
+  // user request (session 4) — was originally added below it. Roles
+  // hand-synced to lib/permissions.ts's BA_TEST_VIEW_ROLES (=
+  // REPORTS_VIEW_ROLES) — the page's own RoleGate is still the real access
+  // control, same convention as every other nav item. Note: because this
+  // href nests under '/dashboard/reports', visiting it also highlights
+  // "Reports" in the nav (a real parent/child relationship, unlike the
+  // '/dashboard/instructor(s)' string-prefix bug fixed earlier — this one
+  // is intentional structure, not a bug).
+  { href: '/dashboard/reports/breath-analyser', label: 'BA Test Register', icon: Wind, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
   // roles here hand-synced to lib/permissions.ts's REPORTS_VIEW_ROLES —
   // instructor/maintenance can see a generated report but only
   // admin/super_admin/operations can generate/save one (see
   // REPORTS_WRITE_ROLES, enforced in the Reports pages themselves).
   // safety_officer (2026-08-20) added so that role can reach the Breath
-  // Analyser Register — see BA_TEST_WRITE_ROLES.
+  // Analysis Report (see BA_TEST_WRITE_ROLES/BA_TEST_VIEW_ROLES).
   { href: '/dashboard/reports', label: 'Reports', icon: ClipboardList, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
   { href: '/dashboard/admin/setup', label: 'Admin Setup', icon: Settings, roles: ['super_admin'] },
 ];
@@ -114,8 +127,19 @@ export default function Sidebar() {
           // (including itself as a substring of '/dashboard/schedule' etc.)
           // — exact match for the two dashboard-home entries, prefix match
           // for everything else so a sub-page still highlights its section.
+          //
+          // Plain startsWith() on its own is also wrong for two sibling
+          // routes whose paths share a prefix at the segment level, not
+          // just textually — '/dashboard/instructors' (Instructors roster)
+          // starts with the string '/dashboard/instructor' (My Students),
+          // so visiting the roster page lit up both nav items. Matching
+          // against the href plus a trailing '/' (or an exact match) keeps
+          // '/dashboard/instructor/123' correctly under "My Students"
+          // while no longer bleeding into "Instructors".
           const isHome = item.href === '/dashboard' || item.href === '/dashboard/student';
-          const active = isHome ? pathname === item.href : pathname?.startsWith(item.href);
+          const active = isHome
+            ? pathname === item.href
+            : pathname === item.href || !!pathname?.startsWith(item.href + '/');
           const Icon = item.icon;
           return (
             <Link

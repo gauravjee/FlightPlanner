@@ -43,10 +43,10 @@ const REPORT_CARDS = [
     status: 'planned' as const,
   },
   {
-    href: '/dashboard/reports/breath-analyser',
+    href: '/dashboard/reports/breath-analysis',
     icon: Wind,
-    title: 'Breath Analyser Register',
-    description: 'Pre-flight breath analyser test log per CAR Section 5, Series F, Part III — Aircraft, Safety Officer, Student/Instructor, License Number, BA Time/Percentage/Equipment.',
+    title: 'Breath Analysis Report',
+    description: 'Daily, weekly, or monthly rollup of the BA Test Register (CAR Section 5, Series F, Part III) — summary stats plus PDF and Excel/CSV export. To add or edit today\'s entries, use "BA Test Register" in the left sidebar.',
     status: 'live' as const,
   },
   {

@@ -45,7 +45,8 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
     // Number" on the Breath Analyser Register when this student is the
     // person tested. Optional — not every student has flown solo yet.
     splNumber: '',
-    // SPL expiry date (2026-08-20), paired with splNumber above.
+    // SPL issue/expiry dates (2026-08-20), paired with splNumber above.
+    splIssueDate: '',
     splExpiryDate: '',
   });
 
@@ -110,6 +111,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
         status: student.status,
         assignedInstructorId: student.assignedInstructorId,
         splNumber: student.splNumber || '',
+        splIssueDate: student.splIssueDate || '',
         splExpiryDate: student.splExpiryDate || '',
       });
       setInitialsManuallyEdited(true);
@@ -287,13 +289,21 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
                 className={inputClass} />
             </div>
             <div>
+              <label className="block text-sm text-secondary mb-1">SPL Issue Date</label>
+              <input type="date" value={form.splIssueDate} onChange={e => handleChange('splIssueDate', e.target.value)}
+                className={inputClass} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <label className="block text-sm text-secondary mb-1">SPL Expiry Date</label>
               <input type="date" value={form.splExpiryDate} onChange={e => handleChange('splExpiryDate', e.target.value)}
                 className={inputClass} />
             </div>
+            <div />
           </div>
-          <p className="text-xs text-tertiary -mt-3">
-            Shown as this student&apos;s License Number on the Breath Analyser Register. Leave blank until they&apos;ve been issued one.
+          <p className="text-xs text-tertiary -mt-1">
+            SPL Number is shown as this student&apos;s License Number on the Breath Analyser Register. Leave these fields blank until they&apos;ve been issued an SPL.
           </p>
 
           <div className="grid grid-cols-2 gap-3">

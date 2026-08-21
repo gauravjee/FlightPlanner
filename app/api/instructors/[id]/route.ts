@@ -16,6 +16,7 @@ const FIELD_MAP: Record<string, string> = {
   initials: 'initials',
   licenseNumber: 'license_number',
   licenseExpiryDate: 'license_expiry_date',
+  licenseIssueDate: 'license_issue_date',
   ratings: 'ratings',
   maxDailyHours: 'max_daily_hours',
   email: 'email',
@@ -52,12 +53,15 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
   }
 
-  // license_expiry_date is a `date` column — Postgres rejects '' as an
-  // invalid date literal, unlike license_number (text) which tolerates it.
-  // Clearing the expiry date in the form sends '', which needs to become
-  // null here rather than being passed straight through.
+  // license_expiry_date/license_issue_date are `date` columns — Postgres
+  // rejects '' as an invalid date literal, unlike license_number (text)
+  // which tolerates it. Clearing either date in the form sends '', which
+  // needs to become null here rather than being passed straight through.
   if (dbUpdates.license_expiry_date === '') {
     dbUpdates.license_expiry_date = null;
+  }
+  if (dbUpdates.license_issue_date === '') {
+    dbUpdates.license_issue_date = null;
   }
 
   // canSelfBook stays super_admin-only regardless of module access —

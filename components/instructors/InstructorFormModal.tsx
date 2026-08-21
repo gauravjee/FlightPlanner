@@ -26,7 +26,8 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
     name: '',
     initials: '',
     licenseNumber: '',
-    // CPL expiry date (2026-08-20), paired with licenseNumber above.
+    // CPL issue/expiry dates (2026-08-20), paired with licenseNumber above.
+    licenseIssueDate: '',
     licenseExpiryDate: '',
     ratings: 'CFI',
     maxDailyHours: 8,
@@ -43,6 +44,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
         name: instructor.name,
         initials: instructor.initials,
         licenseNumber: instructor.licenseNumber,
+        licenseIssueDate: instructor.licenseIssueDate || '',
         licenseExpiryDate: instructor.licenseExpiryDate || '',
         ratings: instructor.ratings,
         maxDailyHours: instructor.maxDailyHours,
@@ -99,6 +101,20 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
                 className={inputClass} />
             </div>
             <div>
+              <label className="block text-xs text-secondary mb-1">Ratings (comma-separated)</label>
+              <input type="text" value={form.ratings} onChange={e => setForm(p => ({ ...p, ratings: e.target.value }))}
+                placeholder="CFI, CFII, MEI"
+                className={inputClass} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-secondary mb-1">CPL Issue Date</label>
+              <input type="date" value={form.licenseIssueDate} onChange={e => setForm(p => ({ ...p, licenseIssueDate: e.target.value }))}
+                className={inputClass} />
+            </div>
+            <div>
               <label className="block text-xs text-secondary mb-1">CPL Expiry Date</label>
               <input type="date" value={form.licenseExpiryDate} onChange={e => setForm(p => ({ ...p, licenseExpiryDate: e.target.value }))}
                 className={inputClass} />
@@ -106,12 +122,6 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-secondary mb-1">Ratings (comma-separated)</label>
-              <input type="text" value={form.ratings} onChange={e => setForm(p => ({ ...p, ratings: e.target.value }))}
-                placeholder="CFI, CFII, MEI"
-                className={inputClass} />
-            </div>
             <div>
               <label className="block text-xs text-secondary mb-1">Status</label>
               <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value as Instructor['status'] }))}
@@ -121,26 +131,25 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
                 <option value="OFF_DUTY">Off Duty</option>
               </select>
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-secondary mb-1">Max Daily Hours</label>
               <input type="number" value={form.maxDailyHours || ''} onChange={e => setForm(p => ({ ...p, maxDailyHours: parseInt(e.target.value) || 0 }))}
                 min={1} max={12}
                 className={inputClass} />
             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-secondary mb-1">Email</label>
+              <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
+                  className={inputClass} />
+            </div>
             <div>
               <label className="block text-xs text-secondary mb-1">Phone</label>
               <input type="text" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
                 className={inputClass} />
             </div>
-          </div>
-
-          <div>
-            <label className="block text-xs text-secondary mb-1">Email</label>
-            <input type="email" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))}
-                className={inputClass} />
           </div>
 
           {/* Self-booking permission — only meaningful once the instructor
