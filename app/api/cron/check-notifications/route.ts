@@ -9,6 +9,18 @@
 //   2. Medical certificates already expired → 🔴 Alert
 //   3. Maintenance due within 7 days → 🟡 Warning
 //   4. Maintenance overdue → 🔴 Alert
+//   5. Student SPL expiring within 30 days → 🟡 Warning
+//   6. Student SPL already expired → 🔴 Alert
+//   7. Instructor CPL expiring within 30 days → 🟡 Warning
+//   8. Instructor CPL already expired → 🔴 Alert
+//
+// SPL/CPL checks added 2026-08-21, mirroring the medical-expiry checks
+// above exactly (same 30-day warning window, same expired/critical
+// framing) — SPL/CPL Issue Date auto-fills Expiry Date to +10 years in
+// the Student/Instructor forms (see StudentFormModal.tsx /
+// InstructorFormModal.tsx), but the expiry date itself is what's alerted
+// on here since it's directly editable and may not always be exactly
+// issue+10y.
 //
 // Each alert sends an email to all active admin/super_admin users
 // via Resend API and logs to the notification_log table.
@@ -184,7 +196,123 @@ export async function GET(request: Request) {
     }
 
     // ============================================================
-    // 3. CHECK MAINTENANCE DUE (7 days warning)
+    // 3. CHECK STUDENT SPL EXPIRY (30 days warning)
+    // ============================================================
+    // Find all active students whose SPL expires within 30 days
+    // ============================================================
+    const splExpiringResult = await supabase
+      .from('students')
+      .select('*')
+      .eq('status', 'ACTIVE')
+      .not('spl_expiry_date', 'is', null)
+      .gte('spl_expiry_date', today.toISOString().split('T')[0])
+      .lte('spl_expiry_date', thirtyDaysFromNow.toISOString().split('T')[0]);
+
+    if (splExpiringResult.data) {
+      for (let s = 0; s < splExpiringResult.data.length; s++) {
+        const splStudent = splExpiringResult.data[s];
+        const splDaysLeft = Math.ceil(
+          (new Date(splStudent.spl_expiry_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+        );
+
+        notifications.push(
+          '🟡 ' + splStudent.name + ': SPL expiring in ' + splDaysLeft + ' days (' + splStudent.spl_expiry_date + ')'
+        );
+
+        await sendAdminAlert(
+          'SPL Expiring',
+          splStudent.name + ' (' + splStudent.initials + ') Student Pilot License expires in ' +
+          splDaysLeft + ' days on ' + splStudent.spl_expiry_date + '. Please ensure renewal is scheduled.',
+          requestUrl
+        );
+      }
+    }
+
+    // ============================================================
+    // 4. CHECK STUDENT SPL EXPIRED
+    // ============================================================
+    const splExpiredResult = await supabase
+      .from('students')
+      .select('*')
+      .eq('status', 'ACTIVE')
+      .not('spl_expiry_date', 'is', null)
+      .lt('spl_expiry_date', today.toISOString().split('T')[0]);
+
+    if (splExpiredResult.data) {
+      for (let t = 0; t < splExpiredResult.data.length; t++) {
+        const expiredSplStudent = splExpiredResult.data[t];
+
+        notifications.push(
+          '🔴 ' + expiredSplStudent.name + ': SPL EXPIRED (' + expiredSplStudent.spl_expiry_date + ')'
+        );
+
+        await sendAdminAlert(
+          '🚨 SPL EXPIRED',
+          expiredSplStudent.name + ' (' + expiredSplStudent.initials + ') Student Pilot License EXPIRED on ' +
+          expiredSplStudent.spl_expiry_date + '. Please renew before further solo flying.',
+          requestUrl
+        );
+      }
+    }
+
+    // ============================================================
+    // 5. CHECK INSTRUCTOR CPL EXPIRY (30 days warning)
+    // ============================================================
+    const cplExpiringResult = await supabase
+      .from('instructors')
+      .select('*')
+      .not('license_expiry_date', 'is', null)
+      .gte('license_expiry_date', today.toISOString().split('T')[0])
+      .lte('license_expiry_date', thirtyDaysFromNow.toISOString().split('T')[0]);
+
+    if (cplExpiringResult.data) {
+      for (let u = 0; u < cplExpiringResult.data.length; u++) {
+        const cplInstructor = cplExpiringResult.data[u];
+        const cplDaysLeft = Math.ceil(
+          (new Date(cplInstructor.license_expiry_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+        );
+
+        notifications.push(
+          '🟡 ' + cplInstructor.name + ': CPL expiring in ' + cplDaysLeft + ' days (' + cplInstructor.license_expiry_date + ')'
+        );
+
+        await sendAdminAlert(
+          'CPL Expiring',
+          cplInstructor.name + ' (' + cplInstructor.initials + ') Commercial Pilot License expires in ' +
+          cplDaysLeft + ' days on ' + cplInstructor.license_expiry_date + '. Please ensure renewal is scheduled.',
+          requestUrl
+        );
+      }
+    }
+
+    // ============================================================
+    // 6. CHECK INSTRUCTOR CPL EXPIRED
+    // ============================================================
+    const cplExpiredResult = await supabase
+      .from('instructors')
+      .select('*')
+      .not('license_expiry_date', 'is', null)
+      .lt('license_expiry_date', today.toISOString().split('T')[0]);
+
+    if (cplExpiredResult.data) {
+      for (let v = 0; v < cplExpiredResult.data.length; v++) {
+        const expiredCplInstructor = cplExpiredResult.data[v];
+
+        notifications.push(
+          '🔴 ' + expiredCplInstructor.name + ': CPL EXPIRED (' + expiredCplInstructor.license_expiry_date + ')'
+        );
+
+        await sendAdminAlert(
+          '🚨 CPL EXPIRED',
+          expiredCplInstructor.name + ' (' + expiredCplInstructor.initials + ') Commercial Pilot License EXPIRED on ' +
+          expiredCplInstructor.license_expiry_date + '. Instructor should not fly/instruct until renewed.',
+          requestUrl
+        );
+      }
+    }
+
+    // ============================================================
+    // 7. CHECK MAINTENANCE DUE (7 days warning)
     // ============================================================
     // Find all scheduled maintenance due within the next 7 days
     // ============================================================
@@ -217,7 +345,7 @@ export async function GET(request: Request) {
     }
 
     // ============================================================
-    // 4. CHECK MAINTENANCE OVERDUE
+    // 8. CHECK MAINTENANCE OVERDUE
     // ============================================================
     // Find all maintenance that was scheduled before today but not completed
     // ============================================================

@@ -100,13 +100,28 @@ export default function RequirementsTab() {
   }, [selectedProgram]);
 
   // Add or update requirement
+  //
+  // 2026-08-21 (security hardening round): this was the specific "writable
+  // via anon key" finding from the whole-frontend security review —
+  // training_requirement_templates holds the blocks_solo/blocks_all_flights
+  // flags gating the hardened Solo Release toggle, so a direct-write bypass
+  // here was one of the higher-stakes gaps. Now routed through the shared,
+  // role-checked config route — see app/api/admin/config/[table]/route.ts.
   const handleSave = async () => {
     if (!form.requirement_name) return;
 
     if (editing) {
-      await supabase.from('training_requirement_templates').update(form).eq('id', editing.id);
+      await fetch('/api/admin/config/requirement-templates', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editing.id, ...form }),
+      });
     } else {
-      await supabase.from('training_requirement_templates').insert(form);
+      await fetch('/api/admin/config/requirement-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
     }
 
     setEditing(null);
@@ -168,7 +183,7 @@ export default function RequirementsTab() {
   // Delete
   const handleDelete = async (id: number) => {
     if (window.confirm('Delete this requirement template? This will not affect existing student requirements.')) {
-      await supabase.from('training_requirement_templates').delete().eq('id', id);
+      await fetch(`/api/admin/config/requirement-templates?id=${id}`, { method: 'DELETE' });
       loadRequirements();
     }
   };

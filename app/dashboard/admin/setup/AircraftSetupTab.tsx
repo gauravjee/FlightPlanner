@@ -97,32 +97,38 @@ export default function AircraftSetupTab() {
       return;
     }
 
+    // 2026-08-21 (security hardening round): this tab used to write
+    // directly to Supabase from the browser — the same gap already fixed
+    // for the main Aircraft page (see app/api/aircraft/route.ts, which
+    // this tab now reuses instead of duplicating a second insecure write
+    // path for the same table). Field names below are mapped to that
+    // route's camelCase body shape (this tab's own form state uses
+    // snake_case, matching the DB column names directly).
+    const payload = {
+      registration: form.registration.toUpperCase(),
+      type: form.type,
+      model: form.model,
+      year: form.year,
+      hobbsTime: form.hobbs_time,
+      fuelCapacity: form.fuel_capacity,
+      currentFuel: form.current_fuel,
+      status: form.status,
+      nextMaintenance: form.next_maintenance,
+      isSimulator: form.is_simulator,
+    };
+
     if (editing) {
-      await supabase.from('aircraft').update({
-        registration: form.registration.toUpperCase(),
-        type: form.type,
-        model: form.model,
-        year: form.year,
-        hobbs_time: form.hobbs_time,
-        fuel_capacity: form.fuel_capacity,
-        current_fuel: form.current_fuel,
-        status: form.status,
-        next_maintenance: form.next_maintenance,
-        is_simulator: form.is_simulator,
-      }).eq('id', editing.id);
+      await fetch(`/api/aircraft/${editing.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
       setSuccessMessage('Aircraft updated!');
     } else {
-      await supabase.from('aircraft').insert({
-        registration: form.registration.toUpperCase(),
-        type: form.type,
-        model: form.model,
-        year: form.year,
-        hobbs_time: form.hobbs_time,
-        fuel_capacity: form.fuel_capacity,
-        current_fuel: form.current_fuel,
-        status: form.status,
-        next_maintenance: form.next_maintenance,
-        is_simulator: form.is_simulator,
+      await fetch('/api/aircraft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
       setSuccessMessage('Aircraft added!');
     }
@@ -153,7 +159,7 @@ export default function AircraftSetupTab() {
   // Delete aircraft
   const handleDelete = async (id: number) => {
     if (window.confirm('Delete this aircraft? This cannot be undone.')) {
-      await supabase.from('aircraft').delete().eq('id', id);
+      await fetch(`/api/aircraft/${id}`, { method: 'DELETE' });
       loadAircraft();
       setSuccessMessage('Aircraft removed.');
       setTimeout(() => setSuccessMessage(''), 3000);

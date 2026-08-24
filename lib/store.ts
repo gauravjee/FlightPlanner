@@ -1516,15 +1516,24 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     }
   },
 
+  // 2026-08-21 (security hardening round): holiday-calendar writes used to
+  // go straight to Supabase from the browser — one of the direct-write-
+  // bypass instances named in the whole-frontend security review. Now
+  // routed through the shared, role-checked config route (Admin Setup is
+  // super_admin-only) instead — see app/api/admin/config/[table]/route.ts.
   addHoliday: async (holiday) => {
-    const { error } = await supabase.from('holidays').insert({
-      holiday_name: holiday.holidayName,
-      holiday_date: holiday.date,
-      is_recurring: holiday.isRecurring,
-      notes: holiday.notes || '',
+    const res = await fetch('/api/admin/config/holidays', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        holiday_name: holiday.holidayName,
+        holiday_date: holiday.date,
+        is_recurring: holiday.isRecurring,
+        notes: holiday.notes || '',
+      }),
     });
-    if (error) {
-      console.error('Error adding holiday:', error);
+    if (!res.ok) {
+      console.error('Error adding holiday:', await res.text());
       return { success: false, message: '❌ Failed to add holiday.' };
     }
     await get().loadHolidays();
@@ -1547,13 +1556,17 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       const key = `${h.date}|${h.isRecurring}`;
       if (seen.has(key)) { skipped++; skippedNames.push(h.holidayName); continue; }
       seen.add(key);
-      const { error } = await supabase.from('holidays').insert({
-        holiday_name: h.holidayName,
-        holiday_date: h.date,
-        is_recurring: h.isRecurring,
-        notes: h.notes || '',
+      const res = await fetch('/api/admin/config/holidays', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          holiday_name: h.holidayName,
+          holiday_date: h.date,
+          is_recurring: h.isRecurring,
+          notes: h.notes || '',
+        }),
       });
-      if (error) { skipped++; skippedNames.push(h.holidayName); continue; }
+      if (!res.ok) { skipped++; skippedNames.push(h.holidayName); continue; }
       added++;
       const conflicts = await countScheduleConflictsOnDate(h.date);
       conflictingFlights += conflicts.conflictingFlights;
@@ -1564,8 +1577,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   removeHoliday: async (id) => {
-    const { error } = await supabase.from('holidays').delete().eq('id', id);
-    if (!error) set(state => ({ holidays: state.holidays.filter(h => h.id !== id) }));
+    const res = await fetch(`/api/admin/config/holidays?id=${id}`, { method: 'DELETE' });
+    if (res.ok) set(state => ({ holidays: state.holidays.filter(h => h.id !== id) }));
   },
 
   // ============================================================

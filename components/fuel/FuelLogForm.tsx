@@ -12,6 +12,7 @@
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { Fuel, TriangleAlert, X } from 'lucide-react';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 // ============================================================
 // PROPS
@@ -21,6 +22,7 @@ interface Props {
 }
 
 export default function FuelLogForm({ onClose }: Props) {
+  useEscapeToClose(onClose);
   // ----- Store access -----
   const { aircraft, addFuelRecord, loadAircraft } = useFlightStore();
 
@@ -144,7 +146,7 @@ export default function FuelLogForm({ onClose }: Props) {
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <Fuel className="w-4 h-4" /> Log Fuel Refill
           </h3>
-          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80" aria-label="Close">
             <X className="w-5 h-5 text-tertiary" />
           </button>
         </div>

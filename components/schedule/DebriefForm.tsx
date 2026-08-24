@@ -5,6 +5,7 @@
 import { useState } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { ScheduledFlight } from '@/types';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface Props {
   flight: ScheduledFlight;
@@ -13,6 +14,7 @@ interface Props {
 }
 
 export default function DebriefForm({ flight, onClose, onComplete }: Props) {
+  useEscapeToClose(onClose);
   const { aircraft, addFlightRecord, updateScheduledFlight, loadScheduledFlights } = useFlightStore();
   
   const ac = aircraft.find(a => String(a.id) === String(flight.aircraftId));

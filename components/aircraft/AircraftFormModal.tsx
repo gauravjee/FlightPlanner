@@ -5,6 +5,7 @@ import { Aircraft } from '@/types';
 import { useState, useEffect } from 'react';
 import { Pencil, Plus, Save, X } from 'lucide-react';
 import { FUEL_BURN_RATE_BY_TYPE_LPH, DEFAULT_FUEL_BURN_RATE_LPH } from '@/lib/store';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 // 2026-08-19: `type` is the engine category, a genuinely fixed 2-value
 // enum — see restructure-aircraft-type-model.sql. Previously this was a
@@ -40,6 +41,7 @@ interface Props {
 }
 
 export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) {
+  useEscapeToClose(onClose);
   const isEditing = !!aircraft;
 
   const [form, setForm] = useState<Aircraft>(getDefaultForm);
@@ -118,7 +120,7 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
             {isEditing ? <Pencil className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
             {isEditing ? 'Edit Aircraft' : 'Add New Aircraft'}
           </h3>
-          <button onClick={onClose} className="p-2 rounded-lg transition cursor-pointer hover:opacity-80">
+          <button onClick={onClose} className="p-2 rounded-lg transition cursor-pointer hover:opacity-80" aria-label="Close">
             <X className="w-5 h-5 text-tertiary" />
           </button>
         </div>

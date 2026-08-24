@@ -37,8 +37,8 @@ import { supabase } from '@/lib/supabase-client';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
-import { syncRequirementsFromGroundSchoolPass } from '@/lib/ground-school-sync';
 import { ArrowLeft, GraduationCap, ClipboardList, CircleCheck, X } from 'lucide-react';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 // ============================================================
 // Type definitions
@@ -118,6 +118,11 @@ export default function StudentProgressPage() {
   // which sets these two fields (subjectId/subjectName identify which
   // subject the open modal is for; null = closed).
   const [directExamModal, setDirectExamModal] = useState<{ subjectId: number; subjectName: string } | null>(null);
+
+  // 2026-08-21 (accessibility round) — see lib/useEscapeToClose.ts.
+  useEscapeToClose(() => {
+    if (directExamModal) setDirectExamModal(null);
+  });
   const [directExamRollNumber, setDirectExamRollNumber] = useState('');
   const [directExamScore, setDirectExamScore] = useState('');
   const [directExamError, setDirectExamError] = useState('');
@@ -212,12 +217,26 @@ export default function StudentProgressPage() {
       await loadStaticData();
 
       // Determine which student to auto‑select
-      if (studentParam) {
-        // Priority 1: URL parameter (e.g., linked from Flight Progress page)
-        setSelectedStudent(studentParam);
-      } else if (userRole === 'student' && userStudentId) {
-        // Priority 2: Student viewing their own progress
+      //
+      // 2026-08-21 (security hardening round): a logged-in student must
+      // NEVER be able to view another student's exam data by editing this
+      // URL. Previously the ?student= param unconditionally won regardless
+      // of role — a student could navigate to
+      // ?student=<some-other-uuid> and see that student's DGCA roll number
+      // and exam scores (the IDOR flagged in the whole-frontend security
+      // review). The student-role branch is now checked FIRST and always
+      // wins for that role: the URL param is only ever honored for
+      // staff roles (admin/instructor/super_admin/operations) who are
+      // expected to view arbitrary students via a link from the Flight
+      // Progress page.
+      if (userRole === 'student' && userStudentId) {
+        // Priority 1: a student always sees only their own progress,
+        // regardless of what (if anything) is in the URL.
         setSelectedStudent(userStudentId);
+      } else if (studentParam) {
+        // Priority 2: URL parameter (e.g., linked from Flight Progress page)
+        // — staff roles only, per the branch above.
+        setSelectedStudent(studentParam);
       }
       // Priority 3: Leave empty — admin/instructor will use the dropdown
 
@@ -251,35 +270,31 @@ export default function StudentProgressPage() {
     const subject = subjects.find((s) => s.id === subjectId);
     if (!subject) return;
 
-    // 1. Create EXEMPTED enrollment in ground_school_enrollment
-    const { error } = await supabase.from('ground_school_enrollment').insert([
-      {
-        class_id: null,
-        student_id: selectedStudent,
-        attendance_status: 'EXEMPTED',
-        exam_score: score,
-        exam_result: 'PASS',
-        exam_date: new Date().toISOString().split('T')[0],
-        attempts: 1,
-        // 'Direct Exam Entry' describes where this record came from (this
-        // flow, vs. an actual class), not who examined the student — DGCA
-        // conducts the real exam, the FTO has no examiner of its own here.
-        examiner: 'Direct Exam Entry',
-        dgca_roll_number: rollNumber,
-        notes: `Requirements Checklist: ${subject.subject_name}`,
-      },
-    ]);
+    // 2026-08-21 (security hardening round): this used to insert directly
+    // into ground_school_enrollment from the browser with the anon key and
+    // no role check at all — the "forged exam records" finding from the
+    // whole-frontend security review (combined with the IDOR above, this
+    // meant anyone could set an arbitrary PASS/score/roll number for any
+    // student). Both the enrollment insert AND the Requirements Checklist
+    // sync now happen server-side in one call — see
+    // app/api/admin/ground-school/direct-exam/route.ts.
+    const res = await fetch('/api/admin/ground-school/direct-exam', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        studentId: selectedStudent,
+        subjectId,
+        subjectName: subject.subject_name,
+        rollNumber,
+        score,
+      }),
+    });
 
-    if (error) {
-      alert('Error: ' + error.message);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert('Error: ' + (data.error || 'Failed to record exam.'));
       return;
     }
-
-    // 2. Also update the Requirements Checklist — shared with the attendance
-    // page's own exam-recording flow, see lib/ground-school-sync.ts.
-    // completedBy dropped 2026-08-19 — the server now derives it from the
-    // signed-in session instead of this call site's own placeholder string.
-    await syncRequirementsFromGroundSchoolPass(selectedStudent, subject.subject_name);
 
     // Show success toast and reload
     setToastMessage('Subject marked as completed!');
@@ -698,7 +713,7 @@ export default function StudentProgressPage() {
                   <h3 className="text-lg font-semibold flex items-center gap-2">
                     <GraduationCap className="w-4 h-4" /> Mark {directExamModal.subjectName} as Completed
                   </h3>
-                  <button onClick={() => setDirectExamModal(null)} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+                  <button onClick={() => setDirectExamModal(null)} className="p-2 rounded-lg cursor-pointer hover:opacity-80" aria-label="Close">
                     <X className="w-5 h-5 text-tertiary" />
                   </button>
                 </div>

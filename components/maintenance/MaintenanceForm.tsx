@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { MaintenanceRecord } from '@/types';
 import { Pencil, Wrench, X, Hourglass, TriangleAlert } from 'lucide-react';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface Props {
   record: MaintenanceRecord | null;
@@ -38,6 +39,7 @@ const buildISTIso = (date: string, hour: string, minute: string): string =>
   new Date(`${date}T${hour}:${minute}:00+05:30`).toISOString();
 
 export default function MaintenanceForm({ record, onSave, onClose }: Props) {
+  useEscapeToClose(onClose);
   const {
     aircraft, loadAircraft,
     scheduledFlights, loadScheduledFlights,
@@ -172,7 +174,7 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
             {isEditing ? <Pencil className="w-4 h-4" /> : <Wrench className="w-4 h-4" />}
             {isEditing ? 'Edit Maintenance' : 'Log Maintenance'}
           </h3>
-          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80" aria-label="Close">
             <X className="w-5 h-5 text-tertiary" />
           </button>
         </div>

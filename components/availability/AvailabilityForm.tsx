@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { AvailabilityRecord } from '@/types';
 import { Palmtree, Pencil, Save, X, GraduationCap, Plane } from 'lucide-react';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface Props {
   record: AvailabilityRecord | null;
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export default function AvailabilityForm({ record, onSave, onClose }: Props) {
+  useEscapeToClose(onClose);
   const { instructors, students } = useFlightStore();
   const isEditing = !!record;
 
@@ -74,7 +76,7 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
           <h3 className="text-lg font-semibold flex items-center gap-2">
             {isEditing ? <><Pencil className="w-4 h-4" /> Edit Leave Record</> : <><Palmtree className="w-4 h-4" /> Add Leave / Unavailability</>}
           </h3>
-          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80" aria-label="Close">
             <X className="w-5 h-5 text-tertiary" />
           </button>
         </div>

@@ -14,6 +14,7 @@
 import { useState } from 'react';
 import { USER_ROLE_OPTIONS } from '@/lib/permissions';
 import { Pencil, X, Save } from 'lucide-react';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface UserLike {
   id: string;
@@ -29,6 +30,7 @@ interface Props {
 }
 
 export default function UserEditModal({ user, onClose, onSaved }: Props) {
+  useEscapeToClose(onClose);
   const [form, setForm] = useState({ name: user.name, email: user.email, role: user.role });
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -74,7 +76,7 @@ export default function UserEditModal({ user, onClose, onSaved }: Props) {
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <Pencil className="w-4 h-4" /> Edit User
           </h3>
-          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80" aria-label="Close">
             <X className="w-5 h-5 text-tertiary" />
           </button>
         </div>

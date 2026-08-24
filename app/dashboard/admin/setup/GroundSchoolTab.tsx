@@ -40,12 +40,23 @@ export default function GroundSchoolTab() {
 
   useEffect(() => { loadSubjects(); }, []);
 
+  // 2026-08-21 (security hardening round): routed through the shared,
+  // role-checked config route instead of writing to Supabase directly from
+  // the browser — see app/api/admin/config/[table]/route.ts.
   const handleSave = async () => {
     if (!form.subject_name || !form.subject_code) return;
     if (editing) {
-      await supabase.from('ground_school_subjects').update(form).eq('id', editing.id);
+      await fetch('/api/admin/config/ground-school-subjects', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editing.id, ...form }),
+      });
     } else {
-      await supabase.from('ground_school_subjects').insert(form);
+      await fetch('/api/admin/config/ground-school-subjects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
     }
     setEditing(null);
     setForm({ subject_name: '', subject_code: '', validity_years: null, required_before_hours: null, is_mandatory: true, sort_order: 99, is_active: true });
@@ -59,7 +70,7 @@ export default function GroundSchoolTab() {
 
   const handleDelete = async (id: number) => {
     if (window.confirm('Delete this subject?')) {
-      await supabase.from('ground_school_subjects').delete().eq('id', id);
+      await fetch(`/api/admin/config/ground-school-subjects?id=${id}`, { method: 'DELETE' });
       loadSubjects();
     }
   };

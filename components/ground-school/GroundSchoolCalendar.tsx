@@ -51,6 +51,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase-client';
 import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays } from '@/lib/store';
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Save, CircleCheck, X } from 'lucide-react';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 // ============================================================
 // Type definitions
@@ -191,6 +192,11 @@ export default function GroundSchoolCalendar() {
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
+
+  // 2026-08-21 (accessibility round) — see lib/useEscapeToClose.ts.
+  useEscapeToClose(() => {
+    if (showModal) setShowModal(false);
+  });
 
   // When editing an existing class, this stores that class data.
   const [editingClass, setEditingClass] = useState<GroundClass | null>(null);

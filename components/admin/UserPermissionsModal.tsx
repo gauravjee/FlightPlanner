@@ -13,6 +13,7 @@
 import { useState } from 'react';
 import { MODULE_KEYS, MODULE_ACCESS, type ModuleKey, type PermissionOverrides } from '@/lib/permissions';
 import { ShieldCheck, X, Save } from 'lucide-react';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface UserLike {
   id: string;
@@ -35,6 +36,7 @@ interface Props {
 type SelectValue = 'default' | 'view' | 'full';
 
 export default function UserPermissionsModal({ user, onClose, onSaved }: Props) {
+  useEscapeToClose(onClose);
   const [selections, setSelections] = useState<Record<ModuleKey, SelectValue>>(() => {
     const initial = {} as Record<ModuleKey, SelectValue>;
     for (const key of MODULE_KEYS) {
@@ -87,7 +89,7 @@ export default function UserPermissionsModal({ user, onClose, onSaved }: Props) 
           <h3 className="text-lg font-semibold flex items-center gap-2">
             <ShieldCheck className="w-4 h-4" /> Edit Permissions
           </h3>
-          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80" aria-label="Close">
             <X className="w-5 h-5 text-tertiary" />
           </button>
         </div>

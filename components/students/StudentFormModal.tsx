@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useFlightStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase-client';
 import { Pencil, GraduationCap, Save, Plus, X, CircleCheck } from 'lucide-react';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface Props {
   student: StudentRecord | null;
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export default function StudentFormModal({ student, onSave, onClose }: Props) {
+  useEscapeToClose(onClose);
   const { instructors, loadInstructors } = useFlightStore();
   const isEditing = !!student;
 
@@ -95,6 +97,13 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
 
   const [initialsManuallyEdited, setInitialsManuallyEdited] = useState(false);
 
+  // SPL Expiry auto-fill (2026-08-21): SPL validity is 10 years from issue.
+  // Picking an Issue Date auto-fills Expiry Date, but Expiry Date stays
+  // directly editable — same "auto until touched" pattern as the Initials
+  // field above. Once the user (or existing saved data) has a real expiry
+  // value, we stop overwriting it on further issue-date edits.
+  const [splExpiryManuallyEdited, setSplExpiryManuallyEdited] = useState(false);
+
   useEffect(() => {
     if (student) {
       setForm({
@@ -115,8 +124,27 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
         splExpiryDate: student.splExpiryDate || '',
       });
       setInitialsManuallyEdited(true);
+      // Existing student with a saved expiry date already on file — treat
+      // it as manually set so editing Issue Date later won't clobber it.
+      setSplExpiryManuallyEdited(!!student.splExpiryDate);
     }
   }, [student]);
+
+  // Adds `years` calendar years to a 'YYYY-MM-DD' date string, returning the
+  // same format. Handles the Feb-29 edge case by falling back to Feb 28 on
+  // a non-leap target year (native Date rolls that over to Mar 1 otherwise).
+  const addYears = (dateStr: string, years: number): string => {
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return '';
+    const targetYear = d.getFullYear() + years;
+    const isFeb29 = d.getMonth() === 1 && d.getDate() === 29;
+    const isTargetLeap = (targetYear % 4 === 0 && targetYear % 100 !== 0) || targetYear % 400 === 0;
+    d.setFullYear(targetYear);
+    if (isFeb29 && !isTargetLeap) {
+      d.setMonth(1, 28);
+    }
+    return d.toISOString().split('T')[0];
+  };
 
   const getExistingInitials = (): string[] => {
     const store = useFlightStore.getState();
@@ -176,7 +204,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
             {isEditing ? <Pencil className="w-4 h-4" /> : <GraduationCap className="w-4 h-4" />}
             {isEditing ? 'Edit Student' : 'Add New Student'}
           </h3>
-          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80" aria-label="Close">
             <X className="w-5 h-5 text-tertiary" />
           </button>
         </div>
@@ -290,15 +318,32 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
             </div>
             <div>
               <label className="block text-sm text-secondary mb-1">SPL Issue Date</label>
-              <input type="date" value={form.splIssueDate} onChange={e => handleChange('splIssueDate', e.target.value)}
+              <input type="date" value={form.splIssueDate} onChange={e => {
+                  const issueDate = e.target.value;
+                  handleChange('splIssueDate', issueDate);
+                  if (!splExpiryManuallyEdited) {
+                    handleChange('splExpiryDate', issueDate ? addYears(issueDate, 10) : '');
+                  }
+                }}
                 className={inputClass} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-secondary mb-1">SPL Expiry Date</label>
-              <input type="date" value={form.splExpiryDate} onChange={e => handleChange('splExpiryDate', e.target.value)}
+              <label className="block text-sm text-secondary mb-1">
+                SPL Expiry Date
+                <span className="text-xs text-tertiary ml-1">(auto: issue + 10y)</span>
+              </label>
+              <input type="date" value={form.splExpiryDate} onChange={e => {
+                  handleChange('splExpiryDate', e.target.value);
+                  setSplExpiryManuallyEdited(true);
+                }}
                 className={inputClass} />
+              {!splExpiryManuallyEdited && form.splIssueDate && (
+                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--success)' }}>
+                  <CircleCheck className="w-3 h-3" /> Auto-generated
+                </p>
+              )}
             </div>
             <div />
           </div>

@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { Instructor } from '@/types';
 import { Pencil, GraduationCap, Save, X, CalendarCheck } from 'lucide-react';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface Props {
   instructor: Instructor | null;
@@ -14,6 +15,7 @@ interface Props {
 }
 
 export default function InstructorFormModal({ instructor, onSave, onClose }: Props) {
+  useEscapeToClose(onClose);
   const isEditing = !!instructor;
   const { data: session } = useSession();
   // Granting self-booking is a super_admin-only action (see
@@ -37,6 +39,25 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
     canSelfBook: false,
   });
 
+  // CPL Expiry auto-fill (2026-08-21): CPL validity is 10 years from issue.
+  // Picking an Issue Date auto-fills Expiry Date, but Expiry Date stays
+  // directly editable — once touched (or already on file for an existing
+  // instructor), further issue-date edits won't overwrite it.
+  const [licenseExpiryManuallyEdited, setLicenseExpiryManuallyEdited] = useState(false);
+
+  const addYears = (dateStr: string, years: number): string => {
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return '';
+    const targetYear = d.getFullYear() + years;
+    const isFeb29 = d.getMonth() === 1 && d.getDate() === 29;
+    const isTargetLeap = (targetYear % 4 === 0 && targetYear % 100 !== 0) || targetYear % 400 === 0;
+    d.setFullYear(targetYear);
+    if (isFeb29 && !isTargetLeap) {
+      d.setMonth(1, 28);
+    }
+    return d.toISOString().split('T')[0];
+  };
+
   // Populate form when editing
   useEffect(() => {
     if (instructor) {
@@ -53,6 +74,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
         status: instructor.status,
         canSelfBook: !!instructor.canSelfBook,
       });
+      setLicenseExpiryManuallyEdited(!!instructor.licenseExpiryDate);
     }
   }, [instructor]);
 
@@ -73,7 +95,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
             {isEditing ? <Pencil className="w-4 h-4" /> : <GraduationCap className="w-4 h-4" />}
             {isEditing ? 'Edit Instructor' : 'Add Instructor'}
           </h3>
-          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80">
+          <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80" aria-label="Close">
             <X className="w-5 h-5 text-tertiary" />
           </button>
         </div>
@@ -111,13 +133,31 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-secondary mb-1">CPL Issue Date</label>
-              <input type="date" value={form.licenseIssueDate} onChange={e => setForm(p => ({ ...p, licenseIssueDate: e.target.value }))}
+              <input type="date" value={form.licenseIssueDate} onChange={e => {
+                  const issueDate = e.target.value;
+                  setForm(p => ({
+                    ...p,
+                    licenseIssueDate: issueDate,
+                    licenseExpiryDate: licenseExpiryManuallyEdited
+                      ? p.licenseExpiryDate
+                      : (issueDate ? addYears(issueDate, 10) : ''),
+                  }));
+                }}
                 className={inputClass} />
             </div>
             <div>
-              <label className="block text-xs text-secondary mb-1">CPL Expiry Date</label>
-              <input type="date" value={form.licenseExpiryDate} onChange={e => setForm(p => ({ ...p, licenseExpiryDate: e.target.value }))}
+              <label className="block text-xs text-secondary mb-1">
+                CPL Expiry Date
+                <span className="text-tertiary ml-1">(auto: issue + 10y)</span>
+              </label>
+              <input type="date" value={form.licenseExpiryDate} onChange={e => {
+                  setForm(p => ({ ...p, licenseExpiryDate: e.target.value }));
+                  setLicenseExpiryManuallyEdited(true);
+                }}
                 className={inputClass} />
+              {!licenseExpiryManuallyEdited && form.licenseIssueDate && (
+                <p className="text-xs mt-1" style={{ color: 'var(--success)' }}>Auto-generated</p>
+              )}
             </div>
           </div>
 

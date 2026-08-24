@@ -68,13 +68,25 @@ export default function SortieTypesTab() {
   }, []);
 
   // Add or update sortie type
+  //
+  // 2026-08-21 (security hardening round): routed through the shared,
+  // role-checked config route instead of writing to Supabase directly from
+  // the browser — see app/api/admin/config/[table]/route.ts.
   const handleSave = async () => {
     if (!form.type_name || !form.type_code) return;
 
     if (editing) {
-      await supabase.from('sortie_types').update(form).eq('id', editing.id);
+      await fetch('/api/admin/config/sortie-types', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editing.id, ...form }),
+      });
     } else {
-      await supabase.from('sortie_types').insert(form);
+      await fetch('/api/admin/config/sortie-types', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
     }
 
     setEditing(null);
@@ -98,7 +110,7 @@ export default function SortieTypesTab() {
   // Delete
   const handleDelete = async (id: number) => {
     if (window.confirm('Delete this sortie type? This may affect existing bookings.')) {
-      await supabase.from('sortie_types').delete().eq('id', id);
+      await fetch(`/api/admin/config/sortie-types?id=${id}`, { method: 'DELETE' });
       loadSortieTypes();
     }
   };

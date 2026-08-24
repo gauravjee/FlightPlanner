@@ -145,6 +145,17 @@ export const PROGRESS_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'stude
 // accidentally move together if one changes for reasons specific to it.
 export const REQUIREMENTS_WRITE_ROLES = ['admin', 'instructor', 'super_admin'];
 
+// 2026-08-21 (security hardening round): the Admin Setup wizard's config
+// tabs (Exercises, Training Programs, Instructor Roles, Sortie Types,
+// Ground School Subjects, Requirement Templates, Holiday Calendar) used to
+// write straight from the browser to Supabase with only a client-side
+// RoleGate on the wizard's own page — the same "UI-only enforcement" gap
+// already fixed for Solo Release/Requirements above. The wizard page itself
+// already restricts entry to super_admin (see app/dashboard/admin/setup/
+// page.tsx's RoleGate allowedRoles={['super_admin']}), so this mirrors that
+// exact same boundary server-side via app/api/admin/config/[table]/route.ts.
+export const ADMIN_SETUP_WRITE_ROLES = ['super_admin'];
+
 // ============================================================
 // PER-USER PERMISSION OVERRIDES (2026-08-17, second round)
 // ============================================================

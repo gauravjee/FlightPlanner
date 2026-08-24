@@ -49,13 +49,25 @@ export default function RolesTab() {
   }, []);
 
   // Add or update role
+  //
+  // 2026-08-21 (security hardening round): routed through the shared,
+  // role-checked config route instead of writing to Supabase directly from
+  // the browser — see app/api/admin/config/[table]/route.ts.
   const handleSave = async () => {
     if (!form.role_name || !form.role_code) return;
 
     if (editing) {
-      await supabase.from('instructor_roles').update(form).eq('id', editing.id);
+      await fetch('/api/admin/config/instructor-roles', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editing.id, ...form }),
+      });
     } else {
-      await supabase.from('instructor_roles').insert(form);
+      await fetch('/api/admin/config/instructor-roles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
     }
 
     setEditing(null);
@@ -77,7 +89,7 @@ export default function RolesTab() {
   // Delete
   const handleDelete = async (id: number) => {
     if (window.confirm('Delete this role? Instructors with this role will be unaffected.')) {
-      await supabase.from('instructor_roles').delete().eq('id', id);
+      await fetch(`/api/admin/config/instructor-roles?id=${id}`, { method: 'DELETE' });
       loadRoles();
     }
   };

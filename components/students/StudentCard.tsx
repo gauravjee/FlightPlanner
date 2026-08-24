@@ -66,6 +66,37 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
     }
   }
 
+  // SPL expiry status (2026-08-21) — same thresholds/pattern as Medical
+  // above, applied to the Student Pilot License expiry date instead.
+  const splExpiry = student.splExpiryDate ? new Date(student.splExpiryDate) : null;
+  let daysUntilSpl: number | null = null;
+  let splStatus: 'expired' | 'critical' | 'warning' | 'ok' | 'none' = 'none';
+
+  if (splExpiry) {
+    const diffTime = splExpiry.getTime() - today.getTime();
+    daysUntilSpl = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (daysUntilSpl < 0) {
+      splStatus = 'expired';
+    } else if (daysUntilSpl <= 5) {
+      splStatus = 'critical';
+    } else if (daysUntilSpl <= 30) {
+      splStatus = 'warning';
+    } else {
+      splStatus = 'ok';
+    }
+  }
+
+  const splBoxStyle = splStatus === 'expired'
+    ? { backgroundColor: 'var(--danger-soft)', border: '1px solid var(--danger)' }
+    : splStatus === 'critical'
+      ? { backgroundColor: 'var(--danger-soft)', border: '1px solid color-mix(in srgb, var(--danger) 50%, transparent)' }
+      : splStatus === 'warning'
+        ? { backgroundColor: 'var(--warning-soft)', border: '1px solid color-mix(in srgb, var(--warning) 50%, transparent)' }
+        : splStatus === 'ok'
+          ? { backgroundColor: 'var(--success-soft)', border: '1px solid color-mix(in srgb, var(--success) 50%, transparent)' }
+          : { backgroundColor: 'var(--surface-muted)' };
+
   const stageColor = getStageColor(student.trainingStage);
 
   const medicalBoxStyle = medicalStatus === 'expired'
@@ -85,10 +116,10 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-full flex items-center justify-center relative" style={{ backgroundColor: 'var(--surface-muted)' }}>
             <span className="font-bold">{student.initials}</span>
-            {medicalStatus === 'expired' && (
+            {(medicalStatus === 'expired' || splStatus === 'expired') && (
               <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full animate-pulse" style={{ backgroundColor: 'var(--danger)' }} />
             )}
-            {medicalStatus === 'critical' && (
+            {(medicalStatus === 'critical' || splStatus === 'critical') && medicalStatus !== 'expired' && splStatus !== 'expired' && (
               <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full" style={{ backgroundColor: 'var(--danger)' }} />
             )}
           </div>
@@ -152,6 +183,33 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
           )}
           {medicalExpiry && medicalStatus !== 'expired' && (
             <p className="text-xs text-tertiary mt-1">{student.medicalExpiry}</p>
+          )}
+        </div>
+
+        {/* SPL Expiry Status — mirrors Medical above (2026-08-21) */}
+        <div className="rounded-lg p-3" style={splBoxStyle}>
+          <p className="text-xs text-tertiary">SPL Expiry</p>
+          {splStatus === 'expired' ? (
+            <p className="text-sm font-bold animate-pulse flex items-center gap-1" style={{ color: 'var(--danger)' }}>
+              <TriangleAlert className="w-3.5 h-3.5" /> EXPIRED
+            </p>
+          ) : splStatus === 'critical' ? (
+            <p className="text-sm font-bold flex items-center gap-1" style={{ color: 'var(--danger)' }}>
+              <CircleAlert className="w-3.5 h-3.5" /> {daysUntilSpl}d left
+            </p>
+          ) : splStatus === 'warning' ? (
+            <p className="text-sm font-bold flex items-center gap-1" style={{ color: 'var(--warning-text)' }}>
+              <CircleAlert className="w-3.5 h-3.5" /> {daysUntilSpl}d left
+            </p>
+          ) : splStatus === 'ok' ? (
+            <p className="text-sm font-medium flex items-center gap-1" style={{ color: 'var(--success)' }}>
+              <CircleCheck className="w-3.5 h-3.5" /> {student.splExpiryDate}
+            </p>
+          ) : (
+            <p className="text-sm text-tertiary">N/A</p>
+          )}
+          {splExpiry && splStatus !== 'expired' && (
+            <p className="text-xs text-tertiary mt-1">{student.splExpiryDate}</p>
           )}
         </div>
             {/* Assigned Instructor */}

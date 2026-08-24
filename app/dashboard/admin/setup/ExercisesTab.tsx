@@ -67,11 +67,21 @@ export default function ExercisesTab() {
   }, []);
 
   // Add or update exercise
+  //
+  // 2026-08-21 (security hardening round): this used to write straight to
+  // Supabase from the browser with the anon key — see the comment atop
+  // app/api/admin/config/[table]/route.ts for why that's a real gap, and
+  // why every Admin Setup config tab now goes through that one shared,
+  // role-checked route instead.
   const handleSave = async () => {
     if (!form.exercise_name || !form.short_code) return;
 
     if (editing) {
-      await supabase.from('exercises').update(form).eq('id', editing.id);
+      await fetch('/api/admin/config/exercises', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editing.id, ...form }),
+      });
     } else {
       // Check for duplicate short code
       const exists = exercises.find(e =>
@@ -82,7 +92,11 @@ export default function ExercisesTab() {
         alert('An exercise with this short code already exists!');
         return;
       }
-      await supabase.from('exercises').insert(form);
+      await fetch('/api/admin/config/exercises', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
     }
 
     setEditing(null);
@@ -105,7 +119,7 @@ export default function ExercisesTab() {
   // Delete
   const handleDelete = async (id: number) => {
     if (window.confirm('Delete this exercise? This will not affect existing bookings.')) {
-      await supabase.from('exercises').delete().eq('id', id);
+      await fetch(`/api/admin/config/exercises?id=${id}`, { method: 'DELETE' });
       loadExercises();
     }
   };
@@ -178,10 +192,15 @@ export default function ExercisesTab() {
 
         let added = 0;
         if (toInsert.length > 0) {
-          const { error } = await supabase.from('exercises').insert(toInsert);
-          if (error) {
-            console.error('Error bulk-importing exercises:', error);
-            skipped.push(...toInsert.map((row, i) => ({ row: i, short_code: row.short_code, reason: 'Insert failed: ' + error.message })));
+          const res = await fetch('/api/admin/config/exercises', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(toInsert),
+          });
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            console.error('Error bulk-importing exercises:', errBody);
+            skipped.push(...toInsert.map((row, i) => ({ row: i, short_code: row.short_code, reason: 'Insert failed: ' + (errBody.error || 'unknown error') })));
           } else {
             added = toInsert.length;
           }

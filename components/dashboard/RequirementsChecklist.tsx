@@ -21,6 +21,7 @@ import { useFlightStore } from '@/lib/store';
 import { useSession } from 'next-auth/react';
 import { syncGroundSchoolFromChecklist, getGroundSchoolSubject } from '@/lib/ground-school-sync';
 import { isSPLRequirement } from '@/lib/spl';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { ClipboardList, Lock, TriangleAlert, ChevronDown, ChevronRight, GraduationCap, IdCard, X } from 'lucide-react';
 import { TrainingRequirement } from '@/types';
 
@@ -66,6 +67,14 @@ export default function RequirementsChecklist({ studentId }: Props) {
   // in app/api/admin/requirements/toggle/route.ts, so this can't be
   // bypassed by calling that route directly.
   const [splModal, setSplModal] = useState<{ id: string; requirementName: string } | null>(null);
+
+  // 2026-08-21 (accessibility round): let Escape dismiss whichever of this
+  // component's two inline modals (DGCA / SPL) is currently open — see
+  // lib/useEscapeToClose.ts.
+  useEscapeToClose(() => {
+    if (dgcaModal) setDgcaModal(null);
+    if (splModal) setSplModal(null);
+  });
   const [splNumberInput, setSplNumberInput] = useState('');
   const [splError, setSplError] = useState('');
 
@@ -446,7 +455,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                 <GraduationCap className="w-4 h-4" /> Complete {dgcaModal.requirementName}
               </h3>
-              <button onClick={() => setDgcaModal(null)} className="p-2 rounded-lg hover:bg-slate-700 cursor-pointer">
+              <button onClick={() => setDgcaModal(null)} className="p-2 rounded-lg hover:bg-slate-700 cursor-pointer" aria-label="Close">
                 <X className="w-5 h-5 text-slate-400" />
               </button>
             </div>
@@ -522,7 +531,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
               <h3 className="text-lg font-semibold text-white flex items-center gap-2">
                 <IdCard className="w-4 h-4" /> Complete {splModal.requirementName}
               </h3>
-              <button onClick={() => setSplModal(null)} className="p-2 rounded-lg hover:bg-slate-700 cursor-pointer">
+              <button onClick={() => setSplModal(null)} className="p-2 rounded-lg hover:bg-slate-700 cursor-pointer" aria-label="Close">
                 <X className="w-5 h-5 text-slate-400" />
               </button>
             </div>

@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface Props {
   onClose: () => void;
@@ -36,6 +37,7 @@ interface Props {
 }
 
 export default function FlightRecordForm({ onClose, studentId, scheduledFlightId, prefill }: Props) {
+  useEscapeToClose(onClose);
   const {
     students, aircraft, instructors, sortieTypes, exercises, addFlightRecord, updateScheduledFlight,
     loadStudents, loadAircraft, loadInstructors, loadSortieTypes, loadExercises,

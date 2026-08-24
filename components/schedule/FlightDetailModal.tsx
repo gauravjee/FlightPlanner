@@ -17,6 +17,7 @@
 import { useFlightStore } from '@/lib/store';
 import { FlightSlot } from '@/types';
 import { useState } from 'react';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 // ============================================================
 // PROPS
 // ============================================================
@@ -27,6 +28,7 @@ interface Props {
 }
 
 export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
+  useEscapeToClose(onClose);
   // ============================================================
   // STORE DATA
   // ============================================================

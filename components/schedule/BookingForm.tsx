@@ -35,6 +35,7 @@ import {
 } from '@/lib/store';
 import { ScheduledFlight } from '@/types';
 import { isSPLRequirement } from '@/lib/spl';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 // ============================================================
 // PROPS
@@ -95,6 +96,7 @@ function exerciseRequiresSoloRelease(exercise: string): boolean {
 // MAIN COMPONENT
 // ============================================================
 export default function BookingForm({ onClose, onSuccess, existingFlight, prefill }: Props) {
+  useEscapeToClose(onClose);
 
   // ----- Store -----
   const {

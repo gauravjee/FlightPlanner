@@ -79,13 +79,25 @@ export default function TrainingProgramsTab() {
   }, []);
 
   // Add / Update program
+  //
+  // 2026-08-21 (security hardening round): routed through the shared,
+  // role-checked config route instead of writing to Supabase directly from
+  // the browser — see app/api/admin/config/[table]/route.ts.
   const handleSave = async () => {
     if (!form.program_name || !form.program_code) return;
 
     if (editing) {
-      await supabase.from('training_programs').update(form).eq('id', editing.id);
+      await fetch('/api/admin/config/training-programs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editing.id, ...form }),
+      });
     } else {
-      await supabase.from('training_programs').insert(form);
+      await fetch('/api/admin/config/training-programs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
     }
 
     setEditing(null);
@@ -121,7 +133,7 @@ export default function TrainingProgramsTab() {
   // Delete program
   const handleDelete = async (id: number) => {
     if (window.confirm('Delete this program?')) {
-      await supabase.from('training_programs').delete().eq('id', id);
+      await fetch(`/api/admin/config/training-programs?id=${id}`, { method: 'DELETE' });
       loadPrograms();
     }
   };
