@@ -123,7 +123,13 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
         initials: student.initials,
         trainingStage: student.trainingStage,
         totalHours: student.totalHours,
-        medicalExpiry: student.medicalExpiry,
+        // '|| ''' matters here: student.medicalExpiry can be undefined
+        // (or, before the lib/store.ts fix alongside this one, null) for a
+        // student with no medical expiry on file, and feeding that
+        // straight into this controlled input's value below (rather than
+        // empty string) triggers React's "value prop on input should not
+        // be null" warning (found via testing, 2026-08-25).
+        medicalExpiry: student.medicalExpiry || '',
         email: student.email || '',
         phone: student.phone || '',
         dateOfBirth: student.dateOfBirth || '',

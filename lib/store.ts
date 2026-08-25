@@ -644,7 +644,15 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           initials: row.initials as string,
           trainingStage: row.training_stage as string,
           totalHours: row.total_hours as number,
-          medicalExpiry: row.medical_expiry as string,
+          // '|| ''' matters here: medical_expiry can be null in the DB for
+          // a student who never had one set. StudentRecord.medicalExpiry
+          // is typed as a required (non-optional) string, so '' — not
+          // undefined — is the right fallback to satisfy that type; a raw
+          // null fed into StudentFormModal's controlled
+          // <input value={form.medicalExpiry}> triggers React's "value
+          // prop on input should not be null" warning (found via testing,
+          // 2026-08-25).
+          medicalExpiry: (row.medical_expiry as string) || '',
           email: (row.email as string) || '',
           phone: (row.phone as string) || '',
           dateOfBirth: (row.date_of_birth as string) || '',
