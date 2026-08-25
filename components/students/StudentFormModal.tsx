@@ -133,6 +133,15 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
   // Adds `years` calendar years to a 'YYYY-MM-DD' date string, returning the
   // same format. Handles the Feb-29 edge case by falling back to Feb 28 on
   // a non-leap target year (native Date rolls that over to Mar 1 otherwise).
+  //
+  // 2026-08-25 bugfix: this used to build the target date via
+  // `d.toISOString().split('T')[0]`, but Date.toISOString() always converts
+  // to UTC first. For any timezone ahead of UTC (e.g. IST, UTC+5:30 — this
+  // FTO's timezone), local midnight is still the *previous* day in UTC, so
+  // the computed expiry date came out one calendar day early (e.g. an issue
+  // date of 2026-08-25 produced 2036-08-24 instead of 2036-08-25). Building
+  // the string directly from the Date object's own local-time fields avoids
+  // the UTC round-trip entirely.
   const addYears = (dateStr: string, years: number): string => {
     const d = new Date(dateStr + 'T00:00:00');
     if (isNaN(d.getTime())) return '';
@@ -143,7 +152,10 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
     if (isFeb29 && !isTargetLeap) {
       d.setMonth(1, 28);
     }
-    return d.toISOString().split('T')[0];
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
   };
 
   const getExistingInitials = (): string[] => {

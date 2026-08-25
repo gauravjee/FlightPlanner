@@ -45,6 +45,11 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
   // instructor), further issue-date edits won't overwrite it.
   const [licenseExpiryManuallyEdited, setLicenseExpiryManuallyEdited] = useState(false);
 
+  // 2026-08-25 bugfix: see the identical fix + explanation in
+  // components/students/StudentFormModal.tsx's addYears — this was a
+  // duplicated copy of the same helper with the same UTC-round-trip bug via
+  // toISOString(), which understates the expiry date by one day in any
+  // timezone ahead of UTC (including this FTO's, IST/UTC+5:30).
   const addYears = (dateStr: string, years: number): string => {
     const d = new Date(dateStr + 'T00:00:00');
     if (isNaN(d.getTime())) return '';
@@ -55,7 +60,10 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
     if (isFeb29 && !isTargetLeap) {
       d.setMonth(1, 28);
     }
-    return d.toISOString().split('T')[0];
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
   };
 
   // Populate form when editing
