@@ -210,7 +210,11 @@ export default function InstructorDashboardPage() {
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={['instructor', 'admin', 'super_admin']}>
+      {/* 2026-08-25: scoped to 'instructor' only per explicit user request —
+          a personalized "my assigned students" view, not a general roster
+          admin/super_admin need (they already have "Instructors" and
+          "Students"). Kept in sync with the Sidebar.tsx nav entry above. */}
+      <RoleGate allowedRoles={['instructor']}>
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
           <div className="max-w-7xl mx-auto px-4 py-6">
 

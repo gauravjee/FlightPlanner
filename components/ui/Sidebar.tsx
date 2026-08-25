@@ -6,9 +6,12 @@
 // user menu, theme toggle all stay exactly as they are on every page), and
 // it doesn't change what any page allows — RoleGate on each destination
 // page is still the actual access control; this only decides which links
-// are worth showing someone, same as the existing role-filtered "Quick
-// Actions" tile grid on app/dashboard/page.tsx (kept as-is; this doesn't
-// replace it either).
+// are worth showing someone.
+//
+// 2026-08-25: the Dashboard's role-filtered "Quick Actions" tile grid
+// (app/dashboard/page.tsx) was removed per explicit user request, now that
+// this sidebar covers the same navigation — this is the only navigation
+// surface for jumping between modules going forward.
 //
 // Why this exists: the app had no persistent navigation at all before this
 // — app/dashboard/layout.tsx rendered nothing but {children}, so getting
@@ -68,8 +71,12 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'maintenance' },
   { href: '/dashboard/aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'aircraft' },
   { href: '/dashboard/students', label: 'Students', icon: Users, roles: ['admin', 'instructor', 'super_admin', 'operations'], moduleKey: 'students' },
-  { href: '/dashboard/instructors', label: 'Instructors', icon: GraduationCap, roles: ['admin', 'super_admin', 'operations'], moduleKey: 'instructors' },
-  { href: '/dashboard/instructor', label: 'My Students', icon: UserRound, roles: ['instructor', 'admin', 'super_admin'] },
+  { href: '/dashboard/instructors', label: 'Instructors', icon: GraduationCap, roles: ['admin', 'super_admin', 'operations', 'instructor'], moduleKey: 'instructors' },
+  // 2026-08-25: per explicit user request, scoped to 'instructor' only —
+  // this is a personalized "my assigned students" view (see the page's own
+  // instructorId-scoped filtering), not a general roster; admin/super_admin
+  // already have the full roster via "Instructors" and "Students" above.
+  { href: '/dashboard/instructor', label: 'My Students', icon: UserRound, roles: ['instructor'] },
   { href: '/dashboard/availability', label: 'Availability', icon: Umbrella, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
   { href: '/dashboard/progress', label: 'Progress', icon: ChartColumnIncreasing, roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
   { href: '/dashboard/ground-school', label: 'Ground School', icon: BookOpen, roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },

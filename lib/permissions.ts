@@ -70,11 +70,17 @@ export const FLIGHT_RECORDS_WRITE_ROLES = ['admin', 'instructor', 'super_admin']
 // ============================================================
 // INSTRUCTORS (roster — all instructors in the FTO, not "My Students")
 // ============================================================
-// Per the 2026-08-17 role/tab matrix, instructor itself doesn't have a tab
+// Per the 2026-08-17 role/tab matrix, instructor itself didn't have a tab
 // for the full roster (only their own "My Students" page, which is a
-// separate route with its own RoleGate) — only admin/super_admin manage
-// the roster; operations can view it.
-export const INSTRUCTORS_VIEW_ROLES = ['admin', 'super_admin', 'operations'];
+// separate route with its own RoleGate) — only admin/super_admin managed
+// the roster; operations could view it.
+//
+// 2026-08-25: reopened to view for `instructor` too, per explicit user
+// decision (this was flagged as an open judgment call in the handoff doc —
+// see "What's still outstanding" item 11 there). Write access is unchanged
+// — instructors can now see the full roster but still can't add/edit/
+// delete other instructors, same as `operations` already could.
+export const INSTRUCTORS_VIEW_ROLES = ['admin', 'super_admin', 'operations', 'instructor'];
 export const INSTRUCTORS_WRITE_ROLES = ['admin', 'super_admin'];
 
 // ============================================================

@@ -26,8 +26,7 @@ import StudentProgressWidget from '@/components/dashboard/StudentProgressWidget'
 import NotificationWidget from '@/components/dashboard/NotificationWidget';
 import {
   Plane, Calendar, ChevronRight, Users, Fuel, Cloud, Wind, Thermometer, Eye, Activity,
-  RefreshCw, Inbox, TriangleAlert, FileText, Wrench, GraduationCap, UserRound, Umbrella,
-  ChartColumnIncreasing, BookOpen,
+  RefreshCw, Inbox, TriangleAlert,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -602,56 +601,6 @@ export default function DashboardPage() {
                     ))
                   )}
                 </div>
-              </div>
-
-              {/* ----- QUICK ACTIONS ----- */}
-              <div className="surface-card p-6">
-                <h2 className="text-sm font-semibold flex items-center gap-2 mb-4">
-                  <ChevronRight className="w-4 h-4 text-secondary" />
-                  Quick Actions
-                </h2>
-                {(() => {
-                  // Each tile's `roles` list matches the `allowedRoles` the
-                  // destination page itself enforces via RoleGate — kept in
-                  // sync here so operations/maintenance (whose access is
-                  // limited to just a couple of modules) no longer see tiles
-                  // that only lead to "Not Authorized." Previously this list
-                  // wasn't filtered by role at all.
-                  const actions = [
-                    { href: '/dashboard/schedule', label: 'Schedule', icon: Calendar, accent: false, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
-                    { href: '/dashboard/aircraft', label: 'Aircraft', icon: Plane, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
-                    { href: '/dashboard/students', label: 'Students', icon: Users, accent: false, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
-                    { href: '/dashboard/fuel', label: 'Fuel', icon: Fuel, accent: false, roles: ['admin', 'instructor', 'super_admin', 'maintenance'] },
-                    { href: '/dashboard/flights', label: 'Flights', icon: FileText, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
-                    { href: '/dashboard/maintenance', label: 'Maintenance', icon: Wrench, accent: true, roles: ['admin', 'instructor', 'super_admin', 'maintenance'] },
-                    { href: '/dashboard/instructors', label: 'Instructors', icon: GraduationCap, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
-                    { href: '/dashboard/instructor', label: 'My Students', icon: UserRound, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
-                    { href: '/dashboard/availability', label: 'Availability', icon: Umbrella, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
-                    { href: '/dashboard/progress', label: 'Progress', icon: ChartColumnIncreasing, accent: false, roles: ['admin', 'instructor', 'super_admin'] },
-                    { href: '/dashboard/ground-school', label: 'Ground School', icon: BookOpen, accent: false, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
-                  ];
-                  const userRole = session?.user?.role;
-                  const visibleActions = actions.filter(a => !userRole || a.roles.includes(userRole));
-                  return (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {visibleActions.map((action) => (
-                        <a
-                          key={action.href}
-                          href={action.href}
-                          className="surface-muted rounded-lg p-3 flex flex-col gap-2 hover:opacity-80 transition text-left no-underline"
-                        >
-                          <div
-                            className="w-8 h-8 rounded-lg flex items-center justify-center"
-                            style={{ backgroundColor: action.accent ? 'var(--danger-soft)' : 'color-mix(in srgb, var(--text-secondary) 14%, transparent)' }}
-                          >
-                            <action.icon className="w-4 h-4" style={{ stroke: action.accent ? 'var(--danger)' : 'var(--text-secondary)' }} />
-                          </div>
-                          <span className="text-xs font-medium">{action.label}</span>
-                        </a>
-                      ))}
-                    </div>
-                  );
-                })()}
               </div>
 
               {/* ----- FLEET FUEL STATUS ----- */}
