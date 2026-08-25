@@ -427,6 +427,13 @@ export interface StudentRecord {
   // SPL issue date (2026-08-20, second round) — paired with splNumber
   // above, alongside splExpiryDate. See add-license-issue-dates.sql.
   splIssueDate?: string;
+  // Medical (DGCA Class 1) certificate issue date (2026-08-25) — paired
+  // with medicalExpiry above. Used to auto-calculate medicalExpiry: 12
+  // months from issue if the student was under 40 on the issue date, 6
+  // months if 40 or older, minus 1 day (validity is inclusive of the
+  // issue date — same convention as splExpiryDate/licenseExpiryDate). See
+  // add-medical-issue-date.sql.
+  medicalIssueDate?: string;
 }
 
 // Availability / Leave record

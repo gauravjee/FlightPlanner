@@ -40,6 +40,9 @@ const FIELD_MAP: Record<string, string> = {
   splNumber: 'spl_number',
   splExpiryDate: 'spl_expiry_date',
   splIssueDate: 'spl_issue_date',
+  // Medical (DGCA Class 1) issue date (2026-08-25), paired with
+  // medicalExpiry above. See add-medical-issue-date.sql.
+  medicalIssueDate: 'medical_issue_date',
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -65,15 +68,19 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
   }
 
-  // spl_expiry_date/spl_issue_date are `date` columns — Postgres rejects ''
-  // as an invalid date literal, unlike spl_number (text) which tolerates
-  // it. Clearing either date in the form sends '', which needs to become
-  // null here rather than being passed straight through.
-  if (dbUpdates.spl_expiry_date === '') {
-    dbUpdates.spl_expiry_date = null;
-  }
-  if (dbUpdates.spl_issue_date === '') {
-    dbUpdates.spl_issue_date = null;
+  // date_of_birth, medical_expiry, medical_issue_date, spl_expiry_date,
+  // and spl_issue_date are all `date` columns — Postgres rejects '' as an
+  // invalid date literal, unlike a text column (e.g. spl_number), which
+  // tolerates it. Clearing any of these dates in the form sends '', which
+  // needs to become null here rather than being passed straight through.
+  // (2026-08-25: extended to date_of_birth/medical_expiry/
+  // medical_issue_date — date_of_birth in particular was previously never
+  // actually editable via the UI, so this gap never surfaced; now that a
+  // Date of Birth field exists, an untouched/cleared field would hit it.)
+  for (const dateCol of ['date_of_birth', 'medical_expiry', 'medical_issue_date', 'spl_expiry_date', 'spl_issue_date']) {
+    if (dbUpdates[dateCol] === '') {
+      dbUpdates[dateCol] = null;
+    }
   }
 
   if (Object.keys(dbUpdates).length === 0) {

@@ -104,7 +104,7 @@ export async function POST(request: Request) {
   const {
     enrollmentId, name, initials, trainingStage, totalHours,
     medicalExpiry, email, phone, dateOfBirth, joinedDate, status, splNumber,
-    splExpiryDate, splIssueDate,
+    splExpiryDate, splIssueDate, medicalIssueDate,
   } = body as Record<string, unknown>;
 
   if (!name || !initials) {
@@ -160,15 +160,22 @@ export async function POST(request: Request) {
       initials,
       training_stage: trainingStage,
       total_hours: totalHours,
-      medical_expiry: medicalExpiry,
+      // medical_expiry and date_of_birth are `date` columns — Postgres
+      // rejects '' as an invalid date literal (unlike spl_number, a text
+      // column, which tolerates it). `|| null` avoids that here, same
+      // convention already used for the spl_* date fields below.
+      medical_expiry: medicalExpiry || null,
       email: trimmedEmail,
       phone,
-      date_of_birth: dateOfBirth,
+      date_of_birth: dateOfBirth || null,
       joined_date: joinedDate,
       status,
       spl_number: splNumber || null,
       spl_expiry_date: splExpiryDate || null,
       spl_issue_date: splIssueDate || null,
+      // Medical (DGCA Class 1) issue date (2026-08-25) — paired with
+      // medical_expiry above. See add-medical-issue-date.sql.
+      medical_issue_date: medicalIssueDate || null,
     })
     .select()
     .single();

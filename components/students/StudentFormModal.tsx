@@ -50,6 +50,9 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
     // SPL issue/expiry dates (2026-08-20), paired with splNumber above.
     splIssueDate: '',
     splExpiryDate: '',
+    // Medical (DGCA Class 1) issue date (2026-08-25), paired with
+    // medicalExpiry above.
+    medicalIssueDate: '',
   });
 
   // Training-stage options come entirely from Admin Setup -> Training
@@ -104,6 +107,14 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
   // value, we stop overwriting it on further issue-date edits.
   const [splExpiryManuallyEdited, setSplExpiryManuallyEdited] = useState(false);
 
+  // Medical Expiry auto-fill (2026-08-25): same "auto until touched"
+  // pattern as SPL/CPL Expiry above, but the validity period isn't a flat
+  // duration — it depends on the DGCA Class 1 medical rule, which is
+  // age-based (see computeMedicalExpiry below). Requires both Date of
+  // Birth and Medical Issue Date to be present; recomputes if either one
+  // changes, as long as Medical Expiry hasn't been directly touched.
+  const [medicalExpiryManuallyEdited, setMedicalExpiryManuallyEdited] = useState(false);
+
   useEffect(() => {
     if (student) {
       setForm({
@@ -122,26 +133,32 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
         splNumber: student.splNumber || '',
         splIssueDate: student.splIssueDate || '',
         splExpiryDate: student.splExpiryDate || '',
+        medicalIssueDate: student.medicalIssueDate || '',
       });
       setInitialsManuallyEdited(true);
       // Existing student with a saved expiry date already on file — treat
       // it as manually set so editing Issue Date later won't clobber it.
       setSplExpiryManuallyEdited(!!student.splExpiryDate);
+      setMedicalExpiryManuallyEdited(!!student.medicalExpiry);
     }
   }, [student]);
 
-  // Adds `years` calendar years to a 'YYYY-MM-DD' date string, returning the
-  // same format. Handles the Feb-29 edge case by falling back to Feb 28 on
-  // a non-leap target year (native Date rolls that over to Mar 1 otherwise).
+  // Adds `years` calendar years to a 'YYYY-MM-DD' date string, then
+  // subtracts one day, returning the same format. The license-validity
+  // period is defined as "exactly `years` years, inclusive of the issue
+  // date" — e.g. issued 2026-08-30 expires 2036-08-29, not 2036-08-30
+  // (2026-08-25, per explicit user correction). Handles the Feb-29 edge
+  // case by falling back to Feb 28 on a non-leap target year before the
+  // day is subtracted (native Date rolls Feb 29 over to Mar 1 otherwise).
   //
-  // 2026-08-25 bugfix: this used to build the target date via
-  // `d.toISOString().split('T')[0]`, but Date.toISOString() always converts
-  // to UTC first. For any timezone ahead of UTC (e.g. IST, UTC+5:30 — this
-  // FTO's timezone), local midnight is still the *previous* day in UTC, so
-  // the computed expiry date came out one calendar day early (e.g. an issue
-  // date of 2026-08-25 produced 2036-08-24 instead of 2036-08-25). Building
-  // the string directly from the Date object's own local-time fields avoids
-  // the UTC round-trip entirely.
+  // 2026-08-25 bugfix (separate from the -1-day rule above): this used to
+  // build the target date via `d.toISOString().split('T')[0]`, but
+  // Date.toISOString() always converts to UTC first. For any timezone
+  // ahead of UTC (e.g. IST, UTC+5:30 — this FTO's timezone), local
+  // midnight is still the *previous* day in UTC, so the computed date came
+  // out an extra calendar day early. Building the string directly from the
+  // Date object's own local-time fields avoids the UTC round-trip
+  // entirely.
   const addYears = (dateStr: string, years: number): string => {
     const d = new Date(dateStr + 'T00:00:00');
     if (isNaN(d.getTime())) return '';
@@ -152,10 +169,61 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
     if (isFeb29 && !isTargetLeap) {
       d.setMonth(1, 28);
     }
+    d.setDate(d.getDate() - 1);
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
+  };
+
+  // Adds `months` calendar months to a 'YYYY-MM-DD' date string, then
+  // subtracts one day (same "inclusive of issue date" convention as
+  // addYears above), returning the same format. Clamps to the last day of
+  // the target month if the original day doesn't exist there (e.g.
+  // 2026-08-31 + 6 months would naively land on 2027-03-03 via JS's own
+  // month-overflow rollover — this clamps it to 2027-02-28/29 instead,
+  // the standard "set to day 0 of the following month" trick).
+  const addMonths = (dateStr: string, months: number): string => {
+    const d = new Date(dateStr + 'T00:00:00');
+    if (isNaN(d.getTime())) return '';
+    const originalDay = d.getDate();
+    d.setMonth(d.getMonth() + months);
+    if (d.getDate() !== originalDay) {
+      d.setDate(0);
+    }
+    d.setDate(d.getDate() - 1);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  // Age (in whole years) as of `atDateStr`, given a 'YYYY-MM-DD' date of
+  // birth. Returns null if either date is missing/invalid.
+  const ageAtDate = (dobStr: string, atDateStr: string): number | null => {
+    const dob = new Date(dobStr + 'T00:00:00');
+    const at = new Date(atDateStr + 'T00:00:00');
+    if (isNaN(dob.getTime()) || isNaN(at.getTime())) return null;
+    let age = at.getFullYear() - dob.getFullYear();
+    const hadBirthdayByAtDate =
+      at.getMonth() > dob.getMonth() ||
+      (at.getMonth() === dob.getMonth() && at.getDate() >= dob.getDate());
+    if (!hadBirthdayByAtDate) age -= 1;
+    return age;
+  };
+
+  // DGCA Class 1 medical validity (2026-08-25, per explicit user
+  // confirmation, cross-checked against several DGCA/aviation-school
+  // sources): 12 months from issue if the student was under 40 on the
+  // issue date, 6 months if 40 or older — minus 1 day, same
+  // inclusive-of-issue-date convention as SPL/CPL. Requires both a Date of
+  // Birth and a Medical Issue Date; returns '' if either is missing.
+  const computeMedicalExpiry = (dobStr: string, issueDateStr: string): string => {
+    if (!dobStr || !issueDateStr) return '';
+    const age = ageAtDate(dobStr, issueDateStr);
+    if (age === null) return '';
+    const validityMonths = age < 40 ? 12 : 6;
+    return addMonths(issueDateStr, validityMonths);
   };
 
   const getExistingInitials = (): string[] => {
@@ -312,9 +380,56 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
                 className={inputClass} />
             </div>
             <div>
-              <label className="block text-sm text-secondary mb-1">Medical Expiry</label>
-              <input type="date" value={form.medicalExpiry} onChange={e => handleChange('medicalExpiry', e.target.value)}
+              <label className="block text-sm text-secondary mb-1">
+                Date of Birth
+                <span className="text-xs text-tertiary ml-1">(for medical validity)</span>
+              </label>
+              <input type="date" value={form.dateOfBirth} onChange={e => {
+                  const dob = e.target.value;
+                  handleChange('dateOfBirth', dob);
+                  if (!medicalExpiryManuallyEdited && form.medicalIssueDate) {
+                    handleChange('medicalExpiry', computeMedicalExpiry(dob, form.medicalIssueDate));
+                  }
+                }}
                 className={inputClass} />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm text-secondary mb-1">
+                Medical Issue Date
+                <span className="text-xs text-tertiary ml-1">(DGCA Class 1)</span>
+              </label>
+              <input type="date" value={form.medicalIssueDate} onChange={e => {
+                  const issueDate = e.target.value;
+                  handleChange('medicalIssueDate', issueDate);
+                  if (!medicalExpiryManuallyEdited) {
+                    handleChange('medicalExpiry', computeMedicalExpiry(form.dateOfBirth, issueDate));
+                  }
+                }}
+                className={inputClass} />
+              {!form.dateOfBirth && (
+                <p className="text-xs mt-1" style={{ color: 'var(--warning-text)' }}>
+                  Enter Date of Birth above to auto-calculate Medical Expiry.
+                </p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm text-secondary mb-1">
+                Medical Expiry
+                <span className="text-xs text-tertiary ml-1">(auto: 12mo under 40 / 6mo 40+, DGCA Class 1)</span>
+              </label>
+              <input type="date" value={form.medicalExpiry} onChange={e => {
+                  handleChange('medicalExpiry', e.target.value);
+                  setMedicalExpiryManuallyEdited(true);
+                }}
+                className={inputClass} />
+              {!medicalExpiryManuallyEdited && form.dateOfBirth && form.medicalIssueDate && (
+                <p className="text-xs mt-1 flex items-center gap-1" style={{ color: 'var(--success)' }}>
+                  <CircleCheck className="w-3 h-3" /> Auto-generated
+                </p>
+              )}
             </div>
           </div>
 

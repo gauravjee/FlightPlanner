@@ -657,6 +657,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
           splNumber: (row.spl_number as string) || undefined,
           splExpiryDate: (row.spl_expiry_date as string) || undefined,
           splIssueDate: (row.spl_issue_date as string) || undefined,
+          medicalIssueDate: (row.medical_issue_date as string) || undefined,
         };
       });
       
