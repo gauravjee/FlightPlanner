@@ -29,7 +29,7 @@ interface CsvImportResult {
 export default function ExercisesTab() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<any>(null);
+  const [editing, setEditing] = useState<Exercise | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [form, setForm] = useState({
     exercise_name: '',
@@ -84,9 +84,13 @@ export default function ExercisesTab() {
       });
     } else {
       // Check for duplicate short code
+      // `editing` is always null in this branch (we're in the `else` of
+      // `if (editing)` above), so this condition always evaluates to
+      // `true` — kept explicit (rather than dropped) so the duplicate
+      // check here reads the same shape as the analogous check would on
+      // an edit path, should this function ever be restructured.
       const exists = exercises.find(e =>
-        e.short_code === form.short_code &&
-        (editing ? e.id !== editing.id : true)
+        e.short_code === form.short_code && true
       );
       if (exists) {
         alert('An exercise with this short code already exists!');

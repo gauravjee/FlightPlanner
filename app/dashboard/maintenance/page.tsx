@@ -38,7 +38,7 @@ export default function MaintenancePage() {
   useEffect(() => {
     loadAircraft();
     loadMaintenanceRecords();
-  }, []);
+  }, [loadAircraft, loadMaintenanceRecords]);
 
   const filteredRecords = maintenanceRecords.filter(r => {
     const matchStatus = filterStatus === 'ALL' || r.status === filterStatus;

@@ -68,7 +68,7 @@ export default function SetupWizardPage() {
     if (!completedTabs.includes(activeTab)) {
       setCompletedTabs(prev => [...prev, activeTab]);
     }
-  }, [activeTab]);
+  }, [activeTab, completedTabs]);
 
   // Calculate progress percentage
   const progressPercent = Math.round((completedTabs.length / TABS.length) * 100);

@@ -126,7 +126,10 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     // "CODE - Name" value format this preserves.
     if (exercises.length === 0) loadExercises();
     loadScheduledFlights();
-  }, []);
+  }, [
+    aircraft.length, students.length, ftoSettings, holidays.length, exercises.length,
+    loadAircraft, loadStudents, loadFTOSettings, loadHolidays, loadExercises, loadScheduledFlights,
+  ]);
 
   // FTO-wide blackout days — weekly recurring off day(s) (Settings -> Time &
   // Scheduling -> "Weekly Off Day(s)") parsed from the raw comma-separated
@@ -291,7 +294,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
         startTime: snapToInterval(startDate, slotIntervalMin),
         endTime: snapToInterval(endDate, slotIntervalMin),
         sortieType: existingFlight.sortieType || 'DUAL',
-        exercise: (existingFlight as any).exercise || '',
+        exercise: existingFlight.exercise || '',
         notes: existingFlight.notes || '',
       });
     }
@@ -317,21 +320,21 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     if (isSolo && form.instructorId) {
       setForm(prev => ({ ...prev, instructorId: '' }));
     }
-  }, [isSolo]);
+  }, [isSolo, form.instructorId]);
 
   // Clear student when switching to Maintenance
   useEffect(() => {
     if (isMaintenance && form.studentId) {
       setForm(prev => ({ ...prev, studentId: '' }));
     }
-  }, [isMaintenance]);
+  }, [isMaintenance, form.studentId]);
 
   // Clear exercise when switching to Maintenance
   useEffect(() => {
     if (isMaintenance && form.exercise) {
       setForm(prev => ({ ...prev, exercise: '' }));
     }
-  }, [isMaintenance]);
+  }, [isMaintenance, form.exercise]);
 
   // Eagerly load the selected student's requirements as soon as they're
   // picked (not just at submit time) — powers the live "Solo Release"
@@ -715,16 +718,16 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // RENDER
   // ============================================================
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="surface-card w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
 
         {/* ===== HEADER ===== */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 z-10 rounded-t-xl">
-          <h3 className="text-lg font-semibold text-white">
+        <div className="flex items-center justify-between p-4 border-b sticky top-0 z-10 rounded-t-xl" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface)' }}>
+          <h3 className="text-lg font-semibold">
             {existingFlight ? '✏️ Edit Flight' : '📅 Book Flight Slot'}
           </h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg cursor-pointer">
-            <span className="text-slate-400 text-xl">✕</span>
+          <button onClick={onClose} className="p-2 hover:bg-[var(--surface-muted)] rounded-lg cursor-pointer">
+            <span className="text-secondary text-xl">✕</span>
           </button>
         </div>
 
@@ -747,16 +750,16 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
           {/* ===== DATE ===== */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">📅 Date *</label>
+            <label className="block text-sm text-secondary mb-1">📅 Date *</label>
             <input
               type="date"
               value={form.date}
               onChange={e => handleFieldChange('date', e.target.value)}
               min={todayLocal}
               required
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white"
+              className="w-full surface-inner rounded-lg px-3 py-2"
             />
-            <p className="text-xs text-slate-500 mt-1">All times are in IST (Indian Standard Time, UTC+5:30)</p>
+            <p className="text-xs text-tertiary mt-1">All times are in IST (Indian Standard Time, UTC+5:30)</p>
           </div>
 
           {/* ===== START & END TIME ===== */}
@@ -767,7 +770,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
               from time_slot_interval, both from Settings -> Daily Time Slots. */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-slate-400 mb-1">🕐 Start Time *</label>
+              <label className="block text-sm text-secondary mb-1">🕐 Start Time *</label>
               <div className="flex gap-2">
                 {(() => {
                   const [startHour, startMinute] = form.startTime.split(':').map(Number);
@@ -783,7 +786,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                           handleFieldChange('startTime', `${pad2(hour)}:${pad2(minute)}`);
                         }}
                         required
-                        className="w-1/2 bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-white">
+                        className="w-1/2 surface-inner rounded-lg px-2 py-2">
                         {HOUR_OPTIONS.map(h => {
                           // Only today's date has a "too early" cutoff — future
                           // dates have no time-of-day restriction. An hour is
@@ -797,7 +800,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                         value={pad2(minutesForStartHour.includes(startMinute) ? startMinute : (minutesForStartHour[0] ?? 0))}
                         onChange={e => handleFieldChange('startTime', `${pad2(startHour)}:${e.target.value}`)}
                         required
-                        className="w-1/2 bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-white">
+                        className="w-1/2 surface-inner rounded-lg px-2 py-2">
                         {minutesForStartHour.map(m => {
                           const isPast = form.date === todayLocal
                             && new Date(`${form.date}T${pad2(startHour)}:${pad2(m)}:00`) < getMinBookableTime();
@@ -810,7 +813,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
               </div>
             </div>
             <div>
-              <label className="block text-sm text-slate-400 mb-1">🕑 End Time *</label>
+              <label className="block text-sm text-secondary mb-1">🕑 End Time *</label>
               <div className="flex gap-2">
                 {(() => {
                   const [startHour, startMinute] = (form.startTime || slotStart).split(':').map(Number);
@@ -828,7 +831,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                           handleFieldChange('endTime', `${pad2(hour)}:${pad2(minute)}`);
                         }}
                         required
-                        className="w-1/2 bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-white">
+                        className="w-1/2 surface-inner rounded-lg px-2 py-2">
                         {HOUR_OPTIONS.map(h => {
                           // An hour is disabled only when EVERY minute in it
                           // is at or before the selected start time.
@@ -840,7 +843,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                         value={pad2(minutesForEndHour.includes(endMinute) ? endMinute : (minutesForEndHour[0] ?? 0))}
                         onChange={e => handleFieldChange('endTime', `${pad2(endHour)}:${e.target.value}`)}
                         required
-                        className="w-1/2 bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-white">
+                        className="w-1/2 surface-inner rounded-lg px-2 py-2">
                         {minutesForEndHour.map(m => {
                           const isBeforeStart = (endHour * 60 + m) <= startTotal;
                           return <option key={m} value={pad2(m)} disabled={isBeforeStart}>{pad2(m)}</option>;
@@ -852,7 +855,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
               </div>
             </div>
           </div>
-          <p className="text-xs text-slate-500 -mt-2">
+          <p className="text-xs text-tertiary -mt-2">
             Bookable window: {slotStart}–{slotEnd} IST, {slotIntervalMin}-minute start times. Flights must be at least {MIN_FLIGHT_DURATION_MIN} min, in {FLIGHT_DURATION_INCREMENT_MIN}-min increments.
           </p>
 
@@ -865,14 +868,14 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
           {/* ===== AIRCRAFT ===== */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">
+            <label className="block text-sm text-secondary mb-1">
               🛩️ Aircraft *
               {form.date && form.startTime && form.endTime && (
                 <span className="text-xs text-green-400 ml-1">({availableAircraft.length} available)</span>
               )}
             </label>
             <select value={form.aircraftId} onChange={e => handleFieldChange('aircraftId', e.target.value)} required
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+              className="w-full surface-inner rounded-lg px-3 py-2">
               <option value="">Select Aircraft</option>
               {availableAircraft.length > 0 && (
                 <optgroup label="✅ AVAILABLE">
@@ -894,7 +897,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
           {/* ===== STUDENT ===== */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">
+            <label className="block text-sm text-secondary mb-1">
               👨‍✈️ Student {!isMaintenance && '*'}
             </label>
             <select
@@ -902,7 +905,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
               onChange={e => handleFieldChange('studentId', e.target.value)}
               disabled={isMaintenance}
               required={!isMaintenance}
-              className={`w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white ${isMaintenance ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              className={`w-full surface-inner rounded-lg px-3 py-2 ${isMaintenance ? 'opacity-50 cursor-not-allowed' : ''}`}>
               <option value="">{isMaintenance ? 'N/A – Maintenance Flight' : 'Select Student'}</option>
               {!isMaintenance && students.filter(s => s.status === 'ACTIVE').map(s => {
                 const medicalDate = s.medicalExpiry ? new Date(s.medicalExpiry) : null;
@@ -925,7 +928,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                 rest of the form, not just as a submit-time error. */}
             {form.studentId && !isMaintenance && (
               loadingRequirements && !reqsMatchSelectedStudent ? (
-                <p className="text-xs text-slate-500 mt-1">Checking solo release status…</p>
+                <p className="text-xs text-tertiary mt-1">Checking solo release status…</p>
               ) : reqsMatchSelectedStudent && blockingSoloReqs.length > 0 ? (
                 <p className="text-xs text-red-400 mt-1">
                   🔒 Not released for solo — missing: {blockingSoloReqs.map(r => r.requirementName).join(', ')}
@@ -938,7 +941,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
           {/* ===== INSTRUCTOR ===== */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">
+            <label className="block text-sm text-secondary mb-1">
               👨‍🏫 Instructor {!isSolo && '*'}
             </label>
             <select
@@ -946,7 +949,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
               onChange={e => handleFieldChange('instructorId', e.target.value)}
               required={!isSolo}
               disabled={isSolo}
-              className={`w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white ${isSolo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              className={`w-full surface-inner rounded-lg px-3 py-2 ${isSolo ? 'opacity-50 cursor-not-allowed' : ''}`}>
               <option value="">
                 {isSolo ? 'N/A – Solo Flight' : 'Select Instructor'}
               </option>
@@ -960,9 +963,9 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
           {/* ===== SORTIE TYPE ===== */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">🎯 Sortie Type</label>
+            <label className="block text-sm text-secondary mb-1">🎯 Sortie Type</label>
             <select value={form.sortieType} onChange={e => handleFieldChange('sortieType', e.target.value)}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+              className="w-full surface-inner rounded-lg px-3 py-2">
               <option value="DUAL">Dual</option>
               <option value="SOLO">Solo</option>
               <option value="MAINTENANCE">Maintenance Flight</option>
@@ -972,10 +975,10 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
           {/* ===== EXERCISE (Dual & Solo only) ===== */}
           {!isMaintenance && (
             <div>
-              <label className="block text-sm text-slate-400 mb-1">📋 Exercise *</label>
+              <label className="block text-sm text-secondary mb-1">📋 Exercise *</label>
               <select value={form.exercise} onChange={e => handleFieldChange('exercise', e.target.value)}
                 required={!isMaintenance}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white">
+                className="w-full surface-inner rounded-lg px-3 py-2">
                 <option value="">Select Exercise</option>
                 {/* Value is "CODE - Name" (not just the short code) — matches
                     what's already stored in scheduled_flights.exercise /
@@ -992,14 +995,14 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
           {/* ===== AIRCRAFT FUEL INFO (Current Fuel Level + Estimated Landing Fuel) ===== */}
           {selectedAircraft && (
-            <div className="bg-slate-700/50 rounded-lg p-3 text-center">
-              <p className="text-xs text-slate-400">Current Fuel Level</p>
-              <p className="text-2xl font-bold text-white">{selectedAircraft.currentFuel}L</p>
-              <p className="text-xs text-slate-500">Capacity: {selectedAircraft.fuelCapacity}L</p>
+            <div className="bg-[var(--surface-muted)] rounded-lg p-3 text-center">
+              <p className="text-xs text-secondary">Current Fuel Level</p>
+              <p className="text-2xl font-bold">{selectedAircraft.currentFuel}L</p>
+              <p className="text-xs text-tertiary">Capacity: {selectedAircraft.fuelCapacity}L</p>
               {estimatedFuelAfter !== null && (
-                <p className="text-xs text-slate-400 mt-2">
-                  ⛽ Est. fuel at landing: <span className="font-semibold text-white">~{Math.round(estimatedFuelAfter)}L</span>
-                  {' '}<span className="text-slate-500">
+                <p className="text-xs text-secondary mt-2">
+                  ⛽ Est. fuel at landing: <span className="font-semibold">~{Math.round(estimatedFuelAfter)}L</span>
+                  {' '}<span className="text-tertiary">
                     (~{getAircraftFuelBurnRate(selectedAircraft)} L/hr avg for {selectedAircraft.model}
                     {selectedAircraft.fuelBurnRateLph != null ? '' : ', type default'} — planning estimate only, verify against actual)
                   </span>
@@ -1020,16 +1023,16 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
           {/* ===== NOTES ===== */}
           <div>
-            <label className="block text-sm text-slate-400 mb-1">📝 Notes</label>
+            <label className="block text-sm text-secondary mb-1">📝 Notes</label>
             <textarea value={form.notes} onChange={e => handleFieldChange('notes', e.target.value)}
               rows={2} placeholder="Any special instructions…"
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white" />
+              className="w-full surface-inner rounded-lg px-3 py-2" />
           </div>
 
           {/* ===== BUTTONS ===== */}
-          <div className="flex space-x-3 pt-4 border-t border-slate-700">
+          <div className="flex space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <button type="button" onClick={onClose}
-              className="flex-1 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition cursor-pointer">
+              className="flex-1 px-4 py-2 surface-inner rounded-lg hover:opacity-80 transition cursor-pointer">
               Cancel
             </button>
             <button type="submit" disabled={loading}

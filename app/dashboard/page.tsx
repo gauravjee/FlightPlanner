@@ -51,7 +51,7 @@ export default function DashboardPage() {
 
   // Redirect students to their own dashboard
   useEffect(() => {
-    if (session?.user && (session.user as any).role === 'student') {
+    if (session?.user && session.user.role === 'student') {
       router.push('/dashboard/student');
     }
   }, [session, router]);

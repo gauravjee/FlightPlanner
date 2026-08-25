@@ -168,7 +168,7 @@ export async function POST(request: Request) {
       success: true,
       message: 'Reset link sent! Check your email.',
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('❌ Forgot password error:', error);
     return NextResponse.json(
       { error: 'Something went wrong. Please try again.' },

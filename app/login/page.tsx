@@ -82,7 +82,7 @@ export default function LoginPage() {
       // so a browser-side read of it would just fail. Reading it off the
       // session avoids needing that read at all.
       const session = await getSession();
-      const sessionUser = session?.user as any;
+      const sessionUser = session?.user;
       const needsReset = sessionUser?.forcePasswordReset === true;
       const role = sessionUser?.role;
 

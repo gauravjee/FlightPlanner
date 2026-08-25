@@ -95,8 +95,8 @@ export default function ChangePasswordPage() {
         await signOut({ callbackUrl: '/login' });
       }, 2000);
 
-    } catch (err: any) {
-      setError('❌ An unexpected error occurred: ' + err.message);
+    } catch (err) {
+      setError('❌ An unexpected error occurred: ' + (err instanceof Error ? err.message : 'Please try again.'));
     } finally {
       setLoading(false);
     }

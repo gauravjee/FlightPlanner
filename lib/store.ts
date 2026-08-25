@@ -877,14 +877,14 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
             studentId: row.student_id ? String(row.student_id) : undefined,
             startTime: row.start_time as string, endTime: row.end_time as string,
             sortieType: row.sortie_type as string, status: row.status as string,
-            exercise: (row as any).exercise || '',
+            exercise: (row.exercise as string) || '',
             weatherBriefed: row.weather_briefed as boolean, notamBriefed: row.notam_briefed as boolean,
             notes: row.notes as string, aircraftReg: ac?.registration || 'Unknown',
             studentName: student?.name || 'None', instructorName: inst?.name || 'Unknown',
             duration: Math.round((endTime.getTime() - startTime.getTime()) / 360000) / 10,
-            logbookPending: !!(row as any).logbook_pending,
-            pendingDebrief: (row as any).pending_debrief ?? null,
-            cancellationReason: (row as any).cancellation_reason ?? null,
+            logbookPending: !!row.logbook_pending,
+            pendingDebrief: (row.pending_debrief as Record<string, unknown> | null) ?? null,
+            cancellationReason: (row.cancellation_reason as string | null) ?? null,
           };
         }),
         loadingSchedule: false,
@@ -970,7 +970,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
       body: JSON.stringify({
         aircraftId: booking.aircraftId, instructorId: booking.instructorId,
         studentId: booking.studentId || null, startTime: booking.startTime, endTime: booking.endTime,
-        sortieType: booking.sortieType, exercise: (booking as any).exercise || '',
+        sortieType: booking.sortieType, exercise: booking.exercise || '',
         status: booking.status || 'SCHEDULED',
         weatherBriefed: booking.weatherBriefed || false, notamBriefed: booking.notamBriefed || false,
         notes: booking.notes || '',
@@ -1030,7 +1030,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (updates.startTime !== undefined) dbUpdates.start_time = updates.startTime;
     if (updates.endTime !== undefined) dbUpdates.end_time = updates.endTime;
     if (updates.sortieType !== undefined) dbUpdates.sortie_type = updates.sortieType;
-    if ((updates as any).exercise !== undefined) dbUpdates.exercise = (updates as any).exercise;
+    if (updates.exercise !== undefined) dbUpdates.exercise = updates.exercise;
     if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
     if (updates.weatherBriefed !== undefined) dbUpdates.weather_briefed = updates.weatherBriefed;
     if (updates.notamBriefed !== undefined) dbUpdates.notam_briefed = updates.notamBriefed;

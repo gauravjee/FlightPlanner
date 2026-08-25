@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useRef, ReactNode } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { signOut, useSession } from 'next-auth/react';
 import { ArrowLeft, Plane, Wrench, Crown, GraduationCap, ClipboardList, UserRound, KeyRound, LogOut, LayoutDashboard, ShieldCheck } from 'lucide-react';
 import { useFlightStore } from '@/lib/store';
@@ -65,7 +66,7 @@ function LiveClock() {
 // ROLE ICON — small helper so both the full and condensed user
 // menu variants below stay in sync on which icon means what.
 // ============================================================
-function RoleIcon({ role, className }: { role: string; className?: string }) {
+function RoleIcon({ role, className }: { role?: string; className?: string }) {
   if (role === 'super_admin' || role === 'maintenance') return <Wrench className={className} />;
   if (role === 'admin') return <Crown className={className} />;
   if (role === 'instructor') return <GraduationCap className={className} />;
@@ -85,7 +86,7 @@ function RoleIcon({ role, className }: { role: string; className?: string }) {
 // the header felt cluttered. Below lg, where Sidebar renders nothing at
 // all, these stay exactly as they always were — no loss of access on
 // phone/narrow-tablet widths.
-function MobileNavLinks({ role }: { role: string }) {
+function MobileNavLinks({ role }: { role?: string }) {
   const dashboardUrl = role === 'student' ? '/dashboard/student' :
                        role === 'instructor' ? '/dashboard/instructor' : '/dashboard';
   return (
@@ -126,7 +127,7 @@ function UserMenu() {
 
   if (!session?.user) return null;
 
-  const role = (session.user as any).role;
+  const role = (session.user as { role?: string }).role;
 
   return (
     <>
@@ -246,9 +247,12 @@ export default function Header(props: HeaderProps = {}) {
             <div className="flex items-center gap-2.5 min-w-0">
               {/* Logo - Custom from FTO Settings or Default */}
               {ftoSettings?.logo_url && ftoSettings?.show_logo === 'true' ? (
-                <img
+                <Image
                   src={ftoSettings.logo_url}
                   alt="FTO Logo"
+                  width={120}
+                  height={32}
+                  unoptimized
                   className="h-8 w-auto object-contain flex-shrink-0"
                 />
               ) : (

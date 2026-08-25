@@ -35,8 +35,18 @@ interface Enrollment {
   student_initials?: string;
 }
 
+interface GroundSchoolClassRow {
+  id: number;
+  class_date: string;
+  start_time: string;
+  end_time: string;
+  subject_id: number;
+  status?: string;
+  ground_school_subjects?: { subject_name: string } | null;
+}
+
 export default function AttendancePage() {
-  const [classes, setClasses] = useState<any[]>([]);
+  const [classes, setClasses] = useState<GroundSchoolClassRow[]>([]);
   const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -53,7 +63,7 @@ export default function AttendancePage() {
       .select('id, class_date, start_time, end_time, subject_id, ground_school_subjects(subject_name)')
       .order('class_date', { ascending: false })
       .limit(30);
-    setClasses(data || []);
+    setClasses((data || []) as unknown as GroundSchoolClassRow[]);
   }, []);
 
   const loadEnrollments = useCallback(async (classId: number) => {
@@ -112,7 +122,7 @@ export default function AttendancePage() {
     if (selectedClassId) loadEnrollments(selectedClassId);
   };
 
-  const updateExam = async (enrollmentId: number, field: string, value: any) => {
+  const updateExam = async (enrollmentId: number, field: string, value: string | number | null) => {
     // 2026-08-19: this subject's exam is conducted by DGCA, not the FTO —
     // a PASS recorded here needs to be traceable to the student's actual
     // DGCA roll number. Block (don't write) rather than silently save an

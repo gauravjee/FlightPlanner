@@ -6,6 +6,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { supabase } from '@/lib/supabase-client';
 import { DAY_NAMES, parseWeeklyOffDays } from '@/lib/store';
 import {
@@ -456,17 +457,21 @@ export default function SettingsTab() {
 
                   {getValue('logo_url') ? (
                     <div className="surface-muted rounded-lg p-6 flex items-center justify-center w-full" style={{ minHeight: '120px' }}>
-                      <img
-                        src={getValue('logo_url')}
-                        alt="School Logo"
-                        className="max-h-16 max-w-full object-contain"
-                        onError={(e) => {
-                          // Hide broken image and show fallback
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          const fallback = document.getElementById('logo-fallback');
-                          if (fallback) fallback.style.display = 'block';
-                        }}
-                      />
+                      <div className="relative max-w-full" style={{ height: '64px', width: '100%' }}>
+                        <Image
+                          src={getValue('logo_url')}
+                          alt="School Logo"
+                          fill
+                          unoptimized
+                          className="object-contain"
+                          onError={(e) => {
+                            // Hide broken image and show fallback
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            const fallback = document.getElementById('logo-fallback');
+                            if (fallback) fallback.style.display = 'block';
+                          }}
+                        />
+                      </div>
                       <div id="logo-fallback" style={{ display: 'none' }} className="text-center">
                         <Plane className="w-8 h-8 mx-auto text-tertiary" />
                         <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>Failed to load image</p>

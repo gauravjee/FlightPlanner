@@ -2,6 +2,24 @@
 // Live NOTAM service using FAA Aviation Weather Center
 import { NOTAM } from '@/types';
 
+// Shape of a single entry in the FAA Aviation Weather Center NOTAM
+// response, as proxied through /api/notam — only the fields we actually
+// read below.
+interface FaaNotamEntry {
+  id?: string;
+  notamNumber?: string;
+  icaoId?: string;
+  text?: string;
+  rawNotam?: string;
+  priority?: string;
+  category?: string;
+  startTime?: string;
+  effectiveStart?: string;
+  endTime?: string;
+  effectiveEnd?: string;
+  isActive?: boolean;
+}
+
 /**
  * Fetch live NOTAMs for an airport via our proxy API
  * Falls back to empty array if API fails
@@ -18,7 +36,7 @@ export async function fetchNOTAMs(airportCode: string = 'VOBL'): Promise<NOTAM[]
     }
 
     // Map FAA response to our NOTAM type
-    return data.map((n: any) => ({
+    return data.map((n: FaaNotamEntry) => ({
       id: n.id || String(Math.random()),
       notamNumber: n.notamNumber || n.id || 'N/A',
       airportCode: n.icaoId || airportCode,

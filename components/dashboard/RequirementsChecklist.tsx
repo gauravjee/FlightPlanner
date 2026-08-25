@@ -99,8 +99,8 @@ export default function RequirementsChecklist({ studentId }: Props) {
 
   // ----- Permissions -----
   const { data: session } = useSession();
-  const userRole = (session?.user as any)?.role;
-  const canEdit = ['admin', 'instructor', 'super_admin'].includes(userRole);
+  const userRole = session?.user?.role;
+  const canEdit = !!userRole && ['admin', 'instructor', 'super_admin'].includes(userRole);
 
   // ----- Blocking requirements summary (incomplete + flagged) -----
   // blocksAllFlights takes precedence in the summary/badge over blocksSolo
@@ -276,11 +276,11 @@ export default function RequirementsChecklist({ studentId }: Props) {
   // ============================================================
   if (studentReqs.length === 0) {
     return (
-      <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
-        <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+      <div className="surface-card p-6">
+        <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <ClipboardList className="w-4 h-4" /> Requirements Checklist
         </h3>
-        <p className="text-slate-400 text-sm">No requirements defined yet.</p>
+        <p className="text-secondary text-sm">No requirements defined yet.</p>
       </div>
     );
   }
@@ -289,19 +289,19 @@ export default function RequirementsChecklist({ studentId }: Props) {
   // Render
   // ============================================================
   return (
-    <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-6">
+    <div className="surface-card p-6">
       {/* ----- Header with progress bar ----- */}
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
           <ClipboardList className="w-4 h-4" /> Requirements Checklist
         </h3>
-        <span className="text-sm text-slate-400">
+        <span className="text-sm text-secondary">
           {completedCount}/{totalCount} completed
         </span>
       </div>
 
       {/* Progress bar */}
-      <div className="w-full bg-slate-700 rounded-full h-2 mb-4">
+      <div className="w-full bg-[var(--surface-muted)] rounded-full h-2 mb-4">
         <div
           className="h-2 rounded-full bg-green-500 transition-all duration-300"
           style={{ width: `${progressPercent}%` }}
@@ -340,7 +340,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
               <button
                 type="button"
                 onClick={() => toggleCategoryCollapsed(category)}
-                className="w-full flex items-center justify-between text-xs font-medium uppercase tracking-wide text-slate-500 hover:text-slate-400 mb-2 cursor-pointer transition-colors"
+                className="w-full flex items-center justify-between text-xs font-medium uppercase tracking-wide text-tertiary hover:text-secondary mb-2 cursor-pointer transition-colors"
               >
                 <span className="flex items-center gap-1">
                   {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -357,7 +357,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
                       className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
                         req.isCompleted
                           ? 'bg-green-500/10 border-green-500/30'
-                          : 'bg-slate-700/30 border-slate-600/30'
+                          : 'bg-[var(--surface-muted)] border-[var(--border)]'
                       }`}
                     >
                       {/* Requirement name, blocking badge, checkbox */}
@@ -369,7 +369,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
                           className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                             req.isCompleted
                               ? 'bg-green-500 border-green-500'
-                              : 'border-slate-500 hover:border-slate-400'
+                              : 'border-[var(--border)] hover:border-[var(--text-tertiary)]'
                           } ${!canEdit ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                         >
                           {req.isCompleted && (
@@ -394,7 +394,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
                             className={`text-sm font-medium ${
                               req.isCompleted
                                 ? 'text-green-400 line-through'
-                                : 'text-white'
+                                : ''
                             }`}
                           >
                             {req.requirementName}
@@ -403,7 +403,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
                             <span
                               className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${
                                 req.isCompleted
-                                  ? 'text-slate-500 bg-slate-700/50'
+                                  ? 'text-tertiary bg-[var(--surface-muted)]'
                                   : 'text-red-400 bg-red-500/10'
                               }`}
                               title={
@@ -421,7 +421,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
 
                       {/* Completion details */}
                       {req.isCompleted && (
-                        <div className="text-right text-xs text-slate-400 flex-shrink-0">
+                        <div className="text-right text-xs text-secondary flex-shrink-0">
                           <p>{req.completedDate || '—'}</p>
                           {req.completedBy && <p>by {req.completedBy}</p>}
                         </div>
@@ -448,38 +448,38 @@ export default function RequirementsChecklist({ studentId }: Props) {
           onClick={() => setDgcaModal(null)}
         >
           <div
-            className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl"
+            className="surface-card w-full max-w-md shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 border-b border-slate-700">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h3 className="text-lg font-semibold flex items-center gap-2">
                 <GraduationCap className="w-4 h-4" /> Complete {dgcaModal.requirementName}
               </h3>
-              <button onClick={() => setDgcaModal(null)} className="p-2 rounded-lg hover:bg-slate-700 cursor-pointer" aria-label="Close">
-                <X className="w-5 h-5 text-slate-400" />
+              <button onClick={() => setDgcaModal(null)} className="p-2 rounded-lg hover:bg-[var(--surface-muted)] cursor-pointer" aria-label="Close">
+                <X className="w-5 h-5 text-secondary" />
               </button>
             </div>
 
             <div className="p-4 space-y-4">
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-secondary">
                 {dgcaModal.subjectName} is examined by DGCA, not the FTO — enter the student&apos;s
                 actual DGCA exam result to mark this complete.
               </p>
 
               <div>
-                <label className="block text-sm text-slate-400 mb-1">DGCA Roll Number *</label>
+                <label className="block text-sm text-secondary mb-1">DGCA Roll Number *</label>
                 <input
                   type="text"
                   value={dgcaRollNumber}
                   onChange={e => setDgcaRollNumber(e.target.value)}
                   placeholder="e.g., DGCA-2026-00123"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-slate-500"
+                  className="w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]"
                   autoFocus
                 />
               </div>
 
               <div>
-                <label className="block text-sm text-slate-400 mb-1">Exam Score Received *</label>
+                <label className="block text-sm text-secondary mb-1">Exam Score Received *</label>
                 <input
                   type="number"
                   min="0"
@@ -487,7 +487,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
                   value={dgcaScore}
                   onChange={e => setDgcaScore(e.target.value)}
                   placeholder="e.g., 85"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-slate-500"
+                  className="w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
 
@@ -502,7 +502,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
                 </button>
                 <button
                   onClick={() => setDgcaModal(null)}
-                  className="px-4 py-2 rounded-lg text-sm bg-slate-700 hover:bg-slate-600 text-white transition"
+                  className="px-4 py-2 rounded-lg text-sm surface-inner hover:bg-[var(--surface-muted)] transition"
                 >
                   Cancel
                 </button>
@@ -524,32 +524,32 @@ export default function RequirementsChecklist({ studentId }: Props) {
           onClick={() => setSplModal(null)}
         >
           <div
-            className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl"
+            className="surface-card w-full max-w-md shadow-2xl"
             onClick={e => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between p-4 border-b border-slate-700">
-              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+            <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+              <h3 className="text-lg font-semibold flex items-center gap-2">
                 <IdCard className="w-4 h-4" /> Complete {splModal.requirementName}
               </h3>
-              <button onClick={() => setSplModal(null)} className="p-2 rounded-lg hover:bg-slate-700 cursor-pointer" aria-label="Close">
-                <X className="w-5 h-5 text-slate-400" />
+              <button onClick={() => setSplModal(null)} className="p-2 rounded-lg hover:bg-[var(--surface-muted)] cursor-pointer" aria-label="Close">
+                <X className="w-5 h-5 text-secondary" />
               </button>
             </div>
 
             <div className="p-4 space-y-4">
-              <p className="text-sm text-slate-400">
+              <p className="text-sm text-secondary">
                 No SPL Number is on file for this student yet — enter it to mark this complete.
                 This saves to the student&apos;s profile the same as editing it there directly.
               </p>
 
               <div>
-                <label className="block text-sm text-slate-400 mb-1">SPL Number *</label>
+                <label className="block text-sm text-secondary mb-1">SPL Number *</label>
                 <input
                   type="text"
                   value={splNumberInput}
                   onChange={e => setSplNumberInput(e.target.value)}
                   placeholder="e.g., SPL-2026-0142"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:outline-none focus:border-slate-500"
+                  className="w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]"
                   autoFocus
                 />
               </div>
@@ -565,7 +565,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
                 </button>
                 <button
                   onClick={() => setSplModal(null)}
-                  className="px-4 py-2 rounded-lg text-sm bg-slate-700 hover:bg-slate-600 text-white transition"
+                  className="px-4 py-2 rounded-lg text-sm surface-inner hover:bg-[var(--surface-muted)] transition"
                 >
                   Cancel
                 </button>

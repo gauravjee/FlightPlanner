@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase-client';
 import { CircleCheck, Pencil, Plus, Save, Trash2, Lock, RefreshCw } from 'lucide-react';
 
@@ -59,12 +59,12 @@ export default function RequirementsTab() {
     notes: '',
   });
 
-  const loadPrograms = async () => {
+  const loadPrograms = useCallback(async () => {
     const { data } = await supabase.from('training_programs').select('*').order('sort_order');
     setPrograms(data || []);
-  };
+  }, []);
 
-  const loadRequirements = async () => {
+  const loadRequirements = useCallback(async () => {
     setLoading(true);
     console.log('Fetching requirements for', selectedProgram);
 
@@ -84,20 +84,20 @@ export default function RequirementsTab() {
       setRequirements(data || []);
     }
     setLoading(false);
-  };
+  }, [selectedProgram]);
 
   // Load data on mount
   useEffect(() => {
     loadPrograms();
     loadRequirements();
-  }, []);
+  }, [loadPrograms, loadRequirements]);
 
   // Reload when program changes
   useEffect(() => {
     loadRequirements();
     setForm(p => ({ ...p, program_code: selectedProgram, requirement_category: selectedProgram }));
     setSyncResult(null);
-  }, [selectedProgram]);
+  }, [selectedProgram, loadRequirements]);
 
   // Add or update requirement
   //

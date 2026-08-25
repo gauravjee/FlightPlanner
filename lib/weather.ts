@@ -64,15 +64,37 @@ export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherDat
   }
 }
 
-function getCeiling(clouds: any): number {
+// Shape of a single cloud layer entry in the FAA METAR response's `clouds`
+// array — only the fields read below.
+interface MetarCloudLayer {
+  cover?: string;
+  base: number;
+}
+
+// Shape of the FAA METAR response object — only the fields read across
+// fetchWeather/getCeiling/getWarnings below.
+interface MetarData {
+  rawOb?: string;
+  temp?: number;
+  dewp?: number;
+  wdir?: number;
+  wspd: number;
+  visib?: number;
+  clouds?: MetarCloudLayer[];
+  altim?: number;
+  fltcat?: string;
+  obsTime?: string;
+}
+
+function getCeiling(clouds: MetarCloudLayer[] | undefined): number {
   if (!clouds || !Array.isArray(clouds) || clouds.length === 0) return 99999;
-  const ceilingClouds = clouds.filter((c: any) => c.cover === 'BKN' || c.cover === 'OVC' || c.cover === 'OVX');
+  const ceilingClouds = clouds.filter((c: MetarCloudLayer) => c.cover === 'BKN' || c.cover === 'OVC' || c.cover === 'OVX');
   if (ceilingClouds.length === 0) return 99999;
-  const bases = ceilingClouds.map((c: any) => c.base * 100).filter((b: number) => b > 0);
+  const bases = ceilingClouds.map((c: MetarCloudLayer) => c.base * 100).filter((b: number) => b > 0);
   return bases.length > 0 ? Math.min(...bases) : 99999;
 }
 
-function getWarnings(metar: any): string[] {
+function getWarnings(metar: MetarData): string[] {
   const warnings: string[] = [];
   const visMeters = metar.visib ? metar.visib * 1609.34 : 99999;
   if (visMeters < 5000) warnings.push('⚠️ Reduced visibility');

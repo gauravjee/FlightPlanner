@@ -57,7 +57,7 @@ export default function FlightsPage() {
     loadExercises();
     loadInstructors();
     loadScheduledFlights();
-  }, []);
+  }, [loadStudents, loadAircraft, loadFlightRecords, loadSortieTypes, loadExercises, loadInstructors, loadScheduledFlights]);
 
   const filteredRecords = selectedStudent === 'ALL'
     ? flightRecords

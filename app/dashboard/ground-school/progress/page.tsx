@@ -94,8 +94,8 @@ interface EnrollmentRecord {
 export default function StudentProgressPage() {
   // ----- Session (for student role auto‑select) -----
   const { data: session } = useSession();
-  const userRole = (session?.user as any)?.role;
-  const userStudentId = (session?.user as any)?.studentId;
+  const userRole = session?.user?.role;
+  const userStudentId = session?.user?.studentId;
 
   // ----- URL params (for pre‑selecting student from Progress page) -----
   // When a user clicks the "Ground School Progress" link on /dashboard/progress,
@@ -160,7 +160,22 @@ export default function StudentProgressPage() {
     setStudents((stuRes.students || []).filter((s) => s.status === 'ACTIVE'));
 
     // Flatten class joins into a simple array for easy client‑side look‑up
-    const flatClasses: ClassInfo[] = (clsRes.data || []).map((c: any) => ({
+    // Cast to the query's REAL runtime shape (a to-one embed, since
+    // ground_school_classes.subject_id/instructor_id are each single FKs)
+    // rather than the untyped Supabase client's default structural
+    // inference (which types every embed as an array regardless of
+    // cardinality, since no generated DB types are configured for this
+    // client) — matches the object-access pattern (`.subject_name`, not
+    // `[0].subject_name`) this code has always used at runtime.
+    const rawClasses = (clsRes.data || []) as unknown as {
+      id: number;
+      class_date: string;
+      start_time: string;
+      end_time: string;
+      ground_school_subjects?: { subject_name?: string };
+      instructors?: { initials?: string };
+    }[];
+    const flatClasses: ClassInfo[] = rawClasses.map((c) => ({
       id: c.id,
       class_date: c.class_date,
       start_time: c.start_time,

@@ -241,9 +241,9 @@ function ResetPasswordForm() {
       alert('✅ Password changed successfully! You can now login with your new password.');
       router.push('/login');  // Redirect to login page
 
-    } catch (err: any) {
+    } catch (err) {
       // Handle any unexpected errors
-      setError('❌ An unexpected error occurred: ' + err.message);
+      setError('❌ An unexpected error occurred: ' + (err instanceof Error ? err.message : 'Please try again.'));
     } finally {
       setLoading(false);  // Always clear loading state (success or failure)
     }

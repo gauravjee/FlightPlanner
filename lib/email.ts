@@ -85,9 +85,10 @@ export async function sendWelcomeEmail(
       const data = await response.json();
       return { success: false, message: data.error || 'Failed to send email' };
     }
-  } catch (error: any) {
+  } catch (error) {
     console.error('Email send error:', error);
-    return { success: false, message: error.message };
+    const message = error instanceof Error ? error.message : 'Failed to send email';
+    return { success: false, message };
   }
 }
 // ============================================================
@@ -183,8 +184,9 @@ export async function sendPasswordResetEmail(
     });
 
     return { success: true, message: 'Password reset email sent!' };
-  } catch (error: any) {
+  } catch (error) {
     console.error('❌ Email send error:', error);
-    return { success: false, message: error.message };
+    const message = error instanceof Error ? error.message : 'Failed to send password reset email.';
+    return { success: false, message };
   }
 }

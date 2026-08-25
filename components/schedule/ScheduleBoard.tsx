@@ -560,7 +560,7 @@ export default function ScheduleBoard() {
 
           const color = sortiePrintColors[flight.sortieType] || '#6b7280';
           // Use exercise short code if available, otherwise fall back to sortie label
-          const label = getExerciseShortCode((flight as any).exercise || '') ||
+          const label = getExerciseShortCode(flight.exercise || '') ||
                         SORTIE_LABELS[flight.sortieType] ||
                         flight.sortieType;
           const stu = flight.studentId ? students.find(s => s.id === flight.studentId) : undefined;
@@ -1162,7 +1162,7 @@ export default function ScheduleBoard() {
                           const hasMaintenanceConflict = doesFlightConflictWithMaintenance(flight);
 
                           // Get exercise name and extract short code
-                          const exerciseName = (flight as any).exercise || '';
+                          const exerciseName = flight.exercise || '';
                           const shortCode = getExerciseShortCode(exerciseName);
 
                           return (

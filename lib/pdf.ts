@@ -6,6 +6,13 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { FlightRecord, StudentRecord, BATest } from '@/types';
 
+// jspdf-autotable augments the jsPDF instance with `lastAutoTable` at
+// runtime, but its TS types don't declare that property — this local
+// augmentation covers just the field this file reads from it.
+interface JsPDFWithAutoTable extends jsPDF {
+  lastAutoTable?: { finalY: number };
+}
+
 /**
  * Generate a student logbook PDF with all flight records
  * Includes student info, flight history table, totals, and instructor sign-off
@@ -97,7 +104,7 @@ export function generateStudentLogbook(student: StudentRecord, flights: FlightRe
   const soloHours = flights.filter(f => f.flightType === 'SOLO').reduce((sum, f) => sum + (f.totalHours || 0), 0);
   const dualHours = flights.filter(f => f.flightType === 'DUAL').reduce((sum, f) => sum + (f.totalHours || 0), 0);
   
-  const finalY = (doc as any).lastAutoTable?.finalY || 150;
+  const finalY = (doc as JsPDFWithAutoTable).lastAutoTable?.finalY || 150;
   
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
@@ -205,7 +212,7 @@ export function generateDailyFlyingReport(report: {
   // ============================================================
   // FOOTER SUMMARY
   // ============================================================
-  const finalY = (doc as any).lastAutoTable?.finalY || 45;
+  const finalY = (doc as JsPDFWithAutoTable).lastAutoTable?.finalY || 45;
   const s = report.stats;
   const summaryLines = [
     `Total Aircraft Hours: ${s.totalAircraftHours.toFixed(1)}h`,
@@ -338,7 +345,7 @@ export function generateBreathAnalysisReport(report: {
   const studentCount = report.tests.filter(t => t.personType === 'STUDENT').length;
   const instructorCount = total - studentCount;
 
-  const finalY = (doc as any).lastAutoTable?.finalY || 45;
+  const finalY = (doc as JsPDFWithAutoTable).lastAutoTable?.finalY || 45;
 
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');

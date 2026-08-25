@@ -48,7 +48,7 @@ export default function StudentDashboardPage() {
   // Extract studentId from session and load data
   useEffect(() => {
     if (session?.user) {
-      const sid = (session.user as any).studentId;
+      const sid = session.user.studentId;
       if (sid) {
         setStudentId(sid);
         loadStudents();

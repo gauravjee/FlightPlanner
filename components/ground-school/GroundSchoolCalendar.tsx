@@ -175,7 +175,11 @@ export default function GroundSchoolCalendar() {
   const [view, setView] = useState<'week' | 'month'>('week');
 
   // Reference date for navigation
-  const today = new Date();
+  // Memoized so `today` is a stable reference across renders (not a new
+  // Date object every render) — the two useMemo calls below (weekDays,
+  // monthDays) depend on it, and without this they'd recompute on every
+  // render regardless of their other deps actually changing.
+  const today = useMemo(() => new Date(), []);
 
   // In week view: the Monday of the displayed week
   const [currentWeekStart, setCurrentWeekStart] = useState(getMonday(today));
@@ -308,7 +312,7 @@ export default function GroundSchoolCalendar() {
     }
 
     // Enrich each class with human‑readable subject name and instructor initials.
-    const enriched: GroundClass[] = (classData || []).map((c: any) => {
+    const enriched: GroundClass[] = (classData || []).map((c: Omit<GroundClass, 'subject_name' | 'instructor_initials'>) => {
       const sub = subjects.find((s) => s.id === c.subject_id);
       const inst = instructors.find((i) => i.id === c.instructor_id);
       return {
@@ -540,7 +544,7 @@ export default function GroundSchoolCalendar() {
       });
     }
     return days;
-  }, [currentWeekStart]);
+  }, [currentWeekStart, today]);
 
   // ----- Weekly time grid constants -----
   const HOURS = Array.from({ length: 11 }, (_, i) => i + 8); // 08:00 - 18:00
@@ -581,16 +585,17 @@ export default function GroundSchoolCalendar() {
     const end = new Date(lastDay);
     end.setDate(end.getDate() + (6 - end.getDay()));
 
-    const weeks: {
+    type MonthDay = {
       dateStr: string;
       day: number;
       isCurrentMonth: boolean;
       isToday: boolean;
-    }[][] = [];
+    };
+    const weeks: MonthDay[][] = [];
 
     const current = new Date(start);
     while (current <= end) {
-      const week: any[] = [];
+      const week: MonthDay[] = [];
       for (let i = 0; i < 7; i++) {
         week.push({
           dateStr: formatDateStr(current),
@@ -603,7 +608,7 @@ export default function GroundSchoolCalendar() {
       weeks.push(week);
     }
     return weeks;
-  }, [currentMonth]);
+  }, [currentMonth, today]);
 
   // Group classes by date for quick lookup in the monthly view
   const classesByDate = useMemo(() => {

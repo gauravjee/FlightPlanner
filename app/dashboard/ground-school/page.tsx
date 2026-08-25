@@ -12,15 +12,25 @@ import { Calendar, ClipboardList, ChartColumn } from 'lucide-react';
 
 interface Subject { id: number; subject_name: string; subject_code: string; }
 interface Enrollment { id: number; class_id: number; student_id: string; attendance_status: string; exam_score: number | null; exam_result: string | null; }
+interface GroundSchoolClassRow {
+  id: number;
+  class_date: string;
+  start_time: string;
+  end_time: string;
+  subject_id: number;
+  topic?: string;
+  status: string;
+  ground_school_subjects?: { subject_name: string } | null;
+}
 
 export default function GroundSchoolPage() {
   const { data: session } = useSession();
-  const userRole = (session?.user as any)?.role;
-  const userStudentId = (session?.user as any)?.studentId;
+  const userRole = session?.user?.role;
+  const userStudentId = session?.user?.studentId;
 
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
-  const [classes, setClasses] = useState<any[]>([]);
+  const [classes, setClasses] = useState<GroundSchoolClassRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState<string>('');
 
@@ -64,7 +74,7 @@ export default function GroundSchoolPage() {
   // Upcoming classes
   const upcomingClasses = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
-    return classes.filter((c: any) => c.class_date >= today && c.status === 'SCHEDULED').slice(0, 5);
+    return classes.filter((c) => c.class_date >= today && c.status === 'SCHEDULED').slice(0, 5);
   }, [classes]);
 
   useSetHeader({ title: 'Ground School', subtitle: 'Theoretical Training Progress', backUrl: '/dashboard' });
@@ -108,7 +118,7 @@ export default function GroundSchoolPage() {
                 <p className="text-secondary text-sm">No upcoming classes scheduled.</p>
               ) : (
                 <div className="space-y-2">
-                  {upcomingClasses.map((cls: any) => (
+                  {upcomingClasses.map((cls) => (
                     <div key={cls.id} className="surface-inner p-3 flex justify-between">
                       <div>
                         <p className="text-sm">{cls.ground_school_subjects?.subject_name || 'N/A'}</p>

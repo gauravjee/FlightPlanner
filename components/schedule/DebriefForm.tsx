@@ -131,24 +131,26 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
 
   const performanceLabels = ['⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐⭐⭐'];
 
+  const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
+
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="surface-card w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 z-10 rounded-t-xl">
-          <h3 className="text-lg font-semibold text-white">✅ Flight Debrief & Check-Out</h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg cursor-pointer">
-            <span className="text-slate-400 text-xl">✕</span>
+        <div className="flex items-center justify-between p-4 border-b sticky top-0 z-10 rounded-t-xl bg-[var(--surface)]" style={{ borderColor: 'var(--border)' }}>
+          <h3 className="text-lg font-semibold">✅ Flight Debrief & Check-Out</h3>
+          <button onClick={onClose} className="p-2 hover:bg-[var(--surface-muted)] rounded-lg cursor-pointer">
+            <span className="text-secondary text-xl">✕</span>
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           {/* Flight Info Banner */}
-          <div className="bg-slate-700/50 rounded-lg p-3">
-            <p className="text-sm text-white font-medium">
+          <div className="surface-inner p-3">
+            <p className="text-sm font-medium">
               {flight.studentName || 'No Student'} | {flight.sortieType?.replace(/_/g, ' ')}
             </p>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-secondary">
               {flight.aircraftReg} | Instructor: {flight.instructorName}
             </p>
           </div>
@@ -156,21 +158,21 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
           {/* Actual Times */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Actual Start Time</label>
+              <label className="block text-xs text-secondary mb-1">Actual Start Time</label>
               <input
                 type="time"
                 value={form.actualStartTime}
                 onChange={e => setForm(p => ({ ...p, actualStartTime: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                className={inputClass}
               />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Actual End Time</label>
+              <label className="block text-xs text-secondary mb-1">Actual End Time</label>
               <input
                 type="time"
                 value={form.actualEndTime}
                 onChange={e => setForm(p => ({ ...p, actualEndTime: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm"
+                className={inputClass}
               />
             </div>
           </div>
@@ -185,67 +187,67 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
           {/* Hobbs & Fuel */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Hobbs Start</label>
+              <label className="block text-xs text-secondary mb-1">Hobbs Start</label>
               <input type="number" value={form.hobbsStart || ''} step="0.1"
                 onChange={e => setForm(p => ({ ...p, hobbsStart: parseFloat(e.target.value) || 0 }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                className={inputClass} />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Hobbs End</label>
+              <label className="block text-xs text-secondary mb-1">Hobbs End</label>
               <input type="number" value={form.hobbsEnd || ''} step="0.1"
                 onChange={e => setForm(p => ({ ...p, hobbsEnd: parseFloat(e.target.value) || 0 }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                className={inputClass} />
             </div>
           </div>
 
           {/* Fuel Before/After */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Fuel Before (L)</label>
+              <label className="block text-xs text-secondary mb-1">Fuel Before (L)</label>
               <input type="number" value={form.fuelBefore || ''}
                 onChange={e => setForm(p => ({ ...p, fuelBefore: parseInt(e.target.value) || 0 }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                className={inputClass} />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Fuel After (L)</label>
+              <label className="block text-xs text-secondary mb-1">Fuel After (L)</label>
               <input type="number" value={form.fuelAfter || ''}
                 onChange={e => setForm(p => ({ ...p, fuelAfter: parseInt(e.target.value) || 0 }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+                className={inputClass} />
             </div>
           </div>
 
           {/* Landings */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Landings</label>
+            <label className="block text-xs text-secondary mb-1">Landings</label>
             <input type="number" value={form.landings || ''} min={0}
               onChange={e => setForm(p => ({ ...p, landings: parseInt(e.target.value) || 0 }))}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+              className={inputClass} />
           </div>
 
           {/* Maneuvers */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Maneuvers Completed</label>
+            <label className="block text-xs text-secondary mb-1">Maneuvers Completed</label>
             <textarea value={form.maneuversCompleted}
               onChange={e => setForm(p => ({ ...p, maneuversCompleted: e.target.value }))}
               rows={2} placeholder="e.g., Normal circuits, Flapless approach, Glide approach"
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+              className={inputClass} />
           </div>
 
           {/* Instructor Notes */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Instructor Debrief Notes</label>
+            <label className="block text-xs text-secondary mb-1">Instructor Debrief Notes</label>
             <textarea value={form.instructorNotes}
               onChange={e => setForm(p => ({ ...p, instructorNotes: e.target.value }))}
               rows={3} placeholder="Post-flight debrief and feedback..."
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm" />
+              className={inputClass} />
           </div>
 
           {/* Performance Rating */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Student Performance</label>
+            <label className="block text-xs text-secondary mb-1">Student Performance</label>
             <select value={form.studentPerformance}
               onChange={e => setForm(p => ({ ...p, studentPerformance: parseInt(e.target.value) }))}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm">
+              className={inputClass}>
               {performanceLabels.map((stars, i) => (
                 <option key={i} value={i + 1}>{stars} ({i + 1}/5)</option>
               ))}
@@ -254,10 +256,10 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
 
           {/* Weather */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Weather Conditions</label>
+            <label className="block text-xs text-secondary mb-1">Weather Conditions</label>
             <select value={form.weatherConditions}
               onChange={e => setForm(p => ({ ...p, weatherConditions: e.target.value }))}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm">
+              className={inputClass}>
               <option value="VMC">VMC - Visual Meteorological Conditions</option>
               <option value="IMC">IMC - Instrument Meteorological Conditions</option>
               <option value="MARGINAL">Marginal VFR</option>
@@ -271,10 +273,10 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
             <input type="checkbox" checked={form.createLogbook}
               onChange={e => setForm(p => ({ ...p, createLogbook: e.target.checked }))}
               className="w-4 h-4" />
-            <label className="text-xs text-slate-400">
+            <label className="text-xs text-secondary">
               Auto-create logbook entry
               {!form.createLogbook && (
-                <span className="block text-slate-500 mt-0.5">
+                <span className="block text-tertiary mt-0.5">
                   Unchecked: flight is still marked completed, but the logbook entry (hours, first-solo credit) stays pending until finished later from the Flights page.
                 </span>
               )}
@@ -282,9 +284,9 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
           </div>
 
           {/* Buttons */}
-          <div className="flex space-x-3 pt-4 border-t border-slate-700">
+          <div className="flex space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <button type="button" onClick={onClose}
-              className="flex-1 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition cursor-pointer">
+              className="flex-1 px-4 py-2 surface-inner hover:bg-[var(--surface-muted)] transition cursor-pointer">
               Cancel
             </button>
             <button type="submit" disabled={loading}

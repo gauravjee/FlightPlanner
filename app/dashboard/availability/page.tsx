@@ -87,7 +87,7 @@ export default function AvailabilityPage() {
     if (editingRecord) {
       updateAvailability(editingRecord.id, data);
     } else {
-      addAvailability(data as any);
+      addAvailability(data as Omit<AvailabilityRecord, 'id' | 'personName' | 'personInitials'>);
     }
     setShowForm(false);
     setEditingRecord(null);

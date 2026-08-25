@@ -27,6 +27,13 @@ interface Props {
   onEdit?: (slot: FlightSlot) => void;           // Edit or Check-Out handler
 }
 
+// The `slot` passed in here is always a ScheduledFlight underneath (see
+// ScheduleBoard's handleSlotClick, which casts one to FlightSlot) — it
+// carries these two extra fields that the narrower FlightSlot type
+// doesn't declare. Local extension so this file can read them without
+// widening FlightSlot for every other consumer of that type.
+type SlotWithExtras = FlightSlot & { logbookPending?: boolean; exercise?: string };
+
 export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   useEscapeToClose(onClose);
   // ============================================================
@@ -157,18 +164,18 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
       onClick={onClose}
     >
       {/* Modal content - stop propagation to prevent closing when clicking inside */}
-      <div 
-        className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" 
+      <div
+        className="surface-card w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
-        
+
         {/* ============================================================ */}
         {/* HEADER */}
         {/* ============================================================ */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 rounded-t-xl z-10">
-          <h3 className="text-lg font-semibold text-white">✈️ Flight Details</h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg cursor-pointer">
-            <span className="text-slate-400 text-xl">✕</span>
+        <div className="flex items-center justify-between p-4 border-b sticky top-0 rounded-t-xl z-10" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+          <h3 className="text-lg font-semibold">✈️ Flight Details</h3>
+          <button onClick={onClose} className="p-2 hover:bg-[var(--surface-muted)] rounded-lg cursor-pointer">
+            <span className="text-secondary text-xl">✕</span>
           </button>
         </div>
 
@@ -192,7 +199,7 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
                   unchecked — flight counts as flown, but hours/first-solo
                   credit won't land until a logbook entry is finished for it
                   from the Flights page. See DebriefForm.tsx. */}
-              {(slot as any).logbookPending && (
+              {(slot as SlotWithExtras).logbookPending && (
                 <span
                   className="px-3 py-1 rounded-full text-sm font-medium bg-amber-500/20 text-amber-400"
                   title="Flight is completed but no logbook entry has been created yet — finish it from the Flights page."
@@ -201,37 +208,37 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
                 </span>
               )}
             </div>
-            <span className="text-sm text-slate-400">{duration.toFixed(1)} hours</span>
+            <span className="text-sm text-secondary">{duration.toFixed(1)} hours</span>
           </div>
 
           {/* ----- AIRCRAFT INFO ----- */}
           {aircraft && (
-            <div className="bg-slate-700/50 rounded-lg p-3">
-              <p className="text-xs text-slate-400 mb-2">🛩️ AIRCRAFT</p>
+            <div className="bg-[var(--surface-muted)] rounded-lg p-3">
+              <p className="text-xs text-secondary mb-2">🛩️ AIRCRAFT</p>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-white font-semibold">{aircraft.registration}</p>
-                  <p className="text-sm text-slate-400">{aircraft.model}</p>
+                  <p className="font-semibold">{aircraft.registration}</p>
+                  <p className="text-sm text-secondary">{aircraft.model}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm text-slate-300">Hobbs: {aircraft.hobbsTime}h</p>
-                  <p className="text-sm text-slate-300">Fuel: {aircraft.currentFuel}L / {aircraft.fuelCapacity}L</p>
+                  <p className="text-sm text-secondary">Hobbs: {aircraft.hobbsTime}h</p>
+                  <p className="text-sm text-secondary">Fuel: {aircraft.currentFuel}L / {aircraft.fuelCapacity}L</p>
                 </div>
               </div>
             </div>
           )}
 
           {/* ----- TIME & SORTIE ----- */}
-          <div className="bg-slate-700/50 rounded-lg p-3">
-            <p className="text-xs text-slate-400 mb-2">⏰ SCHEDULE</p>
-            <p className="text-white font-medium">
+          <div className="bg-[var(--surface-muted)] rounded-lg p-3">
+            <p className="text-xs text-secondary mb-2">⏰ SCHEDULE</p>
+            <p className="font-medium">
               {formatDate(slot.startTime)}
             </p>
-            <p className="text-white font-medium mt-1">
+            <p className="font-medium mt-1">
               {formatIST(slot.startTime)} → {formatIST(slot.endTime)} IST
             </p>
             <span className="inline-block mt-2 px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">
-              {(slot as any).exercise || slot.sortieType?.replace(/_/g, ' ') || 'N/A'}
+              {(slot as SlotWithExtras).exercise || slot.sortieType?.replace(/_/g, ' ') || 'N/A'}
             </span>
             <span className={`inline-block mt-2 ml-2 px-2 py-0.5 rounded text-xs ${
               String(slot.sortieType) === 'DUAL' ? 'bg-blue-500/20 text-blue-400' :
@@ -246,47 +253,47 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
           <div className="grid grid-cols-2 gap-3">
             {/* Instructor */}
             {instructor && (
-              <div className="bg-slate-700/50 rounded-lg p-3">
-                <p className="text-xs text-slate-400 mb-1">👨‍🏫 INSTRUCTOR</p>
-                <p className="text-white font-medium">{instructor.name}</p>
-                <p className="text-xs text-slate-400">{instructor.initials}</p>
-                <p className="text-xs text-slate-500">{instructor.licenseNumber}</p>
+              <div className="bg-[var(--surface-muted)] rounded-lg p-3">
+                <p className="text-xs text-secondary mb-1">👨‍🏫 INSTRUCTOR</p>
+                <p className="font-medium">{instructor.name}</p>
+                <p className="text-xs text-secondary">{instructor.initials}</p>
+                <p className="text-xs text-tertiary">{instructor.licenseNumber}</p>
               </div>
             )}
             {/* Student (or Maintenance) */}
             {student ? (
-              <div className="bg-slate-700/50 rounded-lg p-3">
-                <p className="text-xs text-slate-400 mb-1">👨‍✈️ STUDENT</p>
-                <p className="text-white font-medium">{student.name}</p>
-                <p className="text-xs text-slate-400">{student.initials} | {student.trainingStage}</p>
-                <p className="text-xs text-slate-500">{student.totalHours}h total</p>
+              <div className="bg-[var(--surface-muted)] rounded-lg p-3">
+                <p className="text-xs text-secondary mb-1">👨‍✈️ STUDENT</p>
+                <p className="font-medium">{student.name}</p>
+                <p className="text-xs text-secondary">{student.initials} | {student.trainingStage}</p>
+                <p className="text-xs text-tertiary">{student.totalHours}h total</p>
               </div>
             ) : (
-              <div className="bg-slate-700/50 rounded-lg p-3">
-                <p className="text-xs text-slate-400 mb-1">🔧 PURPOSE</p>
-                <p className="text-white font-medium">Maintenance / Check Flight</p>
+              <div className="bg-[var(--surface-muted)] rounded-lg p-3">
+                <p className="text-xs text-secondary mb-1">🔧 PURPOSE</p>
+                <p className="font-medium">Maintenance / Check Flight</p>
               </div>
             )}
           </div>
 
           {/* ----- WEATHER ----- */}
-          <div className="bg-slate-700/50 rounded-lg p-3">
-            <p className="text-xs text-slate-400 mb-2">🌤️ WEATHER</p>
+          <div className="bg-[var(--surface-muted)] rounded-lg p-3">
+            <p className="text-xs text-secondary mb-2">🌤️ WEATHER</p>
             <div className="grid grid-cols-4 gap-2 text-center">
               <div>
-                <p className="text-xs text-slate-500">Wind</p>
-                <p className="text-sm text-white font-medium">{weather.windDirection}°/{weather.windSpeed}kt</p>
+                <p className="text-xs text-tertiary">Wind</p>
+                <p className="text-sm font-medium">{weather.windDirection}°/{weather.windSpeed}kt</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Visibility</p>
-                <p className="text-sm text-white font-medium">{weather.visibility >= 9999 ? '10km+' : `${weather.visibility}m`}</p>
+                <p className="text-xs text-tertiary">Visibility</p>
+                <p className="text-sm font-medium">{weather.visibility >= 9999 ? '10km+' : `${weather.visibility}m`}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Ceiling</p>
-                <p className="text-sm text-white font-medium">{weather.ceiling >= 9999 ? 'Clear' : `${weather.ceiling}ft`}</p>
+                <p className="text-xs text-tertiary">Ceiling</p>
+                <p className="text-sm font-medium">{weather.ceiling >= 9999 ? 'Clear' : `${weather.ceiling}ft`}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Rules</p>
+                <p className="text-xs text-tertiary">Rules</p>
                 <p className="text-sm text-green-400 font-medium">{weather.flightRules}</p>
               </div>
             </div>
@@ -305,8 +312,8 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
           )}
 
           {/* ----- FLIGHT READINESS CHECKLIST ----- */}
-          <div className="bg-slate-700/50 rounded-lg p-3">
-            <p className="text-xs text-slate-400 mb-3">✅ FLIGHT READINESS</p>
+          <div className="bg-[var(--surface-muted)] rounded-lg p-3">
+            <p className="text-xs text-secondary mb-3">✅ FLIGHT READINESS</p>
             <div className="space-y-2">
               {[
                 { label: 'Aircraft Airworthy', ok: aircraft?.status === 'ACTIVE' },
@@ -318,7 +325,7 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
                   <span className={`text-lg ${item.ok ? 'text-green-400' : 'text-red-400'}`}>
                     {item.ok ? '✅' : '❌'}
                   </span>
-                  <span className={`text-xs ${item.ok ? 'text-slate-300' : 'text-red-400'}`}>
+                  <span className={`text-xs ${item.ok ? 'text-secondary' : 'text-red-400'}`}>
                     {item.label}
                   </span>
                 </div>
@@ -331,11 +338,11 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
         {/* ACTION BUTTONS */}
         {/* Buttons change based on flight status */}
         {/* ============================================================ */}
-        <div className="flex items-center justify-end space-x-2 p-4 border-t border-slate-700 sticky bottom-0 bg-slate-800 rounded-b-xl">
-          
+        <div className="flex items-center justify-end space-x-2 p-4 border-t sticky bottom-0 rounded-b-xl" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+
           {/* ----- CLOSE BUTTON ----- */}
           {/* Always visible */}
-          <button onClick={onClose} className="px-4 py-2 text-sm text-slate-400 hover:text-white transition cursor-pointer">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-secondary hover:opacity-80 transition cursor-pointer">
             Close
           </button>
 
@@ -356,13 +363,13 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
                 className={`px-4 py-2 text-sm rounded-lg transition ${
                   canCheckIn
                     ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30 cursor-pointer'
-                    : 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+                    : 'bg-[var(--surface-muted)] text-tertiary cursor-not-allowed'
                 }`}
               >
                 ✅ Check-In
               </button>
               {!canCheckIn && (
-                <p className="text-[10px] text-slate-500 mt-1">Opens {formatIST(checkInOpensAt.toISOString())} IST</p>
+                <p className="text-[10px] text-tertiary mt-1">Opens {formatIST(checkInOpensAt.toISOString())} IST</p>
               )}
             </div>
           )}
@@ -383,13 +390,13 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
                 className={`px-4 py-2 text-sm rounded-lg transition ${
                   canCheckOut
                     ? 'bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 cursor-pointer'
-                    : 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
+                    : 'bg-[var(--surface-muted)] text-tertiary cursor-not-allowed'
                 }`}
               >
                 📝 Check-Out / Debrief
               </button>
               {!canCheckOut && (
-                <p className="text-[10px] text-slate-500 mt-1">Opens {formatIST(scheduledEnd.toISOString())} IST</p>
+                <p className="text-[10px] text-tertiary mt-1">Opens {formatIST(scheduledEnd.toISOString())} IST</p>
               )}
             </div>
           )}

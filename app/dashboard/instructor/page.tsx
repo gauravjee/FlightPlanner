@@ -80,7 +80,7 @@ export default function InstructorDashboardPage() {
         setTrainingPrograms(data || []);
       }
     })();
-  }, []);
+  }, [loadInstructors, loadStudents, loadScheduledFlights, loadFlightRecords]);
 
   // ============================================================
   // DERIVED DATA
@@ -264,7 +264,7 @@ export default function InstructorDashboardPage() {
                               {student?.name || 'No Student'} ({student?.initials || '—'}) | {flight.aircraftReg}
                             </p>
                             <p className="text-tertiary text-xs">
-                              {(flight as any).exercise || flight.sortieType}
+                              {flight.exercise || flight.sortieType}
                             </p>
                           </div>
                           <span className={`badge ${statusBadgeClass}`}>
@@ -295,7 +295,7 @@ export default function InstructorDashboardPage() {
                           </span>
                         </div>
                         <p className="text-xs text-tertiary mb-1 flex items-center gap-1">
-                          {(record as any).exercise || record.sortieType} | {record.totalHours}h |
+                          {record.exercise || record.sortieType} | {record.totalHours}h |
                           <Star className="w-3 h-3 inline" style={{ color: 'var(--warning-text)' }} />{record.studentPerformance}/5
                         </p>
                         <p className="text-xs text-secondary italic">&quot;{record.instructorNotes}&quot;</p>
@@ -400,7 +400,7 @@ export default function InstructorDashboardPage() {
                             </td>
                             <td className="py-2 text-xs">{student?.name || '—'}</td>
                             <td className="py-2 text-xs">{flight.aircraftReg}</td>
-                            <td className="py-2 text-xs">{(flight as any).exercise || flight.sortieType}</td>
+                            <td className="py-2 text-xs">{flight.exercise || flight.sortieType}</td>
                             <td className="py-2">
                               <span className={`badge ${statusBadgeClass}`}>
                                 {flight.status?.replace('_', ' ')}

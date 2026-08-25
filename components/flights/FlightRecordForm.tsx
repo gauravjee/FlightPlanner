@@ -50,7 +50,10 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
     if (instructors.length === 0) loadInstructors();
     if (sortieTypes.length === 0) loadSortieTypes();
     if (exercises.length === 0) loadExercises();
-  }, []);
+  }, [
+    students.length, aircraft.length, instructors.length, sortieTypes.length, exercises.length,
+    loadStudents, loadAircraft, loadInstructors, loadSortieTypes, loadExercises,
+  ]);
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -147,14 +150,14 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
   const performanceStars = ['⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐⭐⭐'];
 
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-      <div className="bg-slate-800 border border-slate-700 rounded-xl w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-4 border-b border-slate-700 sticky top-0 bg-slate-800 z-10">
-          <h3 className="text-lg font-semibold text-white">
+    <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
+      <div className="surface-card w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between p-4 border-b sticky top-0 z-10 bg-[var(--surface)]" style={{ borderColor: 'var(--border)' }}>
+          <h3 className="text-lg font-semibold">
             📝 {scheduledFlightId ? 'Complete Pending Logbook Entry' : 'Log Flight Record'}
           </h3>
-          <button onClick={onClose} className="p-2 hover:bg-slate-700 rounded-lg cursor-pointer">
-            <span className="text-slate-400 text-xl">✕</span>
+          <button onClick={onClose} className="p-2 hover:bg-[var(--surface-muted)] rounded-lg cursor-pointer">
+            <span className="text-secondary text-xl">✕</span>
           </button>
         </div>
 
@@ -162,7 +165,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
           {/* Student, Aircraft, Instructor */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Student *</label>
+              <label className="block text-xs text-tertiary mb-1">Student *</label>
               <select
                 value={form.studentId}
                 onChange={e => {
@@ -184,7 +187,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
                   }));
                 }}
                 required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
+                className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]">
                 <option value="">Select</option>
                 {students.filter(s => s.status === 'ACTIVE').map(s => (
                   <option key={s.id} value={s.id}>{s.name} ({s.initials})</option>
@@ -192,7 +195,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
               </select>
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Aircraft *</label>
+              <label className="block text-xs text-tertiary mb-1">Aircraft *</label>
               <select
                 value={form.aircraftId}
                 onChange={e => {
@@ -206,7 +209,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
                   setForm(p => ({ ...p, aircraftId: id, hobbsStart: selected ? selected.hobbsTime : 0 }));
                 }}
                 required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
+                className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]">
                 <option value="">Select</option>
                 {aircraft.filter(a => a.status === 'ACTIVE').map(a => (
                   <option key={a.id} value={a.id}>{a.registration} ({a.type})</option>
@@ -214,9 +217,9 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
               </select>
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Instructor *</label>
+              <label className="block text-xs text-tertiary mb-1">Instructor *</label>
               <select value={form.instructorId} onChange={e => setForm(p => ({ ...p, instructorId: e.target.value }))} required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
+                className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]">
                 <option value="">Select</option>
                 {instructors.map(i => (
                   <option key={i.id} value={i.id}>{i.name} ({i.initials})</option>
@@ -228,54 +231,54 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
           {/* Date & Times */}
           <div className="grid grid-cols-4 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Date</label>
+              <label className="block text-xs text-tertiary mb-1">Date</label>
               <input type="date" value={form.flightDate} onChange={e => setForm(p => ({ ...p, flightDate: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white" />
+                className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Departure</label>
+              <label className="block text-xs text-tertiary mb-1">Departure</label>
               <input type="time" value={form.departureTime} onChange={e => setForm(p => ({ ...p, departureTime: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white" />
+                className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Arrival</label>
+              <label className="block text-xs text-tertiary mb-1">Arrival</label>
               <input type="time" value={form.arrivalTime} onChange={e => setForm(p => ({ ...p, arrivalTime: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white" />
+                className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Duration</label>
+              <label className="block text-xs text-tertiary mb-1">Duration</label>
               <input type="text" value={`${totalHours} hrs`} readOnly
-                className="w-full bg-slate-600 border border-slate-500 rounded-lg px-2 py-2 text-sm text-green-400 font-bold" />
+                className="w-full surface-inner rounded-lg px-2 py-2 text-sm text-green-400 font-bold" />
             </div>
           </div>
 
           {/* Hobbs & Landings */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Hobbs Start</label>
+              <label className="block text-xs text-tertiary mb-1">Hobbs Start</label>
               <input type="number" value={form.hobbsStart || ''} onChange={e => setForm(p => ({ ...p, hobbsStart: parseFloat(e.target.value) || 0 }))}
-                step="0.1" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white" />
-              <p className="text-[10px] text-slate-500 mt-0.5">Auto-filled from the aircraft&apos;s current Hobbs — edit if needed.</p>
+                step="0.1" className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
+              <p className="text-[10px] text-tertiary mt-0.5">Auto-filled from the aircraft&apos;s current Hobbs — edit if needed.</p>
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Hobbs End</label>
+              <label className="block text-xs text-tertiary mb-1">Hobbs End</label>
               <input type="number" value={form.hobbsEnd || ''} onChange={e => setForm(p => ({ ...p, hobbsEnd: parseFloat(e.target.value) || 0 }))}
-                step="0.1" className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white" />
+                step="0.1" className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Landings</label>
+              <label className="block text-xs text-tertiary mb-1">Landings</label>
               <input type="number" value={form.landings || ''} onChange={e => setForm(p => ({ ...p, landings: parseInt(e.target.value) || 0 }))}
-                min={0} className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white" />
+                min={0} className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
             </div>
           </div>
 
           {/* Sortie, Exercise & Weather */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Sortie Type *</label>
+              <label className="block text-xs text-tertiary mb-1">Sortie Type *</label>
               <select value={form.sortieType} onChange={e => setForm(p => ({ ...p, sortieType: e.target.value }))}
                 required
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
+                className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]">
                 <option value="">Select</option>
                 {sortieTypes.map(st => (
                   <option key={st.id} value={st.type_code}>{st.type_name}</option>
@@ -283,9 +286,9 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
               </select>
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Exercise</label>
+              <label className="block text-xs text-tertiary mb-1">Exercise</label>
               <select value={form.exercise} onChange={e => setForm(p => ({ ...p, exercise: e.target.value }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
+                className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]">
                 <option value="">Select</option>
                 {exercises.map(ex => (
                   <option key={ex.short_code} value={ex.short_code} title={ex.full_description}>
@@ -295,9 +298,9 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
               </select>
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1">Performance</label>
+              <label className="block text-xs text-tertiary mb-1">Performance</label>
               <select value={form.studentPerformance} onChange={e => setForm(p => ({ ...p, studentPerformance: parseInt(e.target.value) }))}
-                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white">
+                className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]">
                 {performanceStars.map((stars, i) => (
                   <option key={i} value={i + 1}>{stars} ({i + 1}/5)</option>
                 ))}
@@ -307,24 +310,24 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
 
           {/* Maneuvers */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Maneuvers Performed</label>
+            <label className="block text-xs text-tertiary mb-1">Maneuvers Performed</label>
             <textarea value={form.maneuvers} onChange={e => setForm(p => ({ ...p, maneuvers: e.target.value }))}
               rows={2} placeholder="e.g., Normal circuits, Flapless approach, Glide approach"
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white" />
+              className="w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
           </div>
 
           {/* Instructor Notes */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Instructor Notes</label>
+            <label className="block text-xs text-tertiary mb-1">Instructor Notes</label>
             <textarea value={form.instructorNotes} onChange={e => setForm(p => ({ ...p, instructorNotes: e.target.value }))}
               rows={2} placeholder="Feedback on student performance..."
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white" />
+              className="w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
           </div>
 
           {/* Buttons */}
-          <div className="flex space-x-3 pt-4 border-t border-slate-700">
+          <div className="flex space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <button type="button" onClick={onClose}
-              className="flex-1 px-4 py-2 bg-slate-700 text-slate-300 rounded-lg hover:bg-slate-600 transition cursor-pointer">
+              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer surface-inner">
               Cancel
             </button>
             <button type="submit"

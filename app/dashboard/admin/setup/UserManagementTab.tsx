@@ -154,8 +154,8 @@ export default function UserManagementTab() {
       // Reset form and reload user list
       setForm({ email: '', name: '', role: 'instructor', sendEmail: true });
       loadUsers();
-    } catch (err: any) {
-      alert('❌ Error: ' + err.message);
+    } catch (err) {
+      alert('❌ Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setSending(false);
       // Auto-hide success message after 5 seconds

@@ -53,7 +53,10 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
     if (scheduledFlights.length === 0) loadScheduledFlights();
     if (students.length === 0) loadStudents();
     if (instructors.length === 0) loadInstructors();
-  }, []);
+  }, [
+    aircraft.length, scheduledFlights.length, students.length, instructors.length,
+    loadAircraft, loadScheduledFlights, loadStudents, loadInstructors,
+  ]);
 
   const todayLocal = new Date().toLocaleDateString('en-CA');
 
