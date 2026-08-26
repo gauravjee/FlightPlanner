@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase-client';
-import { DAY_NAMES, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
+import { useFlightStore, DAY_NAMES, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import {
   Settings, School, Image as ImageIcon, Upload, LoaderCircle, Plane, Trash2,
   Clock, Calendar, Save, ClipboardList, CircleCheck, CalendarOff,
@@ -43,6 +43,19 @@ const TIMEZONE_OPTIONS = [
 // ============================================================
 export default function SettingsTab() {
   // ----- State -----
+  // This tab manages its own local formValues/settings state (below) and
+  // writes straight to Supabase in handleSave — it does NOT use the shared
+  // app store's `ftoSettings`. That store (read by BookingForm/
+  // ScheduleBoard/GroundSchoolCalendar for the weekly-off/partial-weekly-
+  // off/time-slot/etc. checks) only loads once per session and otherwise
+  // stays cached in memory, so without an explicit refresh here, a change
+  // saved on this tab would silently NOT take effect anywhere else in the
+  // app until a full page reload (2026-08-25 bugfix — found via a user
+  // report that a new Partial Weekly Off Day rule wasn't blocking the
+  // calendar right after saving). `loadFTOSettings` is called at the end
+  // of handleSave to close that gap for every setting on this tab, not
+  // just the new one.
+  const loadFTOSettings = useFlightStore((s) => s.loadFTOSettings);
   const [settings, setSettings] = useState<FTOSetting[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -211,7 +224,8 @@ export default function SettingsTab() {
 
       setSuccessMessage(`✅ ${updatedCount} settings saved successfully!`);
       setTimeout(() => setSuccessMessage(''), 3000);
-      loadSettings(); // Reload to reflect changes
+      loadSettings(); // Reload this tab's own local state to reflect changes
+      loadFTOSettings(); // Refresh the shared app store too — see the note by useFlightStore's import above
     } catch (err) {
       console.error('❌ Error saving settings:', err);
       setSuccessMessage('❌ Error saving settings. Please try again.');
