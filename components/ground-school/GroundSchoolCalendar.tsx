@@ -49,7 +49,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase-client';
-import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays } from '@/lib/store';
+import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Save, CircleCheck, X } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -158,6 +158,7 @@ export default function GroundSchoolCalendar() {
   const loadHolidays = useFlightStore((s) => s.loadHolidays);
   const ftoSettings = useFlightStore((s) => s.ftoSettings);
   const weeklyOffDays = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
+  const partialWeeklyOffRule = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
 
   // ----- Local state -----
 
@@ -420,7 +421,7 @@ export default function GroundSchoolCalendar() {
     // Single insertion point for both the weekly-grid day-column click and
     // the monthly-view day-cell click — reject before the modal even opens
     // if the FTO is closed (holiday or weekly off day) on this date.
-    const blockReason = getSchedulingBlockReason(date, holidays, weeklyOffDays);
+    const blockReason = getSchedulingBlockReason(date, holidays, weeklyOffDays, partialWeeklyOffRule);
     if (blockReason) {
       alert(`FTO is closed on this date (${blockReason.label}) — ground school classes cannot be scheduled.`);
       return;
@@ -475,7 +476,7 @@ export default function GroundSchoolCalendar() {
     // but the modal's own Date field (used for both new classes and when
     // editing an existing one) can still be changed to a closed date before
     // Save is clicked.
-    const blockReason = getSchedulingBlockReason(form.class_date, holidays, weeklyOffDays);
+    const blockReason = getSchedulingBlockReason(form.class_date, holidays, weeklyOffDays, partialWeeklyOffRule);
     if (blockReason) {
       alert(`FTO is closed on ${form.class_date} (${blockReason.label}) — ground school classes cannot be scheduled on this date.`);
       return;

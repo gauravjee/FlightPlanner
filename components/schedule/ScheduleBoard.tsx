@@ -20,7 +20,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { Calendar, Printer, Plus, Wrench, TriangleAlert, ClipboardList, X, Lock, Eye } from 'lucide-react';
-import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays } from '@/lib/store';
+import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { getLocationDisplay } from '@/lib/location';
 import { FlightSlot, ScheduledFlight } from '@/types';
 import { SCHEDULE_CREATE_ROLES } from '@/lib/permissions';
@@ -151,8 +151,11 @@ export default function ScheduleBoard() {
   );
 
   // FTO-wide weekly recurring off day(s) (Settings -> Time & Scheduling ->
-  // "Weekly Off Day(s)"), parsed from the raw comma-separated fto_settings value.
+  // "Weekly Off Day(s)"), parsed from the raw comma-separated fto_settings
+  // value, plus the partial (occurrence-based) rule from the same section
+  // (2026-08-25).
   const weeklyOffDays = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
+  const partialWeeklyOffRule = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
 
   // ----- Load data when component mounts -----
   useEffect(() => {
@@ -167,7 +170,7 @@ export default function ScheduleBoard() {
 
   // Is the currently viewed date blocked for scheduling — a holiday or the
   // FTO's weekly off day? null if the date is open.
-  const dateBlockReason = getSchedulingBlockReason(selectedDate, holidays, weeklyOffDays);
+  const dateBlockReason = getSchedulingBlockReason(selectedDate, holidays, weeklyOffDays, partialWeeklyOffRule);
 
   // Loaded defensively in its own effect (not just relying on the main
   // dashboard having already loaded it) so the Print Schedule sheet below

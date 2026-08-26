@@ -31,7 +31,7 @@ import {
   MIN_FLIGHT_DURATION_MIN, FLIGHT_DURATION_INCREMENT_MIN,
   LOW_FUEL_THRESHOLD_L, FUELING_BUFFER_MIN,
   getAircraftFuelBurnRate, getProjectedFuelAfter,
-  getSchedulingBlockReason, parseWeeklyOffDays,
+  getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule,
 } from '@/lib/store';
 import { ScheduledFlight } from '@/types';
 import { isSPLRequirement } from '@/lib/spl';
@@ -133,8 +133,10 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
   // FTO-wide blackout days — weekly recurring off day(s) (Settings -> Time &
   // Scheduling -> "Weekly Off Day(s)") parsed from the raw comma-separated
-  // fto_settings value.
+  // fto_settings value, plus the partial (occurrence-based, e.g. "every
+  // 2nd/4th Saturday") rule from the same Settings section (2026-08-25).
   const weeklyOffDays = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
+  const partialWeeklyOffRule = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
 
   // ----- Daily operating window & slot granularity, from FTO Settings -----
   // (Settings -> Daily Time Slots). Falls back to the previous hardcoded
@@ -391,7 +393,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (selected < today) return '❌ Cannot book flights in the past.';
-    const blockReason = getSchedulingBlockReason(dateStr, holidays, weeklyOffDays);
+    const blockReason = getSchedulingBlockReason(dateStr, holidays, weeklyOffDays, partialWeeklyOffRule);
     if (blockReason) return `❌ FTO is closed (${blockReason.label}) — cannot book flights on this date.`;
     return '';
   };

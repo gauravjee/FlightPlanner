@@ -188,13 +188,53 @@ async function countScheduleConflictsOnDate(dateStr: string): Promise<{ conflict
 // fto_settings key: a comma-separated list of day-of-week numbers
 // (0=Sunday..6=Saturday), e.g. "0" for Sundays-only or "0,6" for
 // Sunday+Saturday. Empty/unset means no weekly off day.
+//
+// PARTIAL WEEKLY OFF DAY (2026-08-25) — a second, independent rule for the
+// "every 2nd/4th Saturday" or "1st/3rd/5th Saturday" pattern some FTOs use
+// on top of (or instead of) a full weekly off day. Stored as a separate
+// `partial_weekly_off_days` fto_settings key, JSON-encoded:
+// {"day": 6, "occurrences": [2, 4]} — day is 0=Sunday..6=Saturday,
+// occurrences are which occurrence(s) of that weekday in the month
+// (1st..5th) are closed. Deliberately scoped to ONE day at a time (per
+// user confirmation) — a day already in the full `weekly_off_days` set
+// should not also carry a partial rule (enforced in the Settings UI, not
+// here, since this file has no UI concerns). Empty/unset/malformed means
+// no partial rule.
 // ============================================================
 export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th'];
+
+export interface PartialWeeklyOffRule {
+  day: number;            // 0=Sunday..6=Saturday
+  occurrences: number[];  // which occurrence(s) of that weekday in the month (1-5) are off
+}
 
 // Parses the `weekly_off_days` fto_settings value into day-of-week numbers.
 export function parseWeeklyOffDays(raw: string | undefined): number[] {
   if (!raw) return [];
   return raw.split(',').map(s => parseInt(s.trim(), 10)).filter(n => Number.isFinite(n) && n >= 0 && n <= 6);
+}
+
+// Parses the `partial_weekly_off_days` fto_settings value (JSON) into a
+// PartialWeeklyOffRule, or null if unset/empty/malformed — malformed is
+// treated the same as unset rather than throwing, since a bad value here
+// should never break scheduling app-wide.
+export function parsePartialWeeklyOffRule(raw: string | undefined): PartialWeeklyOffRule | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      parsed && typeof parsed.day === 'number' && parsed.day >= 0 && parsed.day <= 6 &&
+      Array.isArray(parsed.occurrences) &&
+      parsed.occurrences.length > 0 &&
+      parsed.occurrences.every((o: unknown) => typeof o === 'number' && o >= 1 && o <= 5)
+    ) {
+      return { day: parsed.day, occurrences: [...new Set<number>(parsed.occurrences)].sort((a, b) => a - b) };
+    }
+  } catch {
+    // malformed JSON in the DB — treat as "no partial rule" rather than crash
+  }
+  return null;
 }
 
 // Is `dateStr` ('YYYY-MM-DD') a day of the week the FTO is closed every week?
@@ -204,21 +244,49 @@ export function isWeeklyOffDay(dateStr: string, weeklyOffDays: number[]): boolea
   return weeklyOffDays.includes(day);
 }
 
+// Which occurrence (1st..5th) of its weekday `dateStr` falls on within its
+// month — e.g. the 1st-7th of the month is always the 1st occurrence of
+// whatever weekday it is, the 8th-14th the 2nd, etc.
+export function weekdayOccurrenceInMonth(dateStr: string): number {
+  const d = new Date(dateStr + 'T00:00:00');
+  return Math.ceil(d.getDate() / 7);
+}
+
+// Is `dateStr` closed under the partial (occurrence-based) weekly-off
+// rule? False if no rule is set, the date isn't the rule's weekday, or
+// it's a non-matching occurrence (e.g. the 1st/3rd/5th when only 2nd/4th
+// are configured). A month with only 4 occurrences of a weekday simply
+// never matches an occurrences:[5] rule that month — no special-casing
+// needed, the comparison just never hits.
+export function isPartialWeeklyOffDay(dateStr: string, rule: PartialWeeklyOffRule | null): boolean {
+  if (!dateStr || !rule) return false;
+  const d = new Date(dateStr + 'T00:00:00');
+  if (d.getDay() !== rule.day) return false;
+  return rule.occurrences.includes(weekdayOccurrenceInMonth(dateStr));
+}
+
 // Combined "is this date blocked for scheduling, and why" check, used by
 // BookingForm/ScheduleBoard/GroundSchoolCalendar and the store's own
-// bookFlight/updateScheduledFlight so every path agrees. Holidays take
-// priority for the message (more specific); falls back to the weekly-off
-// rule. Returns null if the date is open.
+// bookFlight/updateScheduledFlight so every path agrees. Priority order:
+// holiday (most specific) -> full weekly off -> partial weekly off.
+// `partialRule` defaults to null so any not-yet-updated caller keeps
+// working exactly as before. Returns null if the date is open.
 export function getSchedulingBlockReason(
   dateStr: string,
   holidays: Holiday[],
-  weeklyOffDays: number[]
+  weeklyOffDays: number[],
+  partialRule: PartialWeeklyOffRule | null = null
 ): { type: 'holiday' | 'weekly_off'; label: string } | null {
   const holiday = findHolidayForDate(dateStr, holidays);
   if (holiday) return { type: 'holiday', label: holiday.holidayName };
   if (isWeeklyOffDay(dateStr, weeklyOffDays)) {
     const day = new Date(dateStr + 'T00:00:00').getDay();
     return { type: 'weekly_off', label: `Weekly off (${DAY_NAMES[day]})` };
+  }
+  if (isPartialWeeklyOffDay(dateStr, partialRule)) {
+    const occurrence = weekdayOccurrenceInMonth(dateStr);
+    const ordinal = ORDINALS[occurrence - 1] || `${occurrence}th`;
+    return { type: 'weekly_off', label: `Weekly off (${ordinal} ${DAY_NAMES[partialRule!.day]})` };
   }
   return null;
 }
@@ -945,7 +1013,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
 
   bookFlight: async (booking) => {
     const bookingDateStr = new Date(booking.startTime).toLocaleDateString('en-CA');
-    const blockReason = getSchedulingBlockReason(bookingDateStr, get().holidays, parseWeeklyOffDays(get().ftoSettings['weekly_off_days']));
+    const blockReason = getSchedulingBlockReason(bookingDateStr, get().holidays, parseWeeklyOffDays(get().ftoSettings['weekly_off_days']), parsePartialWeeklyOffRule(get().ftoSettings['partial_weekly_off_days']));
     if (blockReason) {
       return { success: false, message: `❌ FTO is closed (${blockReason.label}) — cannot book flights on this date.` };
     }
@@ -1025,7 +1093,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     // throwing, since this action's return type is void.
     if (updates.startTime !== undefined) {
       const newDateStr = new Date(updates.startTime).toLocaleDateString('en-CA');
-      const blockReason = getSchedulingBlockReason(newDateStr, get().holidays, parseWeeklyOffDays(get().ftoSettings['weekly_off_days']));
+      const blockReason = getSchedulingBlockReason(newDateStr, get().holidays, parseWeeklyOffDays(get().ftoSettings['weekly_off_days']), parsePartialWeeklyOffRule(get().ftoSettings['partial_weekly_off_days']));
       if (blockReason) {
         console.error(`❌ Cannot reschedule flight ${id} to ${newDateStr} — FTO is closed (${blockReason.label}).`);
         return;

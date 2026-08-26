@@ -8,7 +8,7 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase-client';
-import { DAY_NAMES, parseWeeklyOffDays } from '@/lib/store';
+import { DAY_NAMES, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import {
   Settings, School, Image as ImageIcon, Upload, LoaderCircle, Plane, Trash2,
   Clock, Calendar, Save, ClipboardList, CircleCheck, CalendarOff,
@@ -103,6 +103,59 @@ export default function SettingsTab() {
     const current = parseWeeklyOffDays(getValue('weekly_off_days'));
     const next = current.includes(day) ? current.filter(d => d !== day) : [...current, day].sort();
     setValue('weekly_off_days', next.join(','));
+    // A day can't be both a full weekly off AND the partial rule's day —
+    // clear the partial rule if it's now pointing at a day that just
+    // became a full off day.
+    const partial = parsePartialWeeklyOffRule(getValue('partial_weekly_off_days'));
+    if (partial && next.includes(partial.day)) {
+      setValue('partial_weekly_off_days', '');
+    }
+  };
+
+  // ----- Partial (occurrence-based) weekly off day (2026-08-25) -----
+  // Covers the "every 2nd & 4th Saturday" / "1st, 3rd & 5th Saturday"
+  // pattern — a single day of week with only specific occurrences (1st
+  // through 5th) closed each month, on top of the full weekly-off days
+  // above. Stored as a JSON string (`{"day":6,"occurrences":[2,4]}`) in
+  // the `partial_weekly_off_days` fto_settings key. The strict parser in
+  // lib/store.ts (used everywhere scheduling actually checks this rule)
+  // requires at least one occurrence to count as "set"; this local,
+  // lenient version is only for editing here, so a day can be selected
+  // first with no occurrences chosen yet without the draft disappearing.
+  const getPartialRuleDraft = (): { day: number | null; occurrences: number[] } => {
+    const raw = getValue('partial_weekly_off_days');
+    if (!raw) return { day: null, occurrences: [] };
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed.day === 'number' && parsed.day >= 0 && parsed.day <= 6 && Array.isArray(parsed.occurrences)) {
+        return {
+          day: parsed.day,
+          occurrences: parsed.occurrences.filter((o: unknown) => typeof o === 'number' && o >= 1 && o <= 5),
+        };
+      }
+    } catch {
+      // malformed JSON — treat as unset
+    }
+    return { day: null, occurrences: [] };
+  };
+
+  /** Set (or clear, with null) which day of week the partial rule applies to. Resets any chosen occurrences. */
+  const setPartialRuleDay = (day: number | null) => {
+    if (day === null) {
+      setValue('partial_weekly_off_days', '');
+      return;
+    }
+    setValue('partial_weekly_off_days', JSON.stringify({ day, occurrences: [] }));
+  };
+
+  /** Toggle one occurrence (1st..5th) for the partial rule's currently selected day. */
+  const togglePartialRuleOccurrence = (occurrence: number) => {
+    const draft = getPartialRuleDraft();
+    if (draft.day === null) return; // no day chosen yet — nothing to toggle
+    const next = draft.occurrences.includes(occurrence)
+      ? draft.occurrences.filter(o => o !== occurrence)
+      : [...draft.occurrences, occurrence].sort((a, b) => a - b);
+    setValue('partial_weekly_off_days', JSON.stringify({ day: draft.day, occurrences: next }));
   };
 
   // ============================================================
@@ -625,15 +678,18 @@ export default function SettingsTab() {
                 <div className="flex flex-wrap gap-2">
                   {DAY_NAMES.map((dayName, dayIndex) => {
                     const isOff = parseWeeklyOffDays(getValue('weekly_off_days')).includes(dayIndex);
+                    const isPartialRuleDay = getPartialRuleDraft().day === dayIndex;
                     return (
                       <button
                         key={dayIndex}
                         type="button"
+                        disabled={isPartialRuleDay}
                         onClick={() => toggleWeeklyOffDay(dayIndex)}
-                        className="px-3 py-2 rounded-lg text-xs font-medium transition cursor-pointer border"
+                        title={isPartialRuleDay ? `${dayName} is already used by the partial weekly off rule below — remove it there first.` : undefined}
+                        className="px-3 py-2 rounded-lg text-xs font-medium transition border disabled:opacity-40 disabled:cursor-not-allowed"
                         style={isOff
                           ? { backgroundColor: 'var(--danger-soft)', color: 'var(--danger)', borderColor: 'var(--danger)' }
-                          : { backgroundColor: 'transparent', borderColor: 'var(--border)' }}
+                          : { backgroundColor: 'transparent', borderColor: 'var(--border)', cursor: isPartialRuleDay ? 'not-allowed' : 'pointer' }}
                       >
                         {dayName.slice(0, 3)}
                       </button>
@@ -644,6 +700,73 @@ export default function SettingsTab() {
                   Days the FTO is closed every week — flight bookings and ground-school classes cannot be scheduled on
                   these days. Leave all unselected if the FTO operates every day.
                 </p>
+            </div>
+
+            {/* ===== Partial Weekly Off Day (occurrence-based, 2026-08-25) ===== */}
+            <div className="border-t pt-4 mt-4" style={{ borderColor: 'var(--border)' }}>
+                <h4 className="text-xs font-medium text-tertiary mb-3 flex items-center gap-1.5">
+                  <CalendarOff className="w-3.5 h-3.5" /> Partial Weekly Off Day
+                </h4>
+                <p className="text-xs text-tertiary mb-3">
+                  For an FTO that is only closed on SOME occurrences of a weekday each month — e.g. every 2nd &amp; 4th
+                  Saturday, or every 1st, 3rd &amp; 5th Saturday — rather than every week. This is separate from, and in
+                  addition to, the full weekly off day(s) above.
+                </p>
+                {(() => {
+                  const draft = getPartialRuleDraft();
+                  const fullOffDays = parseWeeklyOffDays(getValue('weekly_off_days'));
+                  return (
+                    <>
+                      <div className="flex items-center gap-3 mb-3">
+                        <label className="text-xs text-tertiary shrink-0">Day of week</label>
+                        <select
+                          value={draft.day === null ? '' : draft.day}
+                          onChange={e => setPartialRuleDay(e.target.value === '' ? null : parseInt(e.target.value, 10))}
+                          className={inputClass}
+                          style={{ maxWidth: '200px' }}
+                        >
+                          <option value="">None (disabled)</option>
+                          {DAY_NAMES.map((dayName, dayIndex) => (
+                            <option key={dayIndex} value={dayIndex} disabled={fullOffDays.includes(dayIndex)}>
+                              {dayName}{fullOffDays.includes(dayIndex) ? ' (already a full weekly off day)' : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      {draft.day !== null && (
+                        <div>
+                          <label className="block text-xs text-tertiary mb-1.5">
+                            Which {DAY_NAMES[draft.day]}(s) of the month are off
+                          </label>
+                          <div className="flex flex-wrap gap-2">
+                            {['1st', '2nd', '3rd', '4th', '5th'].map((label, i) => {
+                              const occurrence = i + 1;
+                              const isSelected = draft.occurrences.includes(occurrence);
+                              return (
+                                <button
+                                  key={occurrence}
+                                  type="button"
+                                  onClick={() => togglePartialRuleOccurrence(occurrence)}
+                                  className="px-3 py-2 rounded-lg text-xs font-medium transition cursor-pointer border"
+                                  style={isSelected
+                                    ? { backgroundColor: 'var(--danger-soft)', color: 'var(--danger)', borderColor: 'var(--danger)' }
+                                    : { backgroundColor: 'transparent', borderColor: 'var(--border)' }}
+                                >
+                                  {label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-xs text-tertiary mt-2">
+                            {draft.occurrences.length === 0
+                              ? `No occurrences selected yet — pick at least one above, or set "Day of week" back to None to disable this rule.`
+                              : `${DAY_NAMES[draft.day]} is closed on the ${draft.occurrences.map(o => ['1st', '2nd', '3rd', '4th', '5th'][o - 1]).join(', ')} occurrence${draft.occurrences.length > 1 ? 's' : ''} of the month. A month with fewer than 5 ${DAY_NAMES[draft.day]}s simply has no 5th to close.`}
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
             </div>
             </div>
           {/* ============================================================ */}
