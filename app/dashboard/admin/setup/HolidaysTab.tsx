@@ -303,7 +303,7 @@ export default function HolidaysTab() {
                   </td>
                   <td className="py-3 text-xs text-tertiary max-w-[300px] truncate">{h.notes || '—'}</td>
                   <td className="py-3">
-                    <button onClick={() => handleDelete(h.id)} style={{ color: 'var(--danger)' }}><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleDelete(h.id)} style={{ color: 'var(--danger)' }} aria-label={`Delete ${h.holidayName}`}><Trash2 className="w-3.5 h-3.5" /></button>
                   </td>
                 </tr>
               ))}

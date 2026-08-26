@@ -247,11 +247,11 @@ export default function MaintenancePage() {
                               </>
                             )}
                             <button onClick={() => handleEdit(record)}
-                              className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
+                              className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }} aria-label={`Edit ${record.aircraftReg} ${record.maintenanceType} record`}>
                               <Pencil className="w-3 h-3" />
                             </button>
                             <button onClick={() => handleDelete(record.id)}
-                              className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}>
+                              className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }} aria-label={`Delete ${record.aircraftReg} ${record.maintenanceType} record`}>
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>

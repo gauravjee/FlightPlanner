@@ -120,8 +120,8 @@ export default function GroundSchoolTab() {
                   <td className="py-3 text-xs">{s.validity_years ? `${s.validity_years} yrs` : '—'}</td>
                   <td className="py-3 text-xs">{s.required_before_hours ? `${s.required_before_hours}h` : '—'}</td>
                   <td className="py-3">
-                    <button onClick={() => handleEdit(s)} className="mr-2" style={{ color: 'var(--accent)' }}><Pencil className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => handleDelete(s.id)} style={{ color: 'var(--danger)' }}><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleEdit(s)} className="mr-2" style={{ color: 'var(--accent)' }} aria-label={`Edit ${s.subject_name}`}><Pencil className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleDelete(s.id)} style={{ color: 'var(--danger)' }} aria-label={`Delete ${s.subject_name}`}><Trash2 className="w-3.5 h-3.5" /></button>
                   </td>
                 </tr>
               ))}

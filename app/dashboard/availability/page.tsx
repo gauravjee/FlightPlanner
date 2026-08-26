@@ -227,10 +227,10 @@ export default function AvailabilityPage() {
                         </td>
                         <td className="py-3">
                           <div className="flex space-x-1">
-                            <button onClick={() => handleEdit(record)} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }}>
+                            <button onClick={() => handleEdit(record)} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }} aria-label={`Edit ${record.personName}'s leave record`}>
                               <Pencil className="w-3 h-3" />
                             </button>
-                            <button onClick={() => handleDelete(record.id)} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}>
+                            <button onClick={() => handleDelete(record.id)} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }} aria-label={`Delete ${record.personName}'s leave record`}>
                               <Trash2 className="w-3 h-3" />
                             </button>
                           </div>

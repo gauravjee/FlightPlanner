@@ -217,8 +217,8 @@ export default function RolesTab() {
                     </span>
                   </td>
                   <td className="py-3">
-                    <button onClick={() => handleEdit(role)} className="mr-2" style={{ color: 'var(--accent)' }}><Pencil className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => handleDelete(role.id)} style={{ color: 'var(--danger)' }}><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleEdit(role)} className="mr-2" style={{ color: 'var(--accent)' }} aria-label={`Edit ${role.role_name}`}><Pencil className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleDelete(role.id)} style={{ color: 'var(--danger)' }} aria-label={`Delete ${role.role_name}`}><Trash2 className="w-3.5 h-3.5" /></button>
                   </td>
                 </tr>
               ))}

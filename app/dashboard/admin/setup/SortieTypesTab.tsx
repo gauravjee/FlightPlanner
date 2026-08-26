@@ -277,8 +277,8 @@ export default function SortieTypesTab() {
                     </span>
                   </td>
                   <td className="py-3">
-                    <button onClick={() => handleEdit(sortie)} className="mr-2" style={{ color: 'var(--accent)' }}><Pencil className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => handleDelete(sortie.id)} style={{ color: 'var(--danger)' }}><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleEdit(sortie)} className="mr-2" style={{ color: 'var(--accent)' }} aria-label={`Edit ${sortie.type_name}`}><Pencil className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleDelete(sortie.id)} style={{ color: 'var(--danger)' }} aria-label={`Delete ${sortie.type_name}`}><Trash2 className="w-3.5 h-3.5" /></button>
                   </td>
                 </tr>
               ))}

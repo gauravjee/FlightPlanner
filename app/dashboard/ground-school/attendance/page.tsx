@@ -303,7 +303,7 @@ export default function AttendancePage() {
                                   />
                                 </td>
                                 <td className="py-3">
-                                  <button onClick={() => removeStudent(enr.id)} className="px-2 py-1 rounded transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}>
+                                  <button onClick={() => removeStudent(enr.id)} className="px-2 py-1 rounded transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }} aria-label={`Remove ${student?.name || enr.student_id}`}>
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 </td>

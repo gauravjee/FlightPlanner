@@ -402,8 +402,8 @@ export default function AircraftSetupTab() {
                   </td>
                   <td className="py-3 text-xs">{ac.next_maintenance}</td>
                   <td className="py-3">
-                    <button onClick={() => handleEdit(ac)} className="mr-2" style={{ color: 'var(--accent)' }}><Pencil className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => handleDelete(ac.id)} style={{ color: 'var(--danger)' }}><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleEdit(ac)} className="mr-2" style={{ color: 'var(--accent)' }} aria-label={`Edit ${ac.registration}`}><Pencil className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleDelete(ac.id)} style={{ color: 'var(--danger)' }} aria-label={`Delete ${ac.registration}`}><Trash2 className="w-3.5 h-3.5" /></button>
                   </td>
                 </tr>
               ))}

@@ -443,8 +443,8 @@ export default function ExercisesTab() {
                     </span>
                   </td>
                   <td className="py-3">
-                    <button onClick={() => handleEdit(exercise)} className="mr-2" style={{ color: 'var(--accent)' }}><Pencil className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => handleDelete(exercise.id)} style={{ color: 'var(--danger)' }}><Trash2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleEdit(exercise)} className="mr-2" style={{ color: 'var(--accent)' }} aria-label={`Edit ${exercise.exercise_name}`}><Pencil className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => handleDelete(exercise.id)} style={{ color: 'var(--danger)' }} aria-label={`Delete ${exercise.exercise_name}`}><Trash2 className="w-3.5 h-3.5" /></button>
                   </td>
                 </tr>
               ))}
