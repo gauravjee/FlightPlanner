@@ -281,15 +281,19 @@ export const INCIDENT_REPORT_ROLES = REPORTS_VIEW_ROLES;
 // BREATH ANALYSER (BA) TEST REGISTER (2026-08-20)
 // ============================================================
 // Who can view the register — same broad set as the rest of Reports.
-// Who can add/edit an entry — deliberately narrower, per the FTO's own
-// spec: super_admin, admin, operations, and the new 'safety_officer' role
-// (created for this feature — see VALID_USER_ROLES in
-// app/api/admin/users/route.ts and the role dropdown in
-// UserManagementTab.tsx). Notably does NOT include 'instructor' or
-// 'maintenance', even though both can view the register — this was an
-// explicit, narrower choice by the FTO, not an oversight.
+// Who can add/edit an entry — deliberately narrow, per the FTO's own spec.
+// 2026-08-26: narrowed further, per explicit user correction — write
+// access is now 'operations' and 'safety_officer' ONLY. 'admin' and
+// 'super_admin' previously had write access too (the original 2026-08-20
+// spec); the FTO flagged that as a defect and asked for it removed, so
+// even admin/super_admin can no longer add/edit/delete a BA entry —
+// they still retain VIEW access via BA_TEST_VIEW_ROLES below, same as
+// instructor/maintenance. If a future admin genuinely needs to correct an
+// entry, that has to go through operations or a safety_officer user, by
+// design — this is a deliberate compliance-record control, not an
+// oversight to "fix" back to the old broader list.
 export const BA_TEST_VIEW_ROLES = REPORTS_VIEW_ROLES;
-export const BA_TEST_WRITE_ROLES = ['admin', 'super_admin', 'operations', 'safety_officer'];
+export const BA_TEST_WRITE_ROLES = ['operations', 'safety_officer'];
 
 // ============================================================
 // USER ACCOUNTS (login roles) — super_admin-only User Management tab
