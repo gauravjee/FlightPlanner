@@ -4,7 +4,7 @@
 import { Aircraft } from '@/types';
 import { useState, useEffect } from 'react';
 import { Pencil, Plus, Save, X } from 'lucide-react';
-import { FUEL_BURN_RATE_BY_TYPE_LPH, DEFAULT_FUEL_BURN_RATE_LPH } from '@/lib/store';
+import { FUEL_BURN_RATE_BY_TYPE_LPH, DEFAULT_FUEL_BURN_RATE_LPH, deriveModelEngineTypeMap } from '@/lib/store';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { supabase } from '@/lib/supabase-client';
 
@@ -67,26 +67,48 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
   // dropdown-source read in this app.
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [useCustomModel, setUseCustomModel] = useState(false);
+  // 2026-08-27: model -> engine-type ('Single Engine'/'Multi Engine'),
+  // derived from the same query's engine_type column — see
+  // deriveModelEngineTypeMap in lib/store.ts. A model with no engine_type
+  // set on any of its rows just doesn't appear in this map.
+  const [modelEngineType, setModelEngineType] = useState<Record<string, string>>({});
 
   useEffect(() => {
     supabase
       .from('aircraft_maintenance_schedule_templates')
-      .select('aircraft_model')
+      .select('aircraft_model, engine_type')
       .then(({ data, error }) => {
         if (error) { console.error('Error loading aircraft models:', error.message); return; }
-        const distinct = Array.from(new Set((data || []).map(r => r.aircraft_model as string))).sort();
+        const rows = (data || []) as { aircraft_model: string; engine_type: string | null }[];
+        const distinct = Array.from(new Set(rows.map(r => r.aircraft_model))).sort();
         setModelOptions(distinct);
+        setModelEngineType(deriveModelEngineTypeMap(rows));
       });
   }, []);
 
   // Once model options are loaded, decide whether the current form.model
   // (from an aircraft being edited) matches a known option or should show
-  // as a custom/"Other" entry.
+  // as a custom/"Other" entry. Checked against the FULL model list (not the
+  // type-filtered one below) so editing an existing aircraft whose Type and
+  // Model happen to be a pre-existing mismatch (data predating this Type
+  // filter) still shows it as a known list entry rather than forcing it
+  // into "Other" mode.
   useEffect(() => {
     if (form.model && modelOptions.length > 0) {
       setUseCustomModel(!modelOptions.includes(form.model));
     }
   }, [modelOptions, form.model]);
+
+  // 2026-08-27: Model dropdown filtered down to whichever Type is
+  // currently selected (see modelEngineType, derived from the DB above) —
+  // prevents picking a Single Engine Type with a twin-engine Model (or vice
+  // versa) by manual-entry mistake. A model not present in modelEngineType
+  // (no engine_type set yet) is deliberately never filtered out (shown for
+  // every Type) rather than silently hidden. With no Type selected yet,
+  // every option is shown — nothing to filter against.
+  const filteredModelOptions = form.type
+    ? modelOptions.filter(m => !modelEngineType[m] || modelEngineType[m] === form.type)
+    : modelOptions;
 
   useEffect(() => {
     if (aircraft) {
@@ -131,15 +153,26 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
     const num = parseFloat(raw);
     setForm(prev => ({ ...prev, fuelBurnRateLph: raw === '' || isNaN(num) ? undefined : num }));
   } else if (field === 'type') {
-    setForm(prev => ({
-      ...prev,
-      type: value as string,
-      // Auto-fill (or refresh) the burn rate to this type's default, as long
-      // as the user hasn't manually overridden it for this aircraft.
-      fuelBurnRateLph: autoBurnRate
-        ? (FUEL_BURN_RATE_BY_TYPE_LPH[value as string] ?? DEFAULT_FUEL_BURN_RATE_LPH)
-        : prev.fuelBurnRateLph,
-    }));
+    setForm(prev => {
+      // If the currently-picked Model is known (in modelEngineType) and
+      // belongs to a DIFFERENT engine category than the newly-selected
+      // Type, clear it rather than silently leave a mismatched Type/Model
+      // combo sitting in the form — the whole point of this filter is to
+      // prevent exactly that combination from being saved. A model not in
+      // the map (custom/unknown, or no engine_type set yet) is left alone,
+      // since it isn't known to conflict with anything.
+      const modelMismatch = prev.model && modelEngineType[prev.model] && modelEngineType[prev.model] !== value;
+      return {
+        ...prev,
+        type: value as string,
+        model: modelMismatch ? '' : prev.model,
+        // Auto-fill (or refresh) the burn rate to this type's default, as long
+        // as the user hasn't manually overridden it for this aircraft.
+        fuelBurnRateLph: autoBurnRate
+          ? (FUEL_BURN_RATE_BY_TYPE_LPH[value as string] ?? DEFAULT_FUEL_BURN_RATE_LPH)
+          : prev.fuelBurnRateLph,
+      };
+    });
   } else {
     setForm(prev => ({ ...prev, [field]: value }));
   }
@@ -228,7 +261,7 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
                   className={inputClass}
                 >
                   <option value="">Select Model</option>
-                  {modelOptions.map(m => (
+                  {filteredModelOptions.map(m => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                   <option value={OTHER_MODEL_OPTION}>Other (custom)…</option>
@@ -237,6 +270,11 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
               {!useCustomModel && modelOptions.length === 0 && (
                 <p className="text-xs text-tertiary mt-1">
                   No maintenance-schedule models defined yet — add one in Admin Setup → Aircraft Maintenance Schedule.
+                </p>
+              )}
+              {!useCustomModel && modelOptions.length > 0 && filteredModelOptions.length === 0 && (
+                <p className="text-xs text-tertiary mt-1">
+                  No known models for this Type yet — pick &quot;Other (custom)…&quot; or add one in Admin Setup → Aircraft Maintenance Schedule.
                 </p>
               )}
             </div>

@@ -25,7 +25,13 @@ interface ScheduleTemplateRow {
   interval_value: number;
   notes: string | null;
   is_active: boolean;
+  // 2026-08-27 — see add-schedule-template-engine-type.sql. Same value
+  // expected across every row for a given aircraft_model; the Engine Type
+  // selector below keeps them in sync when changed.
+  engine_type: string | null;
 }
+
+const ENGINE_TYPES = ['Single Engine', 'Multi Engine'];
 
 // Seeded models (see add-aircraft-maintenance-schedule.sql) plus whatever
 // custom models a user has already added templates for — the model list
@@ -78,15 +84,40 @@ export default function AircraftMaintenanceScheduleTab() {
 
   const rowsForModel = templates.filter(t => t.aircraft_model === selectedModel);
 
+  // 2026-08-27: Engine Type for the currently-selected model — derived
+  // from its existing rows (they should all agree, since this UI is what
+  // keeps them in sync) rather than tracked as separate independent state,
+  // so switching models always reflects the real DB state, not a stale
+  // selection left over from whichever model was picked before.
+  const modelEngineType = rowsForModel.find(r => r.engine_type)?.engine_type || '';
+
   const resetForm = () => {
     setEditing(null);
     setForm({ item_name: '', interval_type: 'HOBBS_HOURS', interval_value: 100, notes: '', is_active: true });
   };
 
+  // Applies an Engine Type to EVERY existing row for the selected model in
+  // one go (not just new items going forward) — the column is denormalized
+  // across all ~8 item-rows per model, so this is what keeps them from
+  // silently drifting apart. A brand-new model with zero rows yet has
+  // nothing to sync; its first "Add Item" save (below) carries the value.
+  const handleSetEngineType = async (newType: string) => {
+    await Promise.all(
+      rowsForModel.map(row =>
+        fetch('/api/admin/config/aircraft-maintenance-schedule', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: row.id, engine_type: newType || null }),
+        })
+      )
+    );
+    loadTemplates();
+  };
+
   const handleSave = async () => {
     if (!form.item_name || !selectedModel) return;
 
-    const body = { aircraft_model: selectedModel, ...form };
+    const body = { aircraft_model: selectedModel, engine_type: modelEngineType || null, ...form };
 
     if (editing) {
       await fetch('/api/admin/config/aircraft-maintenance-schedule', {
@@ -181,6 +212,30 @@ export default function AircraftMaintenanceScheduleTab() {
             Add Model
           </button>
         </div>
+      </div>
+
+      {/* Engine Type for the selected model — 2026-08-27. Drives the
+          Single Engine / Multi Engine filter on the Aircraft form's Model
+          dropdown (AircraftFormModal.tsx/AircraftSetupTab.tsx). Changing
+          this updates every existing schedule item for this model at once. */}
+      <div className="mb-6">
+        <label className="block text-sm text-secondary mb-2">
+          Engine Type for {selectedModel}:
+        </label>
+        <select
+          value={modelEngineType}
+          onChange={e => handleSetEngineType(e.target.value)}
+          className={`${inputClass} max-w-xs`}
+        >
+          <option value="">Not set — shown for either Type</option>
+          {ENGINE_TYPES.map(t => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        <p className="text-xs text-tertiary mt-1">
+          Used to filter the Aircraft Model dropdown by Type. Leaving this unset means {selectedModel} shows up
+          regardless of whether Single Engine or Multi Engine is selected there.
+        </p>
       </div>
 
       {/* Add/Edit Form */}

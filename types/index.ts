@@ -357,6 +357,11 @@ export interface MaintenanceScheduleTemplate {
   intervalValue: number;
   notes: string | null;
   isActive: boolean;
+  // 2026-08-27: which Aircraft Type ('Single Engine' | 'Multi Engine') this
+  // model belongs to — see add-schedule-template-engine-type.sql. Null for
+  // a model that predates this column and hasn't been set yet; treated as
+  // "unknown, don't filter" by the Model dropdown.
+  engineType: string | null;
 }
 
 // Computed (not stored) — one per active template item applicable to a

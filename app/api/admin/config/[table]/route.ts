@@ -87,7 +87,8 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
   // AircraftMaintenanceScheduleTab.tsx for the CRUD UI.
   'aircraft-maintenance-schedule': {
     dbTable: 'aircraft_maintenance_schedule_templates',
-    columns: ['aircraft_model', 'item_name', 'interval_type', 'interval_value', 'notes', 'is_active'],
+    // engine_type added 2026-08-27 — see add-schedule-template-engine-type.sql.
+    columns: ['aircraft_model', 'item_name', 'interval_type', 'interval_value', 'notes', 'is_active', 'engine_type'],
   },
 };
 

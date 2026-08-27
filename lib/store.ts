@@ -117,6 +117,41 @@ export const FUEL_BURN_RATE_BY_TYPE_LPH: Record<string, number> = {
 // and it has no rate of its own set.
 export const DEFAULT_FUEL_BURN_RATE_LPH = 30;
 
+// 2026-08-27: which engine category (Type) each Model belongs to — used by
+// AircraftFormModal.tsx/AircraftSetupTab.tsx to filter the Model dropdown
+// down to only models matching whichever Type is selected, so picking
+// "Single Engine" then a twin-engine Model (or vice versa) can't happen by
+// manual-entry mistake.
+//
+// Previously a hardcoded MODEL_ENGINE_TYPE map here — replaced with this
+// derivation from the DB-backed engine_type column (see
+// add-schedule-template-engine-type.sql) so a newly-added model's engine
+// type is set the same way everything else about that model already is:
+// via Admin Setup -> Aircraft Maintenance Schedule, no code change or
+// deploy needed. The Aircraft Model list itself has been DB-driven since
+// Phase 1 (SELECT DISTINCT aircraft_model) — this closes the one remaining
+// piece that still required editing code.
+//
+// Takes the raw {aircraft_model, engine_type} rows a caller already has
+// (AircraftFormModal.tsx/AircraftSetupTab.tsx each do their own lightweight
+// supabase select, same pattern as the existing Model-options query — not
+// routed through the full Zustand store, to keep those reads cheap and
+// independent). A model with no engine_type set on any of its rows is
+// simply absent from the returned map — the caller's own filter logic
+// treats "not in the map" as "unknown, show for either Type," same
+// fallback behavior the old hardcoded map had for anything it didn't list.
+export function deriveModelEngineTypeMap(
+  rows: { aircraft_model: string; engine_type: string | null }[]
+): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const row of rows) {
+    if (row.engine_type && !map[row.aircraft_model]) {
+      map[row.aircraft_model] = row.engine_type;
+    }
+  }
+  return map;
+}
+
 // The fuel-burn rate (L/hr) to use for this aircraft: its own configured
 // rate if set, else the engine-category default, else the flat fallback.
 export function getAircraftFuelBurnRate(
@@ -1341,6 +1376,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
         intervalValue: row.interval_value as number,
         notes: (row.notes as string) || null,
         isActive: row.is_active as boolean,
+        engineType: (row.engine_type as string) || null,
       })),
     });
   },

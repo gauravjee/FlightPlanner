@@ -7,6 +7,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase-client';
 import { Plane, Pencil, Plus, Save, Trash2, CircleCheck, Fuel, Wrench } from 'lucide-react';
+import { deriveModelEngineTypeMap } from '@/lib/store';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -70,17 +71,30 @@ export default function AircraftSetupTab() {
   // fallback).
   const [modelOptions, setModelOptions] = useState<string[]>([]);
   const [useCustomModel, setUseCustomModel] = useState(false);
+  // 2026-08-27: model -> engine-type, derived from the query's engine_type
+  // column — see deriveModelEngineTypeMap in lib/store.ts and the fuller
+  // comment in AircraftFormModal.tsx's own copy of this same pattern.
+  const [modelEngineType, setModelEngineType] = useState<Record<string, string>>({});
 
   useEffect(() => {
     supabase
       .from('aircraft_maintenance_schedule_templates')
-      .select('aircraft_model')
+      .select('aircraft_model, engine_type')
       .then(({ data, error }) => {
         if (error) { console.error('Error loading aircraft models:', error.message); return; }
-        const distinct = Array.from(new Set((data || []).map(r => r.aircraft_model as string))).sort();
+        const rows = (data || []) as { aircraft_model: string; engine_type: string | null }[];
+        const distinct = Array.from(new Set(rows.map(r => r.aircraft_model))).sort();
         setModelOptions(distinct);
+        setModelEngineType(deriveModelEngineTypeMap(rows));
       });
   }, []);
+
+  // 2026-08-27: Model dropdown filtered to whichever Type is currently
+  // selected. A model not in the map (no engine_type set yet) is never
+  // filtered out (shown for every Type).
+  const filteredModelOptions = form.type
+    ? modelOptions.filter(m => !modelEngineType[m] || modelEngineType[m] === form.type)
+    : modelOptions;
 
   const loadAircraft = async () => {
     setLoading(true);
@@ -262,7 +276,17 @@ export default function AircraftSetupTab() {
             <label className="block text-xs text-tertiary mb-1">Type</label>
             <select
               value={form.type}
-              onChange={e => setForm(p => ({ ...p, type: e.target.value }))}
+              onChange={e => {
+                const newType = e.target.value;
+                // Clear a now-mismatched Model, same as AircraftFormModal.tsx
+                // — a known model belonging to the OTHER engine category
+                // shouldn't be left sitting in the form once Type changes.
+                setForm(p => ({
+                  ...p,
+                  type: newType,
+                  model: (p.model && modelEngineType[p.model] && modelEngineType[p.model] !== newType) ? '' : p.model,
+                }));
+              }}
               className={inputClass}
             >
               {ENGINE_TYPES.map(t => (
@@ -306,11 +330,16 @@ export default function AircraftSetupTab() {
                 className={inputClass}
               >
                 <option value="">Select Model</option>
-                {modelOptions.map(m => (
+                {filteredModelOptions.map(m => (
                   <option key={m} value={m}>{m}</option>
                 ))}
                 <option value={OTHER_MODEL_OPTION}>Other (custom)…</option>
               </select>
+            )}
+            {!useCustomModel && modelOptions.length > 0 && filteredModelOptions.length === 0 && (
+              <p className="text-xs text-tertiary mt-1">
+                No known models for this Type yet — pick &quot;Other (custom)…&quot; or add one in Admin Setup → Aircraft Maintenance Schedule.
+              </p>
             )}
           </div>
         </div>
