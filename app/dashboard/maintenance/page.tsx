@@ -9,6 +9,7 @@ import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import { MaintenanceRecord } from '@/types';
 import MaintenanceForm from '@/components/maintenance/MaintenanceForm';
+import MaintenanceDueSection from '@/components/maintenance/MaintenanceDueSection';
 import RoleGate from '@/components/ui/RoleGate';
 import { MAINTENANCE_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
@@ -125,6 +126,8 @@ export default function MaintenancePage() {
       <RoleGate allowedRoles={MAINTENANCE_VIEW_ROLES} moduleKey="maintenance">
     <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="max-w-7xl mx-auto px-4 py-6">
+        <MaintenanceDueSection canWrite={canWrite} />
+
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {[

@@ -6,6 +6,12 @@ import { useState, useEffect } from 'react';
 import { Pencil, Plus, Save, X } from 'lucide-react';
 import { FUEL_BURN_RATE_BY_TYPE_LPH, DEFAULT_FUEL_BURN_RATE_LPH } from '@/lib/store';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
+import { supabase } from '@/lib/supabase-client';
+
+// 2026-08-26: sentinel value for the "Other" option in the Model dropdown
+// below — never written to form.model itself, only used to decide whether
+// to show the free-text fallback input.
+const OTHER_MODEL_OPTION = '__other__';
 
 // 2026-08-19: `type` is the engine category, a genuinely fixed 2-value
 // enum — see restructure-aircraft-type-model.sql. Previously this was a
@@ -52,6 +58,35 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
   // field by hand — at that point it becomes a deliberate per-aircraft
   // override and stops auto-updating when Type changes.
   const [autoBurnRate, setAutoBurnRate] = useState(!aircraft || aircraft.fuelBurnRateLph == null);
+
+  // 2026-08-26: Aircraft Model dropdown, sourced from the distinct models
+  // that have a maintenance schedule template defined (see
+  // AircraftMaintenanceScheduleTab.tsx) — with an "Other" free-text
+  // fallback for models with no template yet, per the confirmed design.
+  // Read-only client-side query, same scope convention as every other
+  // dropdown-source read in this app.
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [useCustomModel, setUseCustomModel] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from('aircraft_maintenance_schedule_templates')
+      .select('aircraft_model')
+      .then(({ data, error }) => {
+        if (error) { console.error('Error loading aircraft models:', error.message); return; }
+        const distinct = Array.from(new Set((data || []).map(r => r.aircraft_model as string))).sort();
+        setModelOptions(distinct);
+      });
+  }, []);
+
+  // Once model options are loaded, decide whether the current form.model
+  // (from an aircraft being edited) matches a known option or should show
+  // as a custom/"Other" entry.
+  useEffect(() => {
+    if (form.model && modelOptions.length > 0) {
+      setUseCustomModel(!modelOptions.includes(form.model));
+    }
+  }, [modelOptions, form.model]);
 
   useEffect(() => {
     if (aircraft) {
@@ -157,14 +192,53 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
             </div>
             <div>
               <label className="block text-sm text-secondary mb-1">Model *</label>
-              <input
-                type="text"
-                value={form.model}
-                onChange={e => handleChange('model', e.target.value)}
-                placeholder="e.g., Cessna 172S Skyhawk"
-                required
-                className={inputClass}
-              />
+              {useCustomModel ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={form.model}
+                    onChange={e => handleChange('model', e.target.value)}
+                    placeholder="e.g., Cessna 172S Skyhawk"
+                    required
+                    className={inputClass}
+                  />
+                  {modelOptions.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => { setUseCustomModel(false); handleChange('model', ''); }}
+                      className="px-2 text-xs text-tertiary whitespace-nowrap"
+                      title="Pick from the list instead"
+                    >
+                      Use list
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <select
+                  value={form.model}
+                  onChange={e => {
+                    if (e.target.value === OTHER_MODEL_OPTION) {
+                      setUseCustomModel(true);
+                      handleChange('model', '');
+                    } else {
+                      handleChange('model', e.target.value);
+                    }
+                  }}
+                  required
+                  className={inputClass}
+                >
+                  <option value="">Select Model</option>
+                  {modelOptions.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                  <option value={OTHER_MODEL_OPTION}>Other (custom)…</option>
+                </select>
+              )}
+              {!useCustomModel && modelOptions.length === 0 && (
+                <p className="text-xs text-tertiary mt-1">
+                  No maintenance-schedule models defined yet — add one in Admin Setup → Aircraft Maintenance Schedule.
+                </p>
+              )}
             </div>
           </div>
 

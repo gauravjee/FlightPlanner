@@ -26,6 +26,9 @@ const FIELD_MAP: Record<string, string> = {
   scheduledDate: 'scheduled_date',
   maintenanceStart: 'maintenance_start',
   maintenanceEnd: 'maintenance_end',
+  // 2026-08-26: aircraft maintenance schedule, Phase 1 — see
+  // add-aircraft-maintenance-schedule.sql.
+  hobbsAtCompletion: 'hobbs_at_completion',
 };
 
 export async function PATCH(request: Request, context: RouteContext) {

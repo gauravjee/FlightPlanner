@@ -11,8 +11,14 @@ export interface Aircraft {
   // restructure-aircraft-type-model.sql and lib/flight-classification.ts's
   // isMultiEngineFlight().
   type: string;
-  // Free-text specific model/variant, e.g. "Cessna 172S Skyhawk", "Piper
-  // Seneca II" — display/identification only, not used in any lookup.
+  // Specific model/variant, e.g. "Cessna 172", "Piper PA-34 Seneca". 2026-08-26:
+  // now offered as a dropdown sourced from distinct
+  // aircraft_maintenance_schedule_templates.aircraft_model values, with an
+  // "Other" free-text fallback for models with no maintenance template yet
+  // — see AircraftFormModal.tsx / AircraftSetupTab.tsx. Selecting a
+  // templated model is what makes maintenance-due tracking (Phase 1) work
+  // for that aircraft; free-text "Other" entries just display, same as
+  // before.
   model: string;
   year: number;
   hobbsTime: number;
@@ -324,12 +330,51 @@ export interface MaintenanceRecord {
   //                           days as it spans.
   maintenanceStart?: string | null;  // ISO timestamp
   maintenanceEnd?: string | null;    // ISO timestamp
+  // 2026-08-26: aircraft hobbs reading at the time this record was
+  // completed, or (for a baseline row entered when enabling schedule
+  // tracking on an aircraft) the hobbs reading at the last known service.
+  // Anchors future HOBBS_HOURS due-calculations — see
+  // computeMaintenanceDueItems() in lib/store.ts. Undefined/null on
+  // records that predate this feature or on CALENDAR_MONTHS-only items.
+  hobbsAtCompletion?: number | null;
   // Display fields (looked up from aircraft table)
   aircraftReg?: string;
   aircraftType?: string;
   // Calculated fields
   isOverdue?: boolean;
   daysUntilDue?: number;
+}
+
+// 2026-08-26: Aircraft Maintenance Schedule — Phase 1 (warnings + staff-
+// confirmed record creation only; see add-aircraft-maintenance-schedule.sql
+// and the handoff doc's "Aircraft Maintenance Schedule" section for full
+// design/scope, including the deliberately-deferred Phase 2 hard-block).
+export interface MaintenanceScheduleTemplate {
+  id: number;
+  aircraftModel: string;
+  itemName: string;
+  intervalType: 'HOBBS_HOURS' | 'CALENDAR_MONTHS';
+  intervalValue: number;
+  notes: string | null;
+  isActive: boolean;
+}
+
+// Computed (not stored) — one per active template item applicable to a
+// given aircraft, produced by computeMaintenanceDueItems() in lib/store.ts.
+export interface MaintenanceDueItem {
+  template: MaintenanceScheduleTemplate;
+  aircraftId: string;
+  // Latest known baseline for this item: either the most recent COMPLETED
+  // maintenance_records row referencing it, or a manually-entered baseline
+  // row if the aircraft has no history yet. Null if neither exists — i.e.
+  // schedule tracking has not been enabled/baselined for this item yet.
+  lastHobbs: number | null;
+  lastDate: string | null;
+  // HOBBS_HOURS: lastHobbs + intervalValue. CALENDAR_MONTHS: lastDate +
+  // intervalValue months. Null if no baseline is set yet.
+  dueAtHobbs: number | null;
+  dueAtDate: string | null;
+  status: 'NO_BASELINE' | 'OK' | 'DUE_SOON' | 'OVERDUE';
 }
 
 // Instructor record from database

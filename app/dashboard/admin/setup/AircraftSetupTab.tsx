@@ -32,6 +32,10 @@ interface Aircraft {
 // e.g. "Cessna 172S Skyhawk".
 const ENGINE_TYPES = ['Single Engine', 'Multi Engine'];
 
+// 2026-08-26: sentinel for the "Other" option in the Model dropdown — see
+// AircraftFormModal.tsx's own copy of this same pattern.
+const OTHER_MODEL_OPTION = '__other__';
+
 // Default form values for adding a new aircraft. Pulled out into a function
 // (rather than inlined into useState's initial value) so next_maintenance's
 // Date.now()-based default is only ever computed lazily — on mount via
@@ -59,6 +63,24 @@ export default function AircraftSetupTab() {
 
   // Form state for adding/editing
   const [form, setForm] = useState(getDefaultForm);
+
+  // 2026-08-26: Aircraft Model dropdown — same pattern/source as
+  // AircraftFormModal.tsx (distinct models from
+  // aircraft_maintenance_schedule_templates, plus an "Other" free-text
+  // fallback).
+  const [modelOptions, setModelOptions] = useState<string[]>([]);
+  const [useCustomModel, setUseCustomModel] = useState(false);
+
+  useEffect(() => {
+    supabase
+      .from('aircraft_maintenance_schedule_templates')
+      .select('aircraft_model')
+      .then(({ data, error }) => {
+        if (error) { console.error('Error loading aircraft models:', error.message); return; }
+        const distinct = Array.from(new Set((data || []).map(r => r.aircraft_model as string))).sort();
+        setModelOptions(distinct);
+      });
+  }, []);
 
   const loadAircraft = async () => {
     setLoading(true);
@@ -154,6 +176,7 @@ export default function AircraftSetupTab() {
       next_maintenance: ac.next_maintenance,
       is_simulator: !!ac.is_simulator,
     });
+    setUseCustomModel(!!ac.model && !modelOptions.includes(ac.model));
   };
 
   // Delete aircraft
@@ -169,6 +192,7 @@ export default function AircraftSetupTab() {
   // Reset form to defaults
   const resetForm = () => {
     setForm(getDefaultForm());
+    setUseCustomModel(false);
   };
 
   // Stats
@@ -248,13 +272,46 @@ export default function AircraftSetupTab() {
           </div>
           <div>
             <label className="block text-xs text-tertiary mb-1">Model</label>
-            <input
-              type="text"
-              placeholder="e.g., Cessna 172S Skyhawk"
-              value={form.model}
-              onChange={e => setForm(p => ({ ...p, model: e.target.value }))}
-              className={inputClass}
-            />
+            {useCustomModel ? (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="e.g., Cessna 172S Skyhawk"
+                  value={form.model}
+                  onChange={e => setForm(p => ({ ...p, model: e.target.value }))}
+                  className={inputClass}
+                />
+                {modelOptions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { setUseCustomModel(false); setForm(p => ({ ...p, model: '' })); }}
+                    className="px-2 text-xs text-tertiary whitespace-nowrap"
+                    title="Pick from the list instead"
+                  >
+                    Use list
+                  </button>
+                )}
+              </div>
+            ) : (
+              <select
+                value={form.model}
+                onChange={e => {
+                  if (e.target.value === OTHER_MODEL_OPTION) {
+                    setUseCustomModel(true);
+                    setForm(p => ({ ...p, model: '' }));
+                  } else {
+                    setForm(p => ({ ...p, model: e.target.value }));
+                  }
+                }}
+                className={inputClass}
+              >
+                <option value="">Select Model</option>
+                {modelOptions.map(m => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+                <option value={OTHER_MODEL_OPTION}>Other (custom)…</option>
+              </select>
+            )}
           </div>
         </div>
 

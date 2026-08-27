@@ -74,6 +74,13 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
     cost: record?.cost || 0,
     performedBy: record?.performedBy || '',
     notes: record?.notes || '',
+    // 2026-08-26: aircraft maintenance schedule, Phase 1 — hobbs reading at
+    // completion, needed for HOBBS_HOURS-interval items (Oil Change,
+    // 100-Hour Inspection, Engine Overhaul, etc.) to be tracked when logged
+    // through this normal form rather than the Maintenance Due panel's own
+    // "Create Maintenance Record" action. Optional — omitting it just means
+    // this completion won't reset that item's due clock.
+    hobbsAtCompletion: record?.hobbsAtCompletion != null ? String(record.hobbsAtCompletion) : '',
     // Precise window — off by default (blocks the whole Scheduled Date, the
     // original/simple behavior). Turning it on reveals Start/End pickers.
     usePreciseWindow: !!record?.maintenanceStart,
@@ -161,6 +168,7 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
       notes: form.notes,
       maintenanceStart: form.usePreciseWindow ? buildISTIso(form.startDate, form.startHour, form.startMinute) : null,
       maintenanceEnd: form.usePreciseWindow && !form.openEnded ? buildISTIso(form.endDate, form.endHour, form.endMinute) : null,
+      hobbsAtCompletion: form.hobbsAtCompletion ? parseFloat(form.hobbsAtCompletion) : null,
     });
     onClose();
   };
@@ -236,6 +244,23 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
                 className={inputClass} />
             </div>
           </div>
+
+          {/* 2026-08-26: only meaningful once the record is actually
+              completed — feeds the Aircraft Maintenance Schedule's due
+              tracking (see MaintenanceDueSection.tsx) for HOBBS_HOURS
+              items like Oil Change / 100-Hour Inspection / Engine
+              Overhaul, when logged here instead of via that panel's own
+              action. */}
+          {form.status === 'COMPLETED' && (
+            <div>
+              <label className="block text-xs text-secondary mb-1">
+                Hobbs at Completion <span className="text-tertiary">(for maintenance-schedule tracking)</span>
+              </label>
+              <input type="number" step="0.1" placeholder="e.g., 1245.3" value={form.hobbsAtCompletion}
+                onChange={e => setForm(p => ({ ...p, hobbsAtCompletion: e.target.value }))}
+                className={inputClass} />
+            </div>
+          )}
 
           {/* Precise maintenance window — off by default (blocks the whole
               Scheduled Date, unchanged original behavior). Turning it on

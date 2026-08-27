@@ -81,6 +81,14 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
     dbTable: 'holidays',
     columns: ['holiday_name', 'holiday_date', 'is_recurring', 'notes'],
   },
+  // Aircraft Maintenance Schedule (Admin Setup, 2026-08-26, Phase 1) —
+  // recurring maintenance items per aircraft model. See
+  // add-aircraft-maintenance-schedule.sql for the schema/seed data and
+  // AircraftMaintenanceScheduleTab.tsx for the CRUD UI.
+  'aircraft-maintenance-schedule': {
+    dbTable: 'aircraft_maintenance_schedule_templates',
+    columns: ['aircraft_model', 'item_name', 'interval_type', 'interval_value', 'notes', 'is_active'],
+  },
 };
 
 function pickAllowed(body: Record<string, unknown>, columns: string[]): Record<string, unknown> {

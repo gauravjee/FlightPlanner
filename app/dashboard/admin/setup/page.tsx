@@ -24,10 +24,11 @@ import AircraftSetupTab from './AircraftSetupTab';
 import UserManagementTab from './UserManagementTab';
 import GroundSchoolTab from './GroundSchoolTab';
 import HolidaysTab from './HolidaysTab';
+import AircraftMaintenanceScheduleTab from './AircraftMaintenanceScheduleTab';
 import {
   BookOpen, Plane, Target, ClipboardList, CircleCheck,
   GraduationCap, Users, Settings, School, CalendarDays,
-  ChevronLeft, ChevronRight, BarChart3,
+  ChevronLeft, ChevronRight, BarChart3, Wrench,
 } from 'lucide-react';
 
 // ============================================================
@@ -42,6 +43,9 @@ import {
 const TABS = [
   { id: 'programs', label: 'Training Programs', shortLabel: 'Training', icon: BookOpen, component: TrainingProgramsTab },
   { id: 'aircraft', label: 'Aircraft Fleet', shortLabel: 'Aircraft', icon: Plane, component: AircraftSetupTab },
+  // 2026-08-26, Phase 1: recurring maintenance schedule per aircraft model
+  // (engine TBO, inspections). See AircraftMaintenanceScheduleTab.tsx.
+  { id: 'maintenance-schedule', label: 'Aircraft Maintenance Schedule', shortLabel: 'Maint. Schedule', icon: Wrench, component: AircraftMaintenanceScheduleTab },
   { id: 'sorties', label: 'Sortie Types', shortLabel: 'Sortie', icon: Target, component: SortieTypesTab },
   { id: 'exercises', label: 'Exercises', shortLabel: 'Exercises', icon: ClipboardList, component: ExercisesTab },
   // Label expanded 2026-08-19 (was just "Requirements") — this tab is where

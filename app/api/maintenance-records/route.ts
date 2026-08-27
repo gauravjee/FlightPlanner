@@ -21,6 +21,7 @@ export async function POST(request: Request) {
   const {
     aircraftId, maintenanceType, description, scheduledDate, completedDate,
     status, cost, performedBy, notes, maintenanceStart, maintenanceEnd,
+    hobbsAtCompletion,
   } = body as Record<string, unknown>;
 
   if (!aircraftId || !maintenanceType) {
@@ -39,6 +40,9 @@ export async function POST(request: Request) {
     notes,
     maintenance_start: maintenanceStart ?? null,
     maintenance_end: maintenanceEnd ?? null,
+    // 2026-08-26: aircraft maintenance schedule, Phase 1 — anchors future
+    // HOBBS_HOURS due-calculations. See add-aircraft-maintenance-schedule.sql.
+    hobbs_at_completion: hobbsAtCompletion ?? null,
   });
 
   if (dbError) {

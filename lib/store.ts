@@ -38,7 +38,8 @@ import {
   Aircraft, Instructor, StudentRecord, FlightSlot,
   WeatherData, GeneralWeatherData, NOTAM, FuelRecord, FlightRecord,
   ScheduledFlight, TimeConflict, MaintenanceRecord,
-  AvailabilityRecord, TrainingRequirement, Holiday
+  AvailabilityRecord, TrainingRequirement, Holiday,
+  MaintenanceScheduleTemplate, MaintenanceDueItem
 } from '@/types';
 import { supabase } from './supabase';
 import { flightHoursFromTimes } from './flight-classification';
@@ -292,6 +293,103 @@ export function getSchedulingBlockReason(
 }
 
 // ============================================================
+// AIRCRAFT MAINTENANCE SCHEDULE — Phase 1 (2026-08-26)
+// ============================================================
+// Warnings + staff-confirmed record creation only — see
+// add-aircraft-maintenance-schedule.sql's header for full scope, and the
+// handoff doc's "Aircraft Maintenance Schedule" section for the confirmed
+// design (Phase 2 hard-blocking is deliberately deferred, not built here).
+//
+// "Due soon" windows — how close to due before an OK item flips to
+// DUE_SOON. 2026-08-26: changed from flat constants to a percentage of the
+// item's own interval (capped) after adding short-interval items like a
+// 50-hour Oil Change alongside the original long-interval ones (2000-hour
+// TBO) — a flat 25-hour window meant a 50-hour oil change spent HALF its
+// life showing DUE_SOON, which is noise, not a warning. 20% of the
+// interval, floored/capped so both short and long intervals get a
+// sensible window (a 50-hr item gets a 10-hr warning; a 2000-hr item gets
+// the same 25-hr cap as before).
+function dueSoonHobbsWindow(intervalHours: number): number {
+  return Math.max(5, Math.min(25, intervalHours * 0.2));
+}
+function dueSoonCalendarWindowDays(intervalMonths: number): number {
+  return Math.max(7, Math.min(30, intervalMonths * 30 * 0.2));
+}
+
+// Loose match for tying a logged maintenance_records row back to a
+// schedule template item by name — case/whitespace-insensitive so a
+// record logged via the standard "Log Maintenance" form's fixed Type
+// dropdown (e.g. "Oil Change") still matches a template item_name seeded
+// with the same intent, even if casing ever drifts between the two.
+function normalizeItemName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function addMonthsToDateStr(dateStr: string, months: number): string {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setMonth(d.getMonth() + months);
+  return d.toISOString().split('T')[0];
+}
+
+// Pure function: given one aircraft's active template items and its
+// completed/baseline maintenance history, work out due/overdue status for
+// each item. Mirrors the getSchedulingBlockReason pure-function pattern —
+// callable from the store itself and, if ever needed, directly from a
+// component/test without going through Zustand.
+//
+// `records` should be every maintenance_records row for this aircraft
+// (any status is fine — only COMPLETED rows, which is what a baseline row
+// is also stored as, are used as the "last known service" anchor).
+export function computeMaintenanceDueItems(
+  aircraftId: string,
+  currentHobbs: number,
+  templates: MaintenanceScheduleTemplate[],
+  records: MaintenanceRecord[]
+): MaintenanceDueItem[] {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const todayStr = today.toISOString().split('T')[0];
+  const completed = records
+    .filter(r => r.aircraftId === aircraftId && r.status === 'COMPLETED' && r.completedDate)
+    .sort((a, b) => (a.completedDate! < b.completedDate! ? 1 : -1)); // newest first
+
+  return templates
+    .filter(t => t.isActive)
+    .map((template): MaintenanceDueItem => {
+      // Most recent COMPLETED record whose description/maintenanceType
+      // matches this item's name — a lightweight text match rather than a
+      // foreign key, consistent with maintenance_records having no
+      // template_id column in Phase 1 (records aren't required to
+      // originate from a template item at all). Case/whitespace-insensitive
+      // — see normalizeItemName().
+      const targetName = normalizeItemName(template.itemName);
+      const last = completed.find(r =>
+        normalizeItemName(r.maintenanceType || '') === targetName || normalizeItemName(r.description || '') === targetName
+      );
+
+      const lastHobbs = last?.hobbsAtCompletion ?? null;
+      const lastDate = last?.completedDate ?? null;
+
+      if (template.intervalType === 'HOBBS_HOURS') {
+        if (lastHobbs == null) {
+          return { template, aircraftId, lastHobbs, lastDate, dueAtHobbs: null, dueAtDate: null, status: 'NO_BASELINE' };
+        }
+        const dueAtHobbs = lastHobbs + template.intervalValue;
+        const remaining = dueAtHobbs - currentHobbs;
+        const status: MaintenanceDueItem['status'] = remaining < 0 ? 'OVERDUE' : remaining <= dueSoonHobbsWindow(template.intervalValue) ? 'DUE_SOON' : 'OK';
+        return { template, aircraftId, lastHobbs, lastDate, dueAtHobbs, dueAtDate: null, status };
+      } else {
+        if (lastDate == null) {
+          return { template, aircraftId, lastHobbs, lastDate, dueAtHobbs: null, dueAtDate: null, status: 'NO_BASELINE' };
+        }
+        const dueAtDate = addMonthsToDateStr(lastDate, template.intervalValue);
+        const daysRemaining = Math.ceil((new Date(dueAtDate + 'T00:00:00').getTime() - new Date(todayStr + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24));
+        const status: MaintenanceDueItem['status'] = daysRemaining < 0 ? 'OVERDUE' : daysRemaining <= dueSoonCalendarWindowDays(template.intervalValue) ? 'DUE_SOON' : 'OK';
+        return { template, aircraftId, lastHobbs, lastDate, dueAtHobbs: null, dueAtDate, status };
+      }
+    });
+}
+
+// ============================================================
 // TYPE DEFINITION
 // ============================================================
 interface FlightStore {
@@ -304,6 +402,11 @@ interface FlightStore {
   fuelRecords: FuelRecord[];
   scheduledFlights: ScheduledFlight[];
   maintenanceRecords: MaintenanceRecord[];
+  // 2026-08-26: Aircraft Maintenance Schedule, Phase 1 — active + inactive
+  // template rows (see AircraftMaintenanceScheduleTab.tsx). Used with
+  // computeMaintenanceDueItems() to work out due/overdue status per
+  // aircraft.
+  maintenanceScheduleTemplates: MaintenanceScheduleTemplate[];
   instructors: Instructor[];
   notams: NOTAM[];
   weather: WeatherData;
@@ -438,6 +541,9 @@ interface FlightStore {
   updateMaintenanceRecord: (id: string, updates: Partial<MaintenanceRecord>) => Promise<void>;
   removeMaintenanceRecord: (id: string) => Promise<void>;
   getMaintenanceForAircraft: (aircraftId: string) => MaintenanceRecord[];
+  // 2026-08-26: Aircraft Maintenance Schedule, Phase 1.
+  loadMaintenanceScheduleTemplates: () => Promise<void>;
+  getMaintenanceDueItems: (aircraftId: string) => MaintenanceDueItem[];
 
   // ==========================================
   // 7. INSTRUCTOR ACTIONS
@@ -543,6 +649,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   fuelRecords: [],
   scheduledFlights: [],
   maintenanceRecords: [],
+  maintenanceScheduleTemplates: [],
   instructors: [],
   notams: [],
   exercises: [],
@@ -1157,6 +1264,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
             performedBy: row.performed_by as string, notes: row.notes as string,
             maintenanceStart: (row.maintenance_start as string) || null,
             maintenanceEnd,
+            hobbsAtCompletion: (row.hobbs_at_completion as number) ?? null,
             aircraftReg: ac?.registration || 'Unknown', aircraftType: ac?.type || '',
             isOverdue, daysUntilDue,
           };
@@ -1215,6 +1323,34 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   getMaintenanceForAircraft: (aircraftId) => get().maintenanceRecords.filter(m => m.aircraftId === aircraftId),
+
+  // 2026-08-26: Aircraft Maintenance Schedule, Phase 1. Read-only —
+  // writes go through AircraftMaintenanceScheduleTab.tsx's own fetch calls
+  // to app/api/admin/config/aircraft-maintenance-schedule, same as every
+  // other config-CRUD tab; this just keeps the shared store's copy in
+  // sync so getMaintenanceDueItems() below has fresh data.
+  loadMaintenanceScheduleTemplates: async () => {
+    const { data, error } = await supabase.from('aircraft_maintenance_schedule_templates').select('*');
+    if (error) { console.error('Error loading maintenance schedule templates:', error); return; }
+    set({
+      maintenanceScheduleTemplates: (data || []).map((row: Record<string, unknown>) => ({
+        id: row.id as number,
+        aircraftModel: row.aircraft_model as string,
+        itemName: row.item_name as string,
+        intervalType: row.interval_type as MaintenanceScheduleTemplate['intervalType'],
+        intervalValue: row.interval_value as number,
+        notes: (row.notes as string) || null,
+        isActive: row.is_active as boolean,
+      })),
+    });
+  },
+
+  getMaintenanceDueItems: (aircraftId) => {
+    const ac = get().aircraft.find(a => String(a.id) === String(aircraftId));
+    if (!ac) return [];
+    const templatesForModel = get().maintenanceScheduleTemplates.filter(t => t.aircraftModel === ac.model);
+    return computeMaintenanceDueItems(aircraftId, ac.hobbsTime, templatesForModel, get().maintenanceRecords);
+  },
 
   // ============================================================
   // 7. INSTRUCTOR FUNCTIONS
