@@ -93,7 +93,7 @@ interface EnrollmentRecord {
 // ============================================================
 export default function StudentProgressPage() {
   // ----- Session (for student role auto‑select) -----
-  const { data: session } = useSession();
+  const { data: session, status: sessionStatus } = useSession();
   const userRole = session?.user?.role;
   const userStudentId = session?.user?.studentId;
 
@@ -244,13 +244,37 @@ export default function StudentProgressPage() {
       // staff roles (admin/instructor/super_admin/operations) who are
       // expected to view arbitrary students via a link from the Flight
       // Progress page.
+      //
+      // 2026-08-28 (follow-up, found by manual IDOR re-test): that fix alone
+      // still let another student's data flash on screen for a couple of
+      // seconds on first load. useSession() starts out with status
+      // 'loading' and session/userRole/userStudentId all undefined — on
+      // that FIRST run of this effect, `userRole === 'student'` was false
+      // (undefined, not yet 'student'), so control fell through to the
+      // `else if (studentParam)` branch and briefly trusted the URL even
+      // for a student session, fetching and rendering the other student's
+      // enrollment rows (DGCA roll number, exam scores) before the session
+      // resolved, the effect re-ran, and it self-corrected. A brief window
+      // is still a real exposure — the data was fetched and painted, not
+      // just a loading spinner. Fix: don't decide anything from studentParam
+      // until sessionStatus is no longer 'loading', so userRole is known
+      // for certain one way or the other before ?student= can ever be
+      // honored.
+      if (sessionStatus === 'loading') {
+        return;
+      }
+
       if (userRole === 'student' && userStudentId) {
         // Priority 1: a student always sees only their own progress,
         // regardless of what (if anything) is in the URL.
         setSelectedStudent(userStudentId);
-      } else if (studentParam) {
+      } else if (userRole && userRole !== 'student' && studentParam) {
         // Priority 2: URL parameter (e.g., linked from Flight Progress page)
-        // — staff roles only, per the branch above.
+        // — staff roles only, per the branch above. Checking userRole !==
+        // 'student' explicitly here (rather than relying solely on the
+        // first branch's negation) is defense-in-depth: this branch must
+        // never fire for a 'student' session even if userStudentId were
+        // ever missing/malformed.
         setSelectedStudent(studentParam);
       }
       // Priority 3: Leave empty — admin/instructor will use the dropdown
@@ -258,7 +282,7 @@ export default function StudentProgressPage() {
       setLoading(false);
     };
     init();
-  }, [loadStaticData, userRole, userStudentId, studentParam]);
+  }, [loadStaticData, sessionStatus, userRole, userStudentId, studentParam]);
 
   // Reload enrollments whenever the selected student changes
   useEffect(() => {
