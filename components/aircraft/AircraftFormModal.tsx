@@ -2,7 +2,7 @@
 'use client';
 
 import { Aircraft } from '@/types';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Pencil, Plus, Save, X } from 'lucide-react';
 import { FUEL_BURN_RATE_BY_TYPE_LPH, DEFAULT_FUEL_BURN_RATE_LPH, deriveModelEngineTypeMap } from '@/lib/store';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -10,7 +10,15 @@ import { supabase } from '@/lib/supabase-client';
 
 // 2026-08-26: sentinel value for the "Other" option in the Model dropdown
 // below — never written to form.model itself, only used to decide whether
-// to show the free-text fallback input.
+// to show the "not in the schedule yet" warning state.
+// 2026-08-27: picking "Other" no longer reveals a free-text input (see the
+// Model field JSX below) — it blocks Save instead, pointing the admin at
+// Aircraft Maintenance Schedule. A silently-mismatched Model is exactly how
+// the Maintenance Due panel went blank for a pre-existing aircraft on
+// 2026-08-27; this closes that gap at the point of entry instead of only
+// catching it after the fact. The one exception is a genuinely empty
+// schedule-template table (nothing to point anyone at yet) — see
+// modelOptions.length checks below.
 const OTHER_MODEL_OPTION = '__other__';
 
 // 2026-08-19: `type` is the engine category, a genuinely fixed 2-value
@@ -73,7 +81,12 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
   // set on any of its rows just doesn't appear in this map.
   const [modelEngineType, setModelEngineType] = useState<Record<string, string>>({});
 
-  useEffect(() => {
+  // 2026-08-27: extracted so the "Refresh list" affordance below (shown
+  // while blocked in Other/custom mode) can re-run this fetch on demand,
+  // not just once on mount — lets someone add a model in Admin Setup →
+  // Aircraft Maintenance Schedule (e.g. in another tab) and pick it up
+  // here without having to close and reopen this whole form.
+  const loadModelOptions = useCallback(() => {
     supabase
       .from('aircraft_maintenance_schedule_templates')
       .select('aircraft_model, engine_type')
@@ -85,6 +98,10 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
         setModelEngineType(deriveModelEngineTypeMap(rows));
       });
   }, []);
+
+  useEffect(() => {
+    loadModelOptions();
+  }, [loadModelOptions]);
 
   // Once model options are loaded, decide whether the current form.model
   // (from an aircraft being edited) matches a known option or should show
@@ -226,26 +243,57 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
             <div>
               <label className="block text-sm text-secondary mb-1">Model *</label>
               {useCustomModel ? (
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={form.model}
-                    onChange={e => handleChange('model', e.target.value)}
-                    placeholder="e.g., Cessna 172S Skyhawk"
-                    required
-                    className={inputClass}
-                  />
-                  {modelOptions.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => { setUseCustomModel(false); handleChange('model', ''); }}
-                      className="px-2 text-xs text-tertiary whitespace-nowrap"
-                      title="Pick from the list instead"
+                modelOptions.length > 0 ? (
+                  // 2026-08-27: no free-text input here anymore — a custom
+                  // Model that doesn't match a schedule template silently
+                  // breaks Maintenance Due tracking for that aircraft, so
+                  // Save is blocked (see the submit button below) until the
+                  // admin adds the model properly and picks it from the list.
+                  <div className="space-y-2">
+                    <div
+                      className="text-xs rounded-lg px-3 py-2"
+                      style={{ backgroundColor: 'var(--surface-muted)', border: '1px solid var(--border)' }}
                     >
-                      Use list
-                    </button>
-                  )}
-                </div>
+                      {form.model ? (
+                        <>Current model on file, &quot;{form.model}&quot;, isn&apos;t in the Aircraft Maintenance Schedule yet. </>
+                      ) : (
+                        <>This model isn&apos;t in the Aircraft Maintenance Schedule yet. </>
+                      )}
+                      Add it via Admin Setup → Aircraft Maintenance Schedule, then come back and pick it from
+                      the dropdown — a custom Model can no longer be typed in directly here.
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setUseCustomModel(false)}
+                        className="text-xs text-tertiary underline cursor-pointer"
+                      >
+                        Use list
+                      </button>
+                      <button
+                        type="button"
+                        onClick={loadModelOptions}
+                        className="text-xs text-tertiary underline cursor-pointer"
+                      >
+                        Refresh list
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  // No schedule templates exist at all yet — nothing to
+                  // point the admin at, so fall back to free text rather
+                  // than blocking aircraft creation on an empty table.
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={form.model}
+                      onChange={e => handleChange('model', e.target.value)}
+                      placeholder="e.g., Cessna 172S Skyhawk"
+                      required
+                      className={inputClass}
+                    />
+                  </div>
+                )
               ) : (
                 <select
                   value={form.model}
@@ -402,7 +450,9 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5"
+              disabled={useCustomModel && modelOptions.length > 0}
+              title={useCustomModel && modelOptions.length > 0 ? 'Add this model to Aircraft Maintenance Schedule first, then pick it from the dropdown.' : undefined}
+              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
             >
               {isEditing ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}

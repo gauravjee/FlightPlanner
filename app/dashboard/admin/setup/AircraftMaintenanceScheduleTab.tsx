@@ -13,9 +13,10 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase-client';
-import { Wrench, Pencil, Plus, Save, Trash2 } from 'lucide-react';
+import Papa from 'papaparse';
+import { Wrench, Pencil, Plus, Save, Trash2, Upload, Download, LoaderCircle } from 'lucide-react';
 
 interface ScheduleTemplateRow {
   id: number;
@@ -32,6 +33,32 @@ interface ScheduleTemplateRow {
 }
 
 const ENGINE_TYPES = ['Single Engine', 'Multi Engine'];
+
+// 2026-08-27: a CSV row ready to insert, after validation — see
+// handleCsvUpload below. Kept as its own typed shape (rather than a plain
+// Record<string, unknown>) so the skip-reporting code after a failed bulk
+// insert can read back .aircraft_model/.item_name without casting.
+interface ScheduleImportRow {
+  aircraft_model: string;
+  item_name: string;
+  interval_type: 'HOBBS_HOURS' | 'CALENDAR_MONTHS';
+  interval_value: number;
+  notes: string;
+  is_active: boolean;
+  engine_type: string | null;
+}
+
+// Result summary shown after a CSV bulk import — "Append + skip
+// duplicates", same convention as ExercisesTab.tsx's own CSV import: new
+// rows are added; a row whose Model + Item Name pair already exists (in the
+// DB, or earlier in the same CSV batch) is skipped and reported, mirroring
+// this table's own unique(aircraft_model, item_name) constraint. Existing
+// rows are never overwritten via this path — use the per-item Edit action
+// for that.
+interface CsvImportResult {
+  added: number;
+  skipped: { row: number; label: string; reason: string }[];
+}
 
 // Seeded models (see add-aircraft-maintenance-schedule.sql) plus whatever
 // custom models a user has already added templates for — the model list
@@ -58,6 +85,11 @@ export default function AircraftMaintenanceScheduleTab() {
     notes: '',
     is_active: true,
   });
+
+  // ----- CSV bulk import state (2026-08-27) -----
+  const [csvUploading, setCsvUploading] = useState(false);
+  const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadTemplates = useCallback(async () => {
     setLoading(true);
@@ -163,6 +195,146 @@ export default function AircraftMaintenanceScheduleTab() {
     resetForm();
   };
 
+  // Downloadable CSV template — columns match what handleCsvUpload expects,
+  // same pattern as ExercisesTab.tsx's own template. Two example rows for
+  // the same model, to show both interval_type values at a glance.
+  const downloadTemplate = () => {
+    const csv =
+      'aircraft_model,item_name,interval_type,interval_value,notes,is_active,engine_type\n' +
+      "Cessna 172,100-Hour Inspection,HOBBS_HOURS,100,FAA Part 91.409-style convention — confirm against your approved CAMP,true,Single Engine\n" +
+      'Cessna 172,Annual Inspection,CALENDAR_MONTHS,12,Standard annual inspection cadence,true,Single Engine\n';
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'aircraft_maintenance_schedule_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // Bulk import schedule items from a CSV file — "Append + skip
+  // duplicates", same convention as ExercisesTab.tsx: new rows are
+  // inserted; any row whose (aircraft_model, item_name) pair already
+  // exists (in the DB, or earlier in this same CSV batch) is skipped and
+  // reported. Existing rows are never overwritten. Deliberately NOT scoped
+  // to selectedModel — a CSV can cover several models in one upload, which
+  // is the actual point of this feature (bulk-seeding a new aircraft
+  // type's whole schedule, or adding many items at once, instead of the
+  // one-item-at-a-time Add form above).
+  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCsvUploading(true);
+    setCsvResult(null);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: async (results) => {
+        const rows = results.data as Record<string, string>[];
+        const existingKeys = new Set(
+          templates.map(t => `${t.aircraft_model.trim().toLowerCase()}|${t.item_name.trim().toLowerCase()}`)
+        );
+        const seenInBatch = new Set<string>();
+        const toInsert: ScheduleImportRow[] = [];
+        const skipped: CsvImportResult['skipped'] = [];
+
+        rows.forEach((row, idx) => {
+          const rowNum = idx + 2; // +1 for 0-index, +1 for header row
+          const aircraft_model = (row.aircraft_model || '').trim();
+          const item_name = (row.item_name || '').trim();
+          const label = aircraft_model && item_name ? `${aircraft_model} — ${item_name}` : '(incomplete row)';
+
+          if (!aircraft_model || !item_name) {
+            skipped.push({ row: rowNum, label, reason: 'Missing required aircraft_model or item_name' });
+            return;
+          }
+
+          const intervalType = (row.interval_type || '').trim().toUpperCase();
+          if (intervalType !== 'HOBBS_HOURS' && intervalType !== 'CALENDAR_MONTHS') {
+            skipped.push({ row: rowNum, label, reason: 'interval_type must be HOBBS_HOURS or CALENDAR_MONTHS' });
+            return;
+          }
+
+          const intervalValue = parseFloat(row.interval_value);
+          if (!Number.isFinite(intervalValue) || intervalValue <= 0) {
+            skipped.push({ row: rowNum, label, reason: 'interval_value must be a positive number' });
+            return;
+          }
+
+          const key = `${aircraft_model.toLowerCase()}|${item_name.toLowerCase()}`;
+          if (existingKeys.has(key) || seenInBatch.has(key)) {
+            skipped.push({ row: rowNum, label, reason: 'Duplicate — a schedule item with this Model + Item Name already exists' });
+            return;
+          }
+
+          // engine_type is optional (blank = shown for either Type, same
+          // fallback the manual Add form and the Aircraft dropdown filter
+          // both already use) but must be one of the two real values if
+          // given — the DB column has a CHECK constraint, and this whole
+          // batch is inserted in one call (see the bulk POST branch in
+          // app/api/admin/config/[table]/route.ts), so one bad value here
+          // would otherwise fail every row in the upload, not just this one.
+          const engineTypeRaw = (row.engine_type || '').trim();
+          let engine_type: string | null = null;
+          if (engineTypeRaw) {
+            if (!ENGINE_TYPES.includes(engineTypeRaw)) {
+              skipped.push({
+                row: rowNum,
+                label,
+                reason: `engine_type must be blank, "Single Engine", or "Multi Engine" (got "${engineTypeRaw}")`,
+              });
+              return;
+            }
+            engine_type = engineTypeRaw;
+          }
+
+          seenInBatch.add(key);
+          toInsert.push({
+            aircraft_model,
+            item_name,
+            interval_type: intervalType,
+            interval_value: intervalValue,
+            notes: (row.notes || '').trim(),
+            is_active: row.is_active === undefined || row.is_active === '' ? true : /^(true|1|yes)$/i.test(row.is_active.trim()),
+            engine_type,
+          });
+        });
+
+        let added = 0;
+        if (toInsert.length > 0) {
+          const res = await fetch('/api/admin/config/aircraft-maintenance-schedule', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(toInsert),
+          });
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            console.error('Error bulk-importing maintenance schedule items:', errBody);
+            skipped.push(...toInsert.map((row, i) => ({
+              row: i,
+              label: `${row.aircraft_model} — ${row.item_name}`,
+              reason: 'Insert failed: ' + (errBody.error || 'unknown error'),
+            })));
+          } else {
+            added = toInsert.length;
+          }
+        }
+
+        setCsvResult({ added, skipped });
+        setCsvUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        if (added > 0) loadTemplates();
+      },
+      error: (err) => {
+        console.error('Error parsing CSV:', err);
+        setCsvResult({ added: 0, skipped: [{ row: 0, label: '', reason: 'Failed to parse CSV file: ' + err.message }] });
+        setCsvUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      },
+    });
+  };
+
   const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
 
   return (
@@ -175,6 +347,68 @@ export default function AircraftMaintenanceScheduleTab() {
         These populate the Aircraft Model dropdown and drive due/overdue warnings on the Maintenance page
         (Phase 1: warnings only — this does not block scheduling).
       </p>
+
+      {/* Bulk Import (CSV) — 2026-08-27, same download-template/upload-back
+          pattern as ExercisesTab.tsx, adapted for this table's own
+          required columns and its (aircraft_model, item_name) uniqueness
+          rule. Deliberately NOT scoped to the model selected below — a CSV
+          can cover several models in one upload (e.g. seeding a whole new
+          aircraft type's schedule), which is the actual point: saving the
+          repeated one-item-at-a-time Add flow for a real bulk job. */}
+      <div className="surface-inner p-4 mb-6">
+        <h3 className="text-sm font-medium mb-3 flex items-center gap-1.5">
+          <Upload className="w-3.5 h-3.5" /> Bulk Import (CSV)
+        </h3>
+        <p className="text-xs text-tertiary mb-3">
+          Upload a CSV with columns{' '}
+          <code>aircraft_model, item_name, interval_type, interval_value, notes, is_active, engine_type</code>.
+          Rows can cover any model, not just {selectedModel} below — handy for seeding a whole new aircraft
+          type&apos;s schedule in one go. <code>interval_type</code> must be <code>HOBBS_HOURS</code> or{' '}
+          <code>CALENDAR_MONTHS</code>; <code>engine_type</code> may be left blank, or set to{' '}
+          <code>Single Engine</code> / <code>Multi Engine</code>. New rows are added; a row whose Model + Item
+          Name already exists is skipped and reported below.
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label
+            className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold cursor-pointer surface-muted"
+            style={{ color: 'var(--text-primary)' }}
+          >
+            {csvUploading ? <LoaderCircle className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+            {csvUploading ? 'Importing...' : 'Upload CSV'}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              onChange={handleCsvUpload}
+              disabled={csvUploading}
+              className="hidden"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={downloadTemplate}
+            className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 surface-inner"
+          >
+            <Download className="w-3.5 h-3.5" /> Download Template
+          </button>
+        </div>
+
+        {csvResult && (
+          <div className="mt-3 text-sm">
+            <p style={{ color: 'var(--accent)' }}>
+              ✅ Added {csvResult.added} item{csvResult.added === 1 ? '' : 's'}.
+              {csvResult.skipped.length > 0 && ` Skipped ${csvResult.skipped.length}.`}
+            </p>
+            {csvResult.skipped.length > 0 && (
+              <ul className="mt-2 text-xs text-tertiary space-y-0.5 max-h-40 overflow-y-auto">
+                {csvResult.skipped.map((s, i) => (
+                  <li key={i}>Row {s.row} ({s.label}): {s.reason}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
 
       {/* Model Selector */}
       <div className="mb-6">
