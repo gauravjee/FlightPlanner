@@ -37,6 +37,7 @@ import { supabase } from '@/lib/supabase-client';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
+import { REQUIREMENTS_WRITE_ROLES } from '@/lib/permissions';
 import { ArrowLeft, GraduationCap, ClipboardList, CircleCheck, X } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -570,18 +571,34 @@ export default function StudentProgressPage() {
                               )}
                             </div>
 
-                            {/* Quick action: Mark as previously completed */}
-                            <button
-                              onClick={() => {
-                                setDirectExamError('');
-                                setDirectExamRollNumber('');
-                                setDirectExamScore('');
-                                setDirectExamModal({ subjectId: subj.id, subjectName: subj.name });
-                              }}
-                              className="mt-3 w-full text-xs surface-inner py-1.5 px-3 rounded transition hover:opacity-80 text-secondary flex items-center justify-center gap-1.5"
-                            >
-                              <GraduationCap className="w-3.5 h-3.5" /> Mark as Completed
-                            </button>
+                            {/* Quick action: Mark as previously completed.
+                            2026-08-28 (found via manual IDOR re-test):
+                            this button had no client-side role check at
+                            all — REQUIREMENTS_WRITE_ROLES (admin/
+                            instructor/super_admin) is enforced server-side
+                            by /api/admin/ground-school/direct-exam (see
+                            that route's own 2026-08-21 comment), but the
+                            button itself rendered for every role this page
+                            admits, including student and operations —
+                            neither of which can actually use it. Clicking
+                            it as one of those roles opened the form and
+                            then failed with "Not Authorized" on submit: a
+                            real UX bug (a control that's shown but can
+                            never work), even though the write itself was
+                            never actually at risk. */}
+                            {userRole && REQUIREMENTS_WRITE_ROLES.includes(userRole) && (
+                              <button
+                                onClick={() => {
+                                  setDirectExamError('');
+                                  setDirectExamRollNumber('');
+                                  setDirectExamScore('');
+                                  setDirectExamModal({ subjectId: subj.id, subjectName: subj.name });
+                                }}
+                                className="mt-3 w-full text-xs surface-inner py-1.5 px-3 rounded transition hover:opacity-80 text-secondary flex items-center justify-center gap-1.5"
+                              >
+                                <GraduationCap className="w-3.5 h-3.5" /> Mark as Completed
+                              </button>
+                            )}
                           </>
                         )}
                       </div>
