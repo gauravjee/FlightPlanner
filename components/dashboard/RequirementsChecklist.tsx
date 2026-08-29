@@ -18,6 +18,7 @@
 
 import { useEffect, useState } from 'react';
 import { useFlightStore } from '@/lib/store';
+import { useStudents, updateStudent } from '@/lib/hooks/useStudents';
 import { useSession } from 'next-auth/react';
 import { syncGroundSchoolFromChecklist, getGroundSchoolSubject } from '@/lib/ground-school-sync';
 import { isSPLRequirement } from '@/lib/spl';
@@ -35,9 +36,8 @@ export default function RequirementsChecklist({ studentId }: Props) {
     trainingRequirements,
     loadTrainingRequirements,
     toggleRequirement,
-    students,
-    updateStudent,
   } = useFlightStore();
+  const { students } = useStudents();
 
   const [loading, setLoading] = useState(false);
 

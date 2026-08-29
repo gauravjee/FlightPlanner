@@ -34,6 +34,9 @@ import {
   getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule,
 } from '@/lib/store';
 import { ScheduledFlight } from '@/types';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useInstructors } from '@/lib/hooks/useInstructors';
+import { useStudents } from '@/lib/hooks/useStudents';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -99,9 +102,12 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   useEscapeToClose(onClose);
 
   // ----- Store -----
+  const { aircraft } = useAircraft();
+  const { instructors } = useInstructors();
+  const { students } = useStudents();
   const {
-    aircraft, students, instructors, scheduledFlights,
-    bookFlight, loadAircraft, loadStudents, loadScheduledFlights,
+    scheduledFlights,
+    bookFlight, loadScheduledFlights,
     updateScheduledFlight,
     loadTrainingRequirements,
     getRequirementsForStudent,
@@ -111,10 +117,9 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     exercises, loadExercises,
   } = useFlightStore();
 
-  // ----- Initial data load -----
+  // ----- Initial data load. Students is migrated (SWR, Stage 3) and now
+  // fetches itself via useStudents() above, no manual load needed. -----
   useEffect(() => {
-    if (aircraft.length === 0) loadAircraft();
-    if (students.length === 0) loadStudents();
     if (Object.keys(ftoSettings).length === 0) loadFTOSettings();
     if (holidays.length === 0) loadHolidays();
     // Exercise dropdown used to be a hardcoded EXERCISES array (removed
@@ -127,8 +132,8 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     if (exercises.length === 0) loadExercises();
     loadScheduledFlights();
   }, [
-    aircraft.length, students.length, ftoSettings, holidays.length, exercises.length,
-    loadAircraft, loadStudents, loadFTOSettings, loadHolidays, loadExercises, loadScheduledFlights,
+    ftoSettings, holidays.length, exercises.length,
+    loadFTOSettings, loadHolidays, loadExercises, loadScheduledFlights,
   ]);
 
   // FTO-wide blackout days — weekly recurring off day(s) (Settings -> Time &

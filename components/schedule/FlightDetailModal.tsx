@@ -15,6 +15,9 @@
 'use client';
 
 import { useFlightStore } from '@/lib/store';
+import { useAircraft, getAircraftById } from '@/lib/hooks/useAircraft';
+import { useInstructors, getInstructorById } from '@/lib/hooks/useInstructors';
+import { useStudents, getStudentById } from '@/lib/hooks/useStudents';
 import { FlightSlot } from '@/types';
 import { useState } from 'react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -39,10 +42,10 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   // ============================================================
   // STORE DATA
   // ============================================================
-  const { 
-    getAircraftById,          // Find aircraft by ID
-    getInstructorById,        // Find instructor by ID
-    getStudentById,           // Find student by ID
+  const { aircraft: allAircraft } = useAircraft();
+  const { instructors: allInstructors } = useInstructors();
+  const { students: allStudents } = useStudents();
+  const {
     weather,                  // Current weather data
     notams,                   // Active NOTAMs
     cancelFlight,             // Cancel a flight (soft-cancel: sets status=CANCELLED + a reason)
@@ -53,9 +56,9 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   // ============================================================
   // DERIVED DATA
   // ============================================================
-  const aircraft = getAircraftById(slot.aircraftId);       // Aircraft for this flight
-  const instructor = getInstructorById(slot.instructorId);  // Instructor for this flight
-  const student = slot.studentId ? getStudentById(slot.studentId) : undefined; // Student (if any)
+  const aircraft = getAircraftById(allAircraft, slot.aircraftId);       // Aircraft for this flight
+  const instructor = getInstructorById(allInstructors, slot.instructorId);  // Instructor for this flight
+  const student = slot.studentId ? getStudentById(allStudents, slot.studentId) : undefined; // Student (if any)
 
   const [showCancelReason, setShowCancelReason] = useState(false); // Check Cancellation Reason modal visibility
   

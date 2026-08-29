@@ -21,6 +21,7 @@
 import { useEffect, useMemo } from 'react';
 import { Bell, CircleAlert } from 'lucide-react';
 import { useFlightStore } from '@/lib/store';
+import { useStudents } from '@/lib/hooks/useStudents';
 
 interface Alert {
   id: string;
@@ -29,19 +30,23 @@ interface Alert {
 }
 
 export default function NotificationWidget() {
+  const { students } = useStudents();
   const {
-    students, loadStudents,
     maintenanceRecords, loadMaintenanceRecords, loadingMaintenance,
-    aircraft, loadAircraft,
   } = useFlightStore();
 
-  // Defensive loads — mirrors the pattern used elsewhere (e.g.
+  // Defensive load — mirrors the pattern used elsewhere (e.g.
   // MaintenanceForm) for widgets that render before their page's own
   // effects have necessarily run yet.
+  // 2026-08-28 (SWR migration, Stages 1 + 3): this used to also
+  // defensively load aircraft and students here, purely so
+  // loadMaintenanceRecords()'s own aircraftReg join had something to read
+  // and so this widget's own student loop had data — this widget itself
+  // never used the aircraft list, and students now comes from
+  // useStudents()'s own fetch-on-mount above. Nothing left here but
+  // maintenance records.
   useEffect(() => {
-    if (students.length === 0) loadStudents();
     if (maintenanceRecords.length === 0) loadMaintenanceRecords();
-    if (aircraft.length === 0) loadAircraft();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

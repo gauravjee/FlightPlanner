@@ -14,20 +14,23 @@
 // Data sources:
 //   - `ground_school_subjects` table (loaded once on mount)
 //   - `ground_school_classes` table (loaded for the visible date range)
-//   - `instructors` from the global Zustand store
+//   - `instructors` from lib/hooks/useInstructors.ts (SWR migration, Stage 2,
+//     2026-08-28 — was the global Zustand store before this)
 //
 // Notes for developers:
 //   - The component manages its own `subjects` and `classes` state.
-//   - Instructors are read from `useFlightStore`; if they haven't been loaded
-//     yet, `loadInstructors()` is called automatically.
+//   - Instructors are read from `useInstructors()`, which fetches itself on
+//     mount — no manual load call needed here anymore.
 //   - All date calculations are done without external libraries to keep the
 //     bundle small.
 //   - The weekly grid uses absolute positioning for event blocks.
 //
 // 🔧 Flickering Fix (2026-08-10):
-//   - Added `useRef` guards (subjectsLoaded, instructorsChecked, initialLoadDone)
-//     to prevent `loadData` from re‑running in a loop when `subjects` or
-//     `instructors` state changes during initialisation.
+//   - Added `useRef` guards (subjectsLoaded, initialLoadDone) to prevent
+//     `loadData` from re‑running in a loop when `subjects` or `instructors`
+//     state changes during initialisation. (The instructorsChecked guard
+//     that used to sit alongside these was removed 2026-08-28 — SWR's own
+//     dedup makes it redundant.)
 //   - The `loadData` callback still depends on `subjects` and `instructors` for
 //     enrichment, but the `useEffect` that calls it now waits until both are ready.
 //
@@ -50,6 +53,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase-client';
 import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
+import { useInstructors } from '@/lib/hooks/useInstructors';
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Save, CircleCheck, X } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -148,9 +152,10 @@ const endOfMonth = (date: Date): Date =>
 // ============================================================
 export default function GroundSchoolCalendar() {
   // ----- Global store access -----
-  // We read instructors from the central store so the list is always up‑to‑date.
-  const instructors = useFlightStore((s) => s.instructors);
-  const loadInstructors = useFlightStore((s) => s.loadInstructors);
+  // 2026-08-28 (SWR migration, Stage 2): instructors now comes from
+  // useInstructors() — its own fetch-on-mount + shared cache — instead of
+  // the central Zustand store.
+  const { instructors } = useInstructors();
 
   // FTO-wide blackout dates — flight bookings and ground-school classes
   // cannot be scheduled on a holiday or the FTO's weekly off day.
@@ -225,21 +230,15 @@ export default function GroundSchoolCalendar() {
   // useEffect hooks don't trigger `loadData` multiple times during
   // the initial mount cycle.
   const subjectsLoaded = useRef(false);
-  const instructorsChecked = useRef(false);
   const initialLoadDone = useRef(false);
 
   // ============================================================
   // Effects – load initial data
   // ============================================================
 
-  // 1. Ensure instructors are loaded (if the store is empty, e.g., page reload)
-  useEffect(() => {
-    if (instructorsChecked.current) return; // Already checked — skip
-    if (instructors.length === 0) {
-      loadInstructors();
-    }
-    instructorsChecked.current = true;
-  }, [instructors.length, loadInstructors]);
+  // 1. Instructors — 2026-08-28 (SWR migration, Stage 2): useInstructors()
+  // above now handles its own fetch-on-mount + dedup, so the manual
+  // "checked" ref-guard that used to live here is no longer needed.
 
   // 1b. Ensure the holiday calendar is loaded (same "if empty" guard as
   // instructors above — holidays rarely change, and re-running loadHolidays

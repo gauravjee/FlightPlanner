@@ -4,9 +4,10 @@
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
-import { useFlightStore } from '@/lib/store';
+import { useStudents, withInstructorNames, addStudent, updateStudent, removeStudent } from '@/lib/hooks/useStudents';
+import { useInstructors } from '@/lib/hooks/useInstructors';
 import { StudentRecord } from '@/types';
 import StudentCard from '@/components/students/StudentCard';
 import StudentFormModal from '@/components/students/StudentFormModal';
@@ -23,17 +24,19 @@ const CAN_CREATE_STUDENT_ROLES = ['admin', 'super_admin'];
 export default function StudentsPage() {
   const { data: session } = useSession();
   const canCreateStudent = CAN_CREATE_STUDENT_ROLES.includes(session?.user?.role || '');
-  const { students, loadingStudents, loadStudents, loadInstructors, addStudent, updateStudent, removeStudent } = useFlightStore();
+  // 2026-08-28 (SWR migration, Stage 3): students and instructors both come
+  // from their own hooks now — each fetches itself on mount, no manual load
+  // call needed. The instructor-name join StudentCard displays is computed
+  // here at render time via withInstructorNames() rather than being baked
+  // into the cached student rows (see useStudents.ts's file header for why).
+  const { students: rawStudents, isLoading: loadingStudents } = useStudents();
+  const { instructors } = useInstructors();
+  const students = useMemo(() => withInstructorNames(rawStudents, instructors), [rawStudents, instructors]);
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('ALL');
   const [successMessage, setSuccessMessage] = useState('');
-
-  useEffect(() => {
-  loadInstructors();  // Load instructors first
-  loadStudents();     // Then load students (so instructor names can be looked up)
-}, [loadInstructors, loadStudents]);
 
   const filteredStudents = students.filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -93,9 +96,10 @@ export default function StudentsPage() {
         setSuccessMessage(`Student created but email failed: ${result.emailMessage}. Password: ${result.password}`);
       }
     }
-    // Reload data to reflect changes (including instructor assignment)
-    await loadInstructors();
-    await loadStudents();
+    // No manual reload needed — addStudent()/updateStudent() already
+    // splice the change into the SWR cache, and the instructor-name join
+    // (including a changed instructor assignment) recomputes automatically
+    // via withInstructorNames() above on every render.
     setShowForm(false);
     setEditingStudent(null);
   };

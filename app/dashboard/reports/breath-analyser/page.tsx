@@ -26,7 +26,9 @@ import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { BA_TEST_VIEW_ROLES, BA_TEST_WRITE_ROLES } from '@/lib/permissions';
-import { useFlightStore } from '@/lib/store';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useInstructors } from '@/lib/hooks/useInstructors';
+import { useStudents } from '@/lib/hooks/useStudents';
 import type { BATest } from '@/types';
 import {
   Wind, CalendarDays, Plus, X, Pencil, Trash2, FileSpreadsheet, Save,
@@ -59,13 +61,16 @@ export default function BreathAnalyserRegisterPage() {
   const role = session?.user?.role;
   const canWrite = !!role && BA_TEST_WRITE_ROLES.includes(role);
 
-  const { aircraft, loadAircraft, students, loadStudents, instructors, loadInstructors } = useFlightStore();
+  const { aircraft } = useAircraft();
+  const { instructors } = useInstructors();
+  const { students } = useStudents();
 
-  useEffect(() => {
-    if (aircraft.length === 0) loadAircraft();
-    if (students.length === 0) loadStudents();
-    if (instructors.length === 0) loadInstructors();
-  }, [aircraft.length, loadAircraft, students.length, loadStudents, instructors.length, loadInstructors]);
+  // 2026-08-28 (SWR migration, Stages 1-3): aircraft's, instructors', and
+  // students' own guard-on-length pattern (the one the 2026-08-28
+  // performance audit flagged as this codebase's only existing example of
+  // load-guarding) is now just useAircraft()'s/useInstructors()'s/
+  // useStudents()'s built-in fetch-on-mount + dedup above — no manual load
+  // call needed anymore.
 
   const [date, setDate] = useState(todayStr());
   const [tests, setTests] = useState<BATest[]>([]);

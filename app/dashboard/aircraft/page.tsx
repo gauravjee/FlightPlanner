@@ -2,9 +2,9 @@
 'use client';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import { useSetHeader } from '@/components/ui/HeaderContext';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { useFlightStore } from '@/lib/store';
+import { useAircraft, addAircraft, updateAircraft, removeAircraft } from '@/lib/hooks/useAircraft';
 import { Aircraft } from '@/types';
 import AircraftCard from '@/components/aircraft/AircraftCard';
 import AircraftFormModal from '@/components/aircraft/AircraftFormModal';
@@ -21,15 +21,14 @@ export default function AircraftPage() {
   // here unless a super_admin has granted them a per-user override (see
   // the second-round permission-override feature).
   const canWrite = canWriteModule(session?.user?.role, overrides, 'aircraft');
-  const { aircraft, loadingAircraft, loadAircraft, addAircraft, updateAircraft, removeAircraft } = useFlightStore();
+  // 2026-08-28 (SWR migration, Stage 1): fetch-on-mount, cross-page cache
+  // sharing, and dedup are now all handled by useAircraft() itself — no
+  // more manual useEffect(() => { loadAircraft() }, [loadAircraft]).
+  const { aircraft, isLoading: loadingAircraft } = useAircraft();
   const [showForm, setShowForm] = useState(false);
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
-
-  useEffect(() => {
-    loadAircraft();
-  }, [loadAircraft]);
 
   const filteredAircraft = aircraft.filter(ac => {
     const matchesSearch = ac.registration.toLowerCase().includes(searchTerm.toLowerCase()) ||

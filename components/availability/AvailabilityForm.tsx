@@ -3,7 +3,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useFlightStore } from '@/lib/store';
+import { useInstructors } from '@/lib/hooks/useInstructors';
+import { useStudents } from '@/lib/hooks/useStudents';
 import { AvailabilityRecord } from '@/types';
 import { Palmtree, Pencil, Save, X, GraduationCap, Plane } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -16,7 +17,8 @@ interface Props {
 
 export default function AvailabilityForm({ record, onSave, onClose }: Props) {
   useEscapeToClose(onClose);
-  const { instructors, students } = useFlightStore();
+  const { instructors } = useInstructors();
+  const { students } = useStudents();
   const isEditing = !!record;
 
   const today = new Date().toLocaleDateString('en-CA');

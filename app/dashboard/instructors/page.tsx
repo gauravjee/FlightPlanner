@@ -2,9 +2,9 @@
 // Instructor management page - view, add, edit, delete instructors
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { useFlightStore } from '@/lib/store';
+import { useInstructors, addInstructor, updateInstructor, removeInstructor } from '@/lib/hooks/useInstructors';
 import { Instructor } from '@/types';
 import InstructorCard from '@/components/instructors/InstructorCard';
 import InstructorFormModal from '@/components/instructors/InstructorFormModal';
@@ -22,16 +22,11 @@ export default function InstructorsPage() {
   // role/tab matrix) — operations/instructor/maintenance can view/manage
   // it too if a super_admin has granted a per-user override.
   const canWrite = canWriteModule(session?.user?.role, overrides, 'instructors');
-  const { instructors, loadInstructors, addInstructor, updateInstructor, removeInstructor } = useFlightStore();
+  const { instructors } = useInstructors();
   const [showForm, setShowForm] = useState(false);
   const [editingInstructor, setEditingInstructor] = useState<Instructor | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
-
-  // Load instructors from database on page mount
-  useEffect(() => {
-    loadInstructors();
-  }, [loadInstructors]);
 
   // Filter instructors based on search and status
   const filteredInstructors = instructors.filter(i => {

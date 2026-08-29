@@ -21,6 +21,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { Calendar, Printer, Plus, Wrench, TriangleAlert, ClipboardList, X, Lock, Eye } from 'lucide-react';
 import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useInstructors } from '@/lib/hooks/useInstructors';
+import { useStudents } from '@/lib/hooks/useStudents';
 import { getLocationDisplay } from '@/lib/location';
 import { FlightSlot, ScheduledFlight } from '@/types';
 import { SCHEDULE_CREATE_ROLES } from '@/lib/permissions';
@@ -98,9 +101,9 @@ export default function ScheduleBoard() {
   const store = useFlightStore();
 
   // Data collections
-  const aircraft = store.aircraft;               // Fleet data
-  const instructors = store.instructors;         // Instructor list
-  const students = store.students;               // Student list
+  const { aircraft } = useAircraft();            // Fleet data
+  const { instructors } = useInstructors();      // Instructor list
+  const { students } = useStudents();            // Student list
 
   // ----- Who's allowed to CREATE a brand-new booking (server-side gate is
   // requireScheduleCreateAccess() in lib/api-auth.ts — this mirrors it
@@ -128,9 +131,6 @@ export default function ScheduleBoard() {
   // Data loading actions
   const loadScheduledFlights = store.loadScheduledFlights;  // Load real bookings from DB
   const scheduledFlights = store.scheduledFlights;          // All booked flights
-  const loadAircraft = store.loadAircraft;
-  const loadStudents = store.loadStudents;
-  const loadInstructors = store.loadInstructors;
   const maintenanceRecords = store.maintenanceRecords;      // All maintenance records (for blocking slots)
   const loadMaintenanceRecords = store.loadMaintenanceRecords;
   const ftoSettings = store.ftoSettings;                    // School name / airport code for the printed schedule header
@@ -158,15 +158,15 @@ export default function ScheduleBoard() {
   const partialWeeklyOffRule = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
 
   // ----- Load data when component mounts -----
+  // Aircraft, Instructors, and Students now come from useAircraft()/
+  // useInstructors()/useStudents() above (fetch-on-mount + dedup,
+  // 2026-08-28 SWR migration, Stages 1-3).
   useEffect(() => {
-    loadAircraft();           // Load fleet for aircraft rows
-    loadStudents();           // Load students for initials on blocks
-    loadInstructors();        // Load instructors for initials on blocks
     loadScheduledFlights();   // Load booked flights for Gantt blocks
     loadMaintenanceRecords(); // Load maintenance records so we can block slots for aircraft under/scheduled for maintenance
     loadHolidays();           // Load holiday calendar so we can block slots on closed dates
     if (exercises.length === 0) loadExercises(); // Load exercise codes for the legend below
-  }, [loadAircraft, loadStudents, loadInstructors, loadScheduledFlights, loadMaintenanceRecords, loadHolidays, exercises.length, loadExercises]);
+  }, [loadScheduledFlights, loadMaintenanceRecords, loadHolidays, exercises.length, loadExercises]);
 
   // Is the currently viewed date blocked for scheduling — a holiday or the
   // FTO's weekly off day? null if the date is open.

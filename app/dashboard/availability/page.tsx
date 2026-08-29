@@ -3,8 +3,8 @@
 // Shows instructors and students who are on leave
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useFlightStore } from '@/lib/store';
+import { useState } from 'react';
+import { useAvailability, addAvailability, updateAvailability, removeAvailability } from '@/lib/hooks/useAvailability';
 import { AvailabilityRecord } from '@/types';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
@@ -34,22 +34,15 @@ const leaveLabels: Record<string, string> = {
 };
 
 export default function AvailabilityPage() {
-  const {
-    availabilityRecords, loadingAvailability,
-    loadAvailability, addAvailability, updateAvailability, removeAvailability,
-    loadInstructors, loadStudents
-  } = useFlightStore();
+  const { availabilityRecords, isLoading: loadingAvailability } = useAvailability();
 
   const [showForm, setShowForm] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AvailabilityRecord | null>(null);
   const [filterType, setFilterType] = useState<'ALL' | 'instructor' | 'student'>('ALL');
 
-  // Load data on mount
-  useEffect(() => {
-    loadInstructors();
-    loadStudents();
-    loadAvailability();
-  }, [loadInstructors, loadStudents, loadAvailability]);
+  // Instructors and Students are both migrated now (SWR, Stage 2 + 3) and
+  // fetch themselves via useAvailability()'s own fetcher — no manual load
+  // call needed on this page anymore.
 
   // Filter records
   const filteredRecords = availabilityRecords.filter(r => {

@@ -4,14 +4,26 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { supabase } from '@/lib/supabase-client';
 import { Plane, Pencil, Plus, Save, Trash2, CircleCheck, Fuel, Wrench } from 'lucide-react';
 import { deriveModelEngineTypeMap } from '@/lib/store';
+import {
+  useAircraft,
+  addAircraft as addAircraftRemote,
+  updateAircraft as updateAircraftRemote,
+  removeAircraft as removeAircraftRemote,
+} from '@/lib/hooks/useAircraft';
+import type { Aircraft as SharedAircraft } from '@/types';
 
 // ============================================================
 // TYPE DEFINITIONS
 // ============================================================
+// This tab's own snake_case, DB-column-named shape for the aircraft list/
+// form — kept as-is (rather than switched to the camelCase @/types
+// Aircraft shape used everywhere else) to avoid a much larger unrelated
+// rewrite of this file's form/table JSX, which reads/writes these exact
+// field names throughout.
 interface Aircraft {
   id: number;
   registration: string;
@@ -60,8 +72,32 @@ const getDefaultForm = () => ({
 });
 
 export default function AircraftSetupTab() {
-  const [aircraft, setAircraft] = useState<Aircraft[]>([]);
-  const [loading, setLoading] = useState(true);
+  // 2026-08-28 (SWR migration, Stage 1): this tab used to run its own
+  // independent `supabase.from('aircraft').select('*')` fetch here — a
+  // second read path for the same table as app/dashboard/aircraft/page.tsx,
+  // which had already drifted from the canonical @/types Aircraft shape
+  // (this tab's own snake_case interface above has no fuel_burn_rate_lph
+  // field at all). Reading now goes through the same lib/hooks/useAircraft
+  // cache the main Aircraft page uses, so both stay in sync (an edit here
+  // shows up there instantly, and vice versa) and there's exactly one place
+  // the Supabase query for this table lives. The shared (camelCase) rows
+  // are mapped below into this tab's own snake_case display shape rather
+  // than rewriting this file's form/table JSX, which reads/writes those
+  // field names throughout.
+  const { aircraft: sharedAircraft, isLoading: loading } = useAircraft();
+  const aircraft: Aircraft[] = sharedAircraft.map(a => ({
+    id: Number(a.id),
+    registration: a.registration,
+    type: a.type,
+    model: a.model,
+    year: a.year,
+    hobbs_time: a.hobbsTime,
+    fuel_capacity: a.fuelCapacity,
+    current_fuel: a.currentFuel,
+    status: a.status,
+    next_maintenance: a.nextMaintenance,
+    is_simulator: !!a.isSimulator,
+  }));
   const [editing, setEditing] = useState<Aircraft | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
 
@@ -106,26 +142,6 @@ export default function AircraftSetupTab() {
     ? modelOptions.filter(m => !modelEngineType[m] || modelEngineType[m] === form.type)
     : modelOptions;
 
-  const loadAircraft = async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('aircraft')
-      .select('*')
-      .order('id', { ascending: true });
-
-    if (error) {
-      console.error('Error loading aircraft:', error.message);
-    } else {
-      setAircraft(data || []);
-    }
-    setLoading(false);
-  };
-
-  // Load aircraft on mount
-  useEffect(() => {
-    loadAircraft();
-  }, []);
-
   // Add or update aircraft
   const handleSave = async () => {
     if (!form.registration) {
@@ -156,12 +172,16 @@ export default function AircraftSetupTab() {
 
     // 2026-08-21 (security hardening round): this tab used to write
     // directly to Supabase from the browser — the same gap already fixed
-    // for the main Aircraft page (see app/api/aircraft/route.ts, which
-    // this tab now reuses instead of duplicating a second insecure write
-    // path for the same table). Field names below are mapped to that
-    // route's camelCase body shape (this tab's own form state uses
-    // snake_case, matching the DB column names directly).
-    const payload = {
+    // for the main Aircraft page (see app/api/aircraft/route.ts). Field
+    // names below are mapped to that route's camelCase body shape (this
+    // tab's own form state uses snake_case, matching the DB column names
+    // directly).
+    // 2026-08-28 (SWR migration, Stage 1): now calls the same shared
+    // addAircraft/updateAircraft write functions app/dashboard/aircraft/
+    // page.tsx uses instead of a second, independent fetch('/api/aircraft')
+    // call — those already hit this exact route and then splice the result
+    // into the shared cache, so no manual reload is needed afterward.
+    const payload: Partial<SharedAircraft> = {
       registration: form.registration.toUpperCase(),
       type: form.type,
       model: form.model,
@@ -169,31 +189,22 @@ export default function AircraftSetupTab() {
       hobbsTime: form.hobbs_time,
       fuelCapacity: form.fuel_capacity,
       currentFuel: form.current_fuel,
-      status: form.status,
+      status: form.status as SharedAircraft['status'],
       nextMaintenance: form.next_maintenance,
       isSimulator: form.is_simulator,
     };
 
     if (editing) {
-      await fetch(`/api/aircraft/${editing.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      await updateAircraftRemote(String(editing.id), payload);
       setSuccessMessage('Aircraft updated!');
     } else {
-      await fetch('/api/aircraft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      await addAircraftRemote(payload as Omit<SharedAircraft, 'id'>);
       setSuccessMessage('Aircraft added!');
     }
 
     setTimeout(() => setSuccessMessage(''), 3000);
     setEditing(null);
     resetForm();
-    loadAircraft();
   };
 
   // Edit existing aircraft
@@ -217,8 +228,7 @@ export default function AircraftSetupTab() {
   // Delete aircraft
   const handleDelete = async (id: number) => {
     if (window.confirm('Delete this aircraft? This cannot be undone.')) {
-      await fetch(`/api/aircraft/${id}`, { method: 'DELETE' });
-      loadAircraft();
+      await removeAircraftRemote(String(id));
       setSuccessMessage('Aircraft removed.');
       setTimeout(() => setSuccessMessage(''), 3000);
     }

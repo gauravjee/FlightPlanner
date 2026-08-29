@@ -4,6 +4,9 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useFlightStore } from '@/lib/store';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useInstructors } from '@/lib/hooks/useInstructors';
+import { useStudents } from '@/lib/hooks/useStudents';
 import { MaintenanceRecord } from '@/types';
 import { Pencil, Wrench, X, Hourglass, TriangleAlert } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -40,23 +43,20 @@ const buildISTIso = (date: string, hour: string, minute: string): string =>
 
 export default function MaintenanceForm({ record, onSave, onClose }: Props) {
   useEscapeToClose(onClose);
+  const { aircraft } = useAircraft();
+  const { instructors } = useInstructors();
+  const { students } = useStudents();
   const {
-    aircraft, loadAircraft,
     scheduledFlights, loadScheduledFlights,
-    students, loadStudents,
-    instructors, loadInstructors,
   } = useFlightStore();
   const isEditing = !!record;
 
+  // Instructors and Students are migrated (SWR, Stage 2 + 3) and now fetch
+  // themselves via useInstructors()/useStudents() above, no manual load
+  // needed.
   useEffect(() => {
-    if (aircraft.length === 0) loadAircraft();
     if (scheduledFlights.length === 0) loadScheduledFlights();
-    if (students.length === 0) loadStudents();
-    if (instructors.length === 0) loadInstructors();
-  }, [
-    aircraft.length, scheduledFlights.length, students.length, instructors.length,
-    loadAircraft, loadScheduledFlights, loadStudents, loadInstructors,
-  ]);
+  }, [scheduledFlights.length, loadScheduledFlights]);
 
   const todayLocal = new Date().toLocaleDateString('en-CA');
 

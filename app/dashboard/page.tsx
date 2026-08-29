@@ -19,6 +19,9 @@ import {
   useFlightStore, getAircraftBufferMinutes, parseTurnaroundBufferSetting, MIN_FLIGHT_DURATION_MIN,
   getAircraftFuelBurnRate, getProjectedFuelAfter,
 } from '@/lib/store';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useInstructors } from '@/lib/hooks/useInstructors';
+import { useStudents } from '@/lib/hooks/useStudents';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -31,20 +34,17 @@ import {
 
 export default function DashboardPage() {
   const store = useFlightStore();
+  const { aircraft } = useAircraft();
+  const { instructors } = useInstructors();
+  const { students } = useStudents();
   const weather = store.weather;
   const generalWeather = store.generalWeather;
-  const aircraft = store.aircraft;
-  const loadAircraft = store.loadAircraft;
   const fetchWeather = store.fetchWeather;
   const fetchGeneralWeather = store.fetchGeneralWeather;
   const notams = store.notams;
   const loadNOTAMs = store.loadNOTAMs;
   const scheduledFlights = store.scheduledFlights;
   const loadScheduledFlights = store.loadScheduledFlights;
-  const students = store.students;
-  const loadStudents = store.loadStudents;
-  const instructors = store.instructors;
-  const loadInstructors = store.loadInstructors;
 
   const { data: session } = useSession();
   const router = useRouter();
@@ -137,19 +137,16 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [fetchGeneralWeather, station, lat, lon, hasValidLatLon, ftoSettingsLoaded]);
 
-  // Load fleet/roster + today's bookings for the schedule table and fuel
-  // status below. Aircraft/students/instructors are loaded alongside
-  // scheduledFlights (not just scheduledFlights alone) because the store
-  // resolves aircraft registration / student name / instructor name onto
-  // each booking at load time from whatever's already in those three
-  // lists — loading them together avoids a first-load flash of
-  // "Unknown"/"None" while they're still empty.
+  // Load today's bookings for the schedule table and fuel status below.
+  // Aircraft, Instructors, and Students now come from
+  // useAircraft()/useInstructors()/useStudents() above — their own
+  // fetch-on-mount — and loadScheduledFlights() fetches all three
+  // independently for its own aircraftReg/instructorName/studentName join
+  // (see lib/store.ts's SWR migration notes) — so this page no longer
+  // needs to preload any of them for that reason either.
   useEffect(() => {
-    loadAircraft();
-    loadStudents();
-    loadInstructors();
     loadScheduledFlights();
-  }, [loadAircraft, loadStudents, loadInstructors, loadScheduledFlights]);
+  }, [loadScheduledFlights]);
 
   // Today's flights, computed live from scheduled_flights — this used to
   // be a hardcoded placeholder array (bug: it never reflected the real

@@ -3,7 +3,8 @@
 
 import { StudentRecord } from '@/types';
 import { useState, useEffect, useMemo } from 'react';
-import { useFlightStore } from '@/lib/store';
+import { useInstructors } from '@/lib/hooks/useInstructors';
+import { useStudents } from '@/lib/hooks/useStudents';
 import { supabase } from '@/lib/supabase-client';
 import { Pencil, GraduationCap, Save, Plus, X, CircleCheck } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -16,15 +17,9 @@ interface Props {
 
 export default function StudentFormModal({ student, onSave, onClose }: Props) {
   useEscapeToClose(onClose);
-  const { instructors, loadInstructors } = useFlightStore();
+  const { instructors } = useInstructors();
+  const { students } = useStudents();
   const isEditing = !!student;
-
-    // Load instructors if not already loaded
-      useEffect(() => {
-        if (instructors.length === 0) {
-          loadInstructors();
-        }
-      }, [instructors.length, loadInstructors]);
 
   const [form, setForm] = useState({
     enrollmentId: '',
@@ -233,8 +228,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
   };
 
   const getExistingInitials = (): string[] => {
-    const store = useFlightStore.getState();
-    return store.students
+    return students
       .filter(s => s.status === 'ACTIVE' && (!student || s.id !== student.id))
       .map(s => s.initials);
   };
