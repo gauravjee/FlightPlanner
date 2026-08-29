@@ -7,6 +7,7 @@ import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
+import { useAircraft } from '@/lib/hooks/useAircraft';
 import { MaintenanceRecord } from '@/types';
 import MaintenanceForm from '@/components/maintenance/MaintenanceForm';
 import MaintenanceDueSection from '@/components/maintenance/MaintenanceDueSection';
@@ -24,11 +25,11 @@ export default function MaintenancePage() {
   // lives in app/api/maintenance-records/[id]/route.ts
   // (requireModuleAccess('maintenance')).
   const canWrite = canWriteModule(session?.user?.role, overrides, 'maintenance');
+  const { aircraft } = useAircraft();
   const {
     maintenanceRecords, loadingMaintenance,
     loadMaintenanceRecords, addMaintenanceRecord,
     updateMaintenanceRecord, removeMaintenanceRecord,
-    loadAircraft, aircraft
   } = useFlightStore();
 
   const [showForm, setShowForm] = useState(false);
@@ -37,9 +38,8 @@ export default function MaintenancePage() {
   const [filterAircraft, setFilterAircraft] = useState('ALL');
 
   useEffect(() => {
-    loadAircraft();
     loadMaintenanceRecords();
-  }, [loadAircraft, loadMaintenanceRecords]);
+  }, [loadMaintenanceRecords]);
 
   const filteredRecords = maintenanceRecords.filter(r => {
     const matchStatus = filterStatus === 'ALL' || r.status === filterStatus;

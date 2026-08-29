@@ -20,6 +20,7 @@
 
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
+import { useAircraft } from '@/lib/hooks/useAircraft';
 import { MaintenanceDueItem } from '@/types';
 import { TriangleAlert, Clock, CircleAlert, Wrench, X } from 'lucide-react';
 
@@ -133,8 +134,9 @@ function LogMaintenanceItemModal({ item, aircraftReg, currentHobbs, mode, onClos
 }
 
 export default function MaintenanceDueSection({ canWrite }: { canWrite: boolean }) {
+  const { aircraft } = useAircraft();
   const {
-    aircraft, maintenanceScheduleTemplates, loadMaintenanceScheduleTemplates,
+    maintenanceScheduleTemplates, loadMaintenanceScheduleTemplates,
     getMaintenanceDueItems,
   } = useFlightStore();
 
@@ -147,7 +149,7 @@ export default function MaintenanceDueSection({ canWrite }: { canWrite: boolean 
   // One row per (aircraft, active template item) that has a template
   // matching its model — computed fresh each render from the store, same
   // "pure function over current state" pattern as getSchedulingBlockReason.
-  const allDueItems = aircraft.flatMap(ac => getMaintenanceDueItems(String(ac.id)));
+  const allDueItems = aircraft.flatMap(ac => getMaintenanceDueItems(ac));
 
   const attention = allDueItems.filter(i => i.status !== 'OK');
   if (attention.length === 0) return null;
