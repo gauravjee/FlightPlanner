@@ -4,6 +4,9 @@
 
 import { useState } from 'react';
 import { useFlightStore } from '@/lib/store';
+import { useAircraft, aircraftKey } from '@/lib/hooks/useAircraft';
+import { addFlightRecord } from '@/lib/hooks/useFlightRecords';
+import { mutate } from 'swr';
 import { ScheduledFlight } from '@/types';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -15,8 +18,9 @@ interface Props {
 
 export default function DebriefForm({ flight, onClose, onComplete }: Props) {
   useEscapeToClose(onClose);
-  const { aircraft, addFlightRecord, updateScheduledFlight, loadScheduledFlights } = useFlightStore();
-  
+  const { aircraft } = useAircraft();
+  const { updateScheduledFlight, loadScheduledFlights } = useFlightStore();
+
   const ac = aircraft.find(a => String(a.id) === String(flight.aircraftId));
   
   const now = new Date();
@@ -108,12 +112,26 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
       // 2. Update aircraft fuel if changed — this reflects the physical
       // state of the aircraft, so it happens regardless of the logbook
       // toggle (the plane really did burn that fuel and advance its Hobbs).
+      // This writes directly to Supabase rather than through
+      // lib/hooks/useAircraft.ts's updateAircraft() / /api/aircraft — that
+      // route is gated to AIRCRAFT_WRITE_ROLES (admin/super_admin only),
+      // but any instructor can debrief a flight, so this deliberately stays
+      // a separate write path rather than routing through it (pre-existing
+      // design, unchanged by the 2026-08-28 SWR migration).
       if (form.fuelAfter !== form.fuelBefore) {
         const { supabase } = await import('@/lib/supabase');
         await supabase
           .from('aircraft')
           .update({ current_fuel: form.fuelAfter, hobbs_time: form.hobbsEnd })
           .eq('id', flight.aircraftId);
+        // 2026-08-28: this write used to leave the shared aircraft state
+        // stale until something else happened to reload it (the old store
+        // action was called unconditionally on nearly every page mount, so
+        // it usually self-corrected soon after). Now that aircraft is
+        // cached with a dedupingInterval, revalidate explicitly so every
+        // mounted useAircraft() consumer picks up the new fuel/hobbs values
+        // right away instead of possibly showing a stale reading.
+        await mutate(aircraftKey);
       }
 
       await loadScheduledFlights();

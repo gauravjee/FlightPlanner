@@ -3,9 +3,10 @@
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { useFlightStore } from '@/lib/store';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useFuelRecords } from '@/lib/hooks/useFuelRecords';
 import FuelLogForm from '@/components/fuel/FuelLogForm';
 import RoleGate from '@/components/ui/RoleGate';
 import { FUEL_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
@@ -20,13 +21,9 @@ export default function FuelPage() {
   // super_admin has granted a per-user override. Server-side enforcement
   // lives in app/api/fuel-records/route.ts (requireModuleAccess('fuel')).
   const canWrite = canWriteModule(session?.user?.role, overrides, 'fuel');
-  const { aircraft, fuelRecords, loadingFuel, loadFuelRecords, loadAircraft } = useFlightStore();
+  const { aircraft } = useAircraft();
+  const { fuelRecords, isLoading: loadingFuel } = useFuelRecords();
   const [showForm, setShowForm] = useState(false);
-
-  useEffect(() => {
-    loadAircraft();
-    loadFuelRecords();
-  }, [loadAircraft, loadFuelRecords]);
 
   const totalFuelAdded = fuelRecords.reduce((sum, r) => sum + r.fuelAddedLiters, 0);
   const totalCost = fuelRecords.reduce((sum, r) => sum + r.totalCost, 0);

@@ -15,6 +15,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
+import { useInstructors } from '@/lib/hooks/useInstructors';
+import { useStudents } from '@/lib/hooks/useStudents';
+import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { supabase } from '@/lib/supabase-client';
 import { matchTrainingProgram } from '@/lib/training-programs';
 import { useSetHeader } from '@/components/ui/HeaderContext';
@@ -36,11 +39,11 @@ export default function InstructorDashboardPage() {
   // ============================================================
   // STORE DATA
   // ============================================================
+  const { instructors } = useInstructors();
+  const { students } = useStudents();
+  const { flightRecords } = useFlightRecords();
   const {
-    instructors, loadInstructors,
-    students, loadStudents,
     scheduledFlights, loadScheduledFlights,
-    flightRecords, loadFlightRecords,
     trainingRequirements, loadTrainingRequirementsForStudents,
   } = useFlightStore();
 
@@ -64,12 +67,12 @@ export default function InstructorDashboardPage() {
 
 
 
-  // Load all data on mount
+  // Load all data on mount. Instructors, Students, and Flight Records are
+  // migrated (SWR, Stages 2 + 3 + 4) and now fetch themselves via
+  // useInstructors()/useStudents()/useFlightRecords() above, no manual
+  // load needed.
   useEffect(() => {
-    loadInstructors();
-    loadStudents();
     loadScheduledFlights();
-    loadFlightRecords();
     (async () => {
       const { data, error } = await supabase
         .from('training_programs')
@@ -80,7 +83,7 @@ export default function InstructorDashboardPage() {
         setTrainingPrograms(data || []);
       }
     })();
-  }, [loadInstructors, loadStudents, loadScheduledFlights, loadFlightRecords]);
+  }, [loadScheduledFlights]);
 
   // ============================================================
   // DERIVED DATA

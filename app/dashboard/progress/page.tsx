@@ -6,6 +6,9 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useStudents } from '@/lib/hooks/useStudents';
+import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { supabase } from '@/lib/supabase-client';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
@@ -95,10 +98,10 @@ export default function ProgressPage() {
   const userRole = session?.user?.role;
   const userStudentId = session?.user?.studentId;
 
+  const { aircraft } = useAircraft();
+  const { students } = useStudents();
+  const { flightRecords } = useFlightRecords();
   const {
-    students, loadStudents,
-    flightRecords, loadFlightRecords,
-    aircraft, loadAircraft,
     loadTrainingRequirements,
     getRequirementsForStudent,
   } = useFlightStore();
@@ -112,11 +115,10 @@ export default function ProgressPage() {
   // reads/writes this table.
   const [trainingPrograms, setTrainingPrograms] = useState<TrainingProgramRow[]>([]);
 
-  // Load data on mount
+  // Load data on mount. Students and Flight Records are migrated (SWR,
+  // Stages 3 + 4) and now fetch themselves via useStudents()/
+  // useFlightRecords() above, no manual load needed.
   useEffect(() => {
-    loadStudents();
-    loadFlightRecords();
-    loadAircraft();
     (async () => {
       const { data, error } = await supabase
         .from('training_programs')
@@ -127,7 +129,7 @@ export default function ProgressPage() {
         setTrainingPrograms(data || []);
       }
     })();
-  }, [loadStudents, loadFlightRecords, loadAircraft]);
+  }, []);
 
   // If student is logged in, auto-select their own record
   useEffect(() => {

@@ -6,6 +6,8 @@
 
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
+import { useStudents } from '@/lib/hooks/useStudents';
+import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { useEffect, useState, useMemo } from 'react';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import RoleGate from '@/components/ui/RoleGate';
@@ -29,10 +31,10 @@ const getProgressColor = (percent: number): string => {
 
 export default function StudentDashboardPage() {
   const { data: session } = useSession();
+  const { students } = useStudents();
+  const { flightRecords } = useFlightRecords();
   const {
-    students, loadStudents,
     scheduledFlights, loadScheduledFlights,
-    flightRecords, loadFlightRecords,
   } = useFlightStore();
 
   const [studentId, setStudentId] = useState<string | null>(null);
@@ -45,18 +47,18 @@ export default function StudentDashboardPage() {
   // client-side, so "View All" just expands it in place instead.
   const [showAllLogbook, setShowAllLogbook] = useState(false);
 
-  // Extract studentId from session and load data
+  // Extract studentId from session and load data. Students and Flight
+  // Records are migrated (SWR, Stages 3 + 4) and now fetch themselves via
+  // useStudents()/useFlightRecords() above, no manual load needed.
   useEffect(() => {
     if (session?.user) {
       const sid = session.user.studentId;
       if (sid) {
         setStudentId(sid);
-        loadStudents();
         loadScheduledFlights();
-        loadFlightRecords();
       }
     }
-  }, [session, loadStudents, loadScheduledFlights, loadFlightRecords]);
+  }, [session, loadScheduledFlights]);
 
   // Find the student record
   const student = students.find(s => s.id === studentId);

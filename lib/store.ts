@@ -28,21 +28,64 @@
 //
 // HOW TO USE:
 //   import { useFlightStore } from '@/lib/store';
-//   const { aircraft, loadAircraft, ftoSettings } = useFlightStore();
+//   const { students, ftoSettings } = useFlightStore();
+//   Aircraft moved to lib/hooks/useAircraft.ts (SWR migration, Stage 1,
+//   2026-08-28) — import { useAircraft } from '@/lib/hooks/useAircraft'.
+//   Instructors moved to lib/hooks/useInstructors.ts and Availability to
+//   lib/hooks/useAvailability.ts (SWR migration, Stage 2, 2026-08-28).
+//   Students moved to lib/hooks/useStudents.ts (SWR migration, Stage 3,
+//   2026-08-28) — the instructor-name join students used to carry
+//   pre-baked now lives in that file's withInstructorNames() selector.
+//   Flight Records moved to lib/hooks/useFlightRecords.ts and Fuel Records
+//   to lib/hooks/useFuelRecords.ts (SWR migration, Stage 4, 2026-08-29) —
+//   unlike Students, both keep their aircraft/instructor/student name
+//   joins baked into the fetcher rather than a render-time selector (see
+//   that file's own header comment for why — matches the Availability
+//   precedent, not the Students one).
 // ============================================================
 
 'use client';
 
 import { create } from 'zustand';
 import {
-  Aircraft, Instructor, StudentRecord, FlightSlot,
-  WeatherData, GeneralWeatherData, NOTAM, FuelRecord, FlightRecord,
+  Aircraft, FlightSlot,
+  WeatherData, GeneralWeatherData, NOTAM,
   ScheduledFlight, TimeConflict, MaintenanceRecord,
-  AvailabilityRecord, TrainingRequirement, Holiday,
+  TrainingRequirement, Holiday,
   MaintenanceScheduleTemplate, MaintenanceDueItem
 } from '@/types';
 import { supabase } from './supabase';
-import { flightHoursFromTimes } from './flight-classification';
+// SWR migration, Stage 1 (2026-08-28): aircraft moved out of this store's
+// own state into lib/hooks/useAircraft.ts. The domains below still in this
+// store that need aircraft data for a client-side name-join
+// (loadScheduledFlights, loadMaintenanceRecords) or a fuel-buffer/conflict
+// calc (checkConflicts, bookFlight) call fetchAircraft() directly for a
+// fresh read instead of reading this store's own (now-removed) `aircraft`
+// state. updateMaintenanceRecord still revalidates aircraftKey directly
+// after a server-derived aircraft change (status reset) — the "server
+// derived something the client didn't send, so revalidate rather than
+// locally splice" case the migration plan calls out. (Flight Records' and
+// Fuel Records' own equivalent aircraftKey revalidations — hobbs bump,
+// current_fuel bump — moved out of this file along with those domains in
+// Stage 4; see lib/hooks/useFlightRecords.ts / useFuelRecords.ts.)
+import { fetchAircraft, aircraftKey } from './hooks/useAircraft';
+// SWR migration, Stage 2 (2026-08-28): instructors and availability moved
+// out of this store's own state into lib/hooks/useInstructors.ts and
+// lib/hooks/useAvailability.ts. Not-yet-migrated loaders below that used to
+// read get().instructors for a client-side name-join now call
+// fetchInstructors() directly instead, exactly the pattern Stage 1
+// established for aircraft.
+import { fetchInstructors } from './hooks/useInstructors';
+// SWR migration, Stage 3 (2026-08-28): students moved out of this store's
+// own state into lib/hooks/useStudents.ts. loadScheduledFlights below (the
+// remaining not-yet-migrated loader that needs a student name-join) still
+// calls fetchStudents() directly instead of reading get().students. (Flight
+// Records' own equivalent — loadFlightRecords/loadStudentFlightRecords'
+// fetchStudents() call, and addFlightRecord's studentsKey revalidation for
+// the server-derived hours/solo-date bump — moved out of this file along
+// with that domain in Stage 4; see lib/hooks/useFlightRecords.ts.)
+import { fetchStudents } from './hooks/useStudents';
+import { mutate } from 'swr';
 
 // ============================================================
 // SCHEDULING RULES — booking-duration, turnaround & fuel-burn constants
@@ -431,10 +474,6 @@ interface FlightStore {
   // ==========================================
   // DATA COLLECTIONS
   // ==========================================
-  aircraft: Aircraft[];
-  students: StudentRecord[];
-  flightRecords: FlightRecord[];
-  fuelRecords: FuelRecord[];
   scheduledFlights: ScheduledFlight[];
   maintenanceRecords: MaintenanceRecord[];
   // 2026-08-26: Aircraft Maintenance Schedule, Phase 1 — active + inactive
@@ -442,14 +481,12 @@ interface FlightStore {
   // computeMaintenanceDueItems() to work out due/overdue status per
   // aircraft.
   maintenanceScheduleTemplates: MaintenanceScheduleTemplate[];
-  instructors: Instructor[];
   notams: NOTAM[];
   weather: WeatherData;
   // General (non-aviation) weather for a configured lat/long — only used
   // when there's no ICAO/reference station to source real METAR/TAF from.
   // null until fetchGeneralWeather() has been called at least once.
   generalWeather: GeneralWeatherData | null;
-  availabilityRecords: AvailabilityRecord[];
   trainingRequirements: TrainingRequirement[];
   ftoSettings: Record<string, string>;      // FTO settings as key-value pairs
   // True once loadFTOSettings() has resolved at least once (success or
@@ -481,15 +518,9 @@ interface FlightStore {
   toggleTheme: () => void;
   selectedSlot: FlightSlot | null;
   hoveredSlot: string | null;
-  loadingAircraft: boolean;
-  loadingStudents: boolean;
-  loadingFlights: boolean;
-  loadingFuel: boolean;
   loadingSchedule: boolean;
   loadingMaintenance: boolean;
-  loadingInstructors: boolean;
   loadingNotams: boolean;
-  loadingAvailability: boolean;
   loadingRequirements: boolean;
 
   // ==========================================
@@ -511,53 +542,22 @@ interface FlightStore {
   // ==========================================
   // 1. AIRCRAFT ACTIONS
   // ==========================================
-  loadAircraft: () => Promise<void>;
-  addAircraft: (aircraft: Omit<Aircraft, 'id'>) => Promise<void>;
-  updateAircraft: (id: string, updates: Partial<Aircraft>) => Promise<void>;
-  removeAircraft: (id: string) => Promise<void>;
-  getAircraftById: (id: string) => Aircraft | undefined;
+  // Migrated to lib/hooks/useAircraft.ts (SWR migration, Stage 1,
+  // 2026-08-28) — see useAircraft()/addAircraft()/updateAircraft()/
+  // removeAircraft()/getAircraftById() there.
 
-  // ==========================================
-  // 2. STUDENT ACTIONS
-  // ==========================================
-  loadStudents: () => Promise<void>;
-  // Creating a student also creates their login (see app/api/students POST),
-  // so the caller needs to know whether the welcome email went out — the
-  // return value surfaces that instead of just success/failure.
-  addStudent: (student: Omit<StudentRecord, 'id'>) => Promise<{
-    success: boolean;
-    error?: string;
-    emailSent?: boolean;
-    emailMessage?: string;
-    password?: string;
-  }>;
-  // 2026-08-20: returns whether the save succeeded (used by the SPL-number
-  // capture modal in RequirementsChecklist.tsx to avoid marking the SPL
-  // requirement complete if the number itself failed to save) — the one
-  // pre-existing caller (app/dashboard/students/page.tsx) just awaits it
-  // without reading the return value, so this stays backward-compatible.
-  updateStudent: (id: string, updates: Partial<StudentRecord>) => Promise<boolean>;
-  removeStudent: (id: string) => Promise<void>;
-  getStudentById: (id: string) => StudentRecord | undefined;
-  assignInstructor: (studentId: string, instructorId: string) => Promise<void>;
+  // 2. STUDENT ACTIONS — moved to lib/hooks/useStudents.ts (SWR migration,
+  // Stage 3, 2026-08-28). useStudents(), addStudent(), updateStudent(),
+  // removeStudent(), getStudentById(), assignInstructor(),
+  // withInstructorNames() (the render-time instructor-name join selector).
 
-  // ==========================================
-  // 3. FLIGHT RECORD ACTIONS
-  // ==========================================
-  loadFlightRecords: () => Promise<void>;
-  loadStudentFlightRecords: (studentId: string) => Promise<void>;
-  // Returns success/error instead of void so the form knows whether to
-  // close (save actually went through) or stay open with the error shown —
-  // previously a failed insert closed the form silently, same as it never
-  // happened.
-  addFlightRecord: (record: Omit<FlightRecord, 'id' | 'studentName' | 'aircraftReg' | 'instructorName'>) => Promise<{ success: boolean; error?: string }>;
+  // 3. FLIGHT RECORD ACTIONS — moved to lib/hooks/useFlightRecords.ts (SWR
+  // migration, Stage 4, 2026-08-29). useFlightRecords(), addFlightRecord(),
+  // useStudentFlightRecords()/fetchStudentFlightRecords() (ported, unused).
 
-  // ==========================================
-  // 4. FUEL MANAGEMENT ACTIONS
-  // ==========================================
-  loadFuelRecords: () => Promise<void>;
-  addFuelRecord: (record: Omit<FuelRecord, 'id' | 'totalCost' | 'aircraftReg' | 'aircraftType'>) => Promise<void>;
-  getFuelRecordsForAircraft: (aircraftId: string) => FuelRecord[];
+  // 4. FUEL MANAGEMENT ACTIONS — moved to lib/hooks/useFuelRecords.ts (SWR
+  // migration, Stage 4, 2026-08-29). useFuelRecords(), addFuelRecord(),
+  // getFuelRecordsForAircraft() (ported selector, unused).
 
   // ==========================================
   // 5. SCHEDULE / BOOKING ACTIONS
@@ -578,15 +578,15 @@ interface FlightStore {
   getMaintenanceForAircraft: (aircraftId: string) => MaintenanceRecord[];
   // 2026-08-26: Aircraft Maintenance Schedule, Phase 1.
   loadMaintenanceScheduleTemplates: () => Promise<void>;
-  getMaintenanceDueItems: (aircraftId: string) => MaintenanceDueItem[];
+  // 2026-08-28 (SWR migration, Stage 1): takes the aircraft record itself
+  // rather than an id to look up — every call site already has it in hand
+  // (it's iterating useAircraft()'s own list), and this store no longer
+  // holds an aircraft copy of its own to look the id up in.
+  getMaintenanceDueItems: (aircraft: Pick<Aircraft, 'id' | 'model' | 'hobbsTime'>) => MaintenanceDueItem[];
 
-  // ==========================================
-  // 7. INSTRUCTOR ACTIONS
-  // ==========================================
-  loadInstructors: () => Promise<void>;
-  addInstructor: (instructor: Omit<Instructor, 'id'>) => Promise<void>;
-  updateInstructor: (id: string, updates: Partial<Instructor>) => Promise<void>;
-  removeInstructor: (id: string) => Promise<void>;
+  // 7. INSTRUCTOR ACTIONS — moved to lib/hooks/useInstructors.ts (SWR
+  // migration, Stage 2, 2026-08-28). useInstructors(), addInstructor(),
+  // updateInstructor(), removeInstructor(), getInstructorById().
 
   // ==========================================
   // 8. WEATHER ACTIONS
@@ -599,14 +599,9 @@ interface FlightStore {
   // ==========================================
   loadNOTAMs: (station?: string) => Promise<void>;
 
-  // ==========================================
-  // 10. AVAILABILITY / LEAVE ACTIONS
-  // ==========================================
-  loadAvailability: () => Promise<void>;
-  addAvailability: (record: Omit<AvailabilityRecord, 'id' | 'personName' | 'personInitials'>) => Promise<void>;
-  updateAvailability: (id: string, updates: Partial<AvailabilityRecord>) => Promise<void>;
-  removeAvailability: (id: string) => Promise<void>;
-  checkAvailability: (personType: string, personId: string, date: string) => Promise<boolean>;
+  // 10. AVAILABILITY / LEAVE ACTIONS — moved to lib/hooks/useAvailability.ts
+  // (SWR migration, Stage 2, 2026-08-28). useAvailability(), addAvailability(),
+  // updateAvailability(), removeAvailability(), checkAvailability().
   loadExercises: () => Promise<void>;
   loadSortieTypes: () => Promise<void>;
   // ==========================================
@@ -650,7 +645,6 @@ interface FlightStore {
   
   setSelectedSlot: (slot: FlightSlot | null) => void;
   setHoveredSlot: (id: string | null) => void;
-  getInstructorById: (id: string) => Instructor | undefined;
 }
 
 // Shared row -> TrainingRequirement mapper, used by both
@@ -678,14 +672,9 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // ==========================================
   // INITIAL STATE
   // ==========================================
-  aircraft: [],
-  students: [],
-  flightRecords: [],
-  fuelRecords: [],
   scheduledFlights: [],
   maintenanceRecords: [],
   maintenanceScheduleTemplates: [],
-  instructors: [],
   notams: [],
   exercises: [],
   sortieTypes: [],
@@ -704,7 +693,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     isLoading: true, error: null,
   },
   generalWeather: null,
-  availabilityRecords: [],
   trainingRequirements: [],
   ftoSettings: {},          // Start empty, loaded from database
   ftoSettingsLoaded: false,
@@ -726,15 +714,9 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
   selectedSlot: null,
   hoveredSlot: null,
-  loadingAircraft: false,
-  loadingStudents: false,
-  loadingFlights: false,
-  loadingFuel: false,
   loadingSchedule: false,
   loadingMaintenance: false,
-  loadingInstructors: false,
   loadingNotams: false,
-  loadingAvailability: false,
   loadingRequirements: false,
 
   // ============================================================
@@ -760,322 +742,19 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // ============================================================
   // 1. AIRCRAFT FUNCTIONS
   // ============================================================
-  loadAircraft: async () => {
-    set({ loadingAircraft: true });
-    const { data, error } = await supabase.from('aircraft').select('*').order('created_at', { ascending: true });
-    if (data && !error) {
-      set({
-        aircraft: data.map((row: Record<string, unknown>) => ({
-          id: String(row.id),
-          registration: row.registration as string,
-          type: row.type as string,
-          model: row.model as string,
-          year: row.year as number,
-          hobbsTime: row.hobbs_time as number,
-          fuelCapacity: row.fuel_capacity as number,
-          currentFuel: row.current_fuel as number,
-          status: row.status as Aircraft['status'],
-          nextMaintenance: row.next_maintenance as string,
-          fuelBurnRateLph: row.fuel_burn_rate_lph != null ? (row.fuel_burn_rate_lph as number) : undefined,
-          isSimulator: !!row.is_simulator,
-        })),
-        loadingAircraft: false,
-      });
-    } else { console.error('Error loading aircraft:', error); set({ loadingAircraft: false }); }
-  },
+  // Migrated to lib/hooks/useAircraft.ts (SWR migration, Stage 1,
+  // 2026-08-28). Not-yet-migrated domains below that need aircraft data
+  // call the exported fetchAircraft()/mutate(aircraftKey) from that file
+  // directly — see the import comment at the top of this file.
 
-  // Writes go through app/api/aircraft/** now instead of straight to
-  // Supabase — that route enforces AIRCRAFT_WRITE_ROLES (admin/super_admin
-  // only, per the 2026-08-17 role/tab matrix: instructor/maintenance/
-  // operations can all see the fleet but are view-only here). See
-  // lib/api-auth.ts.
-  addAircraft: async (aircraft) => {
-    const res = await fetch('/api/aircraft', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(aircraft),
-    });
-    const result = await res.json().catch(() => ({}));
-    if (res.ok) {
-      set(state => ({ aircraft: [...state.aircraft, { ...aircraft, id: String(result.aircraft.id) }] }));
-    } else {
-      console.error('Error adding aircraft:', result.error);
-    }
-  },
+  // 2. STUDENT FUNCTIONS — moved to lib/hooks/useStudents.ts (SWR
+  // migration, Stage 3, 2026-08-28).
 
-  updateAircraft: async (id, updates) => {
-    const res = await fetch(`/api/aircraft/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    if (res.ok) set(state => ({ aircraft: state.aircraft.map(a => a.id === id ? { ...a, ...updates } : a) }));
-    else console.error('Error updating aircraft:', await res.text());
-  },
+  // 3. FLIGHT RECORDS / LOGBOOK FUNCTIONS — moved to
+  // lib/hooks/useFlightRecords.ts (SWR migration, Stage 4, 2026-08-29).
 
-  removeAircraft: async (id) => {
-    const res = await fetch(`/api/aircraft/${id}`, { method: 'DELETE' });
-    if (res.ok) set(state => ({ aircraft: state.aircraft.filter(a => a.id !== id) }));
-    else console.error('Error removing aircraft:', await res.text());
-  },
-
-  getAircraftById: (id) => get().aircraft.find(a => a.id === id),
-
-  // ============================================================
-  // 2. STUDENT FUNCTIONS
-  // ============================================================
-    loadStudents: async () => {
-    set({ loadingStudents: true });
-    // Routed through /api/students (not a direct Supabase call) so the
-    // server can scope the result by role: staff get everyone, a logged-in
-    // 'student' only ever gets their own record. See app/api/students/route.ts.
-    let data: Record<string, unknown>[] | null = null;
-    try {
-      const res = await fetch('/api/students');
-      if (res.ok) {
-        const json = await res.json();
-        data = json.students;
-      }
-    } catch (err) {
-      console.error('Error loading students:', err);
-    }
-    if (data) {
-      // Get instructors list for name lookup
-      const instructorsList = get().instructors;
-
-      // Enrich students with assigned instructor names
-      const enriched = data.map((row: Record<string, unknown>) => {
-        const instructorId = row.assigned_instructor_id as string;
-        const instructor = instructorId ? instructorsList.find(i => String(i.id) === String(instructorId)) : undefined;
-        return {
-          id: String(row.id),
-          enrollmentId: row.enrollment_id as string,
-          name: row.name as string,
-          initials: row.initials as string,
-          trainingStage: row.training_stage as string,
-          totalHours: row.total_hours as number,
-          // '|| ''' matters here: medical_expiry can be null in the DB for
-          // a student who never had one set. StudentRecord.medicalExpiry
-          // is typed as a required (non-optional) string, so '' — not
-          // undefined — is the right fallback to satisfy that type; a raw
-          // null fed into StudentFormModal's controlled
-          // <input value={form.medicalExpiry}> triggers React's "value
-          // prop on input should not be null" warning (found via testing,
-          // 2026-08-25).
-          medicalExpiry: (row.medical_expiry as string) || '',
-          email: (row.email as string) || '',
-          phone: (row.phone as string) || '',
-          dateOfBirth: (row.date_of_birth as string) || '',
-          joinedDate: (row.joined_date as string) || '',
-          status: row.status as string,
-          firstSoloDate: row.first_solo_date as string || undefined,
-          assignedInstructorId: instructorId || undefined,
-          assignedInstructorName: instructor?.name || undefined,        // ← LOOKED UP
-          assignedInstructorInitials: instructor?.initials || undefined, // ← LOOKED UP
-          splNumber: (row.spl_number as string) || undefined,
-          splExpiryDate: (row.spl_expiry_date as string) || undefined,
-          splIssueDate: (row.spl_issue_date as string) || undefined,
-          medicalIssueDate: (row.medical_issue_date as string) || undefined,
-        };
-      });
-      
-      set({
-        students: enriched,
-        loadingStudents: false,
-      });
-    } else { set({ loadingStudents: false }); }
-  },
-
-  addStudent: async (student) => {
-    const res = await fetch('/api/students', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(student),
-    });
-    const result = await res.json().catch(() => ({}));
-    if (res.ok) {
-      const created = result.student;
-      set(state => ({ students: [...state.students, { ...student, id: String(created.id) }] }));
-      return {
-        success: true,
-        emailSent: result.emailSent,
-        emailMessage: result.emailMessage,
-        password: result.password,
-      };
-    } else {
-      console.error('Error adding student:', result.error);
-      return { success: false, error: result.error || 'Failed to add student.' };
-    }
-  },
-
-  updateStudent: async (id, updates) => {
-    const res = await fetch(`/api/students/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    if (res.ok) {
-      set(state => ({ students: state.students.map(s => s.id === id ? { ...s, ...updates } : s) }));
-      return true;
-    }
-    console.error('Error updating student:', await res.text());
-    return false;
-  },
-
-  removeStudent: async (id) => {
-    const res = await fetch(`/api/students/${id}`, { method: 'DELETE' });
-    if (res.ok) set(state => ({ students: state.students.filter(s => s.id !== id) }));
-    else console.error('Error removing student:', await res.text());
-  },
-
-  getStudentById: (id) => get().students.find(s => s.id === id),
-
-
-  // ============================================================
-  // 3. FLIGHT RECORDS / LOGBOOK FUNCTIONS
-  // ============================================================
-  loadFlightRecords: async () => {
-    set({ loadingFlights: true });
-    const { data, error } = await supabase.from('flight_records').select('*').order('flight_date', { ascending: false }).limit(100);
-    if (data && !error) {
-      const students = get().students; const aircraft = get().aircraft; const instructors = get().instructors;
-      set({
-        flightRecords: data.map((row: Record<string, unknown>) => {
-          const student = students.find(s => String(s.id) === String(row.student_id));
-          const ac = aircraft.find(a => String(a.id) === String(row.aircraft_id));
-          const inst = instructors.find(i => i.id === String(row.instructor_id));
-          const calcHours = (): number => {
-            if (row.total_hours) return row.total_hours as number;
-            return flightHoursFromTimes(row.departure_time as string, row.arrival_time as string);
-          };
-          return {
-            id: String(row.id), studentId: String(row.student_id), aircraftId: String(row.aircraft_id),
-            instructorId: String(row.instructor_id), flightDate: row.flight_date as string,
-            departureTime: row.departure_time as string, arrivalTime: row.arrival_time as string,
-            hobbsStart: row.hobbs_start as number, hobbsEnd: row.hobbs_end as number,
-            totalHours: calcHours(), landings: row.landings as number,
-            flightType: row.flight_type as string, sortieType: row.sortie_type as string,
-            exercise: (row.exercise as string) || undefined,
-            maneuvers: row.maneuvers as string, instructorNotes: row.instructor_notes as string,
-            studentPerformance: row.student_performance as number, weatherConditions: row.weather_conditions as string,
-            studentName: student?.name || 'Unknown', aircraftReg: ac?.registration || 'Unknown', instructorName: inst?.name || 'Unknown',
-          };
-        }),
-        loadingFlights: false,
-      });
-    } else { console.error('Error loading flight records:', error); set({ loadingFlights: false }); }
-  },
-
-  loadStudentFlightRecords: async (studentId: string) => {
-    set({ loadingFlights: true });
-    const { data, error } = await supabase.from('flight_records').select('*').eq('student_id', studentId).order('flight_date', { ascending: false });
-    if (data && !error) {
-      const students = get().students; const aircraft = get().aircraft; const instructors = get().instructors;
-      set({
-        flightRecords: data.map((row: Record<string, unknown>) => {
-          const student = students.find(s => String(s.id) === String(row.student_id));
-          const ac = aircraft.find(a => String(a.id) === String(row.aircraft_id));
-          const inst = instructors.find(i => i.id === String(row.instructor_id));
-          const calcHours = (): number => {
-            if (row.total_hours) return row.total_hours as number;
-            return flightHoursFromTimes(row.departure_time as string, row.arrival_time as string);
-          };
-          return {
-            id: String(row.id), studentId: String(row.student_id), aircraftId: String(row.aircraft_id),
-            instructorId: String(row.instructor_id), flightDate: row.flight_date as string,
-            departureTime: row.departure_time as string, arrivalTime: row.arrival_time as string,
-            hobbsStart: row.hobbs_start as number, hobbsEnd: row.hobbs_end as number,
-            totalHours: calcHours(), landings: row.landings as number,
-            flightType: row.flight_type as string, sortieType: row.sortie_type as string,
-            exercise: (row.exercise as string) || undefined,
-            maneuvers: row.maneuvers as string, instructorNotes: row.instructor_notes as string,
-            studentPerformance: row.student_performance as number, weatherConditions: row.weather_conditions as string,
-            studentName: student?.name || 'Unknown', aircraftReg: ac?.registration || 'Unknown', instructorName: inst?.name || 'Unknown',
-          };
-        }),
-        loadingFlights: false,
-      });
-    } else { console.error('Error loading student flight records:', error); set({ loadingFlights: false }); }
-  },
-
-  // Insert plus every side effect it used to do as separate client-side
-  // calls (crediting the student's total hours + first-solo date, advancing
-  // the aircraft's hobbs time) now all happen server-side in one request —
-  // see app/api/flight-records/route.ts. Gated to FLIGHT_RECORDS_WRITE_ROLES
-  // (admin/instructor/super_admin — operations isn't on this tab at all,
-  // maintenance is view-only, per the 2026-08-17 role/tab matrix).
-  addFlightRecord: async (record) => {
-    const res = await fetch('/api/flight-records', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(record),
-    });
-    const result = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      // This used to be swallowed by an `if (!error)` guard with no else —
-      // the form still called onClose() as if the save worked, so a failed
-      // insert (e.g. a check-constraint violation) looked identical to a
-      // successful one. Surface the real error so it's visible in the
-      // console and can be shown to whoever's using the form.
-      console.error('Error adding flight record:', result.error);
-      return { success: false, error: result.error || 'Failed to save flight record.' };
-    }
-
-    // Reload data to reflect the record itself plus every side effect the
-    // API route just performed (student hours/solo date, aircraft hobbs).
-    await get().loadAircraft();
-    await get().loadStudents();
-    await get().loadFlightRecords();
-
-    return { success: true };
-  },
-
-  // ============================================================
-  // 4. FUEL MANAGEMENT FUNCTIONS
-  // ============================================================
-  loadFuelRecords: async () => {
-    set({ loadingFuel: true });
-    const { data, error } = await supabase.from('fuel_records').select('*').order('refueling_date', { ascending: false }).limit(50);
-    if (data && !error) {
-      const aircraftList = get().aircraft;
-      set({
-        fuelRecords: data.map((row: Record<string, unknown>) => {
-          const ac = aircraftList.find(a => String(a.id) === String(row.aircraft_id));
-          return {
-            id: String(row.id), aircraftId: String(row.aircraft_id),
-            refuelingDate: row.refueling_date as string, fuelAddedLiters: row.fuel_added_liters as number,
-            fuelCostPerLiter: row.fuel_cost_per_liter as number,
-            totalCost: (row.fuel_added_liters as number) * (row.fuel_cost_per_liter as number),
-            fuelLevelBefore: row.fuel_level_before as number, fuelLevelAfter: row.fuel_level_after as number,
-            fuelType: row.fuel_type as string, refueledBy: row.refueled_by as string, notes: row.notes as string,
-            aircraftReg: ac?.registration || 'Unknown', aircraftType: ac?.type || '',
-          };
-        }),
-        loadingFuel: false,
-      });
-    } else { console.error('Error loading fuel records:', error); set({ loadingFuel: false }); }
-  },
-
-  // Insert plus the aircraft.current_fuel side effect now happen server-side
-  // in one request — see app/api/fuel-records/route.ts. Gated to
-  // FUEL_WRITE_ROLES (admin/super_admin/maintenance — instructor/operations
-  // can view fuel logs but not add one, per the 2026-08-17 role/tab matrix).
-  addFuelRecord: async (record) => {
-    const res = await fetch('/api/fuel-records', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(record),
-    });
-    if (res.ok) {
-      await get().loadAircraft();
-      await get().loadFuelRecords();
-    } else {
-      console.error('Error adding fuel record:', await res.text());
-    }
-  },
-
-  getFuelRecordsForAircraft: (aircraftId) => get().fuelRecords.filter(r => r.aircraftId === aircraftId),
+  // 4. FUEL MANAGEMENT FUNCTIONS — moved to lib/hooks/useFuelRecords.ts
+  // (SWR migration, Stage 4, 2026-08-29).
 
   // ============================================================
   // 5. SCHEDULED FLIGHTS / BOOKING FUNCTIONS
@@ -1084,7 +763,16 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     set({ loadingSchedule: true });
     const { data, error } = await supabase.from('scheduled_flights').select('*').order('start_time', { ascending: true });
     if (data && !error) {
-      const aircraftList = get().aircraft; const studentsList = get().students; const instructorsList = get().instructors;
+      // 2026-08-28 (SWR migration, Stages 1-3): aircraft, instructors, and
+      // students are no longer part of this store's own state — fetch all
+      // three directly for this client-side name-join, the same pattern
+      // lib/hooks/useFlightRecords.ts's fetcher now uses since Stage 4.
+      // (Scheduled Flights migrates in a later stage, at which point this
+      // enrichment moves to a render-time selector instead of being
+      // fetched here — see the plan's Architecture note.)
+      const aircraftList = await fetchAircraft();
+      const instructorsList = await fetchInstructors();
+      const studentsList = await fetchStudents();
       set({
         scheduledFlights: data.map((row: Record<string, unknown>) => {
           const ac = aircraftList.find(a => String(a.id) === String(row.aircraft_id));
@@ -1120,7 +808,10 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     // buffer_minutes), plus a mandatory extra refuel window whenever the
     // relevant fuel level is at or below the low-fuel threshold. See
     // getAircraftBufferMinutes.
-    const bufferAircraft = get().aircraft.find(a => String(a.id) === String(aircraftId));
+    // 2026-08-28 (SWR migration, Stage 1): fresh fetch instead of this
+    // store's own (now-removed) aircraft state — if anything, more correct
+    // here since it's a live fuel-level check for a scheduling decision.
+    const bufferAircraft = (await fetchAircraft()).find(a => String(a.id) === String(aircraftId));
     const turnaroundMin = parseTurnaroundBufferSetting(get().ftoSettings['buffer_minutes']);
     const durationMin = Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
     const bufferBeforeMin = getAircraftBufferMinutes(bufferAircraft?.currentFuel, turnaroundMin);
@@ -1161,7 +852,9 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     }
     const conflict = await get().checkConflicts(booking.aircraftId, booking.startTime, booking.endTime);
     if (conflict.hasConflict) {
-      const conflictAircraft = get().aircraft.find(a => String(a.id) === String(booking.aircraftId));
+      // 2026-08-28 (SWR migration, Stage 1): same fresh-fetch note as
+      // checkConflicts above — only runs on the (uncommon) conflict path.
+      const conflictAircraft = (await fetchAircraft()).find(a => String(a.id) === String(booking.aircraftId));
       const turnaroundMin = parseTurnaroundBufferSetting(get().ftoSettings['buffer_minutes']);
       const durationMin = Math.round((new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime()) / 60000);
       const bufferBeforeMin = getAircraftBufferMinutes(conflictAircraft?.currentFuel, turnaroundMin);
@@ -1270,8 +963,13 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     set({ loadingMaintenance: true });
     const { data, error } = await supabase.from('maintenance_records').select('*').order('scheduled_date', { ascending: true });
     if (data && !error) {
-      const aircraftList = get().aircraft; const today = new Date(); today.setHours(0, 0, 0, 0);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
       const now = new Date();
+      // 2026-08-28 (SWR migration, Stage 1): aircraft is no longer part of
+      // this store's own state — fetch it directly for this client-side
+      // name-join, the same pattern lib/hooks/useFlightRecords.ts's
+      // fetcher now uses since Stage 4.
+      const aircraftList = await fetchAircraft();
       set({
         maintenanceRecords: data.map((row: Record<string, unknown>) => {
           const ac = aircraftList.find(a => String(a.id) === String(row.aircraft_id));
@@ -1341,10 +1039,11 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     if (res.ok) {
       set(state => ({ maintenanceRecords: state.maintenanceRecords.map(m => m.id === id ? { ...m, ...updates } : m) }));
       // The aircraft-status side effect happened server-side above (if
-      // applicable) — reload aircraft so the client's own copy of that
-      // status reflects it instead of going stale until the next full page load.
+      // applicable) — revalidate the SWR aircraft cache so any mounted
+      // useAircraft() consumer's copy of that status reflects it instead
+      // of going stale until the next full page load.
       if (updates.status === 'COMPLETED' || updates.status === 'CANCELLED') {
-        await get().loadAircraft();
+        await mutate(aircraftKey);
       }
     } else {
       console.error('Error updating maintenance record:', await res.text());
@@ -1381,87 +1080,18 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     });
   },
 
-  getMaintenanceDueItems: (aircraftId) => {
-    const ac = get().aircraft.find(a => String(a.id) === String(aircraftId));
-    if (!ac) return [];
-    const templatesForModel = get().maintenanceScheduleTemplates.filter(t => t.aircraftModel === ac.model);
-    return computeMaintenanceDueItems(aircraftId, ac.hobbsTime, templatesForModel, get().maintenanceRecords);
+  // 2026-08-28 (SWR migration, Stage 1): takes the aircraft record itself
+  // now instead of an id — see the interface comment above.
+  getMaintenanceDueItems: (aircraft) => {
+    const templatesForModel = get().maintenanceScheduleTemplates.filter(t => t.aircraftModel === aircraft.model);
+    return computeMaintenanceDueItems(aircraft.id, aircraft.hobbsTime, templatesForModel, get().maintenanceRecords);
   },
 
-  // ============================================================
-  // 7. INSTRUCTOR FUNCTIONS
-  // ============================================================
-  loadInstructors: async () => {
-    set({ loadingInstructors: true });
-    const { data, error } = await supabase.from('instructors').select('*').order('name', { ascending: true });
-    if (data && !error) {
-      set({
-        instructors: data.map((row: Record<string, unknown>) => ({
-          id: String(row.id), name: row.name as string, initials: row.initials as string,
-          licenseNumber: row.license_number as string, ratings: row.ratings as string,
-          maxDailyHours: row.max_daily_hours as number, email: (row.email as string) || '',
-          phone: (row.phone as string) || '', status: row.status as Instructor['status'],
-          // Defaults to false if the migration hasn't been run yet in
-          // Supabase (add-instructor-self-booking-permission.sql) — column
-          // missing/null both read as "can't self-book," the safe side.
-          canSelfBook: Boolean(row.can_self_book),
-          licenseExpiryDate: (row.license_expiry_date as string) || undefined,
-          licenseIssueDate: (row.license_issue_date as string) || undefined,
-        })),
-        loadingInstructors: false,
-      });
-    } else { console.error('Error loading instructors:', error); set({ loadingInstructors: false }); }
-  },
-
-  // Writes go through app/api/instructors/** now instead of straight to
-  // Supabase — gated to INSTRUCTORS_WRITE_ROLES (admin/super_admin only;
-  // operations can view the roster, per the 2026-08-17 role/tab matrix —
-  // note this roster is separate from an instructor's own "My Students"
-  // page, which instructor still has). See lib/api-auth.ts.
-  addInstructor: async (instructor) => {
-    const res = await fetch('/api/instructors', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(instructor),
-    });
-    const result = await res.json().catch(() => ({}));
-    if (res.ok) {
-      set(state => ({ instructors: [...state.instructors, { ...instructor, id: String(result.instructor.id) }] }));
-    } else {
-      console.error('Error adding instructor:', result.error);
-    }
-  },
-
-  updateInstructor: async (id, updates) => {
-    const res = await fetch(`/api/instructors/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    if (res.ok) set(state => ({ instructors: state.instructors.map(i => i.id === id ? { ...i, ...updates } : i) }));
-    else console.error('Error updating instructor:', await res.text());
-  },
-
-  removeInstructor: async (id) => {
-    const res = await fetch(`/api/instructors/${id}`, { method: 'DELETE' });
-    if (res.ok) set(state => ({ instructors: state.instructors.filter(i => i.id !== id) }));
-    else console.error('Error removing instructor:', await res.text());
-  },
-
-
-  //============================================================
-   // 3. FLIGHT RECORDS / LOGBOOK FUNCTIONS
-  // ============================================================
-  assignInstructor: async (studentId, instructorId) => {
-  // `|| null` (not `undefined`) so an empty instructorId still reaches the
-  // server as an explicit "clear the assignment" — updateStudent only
-  // includes a field in the PATCH body when it's !== undefined.
-  await get().updateStudent(
-    studentId,
-    { assignedInstructorId: instructorId || null } as unknown as Partial<StudentRecord>
-  );
-  await get().loadStudents();
-},
+  // 7. INSTRUCTOR FUNCTIONS — moved to lib/hooks/useInstructors.ts (SWR
+  // migration, Stage 2, 2026-08-28).
+  // assignInstructor — moved to lib/hooks/useStudents.ts (SWR migration,
+  // Stage 3, 2026-08-28). Was already dead code (no callers) before this
+  // migration; ported for interface completeness.
 
 
   // ============================================================
@@ -1492,65 +1122,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     set({ notams: data, loadingNotams: false });
   },
 
-  // ============================================================
-  // 10. AVAILABILITY / LEAVE FUNCTIONS
-  // ============================================================
-  loadAvailability: async () => {
-    set({ loadingAvailability: true });
-    const { data, error } = await supabase.from('availability').select('*').order('start_date', { ascending: true });
-    if (data && !error) {
-      const instructors = get().instructors; const students = get().students;
-      set({
-        availabilityRecords: data.map((row: Record<string, unknown>) => {
-          const person = row.person_type === 'instructor'
-            ? instructors.find(i => i.id === String(row.person_id))
-            : students.find(s => s.id === String(row.person_id));
-          return {
-            id: String(row.id), personType: row.person_type as 'instructor' | 'student',
-            personId: String(row.person_id), leaveType: row.leave_type as string,
-            startDate: row.start_date as string, endDate: row.end_date as string,
-            startTime: (row.start_time as string) || undefined, endTime: (row.end_time as string) || undefined,
-            reason: row.reason as string, status: row.status as string, createdBy: row.created_by as string,
-            personName: person?.name || 'Unknown', personInitials: person?.initials || '??',
-          };
-        }),
-        loadingAvailability: false,
-      });
-    } else { console.error('Error loading availability:', error); set({ loadingAvailability: false }); }
-  },
-
-  addAvailability: async (record) => {
-    const { error } = await supabase.from('availability').insert({
-      person_type: record.personType, person_id: record.personId, leave_type: record.leaveType,
-      start_date: record.startDate, end_date: record.endDate,
-      start_time: record.startTime || null, end_time: record.endTime || null,
-      reason: record.reason, status: record.status || 'APPROVED', created_by: record.createdBy,
-    });
-    if (!error) await get().loadAvailability();
-  },
-
-  updateAvailability: async (id, updates) => {
-    const dbUpdates: Record<string, unknown> = {};
-    if (updates.leaveType !== undefined) dbUpdates.leave_type = updates.leaveType;
-    if (updates.startDate !== undefined) dbUpdates.start_date = updates.startDate;
-    if (updates.endDate !== undefined) dbUpdates.end_date = updates.endDate;
-    if (updates.reason !== undefined) dbUpdates.reason = updates.reason;
-    if (updates.status !== undefined) dbUpdates.status = updates.status;
-    const { error } = await supabase.from('availability').update(dbUpdates).eq('id', id);
-    if (!error) set(state => ({ availabilityRecords: state.availabilityRecords.map(a => a.id === id ? { ...a, ...updates } : a) }));
-  },
-
-  removeAvailability: async (id) => {
-    const { error } = await supabase.from('availability').delete().eq('id', id);
-    if (!error) set(state => ({ availabilityRecords: state.availabilityRecords.filter(a => a.id !== id) }));
-  },
-
-  checkAvailability: async (personType: string, personId: string, date: string) => {
-    const { data } = await supabase.from('availability').select('*')
-      .eq('person_type', personType).eq('person_id', personId)
-      .lte('start_date', date).gte('end_date', date).eq('status', 'APPROVED').limit(1);
-    return !data || data.length === 0;
-  },
+  // 10. AVAILABILITY / LEAVE FUNCTIONS — moved to lib/hooks/useAvailability.ts
+  // (SWR migration, Stage 2, 2026-08-28).
 
   // ============================================================
   // 11. TRAINING REQUIREMENTS FUNCTIONS
@@ -1835,5 +1408,4 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // ============================================================
   setSelectedSlot: (slot) => set({ selectedSlot: slot }),
   setHoveredSlot: (id) => set({ hoveredSlot: id }),
-  getInstructorById: (id) => get().instructors.find(i => i.id === id),
 }));

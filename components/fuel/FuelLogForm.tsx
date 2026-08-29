@@ -9,8 +9,9 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useFlightStore } from '@/lib/store';
+import { useState } from 'react';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { addFuelRecord } from '@/lib/hooks/useFuelRecords';
 import { Fuel, TriangleAlert, X } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -24,14 +25,7 @@ interface Props {
 export default function FuelLogForm({ onClose }: Props) {
   useEscapeToClose(onClose);
   // ----- Store access -----
-  const { aircraft, addFuelRecord, loadAircraft } = useFlightStore();
-
-  // ----- Load aircraft data if empty -----
-  useEffect(() => {
-    if (aircraft.length === 0) {
-      loadAircraft();
-    }
-  }, [aircraft.length, loadAircraft]);
+  const { aircraft } = useAircraft();
 
   // ----- Form state -----
   const [form, setForm] = useState({

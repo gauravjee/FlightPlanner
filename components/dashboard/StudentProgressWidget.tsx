@@ -6,6 +6,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Plane, Target, TriangleAlert, PartyPopper, ChevronRight } from 'lucide-react';
 import { useFlightStore } from '@/lib/store';
+import { useStudents } from '@/lib/hooks/useStudents';
+import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { supabase } from '@/lib/supabase-client';
 import { matchTrainingProgram } from '@/lib/training-programs';
 
@@ -27,18 +29,16 @@ interface TrainingProgramHours {
 }
 
 export default function StudentProgressWidget() {
-  const {
-    students, loadStudents,
-    flightRecords, loadFlightRecords,
-    scheduledFlights, loadScheduledFlights
-  } = useFlightStore();
+  const { students } = useStudents();
+  const { flightRecords } = useFlightRecords();
+  const { scheduledFlights, loadScheduledFlights } = useFlightStore();
 
   const [trainingPrograms, setTrainingPrograms] = useState<TrainingProgramHours[]>([]);
 
-  // Load data on mount
+  // Load data on mount. Students and Flight Records are migrated (SWR,
+  // Stages 3 + 4) and now fetch themselves via useStudents()/
+  // useFlightRecords() above, no manual load needed.
   useEffect(() => {
-    loadStudents();
-    loadFlightRecords();
     loadScheduledFlights();
     (async () => {
       const { data, error } = await supabase
@@ -50,7 +50,7 @@ export default function StudentProgressWidget() {
         setTrainingPrograms(data || []);
       }
     })();
-  }, [loadStudents, loadFlightRecords, loadScheduledFlights]);
+  }, [loadScheduledFlights]);
 
   // ============================================================
   // CALCULATE PROGRESS FOR EACH STUDENT

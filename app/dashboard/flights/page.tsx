@@ -8,6 +8,8 @@ import { generateStudentLogbook } from '@/lib/pdf';
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
+import { useStudents } from '@/lib/hooks/useStudents';
+import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
 import FlightRecordForm from '@/components/flights/FlightRecordForm';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
@@ -27,11 +29,13 @@ export default function FlightsPage() {
   // enforcement lives in app/api/flight-records/route.ts
   // (requireModuleAccess('flightRecords')).
   const canWrite = canWriteModule(session?.user?.role, overrides, 'flightRecords');
+  const { students } = useStudents();
+  const { flightRecords, isLoading: loadingFlights } = useFlightRecords();
   const {
-    flightRecords, students, sortieTypes, exercises, loadingFlights,
+    sortieTypes, exercises,
     scheduledFlights,
-    loadFlightRecords, loadStudents, loadAircraft, loadSortieTypes, loadExercises,
-    loadScheduledFlights, loadInstructors,
+    loadSortieTypes, loadExercises,
+    loadScheduledFlights,
   } = useFlightStore();
   const [showForm, setShowForm] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState('ALL');
@@ -40,24 +44,18 @@ export default function FlightsPage() {
   // or was opened via the plain "Log Flight" button instead.
   const [resolvingFlight, setResolvingFlight] = useState<ScheduledFlight | null>(null);
 
+  // Flight records are migrated (SWR, Stage 4) and now fetch themselves via
+  // useFlightRecords() above, no manual load needed — its own fetcher
+  // resolves the aircraft/student/instructor name join server-side (see
+  // lib/hooks/useFlightRecords.ts), so this page doesn't need to preload
+  // any of them for that reason either. students below comes from
+  // useStudents() purely for this page's own UI (the student filter
+  // dropdown), on its own independent fetch-on-mount.
   useEffect(() => {
-    // loadFlightRecords() resolves each record's aircraft/student name
-    // client-side, in the store, from whatever's already in the aircraft/
-    // students state at the moment it runs — it doesn't reactively update
-    // if that data arrives later. Aircraft wasn't loaded by this page at
-    // all before, so records rendered with "Unknown" aircraft whenever
-    // this was the first page visited in the session. Awaiting both loads
-    // first removes that race instead of just usually getting lucky on
-    // load order.
-    (async () => {
-      await Promise.all([loadStudents(), loadAircraft()]);
-      loadFlightRecords();
-    })();
     loadSortieTypes();
     loadExercises();
-    loadInstructors();
     loadScheduledFlights();
-  }, [loadStudents, loadAircraft, loadFlightRecords, loadSortieTypes, loadExercises, loadInstructors, loadScheduledFlights]);
+  }, [loadSortieTypes, loadExercises, loadScheduledFlights]);
 
   const filteredRecords = selectedStudent === 'ALL'
     ? flightRecords

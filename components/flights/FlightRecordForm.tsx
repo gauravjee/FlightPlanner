@@ -4,6 +4,10 @@
 
 import { useState, useEffect } from 'react';
 import { useFlightStore } from '@/lib/store';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useInstructors } from '@/lib/hooks/useInstructors';
+import { useStudents } from '@/lib/hooks/useStudents';
+import { addFlightRecord } from '@/lib/hooks/useFlightRecords';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface Props {
@@ -38,22 +42,21 @@ interface Props {
 
 export default function FlightRecordForm({ onClose, studentId, scheduledFlightId, prefill }: Props) {
   useEscapeToClose(onClose);
+  const { aircraft } = useAircraft();
+  const { instructors } = useInstructors();
+  const { students } = useStudents();
   const {
-    students, aircraft, instructors, sortieTypes, exercises, addFlightRecord, updateScheduledFlight,
-    loadStudents, loadAircraft, loadInstructors, loadSortieTypes, loadExercises,
+    sortieTypes, exercises, updateScheduledFlight,
+    loadSortieTypes, loadExercises,
   } = useFlightStore();
 
-  // Load data if empty
+  // Load data if empty. Instructors and Students are migrated (SWR, Stage
+  // 2 + 3) and now fetch themselves via useInstructors()/useStudents()
+  // above, no manual load needed.
   useEffect(() => {
-    if (students.length === 0) loadStudents();
-    if (aircraft.length === 0) loadAircraft();
-    if (instructors.length === 0) loadInstructors();
     if (sortieTypes.length === 0) loadSortieTypes();
     if (exercises.length === 0) loadExercises();
-  }, [
-    students.length, aircraft.length, instructors.length, sortieTypes.length, exercises.length,
-    loadStudents, loadAircraft, loadInstructors, loadSortieTypes, loadExercises,
-  ]);
+  }, [sortieTypes.length, exercises.length, loadSortieTypes, loadExercises]);
 
   const today = new Date().toISOString().split('T')[0];
 
