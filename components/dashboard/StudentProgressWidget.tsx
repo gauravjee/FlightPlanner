@@ -4,12 +4,14 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { Plane, Target, TriangleAlert, PartyPopper, ChevronRight } from 'lucide-react';
 import { useFlightStore } from '@/lib/store';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { supabase } from '@/lib/supabase-client';
 import { matchTrainingProgram } from '@/lib/training-programs';
+import { STUDENT_ROSTER_VIEW_ROLES } from '@/lib/permissions';
 
 // Admin-configured per-program required hours (Admin Setup -> Training
 // Programs). This widget used to hardcode targetHours as 40 for any stage
@@ -29,7 +31,21 @@ interface TrainingProgramHours {
 }
 
 export default function StudentProgressWidget() {
-  const { students } = useStudents();
+  // 2026-08-29 (E2E testing round): this widget renders on the main
+  // Dashboard for every role with no RoleGate of its own. GET /api/students
+  // 403s for roles outside STUDENT_ROSTER_VIEW_ROLES (e.g. maintenance) —
+  // calling useStudents() unconditionally meant a doomed request on every
+  // page load for those roles, and — worse — since the failed fetch left
+  // `students` as an empty array, the widget's own empty-state branch fired
+  // and showed a false-positive "All students are progressing well!" to a
+  // role that can't actually see student data. Gate the fetch itself
+  // (enabled=false skips it via SWR's null-key idiom) and don't render this
+  // card at all for those roles, rather than showing a misleading result.
+  const { data: session } = useSession();
+  const role = session?.user?.role;
+  const canViewStudents = !!role && STUDENT_ROSTER_VIEW_ROLES.includes(role);
+
+  const { students } = useStudents(canViewStudents);
   const { flightRecords } = useFlightRecords();
   const { scheduledFlights, loadScheduledFlights } = useFlightStore();
 
@@ -116,6 +132,10 @@ export default function StudentProgressWidget() {
         };
       });
   }, [students, flightRecords, scheduledFlights, trainingPrograms]);
+
+  // Every hook above has already run (Rules of Hooks) — safe to bail out
+  // before rendering anything for a role that can't see student data.
+  if (!canViewStudents) return null;
 
   // ============================================================
   // GROUP STUDENTS BY CATEGORY

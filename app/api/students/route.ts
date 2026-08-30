@@ -12,7 +12,17 @@
 // NextAuth session:
 //   - staff roles (admin/instructor/super_admin/operations) get the full
 //     list, matching the existing RoleGate on /dashboard/students
+//   - the 'safety_officer' role gets a scoped, non-PII projection (name,
+//     status, SPL number, no DOB/phone/email/medical) — just enough to
+//     resolve "which student is this" on the Breath Analyser Register's
+//     "Select student" dropdown (see BA_TEST_WRITE_ROLES in
+//     lib/permissions.ts), without exposing the full record the way
+//     STUDENT_STAFF_ROLES does
 //   - the 'student' role gets ONLY their own record
+//
+// See lib/permissions.ts's STUDENT_ROSTER_VIEW_ROLES for the combined list
+// of every role this GET returns something other than 403 for — keep that
+// constant's roles in sync with the branches below if either changes.
 //
 // This on its own does not stop someone from calling Supabase's REST API
 // directly with the anon key — that requires Row Level Security to be
@@ -41,6 +51,26 @@ export async function GET() {
     const { data, error: dbError } = await supabaseAdmin
       .from('students')
       .select('*')
+      .order('created_at', { ascending: true });
+
+    if (dbError) {
+      console.error('Error loading students:', dbError);
+      return NextResponse.json({ error: 'Failed to load students.' }, { status: 500 });
+    }
+    return NextResponse.json({ students: data || [] });
+  }
+
+  // 'safety_officer': a scoped, non-PII projection — enough for the Breath
+  // Analyser Register to list active students by name and auto-fill their
+  // SPL number, without handing over DOB/phone/email/medical data the way
+  // the staff branch above does. lib/hooks/useStudents.ts's mapper already
+  // defaults every field not selected here to '' /undefined, so this reuses
+  // the same fetcher/hook/type as every other role — the BA Register page
+  // itself needed no changes for this fix.
+  if (role === 'safety_officer') {
+    const { data, error: dbError } = await supabaseAdmin
+      .from('students')
+      .select('id, name, initials, status, spl_number, enrollment_id, training_stage, total_hours')
       .order('created_at', { ascending: true });
 
     if (dbError) {

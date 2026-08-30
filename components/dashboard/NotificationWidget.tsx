@@ -19,9 +19,11 @@
 'use client';
 
 import { useEffect, useMemo } from 'react';
+import { useSession } from 'next-auth/react';
 import { Bell, CircleAlert } from 'lucide-react';
 import { useFlightStore } from '@/lib/store';
 import { useStudents } from '@/lib/hooks/useStudents';
+import { STUDENT_ROSTER_VIEW_ROLES } from '@/lib/permissions';
 
 interface Alert {
   id: string;
@@ -30,7 +32,18 @@ interface Alert {
 }
 
 export default function NotificationWidget() {
-  const { students } = useStudents();
+  // 2026-08-29 (E2E testing round): same fix as StudentProgressWidget —
+  // this widget also renders for every role with no RoleGate, and
+  // GET /api/students 403s for roles outside STUDENT_ROSTER_VIEW_ROLES
+  // (e.g. maintenance). Gating the fetch here just stops the wasted
+  // request/console error; this widget already degrades gracefully (no
+  // alerts shown, no misleading text) when `students` comes back empty, so
+  // no further change is needed below.
+  const { data: session } = useSession();
+  const role = session?.user?.role;
+  const canViewStudents = !!role && STUDENT_ROSTER_VIEW_ROLES.includes(role);
+
+  const { students } = useStudents(canViewStudents);
   const {
     maintenanceRecords, loadMaintenanceRecords, loadingMaintenance,
   } = useFlightStore();

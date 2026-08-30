@@ -80,9 +80,18 @@ export async function fetchStudents(): Promise<StudentRecord[]> {
   }));
 }
 
-export function useStudents() {
+// `enabled` (2026-08-29, E2E testing round): defaults to true, so every
+// existing call site is unchanged. Pass false to skip the fetch entirely
+// (SWR's own conditional-key idiom — a null key never fires) rather than
+// letting it run and fail: some Dashboard widgets (StudentProgressWidget,
+// NotificationWidget) render for every role with no RoleGate, and calling
+// this unconditionally meant a doomed request + console error for any role
+// GET /api/students 403s for (e.g. maintenance) — see
+// lib/permissions.ts's STUDENT_ROSTER_VIEW_ROLES for the roles that should
+// pass true here.
+export function useStudents(enabled: boolean = true) {
   const { data, error, isLoading, mutate: boundMutate } = useSWR<StudentRecord[]>(
-    studentsKey,
+    enabled ? studentsKey : null,
     () => fetchStudents()
   );
 

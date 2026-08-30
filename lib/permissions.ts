@@ -35,6 +35,31 @@ export const STUDENT_CREATION_ROLES = ['admin', 'super_admin'];
 // (GET), but can no longer change a student's record.
 export const STUDENT_WRITE_ROLES = ['admin', 'instructor', 'super_admin'];
 
+// 2026-08-29 (E2E testing round): every role for which GET /api/students
+// returns something other than a 403 — i.e. STUDENT_STAFF_ROLES (full
+// roster), plus 'safety_officer' (a scoped, non-PII roster projection —
+// see app/api/students/route.ts) and 'student' (their own single record).
+// This is a *narrower-purpose* sibling of STUDENT_STAFF_ROLES: it answers
+// "can this role attempt to read student data at all" for client-side
+// components that need to gate a useStudents() call so it doesn't fire a
+// doomed request (e.g. StudentProgressWidget/NotificationWidget on the
+// Dashboard, which render for every role with no RoleGate) — it does NOT
+// govern the full Students management page, which stays on
+// MODULE_ACCESS.students (STUDENT_STAFF_ROLES only) via its own RoleGate.
+// Keep this in sync with app/api/students/route.ts's GET branches if
+// either changes — nothing enforces the two staying aligned automatically.
+//
+// Added 'safety_officer' because BA_TEST_WRITE_ROLES already expects a
+// safety officer to log a BA test against a specific student (impossible
+// without looking one up by name — see the Breath Analyser Register's
+// "Select student" dropdown), and 'operations' already had full student
+// access for the same underlying reason. Deliberately did NOT add
+// 'safety_officer' to STUDENT_STAFF_ROLES itself, since that also unlocks
+// the full Students management page (search, DOB/phone/medical, SPL
+// details) via MODULE_ACCESS — more than a safety officer needs just to
+// pick a student's name off a list.
+export const STUDENT_ROSTER_VIEW_ROLES = [...STUDENT_STAFF_ROLES, 'safety_officer', 'student'];
+
 // ============================================================
 // AIRCRAFT
 // ============================================================

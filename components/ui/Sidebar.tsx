@@ -87,11 +87,19 @@ const NAV_ITEMS: NavItem[] = [
   // user request (session 4) — was originally added below it. Roles
   // hand-synced to lib/permissions.ts's BA_TEST_VIEW_ROLES (=
   // REPORTS_VIEW_ROLES) — the page's own RoleGate is still the real access
-  // control, same convention as every other nav item. Note: because this
-  // href nests under '/dashboard/reports', visiting it also highlights
-  // "Reports" in the nav (a real parent/child relationship, unlike the
-  // '/dashboard/instructor(s)' string-prefix bug fixed earlier — this one
-  // is intentional structure, not a bug).
+  // control, same convention as every other nav item.
+  //
+  // 2026-08-29: this href nests under '/dashboard/reports' at the URL
+  // level, so the plain prefix-match below used to also highlight
+  // "Reports" whenever this page was open. An earlier session's comment
+  // here called that "intentional structure, not a bug" — the user
+  // corrected that: BA Test Register was deliberately promoted to its own
+  // equal-weight top-level item (placed *above* Reports, per their own
+  // request), not a child of it, so it shouldn't double-highlight the
+  // Reports item. See NAV_ACTIVE_EXCLUDED_CHILD_PREFIXES below for the fix —
+  // sibling sub-pages that still only live under the Reports landing page
+  // (breath-analysis, daily-flying — no nav item of their own) are
+  // deliberately unaffected and still light up "Reports" as before.
   { href: '/dashboard/reports/breath-analyser', label: 'BA Test Register', icon: Wind, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
   // roles here hand-synced to lib/permissions.ts's REPORTS_VIEW_ROLES —
   // instructor/maintenance can see a generated report but only
@@ -102,6 +110,19 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/reports', label: 'Reports', icon: ClipboardList, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
   { href: '/dashboard/admin/setup', label: 'Admin Setup', icon: Settings, roles: ['super_admin'] },
 ];
+
+// 2026-08-29: sub-paths that have been promoted to their own top-level nav
+// item (see that item's own comment above for why) even though they still
+// nest under a *different* item's href at the URL level — those sub-paths
+// should light up only their own promoted item, not double-highlight the
+// item they happen to nest under. Keyed by the parent item's href; each
+// value is a list of child path prefixes to exclude from that parent's own
+// prefix-match below. Currently just the one case (BA Test Register vs.
+// Reports); add here rather than hand-rolling another one-off exception if
+// a future nav item needs the same treatment.
+const NAV_ACTIVE_EXCLUDED_CHILD_PREFIXES: Record<string, string[]> = {
+  '/dashboard/reports': ['/dashboard/reports/breath-analyser'],
+};
 
 export default function Sidebar() {
   const { data: session, status } = useSession();
@@ -144,9 +165,12 @@ export default function Sidebar() {
           // '/dashboard/instructor/123' correctly under "My Students"
           // while no longer bleeding into "Instructors".
           const isHome = item.href === '/dashboard' || item.href === '/dashboard/student';
+          const excludedChildPrefixes = NAV_ACTIVE_EXCLUDED_CHILD_PREFIXES[item.href];
+          const isExcludedChild = !!excludedChildPrefixes && !!pathname &&
+            excludedChildPrefixes.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'));
           const active = isHome
             ? pathname === item.href
-            : pathname === item.href || !!pathname?.startsWith(item.href + '/');
+            : !isExcludedChild && (pathname === item.href || !!pathname?.startsWith(item.href + '/'));
           const Icon = item.icon;
           return (
             <Link
