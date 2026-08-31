@@ -205,10 +205,12 @@ export interface ScheduledFlight {
   duration?: number;
 }
 
-// Safety incident — minimal log (2026-08-18), not the full DGCA-format
-// Incident Report (a separate, larger, not-yet-built report). Just enough
-// to record that something happened, feeding the Daily Flying Report's
-// "Safety incidents" count. See app/api/safety-incidents/route.ts.
+// Safety incident — started as a minimal log (2026-08-18), not the full
+// DGCA-format Incident Report (a separate, larger, not-yet-built report).
+// 2026-08-31: extended into a workflow — a 5x5 ICAO Doc 9859 risk matrix,
+// corrective-action tracking, and an open/in-progress/closed status — per
+// explicit user decision. See add-safety-incident-workflow.sql and
+// app/api/safety-incidents/[id]/route.ts.
 export interface SafetyIncident {
   id: string;
   incidentDate: string;   // 'YYYY-MM-DD'
@@ -223,6 +225,16 @@ export interface SafetyIncident {
   severity: 'MINOR' | 'MAJOR' | 'CRITICAL';
   reportedBy?: string;
   createdAt?: string;
+  // ICAO Doc 9859 5x5 risk matrix — both undefined/null until a manager
+  // triages the incident (see INCIDENT_MANAGE_ROLES).
+  riskSeverity?: number | null;    // 1-5
+  riskLikelihood?: number | null;  // 1-5
+  riskScore?: number | null;       // riskSeverity * riskLikelihood, 1-25
+  status: 'OPEN' | 'IN_PROGRESS' | 'CLOSED';
+  correctiveAction?: string | null;
+  assignedTo?: string | null;
+  closedBy?: string | null;
+  closedAt?: string | null;
 }
 
 // Breath Analyser (BA) test — one row per person tested, per the FTO's
@@ -337,6 +349,13 @@ export interface MaintenanceRecord {
   // computeMaintenanceDueItems() in lib/store.ts. Undefined/null on
   // records that predate this feature or on CALENDAR_MONTHS-only items.
   hobbsAtCompletion?: number | null;
+  // 2026-08-31: pilot-facing squawk reporting — see
+  // add-squawk-reporting.sql and app/api/maintenance-records/route.ts.
+  // reportedBy is the pilot who filed it (denormalized name/email, null
+  // for ordinary staff-logged records); isSquawk marks it as such for
+  // badging/filtering separately from routine maintenance.
+  reportedBy?: string | null;
+  isSquawk?: boolean;
   // Display fields (looked up from aircraft table)
   aircraftReg?: string;
   aircraftType?: string;

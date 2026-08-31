@@ -38,7 +38,7 @@ import { useSession } from 'next-auth/react';
 import {
   LayoutDashboard, Calendar, Plane, Users, Fuel, FileText, Wrench,
   GraduationCap, UserRound, Umbrella, ChartColumnIncreasing, BookOpen,
-  Settings, ClipboardList, Wind,
+  Settings, ClipboardList, Wind, ShieldAlert, TriangleAlert, Hourglass,
 } from 'lucide-react';
 import { canViewModule, type ModuleKey } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
@@ -101,6 +101,19 @@ const NAV_ITEMS: NavItem[] = [
   // (breath-analysis, daily-flying — no nav item of their own) are
   // deliberately unaffected and still light up "Reports" as before.
   { href: '/dashboard/reports/breath-analyser', label: 'BA Test Register', icon: Wind, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
+  // Safety Management workflow (2026-08-31) — view roles hand-synced to
+  // lib/permissions.ts's INCIDENT_REPORT_ROLES (= REPORTS_VIEW_ROLES);
+  // triage actions inside the page are further gated to
+  // INCIDENT_MANAGE_ROLES, enforced server-side.
+  { href: '/dashboard/safety', label: 'Safety', icon: ShieldAlert, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
+  // Pilot-facing squawk reporting (2026-08-31) — roles hand-synced to
+  // lib/permissions.ts's SQUAWK_REPORT_ROLES. Deliberately separate from
+  // "Maintenance" above, which students can't see at all.
+  { href: '/dashboard/report-defect', label: 'Report a Defect', icon: TriangleAlert, roles: ['instructor', 'student'] },
+  // Lightweight, non-regulatory instructor duty-hours view (2026-08-31) —
+  // see that page's own header comment for why this isn't a DGCA
+  // compliance claim. Roles hand-synced to that page's own VIEW_ROLES.
+  { href: '/dashboard/duty-hours', label: 'Duty Hours', icon: Hourglass, roles: ['admin', 'super_admin', 'operations', 'instructor'] },
   // roles here hand-synced to lib/permissions.ts's REPORTS_VIEW_ROLES —
   // instructor/maintenance can see a generated report but only
   // admin/super_admin/operations can generate/save one (see

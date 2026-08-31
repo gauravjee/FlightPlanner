@@ -998,6 +998,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
             maintenanceStart: (row.maintenance_start as string) || null,
             maintenanceEnd,
             hobbsAtCompletion: (row.hobbs_at_completion as number) ?? null,
+            reportedBy: (row.reported_by as string) || null,
+            isSquawk: Boolean(row.is_squawk),
             aircraftReg: ac?.registration || 'Unknown', aircraftType: ac?.type || '',
             isOverdue, daysUntilDue,
           };

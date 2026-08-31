@@ -1,11 +1,18 @@
 // app/api/safety-incidents/route.ts
-// Minimal safety incident log (2026-08-18) — see add-reports-module.sql
-// for the `safety_incidents` table and lib/permissions.ts's
-// INCIDENT_REPORT_ROLES. Not the full DGCA-format Incident Report (a
-// separate, larger, not-yet-built report) — this exists so the Daily
-// Flying Report's "Safety incidents" count has real data instead of a
-// hand-typed number, and so an incident isn't lost between the moment it
-// happens and whenever a fuller report gets built.
+// Safety incident log (2026-08-18) — see add-reports-module.sql for the
+// `safety_incidents` table and lib/permissions.ts's INCIDENT_REPORT_ROLES.
+// Not the full DGCA-format Incident Report (a separate, larger, not-yet-
+// built report) — this exists so the Daily Flying Report's "Safety
+// incidents" count has real data instead of a hand-typed number, and so an
+// incident isn't lost between the moment it happens and whenever a fuller
+// report gets built.
+//
+// 2026-08-31: extended into a workflow (5x5 risk matrix, corrective
+// action, open/in-progress/closed status) — see
+// add-safety-incident-workflow.sql. GET/POST here are unchanged (still
+// just the initial report); triaging an incident after it's logged is
+// PATCH app/api/safety-incidents/[id]/route.ts, gated to the narrower
+// INCIDENT_MANAGE_ROLES.
 //
 // Both listing and creating use the same (deliberately broad)
 // INCIDENT_REPORT_ROLES — anyone who can report an incident can also see
@@ -51,6 +58,14 @@ export async function GET(request: Request) {
     severity: row.severity,
     reportedBy: row.reported_by || undefined,
     createdAt: row.created_at,
+    riskSeverity: row.risk_severity ?? null,
+    riskLikelihood: row.risk_likelihood ?? null,
+    riskScore: row.risk_score ?? null,
+    status: row.status || 'OPEN',
+    correctiveAction: row.corrective_action ?? null,
+    assignedTo: row.assigned_to ?? null,
+    closedBy: row.closed_by ?? null,
+    closedAt: row.closed_at ?? null,
   }));
 
   return NextResponse.json({ incidents });

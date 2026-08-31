@@ -302,6 +302,27 @@ export const REPORTS_WRITE_ROLES = ['admin', 'super_admin', 'operations'];
 // reporting ever needs a different rule than viewing the report does.
 export const INCIDENT_REPORT_ROLES = REPORTS_VIEW_ROLES;
 
+// 2026-08-31: who can triage a logged incident — assign the 5x5 risk
+// rating, write a corrective action, and move its status (open/in-progress/
+// closed). Deliberately narrower than INCIDENT_REPORT_ROLES (anyone who
+// works the flight line can report one; only the safety-management side
+// can manage the workflow after that). Per explicit user decision: safety
+// managers = operations + safety_officer + admin/super_admin. Notably
+// excludes 'instructor' and 'maintenance', who can still report/view.
+export const INCIDENT_MANAGE_ROLES = ['operations', 'safety_officer', 'admin', 'super_admin'];
+
+// ============================================================
+// PILOT-FACING SQUAWK REPORTING (2026-08-31)
+// ============================================================
+// Who can file a maintenance defect ("squawk") against an aircraft via the
+// restricted-field path in app/api/maintenance-records/route.ts, without
+// needing MAINTENANCE_WRITE_ROLES. Per explicit user decision: instructors
+// and students (any pilot who might fly the aircraft) — not operations,
+// which already has full staff visibility elsewhere. A squawk filed this
+// way always lands with status SCHEDULED and is_squawk=true for staff to
+// triage; the reporter cannot set cost/performedBy/completedDate etc.
+export const SQUAWK_REPORT_ROLES = ['instructor', 'student'];
+
 // ============================================================
 // BREATH ANALYSER (BA) TEST REGISTER (2026-08-20)
 // ============================================================
