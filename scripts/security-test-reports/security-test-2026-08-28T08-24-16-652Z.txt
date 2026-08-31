@@ -1,0 +1,273 @@
+==============================================================================
+FlightPro Manager — Security Hardening Round: Test Report
+Target: https://flightplanner-xi.vercel.app
+Run at: 2026-08-28T08:24:16.658Z
+==============================================================================
+
+LOGIN STATUS
+------------------------------------------------------------------------------
+  OK    super_admin      dummy.superadmin@flightpro.test
+  OK    admin            dummy.admin@flightpro.test
+  OK    operations       dummy.operations@flightpro.test
+  OK    maintenance      dummy.maintenance@flightpro.test
+  OK    instructor       dummy.instructor@flightpro.test
+  OK    safety_officer   dummy.safetyofficer@flightpro.test
+  OK    student          dummy.student@flightpro.test
+
+SUMMARY
+------------------------------------------------------------------------------
+  114/114 checks passed, 0 failed, 1 skipped/not-automated.
+
+Admin Setup Config Routes
+------------------------------------------------------------------------------
+  [PASS] POST exercises — unauthenticated rejected
+         expected 401, got 401
+  [PASS] POST exercises — admin rejected
+         expected 403, got 403
+  [PASS] POST exercises — operations rejected
+         expected 403, got 403
+  [PASS] POST exercises — maintenance rejected
+         expected 403, got 403
+  [PASS] POST exercises — instructor rejected
+         expected 403, got 403
+  [PASS] POST exercises — safety_officer rejected
+         expected 403, got 403
+  [PASS] POST exercises — student rejected
+         expected 403, got 403
+  [PASS] POST exercises — super_admin allowed (+ extra-field dropped)
+         expected 200, got 200
+  [PASS] DELETE exercises — cleanup of test row
+         expected 200, got 200
+  [PASS] POST training-programs — unauthenticated rejected
+         expected 401, got 401
+  [PASS] POST training-programs — admin rejected
+         expected 403, got 403
+  [PASS] POST training-programs — operations rejected
+         expected 403, got 403
+  [PASS] POST training-programs — maintenance rejected
+         expected 403, got 403
+  [PASS] POST training-programs — instructor rejected
+         expected 403, got 403
+  [PASS] POST training-programs — safety_officer rejected
+         expected 403, got 403
+  [PASS] POST training-programs — student rejected
+         expected 403, got 403
+  [PASS] POST training-programs — super_admin allowed (+ extra-field dropped)
+         expected 200, got 200
+  [PASS] DELETE training-programs — cleanup of test row
+         expected 200, got 200
+  [PASS] POST instructor-roles — unauthenticated rejected
+         expected 401, got 401
+  [PASS] POST instructor-roles — admin rejected
+         expected 403, got 403
+  [PASS] POST instructor-roles — operations rejected
+         expected 403, got 403
+  [PASS] POST instructor-roles — maintenance rejected
+         expected 403, got 403
+  [PASS] POST instructor-roles — instructor rejected
+         expected 403, got 403
+  [PASS] POST instructor-roles — safety_officer rejected
+         expected 403, got 403
+  [PASS] POST instructor-roles — student rejected
+         expected 403, got 403
+  [PASS] POST instructor-roles — super_admin allowed (+ extra-field dropped)
+         expected 200, got 200
+  [PASS] DELETE instructor-roles — cleanup of test row
+         expected 200, got 200
+  [PASS] POST sortie-types — unauthenticated rejected
+         expected 401, got 401
+  [PASS] POST sortie-types — admin rejected
+         expected 403, got 403
+  [PASS] POST sortie-types — operations rejected
+         expected 403, got 403
+  [PASS] POST sortie-types — maintenance rejected
+         expected 403, got 403
+  [PASS] POST sortie-types — instructor rejected
+         expected 403, got 403
+  [PASS] POST sortie-types — safety_officer rejected
+         expected 403, got 403
+  [PASS] POST sortie-types — student rejected
+         expected 403, got 403
+  [PASS] POST sortie-types — super_admin allowed (+ extra-field dropped)
+         expected 200, got 200
+  [PASS] DELETE sortie-types — cleanup of test row
+         expected 200, got 200
+  [PASS] POST ground-school-subjects — unauthenticated rejected
+         expected 401, got 401
+  [PASS] POST ground-school-subjects — admin rejected
+         expected 403, got 403
+  [PASS] POST ground-school-subjects — operations rejected
+         expected 403, got 403
+  [PASS] POST ground-school-subjects — maintenance rejected
+         expected 403, got 403
+  [PASS] POST ground-school-subjects — instructor rejected
+         expected 403, got 403
+  [PASS] POST ground-school-subjects — safety_officer rejected
+         expected 403, got 403
+  [PASS] POST ground-school-subjects — student rejected
+         expected 403, got 403
+  [PASS] POST ground-school-subjects — super_admin allowed (+ extra-field dropped)
+         expected 200, got 200
+  [PASS] DELETE ground-school-subjects — cleanup of test row
+         expected 200, got 200
+  [PASS] POST requirement-templates — unauthenticated rejected
+         expected 401, got 401
+  [PASS] POST requirement-templates — admin rejected
+         expected 403, got 403
+  [PASS] POST requirement-templates — operations rejected
+         expected 403, got 403
+  [PASS] POST requirement-templates — maintenance rejected
+         expected 403, got 403
+  [PASS] POST requirement-templates — instructor rejected
+         expected 403, got 403
+  [PASS] POST requirement-templates — safety_officer rejected
+         expected 403, got 403
+  [PASS] POST requirement-templates — student rejected
+         expected 403, got 403
+  [PASS] POST requirement-templates — super_admin allowed (+ extra-field dropped)
+         expected 200, got 200
+  [PASS] DELETE requirement-templates — cleanup of test row
+         expected 200, got 200
+  [PASS] POST holidays — unauthenticated rejected
+         expected 401, got 401
+  [PASS] POST holidays — admin rejected
+         expected 403, got 403
+  [PASS] POST holidays — operations rejected
+         expected 403, got 403
+  [PASS] POST holidays — maintenance rejected
+         expected 403, got 403
+  [PASS] POST holidays — instructor rejected
+         expected 403, got 403
+  [PASS] POST holidays — safety_officer rejected
+         expected 403, got 403
+  [PASS] POST holidays — student rejected
+         expected 403, got 403
+  [PASS] POST holidays — super_admin allowed (+ extra-field dropped)
+         expected 200, got 200
+  [PASS] DELETE holidays — cleanup of test row
+         expected 200, got 200
+  [PASS] POST aircraft-maintenance-schedule — unauthenticated rejected
+         expected 401, got 401
+  [PASS] POST aircraft-maintenance-schedule — admin rejected
+         expected 403, got 403
+  [PASS] POST aircraft-maintenance-schedule — operations rejected
+         expected 403, got 403
+  [PASS] POST aircraft-maintenance-schedule — maintenance rejected
+         expected 403, got 403
+  [PASS] POST aircraft-maintenance-schedule — instructor rejected
+         expected 403, got 403
+  [PASS] POST aircraft-maintenance-schedule — safety_officer rejected
+         expected 403, got 403
+  [PASS] POST aircraft-maintenance-schedule — student rejected
+         expected 403, got 403
+  [PASS] POST aircraft-maintenance-schedule — super_admin allowed (+ extra-field dropped)
+         expected 200, got 200
+  [PASS] DELETE aircraft-maintenance-schedule — cleanup of test row
+         expected 200, got 200
+  [PASS] PATCH exercises — unauthenticated rejected (representative)
+         expected 401, got 401
+  [PASS] DELETE exercises — unauthenticated rejected (representative)
+         expected 401, got 401
+  [PASS] PATCH exercises — admin rejected (representative)
+         expected 403, got 403
+  [PASS] DELETE exercises — admin rejected (representative)
+         expected 403, got 403
+  [PASS] PATCH exercises — operations rejected (representative)
+         expected 403, got 403
+  [PASS] DELETE exercises — operations rejected (representative)
+         expected 403, got 403
+  [PASS] PATCH exercises — maintenance rejected (representative)
+         expected 403, got 403
+  [PASS] DELETE exercises — maintenance rejected (representative)
+         expected 403, got 403
+  [PASS] PATCH exercises — instructor rejected (representative)
+         expected 403, got 403
+  [PASS] DELETE exercises — instructor rejected (representative)
+         expected 403, got 403
+  [PASS] PATCH exercises — safety_officer rejected (representative)
+         expected 403, got 403
+  [PASS] DELETE exercises — safety_officer rejected (representative)
+         expected 403, got 403
+  [PASS] PATCH exercises — student rejected (representative)
+         expected 403, got 403
+  [PASS] DELETE exercises — student rejected (representative)
+         expected 403, got 403
+  [PASS] PATCH exercises — super_admin allowed
+         expected 200, got 200
+
+Aircraft Routes
+------------------------------------------------------------------------------
+  [PASS] POST /api/aircraft — unauthenticated rejected
+         expected 401, got 401
+  [PASS] POST /api/aircraft — operations rejected
+         expected 403, got 403
+  [PASS] PATCH /api/aircraft/[id] — operations rejected
+         expected 403, got 403
+  [PASS] DELETE /api/aircraft/[id] — operations rejected
+         expected 403, got 403
+  [PASS] POST /api/aircraft — maintenance rejected
+         expected 403, got 403
+  [PASS] PATCH /api/aircraft/[id] — maintenance rejected
+         expected 403, got 403
+  [PASS] DELETE /api/aircraft/[id] — maintenance rejected
+         expected 403, got 403
+  [PASS] POST /api/aircraft — instructor rejected
+         expected 403, got 403
+  [PASS] PATCH /api/aircraft/[id] — instructor rejected
+         expected 403, got 403
+  [PASS] DELETE /api/aircraft/[id] — instructor rejected
+         expected 403, got 403
+  [PASS] POST /api/aircraft — safety_officer rejected
+         expected 403, got 403
+  [PASS] PATCH /api/aircraft/[id] — safety_officer rejected
+         expected 403, got 403
+  [PASS] DELETE /api/aircraft/[id] — safety_officer rejected
+         expected 403, got 403
+  [PASS] POST /api/aircraft — student rejected
+         expected 403, got 403
+  [PASS] PATCH /api/aircraft/[id] — student rejected
+         expected 403, got 403
+  [PASS] DELETE /api/aircraft/[id] — student rejected
+         expected 403, got 403
+  [PASS] POST /api/aircraft — admin allowed
+         expected 200, got 200
+  [PASS] PATCH /api/aircraft/[id] — admin allowed
+         expected 200, got 200
+  [PASS] DELETE /api/aircraft/[id] — cleanup of test aircraft
+         expected 200, got 200
+  [PASS] POST /api/aircraft — super_admin allowed
+         expected 200, got 200
+  [PASS] PATCH /api/aircraft/[id] — super_admin allowed
+         expected 200, got 200
+  [PASS] DELETE /api/aircraft/[id] — cleanup of test aircraft
+         expected 200, got 200
+
+Direct Exam Entry Route (negative-only — see scope notes)
+------------------------------------------------------------------------------
+  [PASS] POST direct-exam — unauthenticated rejected
+         expected 401, got 401
+  [PASS] POST direct-exam — operations rejected
+         expected 403, got 403
+  [PASS] POST direct-exam — maintenance rejected
+         expected 403, got 403
+  [PASS] POST direct-exam — safety_officer rejected
+         expected 403, got 403
+  [PASS] POST direct-exam — student rejected
+         expected 403, got 403
+  [SKIP] POST direct-exam — allowed-role positive path
+         expected (not tested), got (no response) — Intentionally NOT exercised — this route has no DELETE endpoint and no FK-existence check, so a successful call cannot be cleanly undone. Verify this path manually if needed, and clean up the resulting ground_school_enrollment row by hand.
+
+SCOPE NOTES (things this script deliberately does not test)
+------------------------------------------------------------------------------
+  1. Ground School Progress IDOR fix (?student= URL override): this is a
+     client-side React guard, not a server response difference — a plain
+     HTTP script cannot observe it either way. Needs a manual browser
+     check with two distinct student accounts (only one was provided).
+  2. Direct Exam Entry positive (allowed-role) path: skipped — no clean
+     way to undo a successful call (no DELETE endpoint, no FK check).
+  3. Admin Setup PATCH/DELETE role gating tested on one representative
+     table (exercises), not all 8 — every table shares the exact same
+     one-line requireRole() check for PATCH/DELETE, so repeating it per
+     table adds requests against production with no new signal.
+
+CLEANUP: all throwaway test rows created by this run were deleted successfully.

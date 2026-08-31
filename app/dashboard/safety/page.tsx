@@ -17,14 +17,21 @@ import { useSession } from 'next-auth/react';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
-import { INCIDENT_REPORT_ROLES, INCIDENT_MANAGE_ROLES } from '@/lib/permissions';
+import { INCIDENT_REPORT_ROLES, INCIDENT_MANAGE_ROLES, INCIDENT_RESOLVE_ROLES, SAFETY_INCIDENT_CATEGORIES } from '@/lib/permissions';
 import type { SafetyIncident } from '@/types';
 import { ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react';
 
-const STATUS_OPTIONS: SafetyIncident['status'][] = ['OPEN', 'IN_PROGRESS', 'CLOSED'];
+const STATUS_OPTIONS: SafetyIncident['status'][] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
 
 function statusBadgeClass(status: SafetyIncident['status']) {
-  return status === 'CLOSED' ? 'badge-success' : status === 'IN_PROGRESS' ? 'badge-warning' : 'badge-neutral';
+  if (status === 'CLOSED') return 'badge-success';
+  if (status === 'RESOLVED') return 'badge-accent';
+  if (status === 'IN_PROGRESS') return 'badge-warning';
+  return 'badge-neutral';
+}
+
+function categoryLabel(category: string | undefined) {
+  return SAFETY_INCIDENT_CATEGORIES.find(c => c.value === category)?.label || 'Other';
 }
 
 // ICAO Doc 9859 tolerability bands for a 1-25 risk score.
@@ -45,6 +52,8 @@ export default function SafetyManagementPage() {
   const { data: session } = useSession();
   const role = session?.user?.role;
   const canManage = !!role && INCIDENT_MANAGE_ROLES.includes(role);
+  const canResolve = !!role && !canManage && INCIDENT_RESOLVE_ROLES.includes(role);
+  const myName = session?.user?.name || session?.user?.email || '';
 
   const [incidents, setIncidents] = useState<SafetyIncident[]>([]);
   const [loading, setLoading] = useState(false);
@@ -56,8 +65,11 @@ export default function SafetyManagementPage() {
   // Draft triage fields, keyed by the currently-expanded incident.
   const [draft, setDraft] = useState<{
     riskSeverity: string; riskLikelihood: string; status: SafetyIncident['status'];
-    correctiveAction: string; assignedTo: string;
+    correctiveAction: string; assignedTo: string; resolutionNote: string;
   } | null>(null);
+  // Maintenance's narrow resolve-note draft, kept separate so their save
+  // can PATCH just {status, resolutionNote} — never the manager fields.
+  const [resolveNote, setResolveNote] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,24 +110,19 @@ export default function SafetyManagementPage() {
       status: inc.status,
       correctiveAction: inc.correctiveAction || '',
       assignedTo: inc.assignedTo || '',
+      resolutionNote: inc.resolutionNote || '',
     });
+    setResolveNote(inc.resolutionNote || '');
   };
 
-  const handleSave = async (id: string) => {
-    if (!draft) return;
+  const patchIncident = async (id: string, body: Record<string, unknown>) => {
     setSaving(true);
     setErrorMsg('');
     try {
       const res = await fetch(`/api/safety-incidents/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          riskSeverity: draft.riskSeverity ? parseInt(draft.riskSeverity, 10) : null,
-          riskLikelihood: draft.riskLikelihood ? parseInt(draft.riskLikelihood, 10) : null,
-          status: draft.status,
-          correctiveAction: draft.correctiveAction,
-          assignedTo: draft.assignedTo,
-        }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
@@ -131,6 +138,24 @@ export default function SafetyManagementPage() {
       setSaving(false);
     }
   };
+
+  const handleSave = (id: string) => {
+    if (!draft) return;
+    patchIncident(id, {
+      riskSeverity: draft.riskSeverity ? parseInt(draft.riskSeverity, 10) : null,
+      riskLikelihood: draft.riskLikelihood ? parseInt(draft.riskLikelihood, 10) : null,
+      status: draft.status,
+      correctiveAction: draft.correctiveAction,
+      assignedTo: draft.assignedTo,
+      resolutionNote: draft.resolutionNote,
+    });
+  };
+
+  // Maintenance: add a resolution note and mark RESOLVED — nothing else.
+  const handleResolve = (id: string) => patchIncident(id, { status: 'RESOLVED', resolutionNote: resolveNote });
+
+  // Original reporter (or a manager, via handleSave above): close only.
+  const handleClose = (id: string) => patchIncident(id, { status: 'CLOSED' });
 
   const inputClass = "w-full surface-card rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
 
@@ -181,9 +206,9 @@ export default function SafetyManagementPage() {
                         className="w-full flex items-start justify-between gap-3 cursor-pointer text-left"
                       >
                         <div>
-                          <p className="text-sm">{inc.description}</p>
+                          <p className="text-sm">{inc.incidentNumber ? `${inc.incidentNumber} · ` : ''}{inc.description}</p>
                           <p className="text-xs text-tertiary mt-1">
-                            {inc.incidentDate}{inc.incidentTime ? ` · ${inc.incidentTime}` : ''} · Reported by {inc.reportedBy || 'Unknown'}
+                            {inc.incidentDate}{inc.incidentTime ? ` · ${inc.incidentTime}` : ''} · {categoryLabel(inc.category)} · Reported by {inc.reportedBy || 'Unknown'}
                             {inc.assignedTo ? ` · Assigned to ${inc.assignedTo}` : ''}
                           </p>
                         </div>
@@ -224,6 +249,10 @@ export default function SafetyManagementPage() {
                                 <textarea value={draft.correctiveAction} onChange={e => setDraft(d => d && { ...d, correctiveAction: e.target.value })} rows={2} className={inputClass} />
                               </div>
                               <div>
+                                <label className="block text-xs text-secondary mb-1">Resolution Note (Maintenance)</label>
+                                <textarea value={draft.resolutionNote} onChange={e => setDraft(d => d && { ...d, resolutionNote: e.target.value })} rows={2} className={inputClass} />
+                              </div>
+                              <div>
                                 <label className="block text-xs text-secondary mb-1">Status</label>
                                 <select value={draft.status} onChange={e => setDraft(d => d && { ...d, status: e.target.value as SafetyIncident['status'] })} className={inputClass}>
                                   {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
@@ -237,9 +266,31 @@ export default function SafetyManagementPage() {
                               >
                                 {saving ? 'Saving…' : 'Save'}
                               </button>
+                              {inc.resolvedBy && (
+                                <p className="text-xs text-tertiary">Resolved by {inc.resolvedBy}{inc.resolvedAt ? ` on ${new Date(inc.resolvedAt).toLocaleDateString('en-IN')}` : ''}</p>
+                              )}
                               {inc.closedBy && (
                                 <p className="text-xs text-tertiary">Closed by {inc.closedBy}{inc.closedAt ? ` on ${new Date(inc.closedAt).toLocaleDateString('en-IN')}` : ''}</p>
                               )}
+                            </>
+                          ) : canResolve && (inc.status === 'OPEN' || inc.status === 'IN_PROGRESS') ? (
+                            <>
+                              <p className="text-xs text-secondary">
+                                Add a resolution note and mark this incident Resolved once the fix is confirmed. A safety manager or the
+                                original reporter closes it out from there.
+                              </p>
+                              <div>
+                                <label className="block text-xs text-secondary mb-1">Resolution Note</label>
+                                <textarea value={resolveNote} onChange={e => setResolveNote(e.target.value)} rows={2} className={inputClass} placeholder="What was found and fixed?" />
+                              </div>
+                              <button
+                                onClick={() => handleResolve(inc.id)}
+                                disabled={saving}
+                                className="px-3 py-1.5 text-xs rounded-lg font-semibold cursor-pointer disabled:opacity-50"
+                                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+                              >
+                                {saving ? 'Saving…' : 'Mark Resolved'}
+                              </button>
                             </>
                           ) : (
                             <>
@@ -247,6 +298,21 @@ export default function SafetyManagementPage() {
                                 {inc.correctiveAction ? `Corrective action: ${inc.correctiveAction}` : 'No corrective action recorded yet.'}
                               </p>
                               {inc.assignedTo && <p className="text-xs text-tertiary">Assigned to {inc.assignedTo}</p>}
+                              {inc.resolutionNote && <p className="text-xs text-secondary">Resolution note: {inc.resolutionNote}</p>}
+                              {inc.resolvedBy && (
+                                <p className="text-xs text-tertiary">Resolved by {inc.resolvedBy}{inc.resolvedAt ? ` on ${new Date(inc.resolvedAt).toLocaleDateString('en-IN')}` : ''}</p>
+                              )}
+                              {inc.closedBy ? (
+                                <p className="text-xs text-tertiary">Closed by {inc.closedBy}{inc.closedAt ? ` on ${new Date(inc.closedAt).toLocaleDateString('en-IN')}` : ''}</p>
+                              ) : !!myName && inc.reportedBy === myName && (
+                                <button
+                                  onClick={() => handleClose(inc.id)}
+                                  disabled={saving}
+                                  className="px-3 py-1.5 text-xs surface-card rounded-lg cursor-pointer hover:opacity-80 disabled:opacity-50"
+                                >
+                                  {saving ? 'Closing…' : 'Close Incident'}
+                                </button>
+                              )}
                             </>
                           )}
                         </div>

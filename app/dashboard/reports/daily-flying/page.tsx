@@ -18,7 +18,7 @@ import Papa from 'papaparse';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
-import { REPORTS_VIEW_ROLES, REPORTS_WRITE_ROLES, INCIDENT_REPORT_ROLES } from '@/lib/permissions';
+import { REPORTS_VIEW_ROLES, REPORTS_WRITE_ROLES, INCIDENT_REPORT_ROLES, SAFETY_INCIDENT_CATEGORIES } from '@/lib/permissions';
 import { generateDailyFlyingReport } from '@/lib/pdf';
 import type { DailyFlyingReport, SafetyIncident } from '@/types';
 import {
@@ -61,6 +61,7 @@ export default function DailyFlyingReportPage() {
   const [showIncidentForm, setShowIncidentForm] = useState(false);
   const [incidentDesc, setIncidentDesc] = useState('');
   const [incidentSeverity, setIncidentSeverity] = useState<'MINOR' | 'MAJOR' | 'CRITICAL'>('MINOR');
+  const [incidentCategory, setIncidentCategory] = useState<string>('OTHER');
   const [savingIncident, setSavingIncident] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -144,11 +145,12 @@ export default function DailyFlyingReportPage() {
       const res = await fetch('/api/safety-incidents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ incidentDate: date, description: incidentDesc, severity: incidentSeverity }),
+        body: JSON.stringify({ incidentDate: date, description: incidentDesc, severity: incidentSeverity, category: incidentCategory }),
       });
       if (res.ok) {
         setIncidentDesc('');
         setIncidentSeverity('MINOR');
+        setIncidentCategory('OTHER');
         setShowIncidentForm(false);
         await loadForDate(date);
       } else {
@@ -348,6 +350,13 @@ export default function DailyFlyingReportPage() {
                       <option value="MAJOR">Major</option>
                       <option value="CRITICAL">Critical</option>
                     </select>
+                    <select
+                      value={incidentCategory}
+                      onChange={e => setIncidentCategory(e.target.value)}
+                      className="surface-card rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-[var(--accent)]"
+                    >
+                      {SAFETY_INCIDENT_CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                    </select>
                     <button
                       onClick={handleReportIncident}
                       disabled={savingIncident || !incidentDesc.trim()}
@@ -373,9 +382,10 @@ export default function DailyFlyingReportPage() {
                   {incidents.map(inc => (
                     <div key={inc.id} className="surface-inner p-3 flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm">{inc.description}</p>
+                        <p className="text-sm">{inc.incidentNumber ? `${inc.incidentNumber} · ` : ''}{inc.description}</p>
                         <p className="text-xs text-tertiary mt-1">
                           {inc.incidentTime ? `${inc.incidentTime} · ` : ''}Reported by {inc.reportedBy || 'Unknown'}
+                          {inc.assignedTo ? ` · Assigned to ${inc.assignedTo}` : ''}
                         </p>
                       </div>
                       <span className={`badge ${severityBadgeClass(inc.severity)}`}>{inc.severity}</span>

@@ -1,0 +1,200 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FlightPro Manager — Security Hardening Test Report</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, Arial, sans-serif; color: #1a1a1a; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.4rem; margin-bottom: 0; }
+  .meta { color: #666; font-size: 0.9rem; margin-bottom: 1.5rem; }
+  .summary { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+  .card { border-radius: 8px; padding: 0.75rem 1.25rem; font-weight: 600; }
+  .card.pass { background: #e6f4ea; color: #1e7e34; }
+  .card.fail { background: #fdecea; color: #b3261e; }
+  .card.skip { background: #f1f1f1; color: #555; }
+  h2 { font-size: 1.1rem; border-bottom: 2px solid #ddd; padding-bottom: 0.3rem; margin-top: 2rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem; }
+  td, th { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid #eee; vertical-align: top; }
+  tr.pass .mark { color: #1e7e34; font-weight: 700; }
+  tr.fail .mark { color: #b3261e; font-weight: 700; }
+  tr.skip .mark { color: #888; font-weight: 700; }
+  .login-table td { padding: 0.25rem 0.5rem; }
+  .ok { color: #1e7e34; font-weight: 600; }
+  .bad { color: #b3261e; font-weight: 600; }
+  .note { background: #fff8e1; padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.85rem; margin: 0.5rem 0; }
+  .warn { background: #fdecea; padding: 0.75rem 1rem; border-radius: 6px; font-size: 0.85rem; }
+  @media print { body { margin: 0.5rem; } }
+</style>
+</head>
+<body>
+<h1>FlightPro Manager — Security Hardening Round: Test Report</h1>
+<div class="meta">Target: https://flightplanner-xi.vercel.app &nbsp;·&nbsp; Run at: 2026-08-28T08:24:16.675Z</div>
+
+<div class="summary">
+  <div class="card pass">114 passed</div>
+  <div class="card fail">0 failed</div>
+  <div class="card skip">1 skipped / not automated</div>
+</div>
+
+<h2>Login Status</h2>
+<table class="login-table">
+<tr><td><span class="ok">OK</span></td><td>super_admin</td><td>dummy.superadmin@flightpro.test</td><td></td></tr>
+<tr><td><span class="ok">OK</span></td><td>admin</td><td>dummy.admin@flightpro.test</td><td></td></tr>
+<tr><td><span class="ok">OK</span></td><td>operations</td><td>dummy.operations@flightpro.test</td><td></td></tr>
+<tr><td><span class="ok">OK</span></td><td>maintenance</td><td>dummy.maintenance@flightpro.test</td><td></td></tr>
+<tr><td><span class="ok">OK</span></td><td>instructor</td><td>dummy.instructor@flightpro.test</td><td></td></tr>
+<tr><td><span class="ok">OK</span></td><td>safety_officer</td><td>dummy.safetyofficer@flightpro.test</td><td></td></tr>
+<tr><td><span class="ok">OK</span></td><td>student</td><td>dummy.student@flightpro.test</td><td></td></tr>
+</table>
+
+
+<h2>Admin Setup Config Routes</h2>
+<table>
+<thead><tr><th></th><th>Check</th><th>Role</th><th>Expected</th><th>Actual</th><th>Note</th></tr></thead>
+<tbody>
+<tr class="pass"><td class="mark">PASS</td><td>POST exercises — unauthenticated rejected</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST exercises — admin rejected</td><td>admin</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST exercises — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST exercises — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST exercises — instructor rejected</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST exercises — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST exercises — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST exercises — super_admin allowed (+ extra-field dropped)</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE exercises — cleanup of test row</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST training-programs — unauthenticated rejected</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST training-programs — admin rejected</td><td>admin</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST training-programs — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST training-programs — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST training-programs — instructor rejected</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST training-programs — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST training-programs — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST training-programs — super_admin allowed (+ extra-field dropped)</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE training-programs — cleanup of test row</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST instructor-roles — unauthenticated rejected</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST instructor-roles — admin rejected</td><td>admin</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST instructor-roles — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST instructor-roles — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST instructor-roles — instructor rejected</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST instructor-roles — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST instructor-roles — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST instructor-roles — super_admin allowed (+ extra-field dropped)</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE instructor-roles — cleanup of test row</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST sortie-types — unauthenticated rejected</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST sortie-types — admin rejected</td><td>admin</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST sortie-types — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST sortie-types — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST sortie-types — instructor rejected</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST sortie-types — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST sortie-types — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST sortie-types — super_admin allowed (+ extra-field dropped)</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE sortie-types — cleanup of test row</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST ground-school-subjects — unauthenticated rejected</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST ground-school-subjects — admin rejected</td><td>admin</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST ground-school-subjects — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST ground-school-subjects — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST ground-school-subjects — instructor rejected</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST ground-school-subjects — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST ground-school-subjects — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST ground-school-subjects — super_admin allowed (+ extra-field dropped)</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE ground-school-subjects — cleanup of test row</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST requirement-templates — unauthenticated rejected</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST requirement-templates — admin rejected</td><td>admin</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST requirement-templates — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST requirement-templates — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST requirement-templates — instructor rejected</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST requirement-templates — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST requirement-templates — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST requirement-templates — super_admin allowed (+ extra-field dropped)</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE requirement-templates — cleanup of test row</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST holidays — unauthenticated rejected</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST holidays — admin rejected</td><td>admin</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST holidays — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST holidays — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST holidays — instructor rejected</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST holidays — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST holidays — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST holidays — super_admin allowed (+ extra-field dropped)</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE holidays — cleanup of test row</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST aircraft-maintenance-schedule — unauthenticated rejected</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST aircraft-maintenance-schedule — admin rejected</td><td>admin</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST aircraft-maintenance-schedule — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST aircraft-maintenance-schedule — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST aircraft-maintenance-schedule — instructor rejected</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST aircraft-maintenance-schedule — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST aircraft-maintenance-schedule — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST aircraft-maintenance-schedule — super_admin allowed (+ extra-field dropped)</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE aircraft-maintenance-schedule — cleanup of test row</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH exercises — unauthenticated rejected (representative)</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE exercises — unauthenticated rejected (representative)</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH exercises — admin rejected (representative)</td><td>admin</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE exercises — admin rejected (representative)</td><td>admin</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH exercises — operations rejected (representative)</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE exercises — operations rejected (representative)</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH exercises — maintenance rejected (representative)</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE exercises — maintenance rejected (representative)</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH exercises — instructor rejected (representative)</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE exercises — instructor rejected (representative)</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH exercises — safety_officer rejected (representative)</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE exercises — safety_officer rejected (representative)</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH exercises — student rejected (representative)</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE exercises — student rejected (representative)</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH exercises — super_admin allowed</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+</tbody>
+</table>
+
+<h2>Aircraft Routes</h2>
+<table>
+<thead><tr><th></th><th>Check</th><th>Role</th><th>Expected</th><th>Actual</th><th>Note</th></tr></thead>
+<tbody>
+<tr class="pass"><td class="mark">PASS</td><td>POST /api/aircraft — unauthenticated rejected</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST /api/aircraft — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH /api/aircraft/[id] — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE /api/aircraft/[id] — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST /api/aircraft — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH /api/aircraft/[id] — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE /api/aircraft/[id] — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST /api/aircraft — instructor rejected</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH /api/aircraft/[id] — instructor rejected</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE /api/aircraft/[id] — instructor rejected</td><td>instructor</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST /api/aircraft — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH /api/aircraft/[id] — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE /api/aircraft/[id] — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST /api/aircraft — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH /api/aircraft/[id] — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE /api/aircraft/[id] — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST /api/aircraft — admin allowed</td><td>admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH /api/aircraft/[id] — admin allowed</td><td>admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE /api/aircraft/[id] — cleanup of test aircraft</td><td>admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST /api/aircraft — super_admin allowed</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>PATCH /api/aircraft/[id] — super_admin allowed</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>DELETE /api/aircraft/[id] — cleanup of test aircraft</td><td>super_admin</td><td>200</td><td>200</td><td></td></tr>
+</tbody>
+</table>
+
+<h2>Direct Exam Entry Route (negative-only — see scope notes)</h2>
+<table>
+<thead><tr><th></th><th>Check</th><th>Role</th><th>Expected</th><th>Actual</th><th>Note</th></tr></thead>
+<tbody>
+<tr class="pass"><td class="mark">PASS</td><td>POST direct-exam — unauthenticated rejected</td><td>(none)</td><td>401</td><td>401</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST direct-exam — operations rejected</td><td>operations</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST direct-exam — maintenance rejected</td><td>maintenance</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST direct-exam — safety_officer rejected</td><td>safety_officer</td><td>403</td><td>403</td><td></td></tr>
+<tr class="pass"><td class="mark">PASS</td><td>POST direct-exam — student rejected</td><td>student</td><td>403</td><td>403</td><td></td></tr>
+<tr class="skip"><td class="mark">SKIP</td><td>POST direct-exam — allowed-role positive path</td><td>admin/instructor/super_admin</td><td>(not tested)</td><td>—</td><td>Intentionally NOT exercised — this route has no DELETE endpoint and no FK-existence check, so a successful call cannot be cleanly undone. Verify this path manually if needed, and clean up the resulting ground_school_enrollment row by hand.</td></tr>
+</tbody>
+</table>
+
+<h2>Scope Notes</h2>
+<div class="note">
+<b>Not covered by this script:</b>
+<ol>
+<li>Ground School Progress IDOR fix (<code>?student=</code> URL override) — client-side React guard, not observable via plain HTTP. Needs a manual browser check with two distinct student accounts.</li>
+<li>Direct Exam Entry's positive (allowed-role) path — skipped, no clean way to undo a successful call (no DELETE endpoint, no FK-existence check on the insert).</li>
+<li>Admin Setup PATCH/DELETE role gating is checked on one representative table (exercises) rather than all 8 — every table's PATCH/DELETE handler shares the exact same one-line auth check, so repeating it per table adds production requests with no new signal.</li>
+</ol>
+</div>
+
+<h2>Cleanup</h2><div class="note">All throwaway test rows created by this run were deleted successfully.</div>
+
+</body>
+</html>

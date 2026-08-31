@@ -230,11 +230,18 @@ export interface SafetyIncident {
   riskSeverity?: number | null;    // 1-5
   riskLikelihood?: number | null;  // 1-5
   riskScore?: number | null;       // riskSeverity * riskLikelihood, 1-25
-  status: 'OPEN' | 'IN_PROGRESS' | 'CLOSED';
+  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
   correctiveAction?: string | null;
   assignedTo?: string | null;
   closedBy?: string | null;
   closedAt?: string | null;
+  // 2026-08-31 enhancement — see SAFETY_INCIDENT_CATEGORIES/
+  // INCIDENT_RESOLVE_ROLES in lib/permissions.ts.
+  incidentNumber?: string | null;  // 'INC-2026-001', assigned on report
+  category?: string;               // one of SAFETY_INCIDENT_CATEGORIES
+  resolutionNote?: string | null;  // set by Maintenance's narrow resolve action
+  resolvedBy?: string | null;
+  resolvedAt?: string | null;
 }
 
 // Breath Analyser (BA) test — one row per person tested, per the FTO's

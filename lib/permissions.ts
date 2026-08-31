@@ -311,6 +311,30 @@ export const INCIDENT_REPORT_ROLES = REPORTS_VIEW_ROLES;
 // excludes 'instructor' and 'maintenance', who can still report/view.
 export const INCIDENT_MANAGE_ROLES = ['operations', 'safety_officer', 'admin', 'super_admin'];
 
+// 2026-08-31 enhancement: structured category, chosen at report time,
+// replacing free-text. The three *_TECHNICAL categories auto-suggest
+// assigned_to='Maintenance' on report (app/api/safety-incidents/route.ts)
+// and are the categories Maintenance's narrow resolve action is meant for
+// — nothing server-side actually restricts the resolve action to these,
+// since the assignment is just a starting suggestion a manager can change.
+export const SAFETY_INCIDENT_CATEGORIES = [
+  { value: 'BIRD_STRIKE', label: 'Bird Strike', technical: true },
+  { value: 'MECHANICAL_SYSTEMS', label: 'Mechanical / Systems Problem', technical: true },
+  { value: 'OTHER_TECHNICAL', label: 'Other Technical', technical: true },
+  { value: 'OPERATIONAL', label: 'Operational', technical: false },
+  { value: 'OTHER', label: 'Other', technical: false },
+] as const;
+export type SafetyIncidentCategory = typeof SAFETY_INCIDENT_CATEGORIES[number]['value'];
+export const TECHNICAL_INCIDENT_CATEGORIES: string[] =
+  SAFETY_INCIDENT_CATEGORIES.filter(c => c.technical).map(c => c.value);
+
+// Maintenance's narrow slice of incident-management power (per explicit
+// user decision): add a resolution note and mark an incident RESOLVED.
+// Deliberately NOT added to INCIDENT_MANAGE_ROLES — maintenance still
+// can't risk-rate, reassign, or CLOSE (that's the reporter or a manager;
+// see the close-authority check in app/api/safety-incidents/[id]/route.ts).
+export const INCIDENT_RESOLVE_ROLES = ['maintenance'];
+
 // ============================================================
 // PILOT-FACING SQUAWK REPORTING (2026-08-31)
 // ============================================================
