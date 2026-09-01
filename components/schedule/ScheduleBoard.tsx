@@ -93,6 +93,13 @@ export default function ScheduleBoard() {
   // opened via the "+ Book Slot" button instead (no prefill).
   const [gridClickPrefill, setGridClickPrefill] = useState<{ aircraftId: string; date: string; startTime: string } | null>(null);
 
+  // Drag-and-drop rescheduling: the flight currently being dragged (native
+  // HTML5 DnD — no library, this is just a Gantt block dragged within/across
+  // rows), and which aircraft row it's currently hovering (for the row
+  // highlight). Cleared on drop or dragend either way.
+  const [draggingFlight, setDraggingFlight] = useState<ScheduledFlight | null>(null);
+  const [dragOverAircraftId, setDragOverAircraftId] = useState<string | null>(null);
+
   // ----- Date filter (local date in YYYY-MM-DD format) -----
   const todayLocal = new Date().toLocaleDateString('en-CA');       // e.g. "2026-08-03"
   const [selectedDate, setSelectedDate] = useState(todayLocal);    // Currently selected date
@@ -791,6 +798,82 @@ export default function ScheduleBoard() {
     setShowBookingForm(true);
   };
 
+  // Drag-and-drop rescheduling — mirrors handleGridClick's time-from-x-
+  // position math and validation (date closed / maintenance block / past),
+  // then reuses the store's own checkConflicts (excluding the flight being
+  // moved) before calling updateScheduledFlight. Only SCHEDULED flights are
+  // draggable (see draggable= on the block below), so IN_PROGRESS/COMPLETED/
+  // CANCELLED flights can't be dragged in the first place.
+  const handleFlightDragStart = (e: React.DragEvent, flight: ScheduledFlight) => {
+    e.dataTransfer.setData('text/plain', flight.id); // required by Firefox for drag to start
+    e.dataTransfer.effectAllowed = 'move';
+    setDraggingFlight(flight);
+  };
+
+  const handleRowDragOver = (e: React.DragEvent, aircraftId: string) => {
+    if (!draggingFlight) return;
+    e.preventDefault(); // required to allow a drop
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverAircraftId(aircraftId);
+  };
+
+  const handleRowDrop = async (e: React.DragEvent, aircraftId: string) => {
+    e.preventDefault();
+    const flight = draggingFlight;
+    setDraggingFlight(null);
+    setDragOverAircraftId(null);
+    if (!flight) return;
+
+    const rect = e.currentTarget.getBoundingClientRect();
+    const dropPercent = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    const rawHour = 5 + dropPercent * totalHours;
+    let snappedMinutes = Math.round((rawHour * 60) / 30) * 30;
+    snappedMinutes = Math.min(22 * 60 + 30, Math.max(6 * 60, snappedMinutes));
+    const hour = Math.floor(snappedMinutes / 60);
+    const minute = snappedMinutes % 60;
+    const startTime = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+
+    if (dateBlockReason) {
+      setErrorMessage(`FTO is closed on ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} (${dateBlockReason.label}) — flights cannot be rescheduled to this date.`);
+      setTimeout(() => setErrorMessage(''), 4000);
+      return;
+    }
+
+    const maintenanceBlock = getMaintenanceBlock(aircraftId);
+    if (isTimeBlockedByMaintenance(maintenanceBlock, startTime)) {
+      const ac = aircraft.find(a => String(a.id) === String(aircraftId));
+      setErrorMessage(`${ac?.registration || 'This aircraft'} is unavailable at ${startTime} — ${maintenanceBlock!.maintenanceType} maintenance.`);
+      setTimeout(() => setErrorMessage(''), 4000);
+      return;
+    }
+
+    if (isSlotInPast(selectedDate, startTime)) {
+      setErrorMessage(`${startTime} on ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })} is in the past — flights cannot be rescheduled into the past.`);
+      setTimeout(() => setErrorMessage(''), 4000);
+      return;
+    }
+
+    const durationMs = new Date(flight.endTime).getTime() - new Date(flight.startTime).getTime();
+    const newStart = new Date(`${selectedDate}T${startTime}:00+05:30`);
+    const newEnd = new Date(newStart.getTime() + durationMs);
+
+    const conflict = await store.checkConflicts(aircraftId, newStart.toISOString(), newEnd.toISOString(), flight.id);
+    if (conflict.hasConflict) {
+      setErrorMessage(`❌ ${aircraft.find(a => String(a.id) === String(aircraftId))?.registration || 'This aircraft'} is already booked around ${startTime} — pick a different time or aircraft.`);
+      setTimeout(() => setErrorMessage(''), 4000);
+      return;
+    }
+
+    await store.updateScheduledFlight(flight.id, {
+      aircraftId,
+      startTime: newStart.toISOString(),
+      endTime: newEnd.toISOString(),
+    });
+    setSuccessMessage(`✅ Rescheduled to ${startTime} IST${String(aircraftId) !== String(flight.aircraftId) ? ` on ${aircraft.find(a => String(a.id) === String(aircraftId))?.registration || 'the new aircraft'}` : ''}.`);
+    setTimeout(() => setSuccessMessage(''), 3000);
+    loadScheduledFlights();
+  };
+
   const handleBookingSuccess = (message: string) => {
     setShowBookingForm(false);
     setEditingFlight(null);
@@ -1095,6 +1178,9 @@ export default function ScheduleBoard() {
                           blocks clicks inside that window, not the whole row. */}
                       <div
                         onClick={(e) => handleGridClick(ac.id, e)}
+                        onDragOver={(e) => handleRowDragOver(e, ac.id)}
+                        onDragLeave={() => setDragOverAircraftId(prev => (prev === ac.id ? null : prev))}
+                        onDrop={(e) => handleRowDrop(e, ac.id)}
                         className={`flex-1 relative border rounded-r-lg transition ${
                           maintenanceBlock?.allDay ? 'cursor-not-allowed' : 'cursor-pointer'
                         }`}
@@ -1106,10 +1192,14 @@ export default function ScheduleBoard() {
                           // pre-redesign bg-slate-900/20 background looked, and
                           // keeping every row visually uniform with the gaps
                           // between rows instead of blotting the lines out.
-                          backgroundColor: 'color-mix(in srgb, var(--surface-muted) 35%, transparent)',
-                          borderColor: maintenanceBlock?.allDay
-                            ? (maintenanceBlock.overdue ? 'color-mix(in srgb, var(--danger) 40%, transparent)' : 'color-mix(in srgb, var(--warning) 30%, transparent)')
-                            : 'color-mix(in srgb, var(--border) 50%, transparent)',
+                          backgroundColor: dragOverAircraftId === ac.id
+                            ? 'color-mix(in srgb, var(--accent) 18%, transparent)'
+                            : 'color-mix(in srgb, var(--surface-muted) 35%, transparent)',
+                          borderColor: dragOverAircraftId === ac.id
+                            ? 'var(--accent)'
+                            : maintenanceBlock?.allDay
+                              ? (maintenanceBlock.overdue ? 'color-mix(in srgb, var(--danger) 40%, transparent)' : 'color-mix(in srgb, var(--warning) 30%, transparent)')
+                              : 'color-mix(in srgb, var(--border) 50%, transparent)',
                         }}
                         title={
                           maintenanceBlock?.allDay
@@ -1163,6 +1253,12 @@ export default function ScheduleBoard() {
                           const isHovered = hoveredSlot === flight.id;
                           const flightStartIST = formatISTTime(flight.startTime);
                           const hasMaintenanceConflict = doesFlightConflictWithMaintenance(flight);
+                          // Only a SCHEDULED flight can be dragged to reschedule (an
+                          // in-progress/completed/cancelled flight has already happened
+                          // or is happening — nothing to move), and only for someone
+                          // who'd be allowed to create/edit a booking in the first
+                          // place (same gate as the empty-slot click-to-book above).
+                          const isDraggable = canCreateBooking && flight.status === 'SCHEDULED';
 
                           // Get exercise name and extract short code
                           const exerciseName = flight.exercise || '';
@@ -1171,6 +1267,9 @@ export default function ScheduleBoard() {
                           return (
                             <div
                               key={flight.id}
+                              draggable={isDraggable}
+                              onDragStart={(e) => isDraggable && handleFlightDragStart(e, flight)}
+                              onDragEnd={() => { setDraggingFlight(null); setDragOverAircraftId(null); }}
                               onClick={(e) => {
                                 // Don't let this bubble up to the row's
                                 // click-to-book handler — an existing block
@@ -1183,9 +1282,11 @@ export default function ScheduleBoard() {
                               className={`absolute top-1 bottom-1 border rounded-md px-2 py-1
                                 cursor-pointer transition-all duration-200
                                 hover:scale-[1.03] hover:z-30 hover:shadow-xl
+                                ${isDraggable ? 'active:cursor-grabbing' : ''}
                                 ${isHovered ? 'ring-2 ring-white/50 z-20 scale-[1.03] shadow-xl' : 'z-10'}
                                 ${flight.status === 'IN_PROGRESS' ? 'ring-1' : ''}
-                                ${hasMaintenanceConflict ? 'ring-2 animate-pulse' : ''}`}
+                                ${hasMaintenanceConflict ? 'ring-2 animate-pulse' : ''}
+                                ${draggingFlight?.id === flight.id ? 'opacity-40' : ''}`}
                               style={{
                                 ...style,
                                 backgroundColor: `color-mix(in srgb, ${blockColor} 80%, transparent)`,
@@ -1193,7 +1294,7 @@ export default function ScheduleBoard() {
                                 ...(flight.status === 'IN_PROGRESS' ? { boxShadow: `0 0 0 1px color-mix(in srgb, var(--success) 50%, transparent)` } : {}),
                                 ...(hasMaintenanceConflict ? { boxShadow: '0 0 0 2px var(--danger)' } : {}),
                               }}
-                              title={`${student?.name || flight.studentName || 'No Student'} - ${exerciseName || flight.sortieType}\n${flightStartIST} IST${hasMaintenanceConflict ? '\nConflicts with scheduled maintenance on this aircraft — reassign or cancel' : ''}`}
+                              title={`${student?.name || flight.studentName || 'No Student'} - ${exerciseName || flight.sortieType}\n${flightStartIST} IST${hasMaintenanceConflict ? '\nConflicts with scheduled maintenance on this aircraft — reassign or cancel' : ''}${isDraggable ? '\nDrag to reschedule' : ''}`}
                             >
                               {flight.status === 'IN_PROGRESS' && (
                                 <span className="absolute top-1 right-1 w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--success)' }} />
