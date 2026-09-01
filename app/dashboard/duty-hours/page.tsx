@@ -12,12 +12,12 @@
 // API route, and no claim of regulatory compliance.
 'use client';
 
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
-import { useFlightStore } from '@/lib/store';
 import { useInstructors } from '@/lib/hooks/useInstructors';
+import { useScheduledFlights } from '@/lib/hooks/useScheduledFlights';
 import { Info } from 'lucide-react';
 
 const VIEW_ROLES = ['admin', 'super_admin', 'operations', 'instructor'];
@@ -28,9 +28,7 @@ function localDateStr(iso: string): string {
 
 export default function DutyHoursPage() {
   const { instructors } = useInstructors();
-  const { scheduledFlights, loadScheduledFlights } = useFlightStore();
-
-  useEffect(() => { if (scheduledFlights.length === 0) loadScheduledFlights(); }, [scheduledFlights.length, loadScheduledFlights]);
+  const { scheduledFlights } = useScheduledFlights();
 
   useSetHeader({
     title: 'Instructor Duty Hours',

@@ -37,6 +37,7 @@ import { ScheduledFlight } from '@/types';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
+import { useScheduledFlights, bookFlight, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -105,10 +106,12 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   const { aircraft } = useAircraft();
   const { instructors } = useInstructors();
   const { students } = useStudents();
+  // Scheduled flights come from SWR (Stage 5, 2026-09-01) — fetch-on-mount +
+  // dedup. Raw (unenriched) flights are fine here: this form's conflict
+  // logic only reads aircraftId/studentId/instructorId/status/startTime/
+  // endTime, never .aircraftReg/.studentName/.instructorName.
+  const { scheduledFlights } = useScheduledFlights();
   const {
-    scheduledFlights,
-    bookFlight, loadScheduledFlights,
-    updateScheduledFlight,
     loadTrainingRequirements,
     getRequirementsForStudent,
     loadingRequirements,
@@ -130,10 +133,9 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     // exercises are managed. See the Exercise <select> below for the
     // "CODE - Name" value format this preserves.
     if (exercises.length === 0) loadExercises();
-    loadScheduledFlights();
   }, [
     ftoSettings, holidays.length, exercises.length,
-    loadFTOSettings, loadHolidays, loadExercises, loadScheduledFlights,
+    loadFTOSettings, loadHolidays, loadExercises,
   ]);
 
   // FTO-wide blackout days — weekly recurring off day(s) (Settings -> Time &

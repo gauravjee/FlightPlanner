@@ -3,8 +3,8 @@
 'use client';
 
 import { useState } from 'react';
-import { useFlightStore } from '@/lib/store';
 import { useAircraft, aircraftKey } from '@/lib/hooks/useAircraft';
+import { updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { addFlightRecord } from '@/lib/hooks/useFlightRecords';
 import { mutate } from 'swr';
 import { ScheduledFlight } from '@/types';
@@ -19,7 +19,6 @@ interface Props {
 export default function DebriefForm({ flight, onClose, onComplete }: Props) {
   useEscapeToClose(onClose);
   const { aircraft } = useAircraft();
-  const { updateScheduledFlight, loadScheduledFlights } = useFlightStore();
 
   const ac = aircraft.find(a => String(a.id) === String(flight.aircraftId));
   
@@ -134,7 +133,7 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
         await mutate(aircraftKey);
       }
 
-      await loadScheduledFlights();
+      // Cache already fresh — updateScheduledFlight local-splices.
       onComplete(
         form.createLogbook
           ? '✅ Flight completed & logbook updated!'

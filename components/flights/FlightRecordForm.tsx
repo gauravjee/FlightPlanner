@@ -7,6 +7,7 @@ import { useFlightStore } from '@/lib/store';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
+import { updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { addFlightRecord } from '@/lib/hooks/useFlightRecords';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -46,7 +47,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
   const { instructors } = useInstructors();
   const { students } = useStudents();
   const {
-    sortieTypes, exercises, updateScheduledFlight,
+    sortieTypes, exercises,
     loadSortieTypes, loadExercises,
   } = useFlightStore();
 

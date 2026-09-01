@@ -6,9 +6,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Plane, Target, TriangleAlert, PartyPopper, ChevronRight } from 'lucide-react';
-import { useFlightStore } from '@/lib/store';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
+import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useInstructors } from '@/lib/hooks/useInstructors';
 import { supabase } from '@/lib/supabase-client';
 import { matchTrainingProgram } from '@/lib/training-programs';
 import { STUDENT_ROSTER_VIEW_ROLES } from '@/lib/permissions';
@@ -47,15 +49,17 @@ export default function StudentProgressWidget() {
 
   const { students } = useStudents(canViewStudents);
   const { flightRecords } = useFlightRecords();
-  const { scheduledFlights, loadScheduledFlights } = useFlightStore();
+  const { aircraft } = useAircraft();
+  const { instructors } = useInstructors();
+  const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
+  const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
 
   const [trainingPrograms, setTrainingPrograms] = useState<TrainingProgramHours[]>([]);
 
-  // Load data on mount. Students and Flight Records are migrated (SWR,
-  // Stages 3 + 4) and now fetch themselves via useStudents()/
-  // useFlightRecords() above, no manual load needed.
+  // Load data on mount. Students, Flight Records, and now Scheduled Flights
+  // are all SWR-migrated (Stages 3, 4, 5) and fetch themselves — no manual
+  // load needed.
   useEffect(() => {
-    loadScheduledFlights();
     (async () => {
       const { data, error } = await supabase
         .from('training_programs')
@@ -66,7 +70,7 @@ export default function StudentProgressWidget() {
         setTrainingPrograms(data || []);
       }
     })();
-  }, [loadScheduledFlights]);
+  }, []);
 
   // ============================================================
   // CALCULATE PROGRESS FOR EACH STUDENT

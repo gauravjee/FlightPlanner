@@ -2,11 +2,11 @@
 // Modal form for adding/editing maintenance records
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
-import { useFlightStore } from '@/lib/store';
+import { useState, useMemo } from 'react';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
+import { useScheduledFlights } from '@/lib/hooks/useScheduledFlights';
 import { MaintenanceRecord } from '@/types';
 import { Pencil, Wrench, X, Hourglass, TriangleAlert } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -46,17 +46,10 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
   const { aircraft } = useAircraft();
   const { instructors } = useInstructors();
   const { students } = useStudents();
-  const {
-    scheduledFlights, loadScheduledFlights,
-  } = useFlightStore();
+  // Instructors, Students, and now Scheduled Flights are all SWR-migrated
+  // (Stages 2, 3, 5) and fetch themselves on mount — no manual load needed.
+  const { scheduledFlights } = useScheduledFlights();
   const isEditing = !!record;
-
-  // Instructors and Students are migrated (SWR, Stage 2 + 3) and now fetch
-  // themselves via useInstructors()/useStudents() above, no manual load
-  // needed.
-  useEffect(() => {
-    if (scheduledFlights.length === 0) loadScheduledFlights();
-  }, [scheduledFlights.length, loadScheduledFlights]);
 
   const todayLocal = new Date().toLocaleDateString('en-CA');
 

@@ -5,9 +5,11 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { useFlightStore } from '@/lib/store';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
+import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useEffect, useState, useMemo } from 'react';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import RoleGate from '@/components/ui/RoleGate';
@@ -33,9 +35,12 @@ export default function StudentDashboardPage() {
   const { data: session } = useSession();
   const { students } = useStudents();
   const { flightRecords } = useFlightRecords();
-  const {
-    scheduledFlights, loadScheduledFlights,
-  } = useFlightStore();
+  const { aircraft } = useAircraft();
+  const { instructors } = useInstructors();
+  // Scheduled flights come from SWR (Stage 5, 2026-09-01) — fetch-on-mount +
+  // dedup, names joined at render time (see withScheduledFlightNames).
+  const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
+  const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
 
   const [studentId, setStudentId] = useState<string | null>(null);
   // "View All" used to link to /dashboard/flights — the staff logbook page,
@@ -47,18 +52,17 @@ export default function StudentDashboardPage() {
   // client-side, so "View All" just expands it in place instead.
   const [showAllLogbook, setShowAllLogbook] = useState(false);
 
-  // Extract studentId from session and load data. Students and Flight
-  // Records are migrated (SWR, Stages 3 + 4) and now fetch themselves via
-  // useStudents()/useFlightRecords() above, no manual load needed.
+  // Extract studentId from session. Students, Flight Records, and now
+  // Scheduled Flights are all SWR-migrated (Stages 3, 4, 5) and fetch
+  // themselves — no manual load needed.
   useEffect(() => {
     if (session?.user) {
       const sid = session.user.studentId;
       if (sid) {
         setStudentId(sid);
-        loadScheduledFlights();
       }
     }
-  }, [session, loadScheduledFlights]);
+  }, [session]);
 
   // Find the student record
   const student = students.find(s => s.id === studentId);

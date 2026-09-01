@@ -22,6 +22,7 @@ import {
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
+import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -43,8 +44,10 @@ export default function DashboardPage() {
   const fetchGeneralWeather = store.fetchGeneralWeather;
   const notams = store.notams;
   const loadNOTAMs = store.loadNOTAMs;
-  const scheduledFlights = store.scheduledFlights;
-  const loadScheduledFlights = store.loadScheduledFlights;
+  // Scheduled flights come from SWR (Stage 5, 2026-09-01) — fetch-on-mount +
+  // dedup, names joined at render time (see withScheduledFlightNames).
+  const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
+  const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
 
   const { data: session } = useSession();
   const router = useRouter();
@@ -137,16 +140,8 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [fetchGeneralWeather, station, lat, lon, hasValidLatLon, ftoSettingsLoaded]);
 
-  // Load today's bookings for the schedule table and fuel status below.
-  // Aircraft, Instructors, and Students now come from
-  // useAircraft()/useInstructors()/useStudents() above — their own
-  // fetch-on-mount — and loadScheduledFlights() fetches all three
-  // independently for its own aircraftReg/instructorName/studentName join
-  // (see lib/store.ts's SWR migration notes) — so this page no longer
-  // needs to preload any of them for that reason either.
-  useEffect(() => {
-    loadScheduledFlights();
-  }, [loadScheduledFlights]);
+  // Aircraft, Instructors, Students, and now Scheduled Flights all come
+  // from SWR hooks (fetch-on-mount + dedup) — nothing to preload here.
 
   // Today's flights, computed live from scheduled_flights — this used to
   // be a hardcoded placeholder array (bug: it never reflected the real

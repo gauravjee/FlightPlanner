@@ -50,49 +50,49 @@ import { create } from 'zustand';
 import {
   Aircraft, FlightSlot,
   WeatherData, GeneralWeatherData, NOTAM,
-  ScheduledFlight, TimeConflict, MaintenanceRecord,
+  MaintenanceRecord,
   TrainingRequirement, Holiday,
   MaintenanceScheduleTemplate, MaintenanceDueItem
 } from '@/types';
 import { supabase } from './supabase';
 // SWR migration, Stage 1 (2026-08-28): aircraft moved out of this store's
-// own state into lib/hooks/useAircraft.ts. The domains below still in this
-// store that need aircraft data for a client-side name-join
-// (loadScheduledFlights, loadMaintenanceRecords) or a fuel-buffer/conflict
-// calc (checkConflicts, bookFlight) call fetchAircraft() directly for a
-// fresh read instead of reading this store's own (now-removed) `aircraft`
-// state. updateMaintenanceRecord still revalidates aircraftKey directly
-// after a server-derived aircraft change (status reset) — the "server
-// derived something the client didn't send, so revalidate rather than
-// locally splice" case the migration plan calls out. (Flight Records' and
-// Fuel Records' own equivalent aircraftKey revalidations — hobbs bump,
-// current_fuel bump — moved out of this file along with those domains in
-// Stage 4; see lib/hooks/useFlightRecords.ts / useFuelRecords.ts.)
+// own state into lib/hooks/useAircraft.ts. loadMaintenanceRecords below
+// (the remaining not-yet-migrated loader that needs an aircraft
+// name-join) calls fetchAircraft() directly for a fresh read instead of
+// reading this store's own (now-removed) `aircraft` state.
+// updateMaintenanceRecord still revalidates aircraftKey directly after a
+// server-derived aircraft change (status reset) — the "server derived
+// something the client didn't send, so revalidate rather than locally
+// splice" case the migration plan calls out. (Flight Records', Fuel
+// Records', and Scheduled Flights' own equivalent aircraftKey/fetchAircraft
+// uses — hobbs bump, current_fuel bump, checkConflicts/bookFlight's
+// fuel-buffer calc — moved out of this file along with those domains in
+// Stages 4 and 5; see lib/hooks/useFlightRecords.ts / useFuelRecords.ts /
+// useScheduledFlights.ts.)
 import { fetchAircraft, aircraftKey } from './hooks/useAircraft';
 // SWR migration, Stage 2 (2026-08-28): instructors and availability moved
 // out of this store's own state into lib/hooks/useInstructors.ts and
-// lib/hooks/useAvailability.ts. Not-yet-migrated loaders below that used to
-// read get().instructors for a client-side name-join now call
-// fetchInstructors() directly instead, exactly the pattern Stage 1
-// established for aircraft.
-import { fetchInstructors } from './hooks/useInstructors';
+// lib/hooks/useAvailability.ts. (The one not-yet-migrated loader that used
+// to call fetchInstructors() directly for a name-join —
+// loadScheduledFlights — moved out along with the rest of that domain in
+// Stage 5; see lib/hooks/useScheduledFlights.ts.)
 // SWR migration, Stage 3 (2026-08-28): students moved out of this store's
-// own state into lib/hooks/useStudents.ts. loadScheduledFlights below (the
-// remaining not-yet-migrated loader that needs a student name-join) still
-// calls fetchStudents() directly instead of reading get().students. (Flight
-// Records' own equivalent — loadFlightRecords/loadStudentFlightRecords'
-// fetchStudents() call, and addFlightRecord's studentsKey revalidation for
-// the server-derived hours/solo-date bump — moved out of this file along
-// with that domain in Stage 4; see lib/hooks/useFlightRecords.ts.)
-import { fetchStudents } from './hooks/useStudents';
+// own state into lib/hooks/useStudents.ts. (loadScheduledFlights, the
+// remaining not-yet-migrated loader that called fetchStudents() directly
+// for a student name-join, moved out along with the rest of that domain in
+// Stage 5; see lib/hooks/useScheduledFlights.ts. Flight Records' own
+// equivalent — loadFlightRecords/loadStudentFlightRecords' fetchStudents()
+// call, and addFlightRecord's studentsKey revalidation for the
+// server-derived hours/solo-date bump — moved out of this file along with
+// that domain in Stage 4; see lib/hooks/useFlightRecords.ts.)
 import { mutate } from 'swr';
 
 // ============================================================
 // SCHEDULING RULES — booking-duration, turnaround & fuel-burn constants
 // ============================================================
-// Shared by the store's own conflict check (checkConflicts/bookFlight),
-// BookingForm's client-side validation, and the dashboard's "Available
-// Slots" tile, so all three always agree on what counts as a bookable gap:
+// Shared by BookingForm's client-side validation and the dashboard's
+// "Available Slots" tile (the store's own conflict check — checkConflicts/
+// bookFlight — moved to lib/hooks/useScheduledFlights.ts in Stage 5):
 //   - A flight must be at least MIN_FLIGHT_DURATION_MIN long, in
 //     FLIGHT_DURATION_INCREMENT_MIN steps (45, 60, 75, 90 minutes, ...).
 //   - Every aircraft needs a turnaround gap of clear time immediately
@@ -226,10 +226,10 @@ export function getProjectedFuelAfter(
 // HOLIDAYS — FTO-wide blackout dates that block booking/scheduling
 // ============================================================
 // Shared by BookingForm (validateDate), ScheduleBoard (grid-click block +
-// banner), and GroundSchoolCalendar (openNewClass), plus the store's own
-// bookFlight/updateScheduledFlight, so every scheduling path agrees on
-// which dates the FTO is closed. See the Holiday type in types/index.ts
-// for the one-time-vs-recurring distinction.
+// banner), and GroundSchoolCalendar (openNewClass), plus
+// useScheduledFlights.ts's own bookFlight/updateScheduledFlight, so every
+// scheduling path agrees on which dates the FTO is closed. See the Holiday
+// type in types/index.ts for the one-time-vs-recurring distinction.
 
 // Does `dateStr` ('YYYY-MM-DD') fall on a holiday? Checks recurring
 // holidays by month/day only (so a national holiday entered once keeps
@@ -345,8 +345,9 @@ export function isPartialWeeklyOffDay(dateStr: string, rule: PartialWeeklyOffRul
 }
 
 // Combined "is this date blocked for scheduling, and why" check, used by
-// BookingForm/ScheduleBoard/GroundSchoolCalendar and the store's own
-// bookFlight/updateScheduledFlight so every path agrees. Priority order:
+// BookingForm/ScheduleBoard/GroundSchoolCalendar and
+// useScheduledFlights.ts's own bookFlight/updateScheduledFlight so every
+// path agrees. Priority order:
 // holiday (most specific) -> full weekly off -> partial weekly off.
 // `partialRule` defaults to null so any not-yet-updated caller keeps
 // working exactly as before. Returns null if the date is open.
@@ -474,7 +475,6 @@ interface FlightStore {
   // ==========================================
   // DATA COLLECTIONS
   // ==========================================
-  scheduledFlights: ScheduledFlight[];
   maintenanceRecords: MaintenanceRecord[];
   // 2026-08-26: Aircraft Maintenance Schedule, Phase 1 — active + inactive
   // template rows (see AircraftMaintenanceScheduleTab.tsx). Used with
@@ -518,7 +518,6 @@ interface FlightStore {
   toggleTheme: () => void;
   selectedSlot: FlightSlot | null;
   hoveredSlot: string | null;
-  loadingSchedule: boolean;
   loadingMaintenance: boolean;
   loadingNotams: boolean;
   loadingRequirements: boolean;
@@ -559,14 +558,10 @@ interface FlightStore {
   // migration, Stage 4, 2026-08-29). useFuelRecords(), addFuelRecord(),
   // getFuelRecordsForAircraft() (ported selector, unused).
 
-  // ==========================================
-  // 5. SCHEDULE / BOOKING ACTIONS
-  // ==========================================
-  loadScheduledFlights: () => Promise<void>;
-  bookFlight: (booking: Omit<ScheduledFlight, 'id' | 'aircraftReg' | 'studentName' | 'instructorName' | 'duration'>) => Promise<{success: boolean; message: string}>;
-  checkConflicts: (aircraftId: string, startTime: string, endTime: string, excludeId?: string) => Promise<TimeConflict>;
-  cancelFlight: (id: string, reason?: 'WEATHER' | 'MAINTENANCE' | 'OTHER') => Promise<void>;
-  updateScheduledFlight: (id: string, updates: Partial<ScheduledFlight>) => Promise<void>;
+  // 5. SCHEDULE / BOOKING ACTIONS — moved to lib/hooks/useScheduledFlights.ts
+  // (SWR migration, Stage 5, 2026-09-01). useScheduledFlights(),
+  // withScheduledFlightNames() (render-time join selector), bookFlight(),
+  // checkConflicts(), cancelFlight(), updateScheduledFlight().
 
   // ==========================================
   // 6. MAINTENANCE ACTIONS
@@ -672,7 +667,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // ==========================================
   // INITIAL STATE
   // ==========================================
-  scheduledFlights: [],
   maintenanceRecords: [],
   maintenanceScheduleTemplates: [],
   notams: [],
@@ -714,7 +708,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
   selectedSlot: null,
   hoveredSlot: null,
-  loadingSchedule: false,
   loadingMaintenance: false,
   loadingNotams: false,
   loadingRequirements: false,
@@ -757,204 +750,12 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // (SWR migration, Stage 4, 2026-08-29).
 
   // ============================================================
-  // 5. SCHEDULED FLIGHTS / BOOKING FUNCTIONS
+  // 5. SCHEDULED FLIGHTS / BOOKING FUNCTIONS — moved to
+  // lib/hooks/useScheduledFlights.ts (SWR migration, Stage 5, 2026-09-01).
+  // useScheduledFlights(), withScheduledFlightNames() (render-time join
+  // selector — replaces the fetch-time enrichment this used to do),
+  // bookFlight(), checkConflicts(), cancelFlight(), updateScheduledFlight().
   // ============================================================
-  loadScheduledFlights: async () => {
-    set({ loadingSchedule: true });
-    const { data, error } = await supabase.from('scheduled_flights').select('*').order('start_time', { ascending: true });
-    if (data && !error) {
-      // 2026-08-28 (SWR migration, Stages 1-3): aircraft, instructors, and
-      // students are no longer part of this store's own state — fetch all
-      // three directly for this client-side name-join, the same pattern
-      // lib/hooks/useFlightRecords.ts's fetcher now uses since Stage 4.
-      // (Scheduled Flights migrates in a later stage, at which point this
-      // enrichment moves to a render-time selector instead of being
-      // fetched here — see the plan's Architecture note.)
-      const aircraftList = await fetchAircraft();
-      const instructorsList = await fetchInstructors();
-      const studentsList = await fetchStudents();
-      set({
-        scheduledFlights: data.map((row: Record<string, unknown>) => {
-          const ac = aircraftList.find(a => String(a.id) === String(row.aircraft_id));
-          const student = studentsList.find(s => String(s.id) === String(row.student_id));
-          const inst = instructorsList.find(i => i.id === String(row.instructor_id));
-          const startTime = new Date(row.start_time as string); const endTime = new Date(row.end_time as string);
-          return {
-            id: String(row.id), aircraftId: String(row.aircraft_id), instructorId: String(row.instructor_id),
-            studentId: row.student_id ? String(row.student_id) : undefined,
-            startTime: row.start_time as string, endTime: row.end_time as string,
-            sortieType: row.sortie_type as string, status: row.status as string,
-            exercise: (row.exercise as string) || '',
-            weatherBriefed: row.weather_briefed as boolean, notamBriefed: row.notam_briefed as boolean,
-            notes: row.notes as string, aircraftReg: ac?.registration || 'Unknown',
-            studentName: student?.name || 'None', instructorName: inst?.name || 'Unknown',
-            duration: Math.round((endTime.getTime() - startTime.getTime()) / 360000) / 10,
-            logbookPending: !!row.logbook_pending,
-            pendingDebrief: (row.pending_debrief as Record<string, unknown> | null) ?? null,
-            cancellationReason: (row.cancellation_reason as string | null) ?? null,
-          };
-        }),
-        loadingSchedule: false,
-      });
-    } else { console.error('Error loading scheduled flights:', error); set({ loadingSchedule: false }); }
-  },
-
-  checkConflicts: async (aircraftId, startTime, endTime, excludeId?) => {
-    // Buffer is per-aircraft, not a flat constant — and asymmetric: the gap
-    // required BEFORE this flight depends on the aircraft's fuel level right
-    // now, while the gap required AFTER it depends on the fuel level
-    // projected at the end of THIS flight (see getProjectedFuelAfter). Both
-    // start from the FTO's configured turnaround gap (Settings ->
-    // buffer_minutes), plus a mandatory extra refuel window whenever the
-    // relevant fuel level is at or below the low-fuel threshold. See
-    // getAircraftBufferMinutes.
-    // 2026-08-28 (SWR migration, Stage 1): fresh fetch instead of this
-    // store's own (now-removed) aircraft state — if anything, more correct
-    // here since it's a live fuel-level check for a scheduling decision.
-    const bufferAircraft = (await fetchAircraft()).find(a => String(a.id) === String(aircraftId));
-    const turnaroundMin = parseTurnaroundBufferSetting(get().ftoSettings['buffer_minutes']);
-    const durationMin = Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
-    const bufferBeforeMin = getAircraftBufferMinutes(bufferAircraft?.currentFuel, turnaroundMin);
-    const projectedFuelAfter = getProjectedFuelAfter(bufferAircraft, durationMin);
-    const bufferAfterMin = getAircraftBufferMinutes(projectedFuelAfter, turnaroundMin);
-    const bufferedStart = new Date(startTime); bufferedStart.setMinutes(bufferedStart.getMinutes() - bufferBeforeMin);
-    const bufferedEnd = new Date(endTime); bufferedEnd.setMinutes(bufferedEnd.getMinutes() + bufferAfterMin);
-    let query = supabase.from('scheduled_flights').select('*')
-      .eq('aircraft_id', aircraftId)
-      .lt('start_time', bufferedEnd.toISOString())
-      .gt('end_time', bufferedStart.toISOString())
-      // A cancelled flight used to be hard-deleted, so it could never
-      // reach this query. Now that cancelFlight() soft-cancels (see
-      // below), a cancelled row stays in the table — it must not count
-      // as still occupying the aircraft, or every cancellation would
-      // permanently and falsely block that time slot forever after.
-      .neq('status', 'CANCELLED');
-    if (excludeId) query = query.neq('id', excludeId);
-    const { data, error } = await query;
-    if (error) return { hasConflict: false, conflictingFlights: [] };
-    const conflicts = excludeId ? (data || []).filter(f => String(f.id) !== String(excludeId)) : (data || []);
-    return {
-      hasConflict: conflicts.length > 0,
-      conflictingFlights: conflicts.map(row => ({
-        id: String(row.id), aircraftId: String(row.aircraft_id), instructorId: String(row.instructor_id),
-        startTime: row.start_time as string, endTime: row.end_time as string,
-        sortieType: row.sortie_type as string, status: row.status as string,
-        weatherBriefed: false, notamBriefed: false, notes: '', exercise: '',
-      })),
-    };
-  },
-
-  bookFlight: async (booking) => {
-    const bookingDateStr = new Date(booking.startTime).toLocaleDateString('en-CA');
-    const blockReason = getSchedulingBlockReason(bookingDateStr, get().holidays, parseWeeklyOffDays(get().ftoSettings['weekly_off_days']), parsePartialWeeklyOffRule(get().ftoSettings['partial_weekly_off_days']));
-    if (blockReason) {
-      return { success: false, message: `❌ FTO is closed (${blockReason.label}) — cannot book flights on this date.` };
-    }
-    const conflict = await get().checkConflicts(booking.aircraftId, booking.startTime, booking.endTime);
-    if (conflict.hasConflict) {
-      // 2026-08-28 (SWR migration, Stage 1): same fresh-fetch note as
-      // checkConflicts above — only runs on the (uncommon) conflict path.
-      const conflictAircraft = (await fetchAircraft()).find(a => String(a.id) === String(booking.aircraftId));
-      const turnaroundMin = parseTurnaroundBufferSetting(get().ftoSettings['buffer_minutes']);
-      const durationMin = Math.round((new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime()) / 60000);
-      const bufferBeforeMin = getAircraftBufferMinutes(conflictAircraft?.currentFuel, turnaroundMin);
-      const projectedFuelAfter = getProjectedFuelAfter(conflictAircraft, durationMin);
-      const bufferAfterMin = getAircraftBufferMinutes(projectedFuelAfter, turnaroundMin);
-      const bufferDesc = bufferBeforeMin === bufferAfterMin
-        ? `a ${bufferBeforeMin}-min buffer before/after`
-        : `a ${bufferBeforeMin}-min buffer before and ${bufferAfterMin}-min buffer after`;
-      const lowFuelNote = (bufferBeforeMin > turnaroundMin || bufferAfterMin > turnaroundMin)
-        ? ` (includes a mandatory ${FUELING_BUFFER_MIN}-min refuel window — fuel is at or below ${LOW_FUEL_THRESHOLD_L}L)`
-        : '';
-      return { success: false, message: `⚠️ Time conflict — this aircraft needs ${bufferDesc} existing flights${lowFuelNote}.` };
-    }
-    // Conflict/holiday/weekly-off checks above stay client-side (scheduling
-    // validation, not an authorization boundary — see
-    // app/api/scheduled-flights/route.ts's own scope note). The actual
-    // insert, and WHO is allowed to create a new booking at all, goes
-    // through that route: admin/super_admin/operations always can; an
-    // instructor only if their own can_self_book flag is on (Instructors
-    // tab, super_admin-grantable) — see requireScheduleCreateAccess() in
-    // lib/api-auth.ts.
-    const res = await fetch('/api/scheduled-flights', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        aircraftId: booking.aircraftId, instructorId: booking.instructorId,
-        studentId: booking.studentId || null, startTime: booking.startTime, endTime: booking.endTime,
-        sortieType: booking.sortieType, exercise: booking.exercise || '',
-        status: booking.status || 'SCHEDULED',
-        weatherBriefed: booking.weatherBriefed || false, notamBriefed: booking.notamBriefed || false,
-        notes: booking.notes || '',
-      }),
-    });
-    if (res.ok) { await get().loadScheduledFlights(); return { success: true, message: '✅ Flight booked!' }; }
-    const result = await res.json().catch(() => ({}));
-    if (res.status === 403) {
-      return { success: false, message: `🔒 ${result.error || 'Not authorized to create a new booking.'}` };
-    }
-    return { success: false, message: '❌ Failed to book flight.' };
-  },
-
-  // Soft-cancel — used to be a hard DELETE, which meant a cancelled
-  // booking left no trace at all (no count, no reason, nothing the Daily
-  // Flying Report could ever total up). Now sets status='CANCELLED' +
-  // cancellation_reason and keeps the row. The CANCELLED status is
-  // already handled everywhere else that reads scheduledFlights
-  // (dashboard widgets, MaintenanceForm's conflict check, checkConflicts
-  // above) — this was the one place that never actually produced it.
-  // Local state keeps the row (mapped, not filtered out) so consumers
-  // that want to show cancelled flights (e.g. a day's full history) can,
-  // while every place that means "still active" already excludes
-  // CANCELLED explicitly (see ScheduleBoard.tsx, BookingForm.tsx).
-  cancelFlight: async (id, reason) => {
-    const { error } = await supabase.from('scheduled_flights')
-      .update({ status: 'CANCELLED', cancellation_reason: reason ?? null })
-      .eq('id', id);
-    if (!error) {
-      set(state => ({
-        scheduledFlights: state.scheduledFlights.map(f =>
-          f.id === id ? { ...f, status: 'CANCELLED' } : f
-        ),
-      }));
-    }
-  },
-
-  updateScheduledFlight: async (id, updates) => {
-    // Secondary safety net — BookingForm's validateDate() is the primary
-    // client-side gate for the edit-submit path, but this guards the
-    // authoritative store action too in case a new startTime ever reaches
-    // it another way. Silently refuses (no partial update) rather than
-    // throwing, since this action's return type is void.
-    if (updates.startTime !== undefined) {
-      const newDateStr = new Date(updates.startTime).toLocaleDateString('en-CA');
-      const blockReason = getSchedulingBlockReason(newDateStr, get().holidays, parseWeeklyOffDays(get().ftoSettings['weekly_off_days']), parsePartialWeeklyOffRule(get().ftoSettings['partial_weekly_off_days']));
-      if (blockReason) {
-        console.error(`❌ Cannot reschedule flight ${id} to ${newDateStr} — FTO is closed (${blockReason.label}).`);
-        return;
-      }
-    }
-    const dbUpdates: Record<string, unknown> = {};
-    if (updates.status !== undefined) dbUpdates.status = updates.status;
-    if (updates.aircraftId !== undefined) dbUpdates.aircraft_id = updates.aircraftId;
-    if (updates.instructorId !== undefined) dbUpdates.instructor_id = updates.instructorId;
-    if (updates.studentId !== undefined) dbUpdates.student_id = updates.studentId;
-    if (updates.startTime !== undefined) dbUpdates.start_time = updates.startTime;
-    if (updates.endTime !== undefined) dbUpdates.end_time = updates.endTime;
-    if (updates.sortieType !== undefined) dbUpdates.sortie_type = updates.sortieType;
-    if (updates.exercise !== undefined) dbUpdates.exercise = updates.exercise;
-    if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
-    if (updates.weatherBriefed !== undefined) dbUpdates.weather_briefed = updates.weatherBriefed;
-    if (updates.notamBriefed !== undefined) dbUpdates.notam_briefed = updates.notamBriefed;
-    if (updates.logbookPending !== undefined) dbUpdates.logbook_pending = updates.logbookPending;
-    if (updates.pendingDebrief !== undefined) dbUpdates.pending_debrief = updates.pendingDebrief;
-    const { error } = await supabase.from('scheduled_flights').update(dbUpdates).eq('id', id);
-    if (!error) {
-      set(state => ({
-        scheduledFlights: state.scheduledFlights.map(f => f.id === id ? { ...f, ...updates } : f)
-      }));
-    }
-  },
 
   // ============================================================
   // 6. MAINTENANCE FUNCTIONS

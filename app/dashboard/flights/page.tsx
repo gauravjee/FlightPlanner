@@ -9,7 +9,10 @@ import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { useFlightStore } from '@/lib/store';
 import { useStudents } from '@/lib/hooks/useStudents';
+import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
+import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
 import FlightRecordForm from '@/components/flights/FlightRecordForm';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
@@ -30,12 +33,17 @@ export default function FlightsPage() {
   // (requireModuleAccess('flightRecords')).
   const canWrite = canWriteModule(session?.user?.role, overrides, 'flightRecords');
   const { students } = useStudents();
+  const { aircraft } = useAircraft();
+  const { instructors } = useInstructors();
   const { flightRecords, isLoading: loadingFlights } = useFlightRecords();
+  // Scheduled flights come from SWR (Stage 5, 2026-09-01) — fetch-on-mount +
+  // dedup, names joined at render time (see withScheduledFlightNames) for
+  // the Pending Logbook Entries panel below.
+  const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
+  const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
   const {
     sortieTypes, exercises,
-    scheduledFlights,
     loadSortieTypes, loadExercises,
-    loadScheduledFlights,
   } = useFlightStore();
   const [showForm, setShowForm] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState('ALL');
@@ -54,8 +62,7 @@ export default function FlightsPage() {
   useEffect(() => {
     loadSortieTypes();
     loadExercises();
-    loadScheduledFlights();
-  }, [loadSortieTypes, loadExercises, loadScheduledFlights]);
+  }, [loadSortieTypes, loadExercises]);
 
   const filteredRecords = selectedStudent === 'ALL'
     ? flightRecords

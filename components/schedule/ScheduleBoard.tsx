@@ -21,6 +21,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { Calendar, Printer, Plus, Wrench, TriangleAlert, ClipboardList, X, Lock, Eye } from 'lucide-react';
 import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
+import { useScheduledFlights, withScheduledFlightNames, checkConflicts, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
@@ -136,8 +137,14 @@ export default function ScheduleBoard() {
   const setHoveredSlot = store.setHoveredSlot;   // Track hover state
 
   // Data loading actions
-  const loadScheduledFlights = store.loadScheduledFlights;  // Load real bookings from DB
-  const scheduledFlights = store.scheduledFlights;          // All booked flights
+  // Scheduled flights come from SWR (Stage 5, 2026-09-01) — fetch-on-mount +
+  // dedup, no manual load call needed. Names are joined in at render time via
+  // withScheduledFlightNames (not baked into the fetcher) because
+  // cancelFlight/updateScheduledFlight both do local-splice writes — most
+  // notably drag-and-drop reassigning a flight to a different aircraft,
+  // which would leave a stale baked-in aircraftReg otherwise.
+  const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
+  const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
   const maintenanceRecords = store.maintenanceRecords;      // All maintenance records (for blocking slots)
   const loadMaintenanceRecords = store.loadMaintenanceRecords;
   const ftoSettings = store.ftoSettings;                    // School name / airport code for the printed schedule header
@@ -165,15 +172,14 @@ export default function ScheduleBoard() {
   const partialWeeklyOffRule = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
 
   // ----- Load data when component mounts -----
-  // Aircraft, Instructors, and Students now come from useAircraft()/
-  // useInstructors()/useStudents() above (fetch-on-mount + dedup,
-  // 2026-08-28 SWR migration, Stages 1-3).
+  // Aircraft, Instructors, Students, and now Scheduled Flights come from
+  // SWR hooks above (fetch-on-mount + dedup, 2026-08-28/09-01 SWR migration,
+  // Stages 1-3 and 5).
   useEffect(() => {
-    loadScheduledFlights();   // Load booked flights for Gantt blocks
     loadMaintenanceRecords(); // Load maintenance records so we can block slots for aircraft under/scheduled for maintenance
     loadHolidays();           // Load holiday calendar so we can block slots on closed dates
     if (exercises.length === 0) loadExercises(); // Load exercise codes for the legend below
-  }, [loadScheduledFlights, loadMaintenanceRecords, loadHolidays, exercises.length, loadExercises]);
+  }, [loadMaintenanceRecords, loadHolidays, exercises.length, loadExercises]);
 
   // Is the currently viewed date blocked for scheduling — a holiday or the
   // FTO's weekly off day? null if the date is open.
@@ -720,8 +726,7 @@ export default function ScheduleBoard() {
   const handleSlotClick = (slot: FlightSlot) => setSelectedSlot(slot);
 
   const handleCloseModal = () => {
-    setSelectedSlot(null);
-    loadScheduledFlights();   // Refresh after modal closes
+    setSelectedSlot(null);   // Cache already fresh — cancelFlight/updateScheduledFlight local-splice
   };
 
   // Click-to-book: figure out the time from where the user clicked within
@@ -857,21 +862,21 @@ export default function ScheduleBoard() {
     const newStart = new Date(`${selectedDate}T${startTime}:00+05:30`);
     const newEnd = new Date(newStart.getTime() + durationMs);
 
-    const conflict = await store.checkConflicts(aircraftId, newStart.toISOString(), newEnd.toISOString(), flight.id);
+    const conflict = await checkConflicts(aircraftId, newStart.toISOString(), newEnd.toISOString(), flight.id);
     if (conflict.hasConflict) {
       setErrorMessage(`❌ ${aircraft.find(a => String(a.id) === String(aircraftId))?.registration || 'This aircraft'} is already booked around ${startTime} — pick a different time or aircraft.`);
       setTimeout(() => setErrorMessage(''), 4000);
       return;
     }
 
-    await store.updateScheduledFlight(flight.id, {
+    await updateScheduledFlight(flight.id, {
       aircraftId,
       startTime: newStart.toISOString(),
       endTime: newEnd.toISOString(),
     });
     setSuccessMessage(`✅ Rescheduled to ${startTime} IST${String(aircraftId) !== String(flight.aircraftId) ? ` on ${aircraft.find(a => String(a.id) === String(aircraftId))?.registration || 'the new aircraft'}` : ''}.`);
     setTimeout(() => setSuccessMessage(''), 3000);
-    loadScheduledFlights();
+    // Cache already fresh — updateScheduledFlight local-splices.
   };
 
   const handleBookingSuccess = (message: string) => {
@@ -879,7 +884,7 @@ export default function ScheduleBoard() {
     setEditingFlight(null);
     setGridClickPrefill(null);
     setSuccessMessage(message);
-    loadScheduledFlights();   // Refresh after booking
+    // Cache already fresh — bookFlight revalidates via mutate(key) on success.
     setTimeout(() => setSuccessMessage(''), 3000); // Auto‑hide toast after 3 seconds
   };
 
@@ -1522,7 +1527,7 @@ export default function ScheduleBoard() {
             setShowDebriefForm(false);
             setDebriefFlight(null);
             setSuccessMessage(message);
-            loadScheduledFlights();
+            // Cache already fresh — updateScheduledFlight local-splices.
             setTimeout(() => setSuccessMessage(''), 3000);
           }}
         />

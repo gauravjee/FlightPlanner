@@ -15,6 +15,7 @@
 'use client';
 
 import { useFlightStore } from '@/lib/store';
+import { cancelFlight, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { useAircraft, getAircraftById } from '@/lib/hooks/useAircraft';
 import { useInstructors, getInstructorById } from '@/lib/hooks/useInstructors';
 import { useStudents, getStudentById } from '@/lib/hooks/useStudents';
@@ -48,10 +49,9 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   const {
     weather,                  // Current weather data
     notams,                   // Active NOTAMs
-    cancelFlight,             // Cancel a flight (soft-cancel: sets status=CANCELLED + a reason)
-    loadScheduledFlights,     // Reload schedule after changes
-    updateScheduledFlight,    // Update flight status (Check-In)
   } = useFlightStore();
+  // cancelFlight/updateScheduledFlight now come from the SWR hook (Stage 5,
+  // 2026-09-01) — both local-splice their write, so no manual reload needed.
 
   // ============================================================
   // DERIVED DATA
@@ -90,7 +90,6 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
    */
   const handleCancel = async (reason: 'WEATHER' | 'MAINTENANCE' | 'OTHER') => {
     await cancelFlight(slot.id, reason);
-    await loadScheduledFlights();
     onClose();
   };
 
@@ -358,7 +357,6 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
                 onClick={async () => {
                   if (!canCheckIn) return;
                   await updateScheduledFlight(slot.id, { status: 'IN_PROGRESS' });
-                  await loadScheduledFlights();
                   onClose();
                 }}
                 disabled={!canCheckIn}
