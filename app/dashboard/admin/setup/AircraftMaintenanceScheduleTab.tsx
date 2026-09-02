@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase-client';
 import Papa from 'papaparse';
 import { Wrench, Pencil, Plus, Save, Trash2, Upload, Download, LoaderCircle } from 'lucide-react';
 import { maintenanceScheduleTemplatesKey } from '@/lib/hooks/useMaintenanceRecords';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 interface ScheduleTemplateRow {
   id: number;
@@ -80,6 +81,7 @@ export default function AircraftMaintenanceScheduleTab() {
   const [selectedModel, setSelectedModel] = useState(SEED_MODELS[0]);
   const [customModel, setCustomModel] = useState('');
   const [editing, setEditing] = useState<ScheduleTemplateRow | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [form, setForm] = useState({
     item_name: '',
     interval_type: 'HOBBS_HOURS' as 'HOBBS_HOURS' | 'CALENDAR_MONTHS',
@@ -190,11 +192,15 @@ export default function AircraftMaintenanceScheduleTab() {
     });
   };
 
-  const handleDelete = async (id: number) => {
-    if (window.confirm('Delete this maintenance schedule item? Existing maintenance records referencing it are not affected.')) {
-      await fetch(`/api/admin/config/aircraft-maintenance-schedule?id=${id}`, { method: 'DELETE' });
-      loadTemplates();
-    }
+  const handleDelete = (id: number) => {
+    setDeleteTarget(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteTarget == null) return;
+    await fetch(`/api/admin/config/aircraft-maintenance-schedule?id=${deleteTarget}`, { method: 'DELETE' });
+    setDeleteTarget(null);
+    loadTemplates();
   };
 
   const handleAddModel = () => {
@@ -605,6 +611,16 @@ export default function AircraftMaintenanceScheduleTab() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {deleteTarget != null && (
+        <ConfirmDialog
+          title="Delete schedule item?"
+          message="Delete this maintenance schedule item? Existing maintenance records referencing it are not affected."
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );

@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase-client';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { GraduationCap, Pencil, Plus, Save, Trash2 } from 'lucide-react';
 
 interface InstructorRole {
@@ -19,6 +20,7 @@ export default function RolesTab() {
   const [roles, setRoles] = useState<InstructorRole[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<InstructorRole | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [form, setForm] = useState({
     role_name: '',
     role_code: '',
@@ -87,11 +89,15 @@ export default function RolesTab() {
   };
 
   // Delete
-  const handleDelete = async (id: number) => {
-    if (window.confirm('Delete this role? Instructors with this role will be unaffected.')) {
-      await fetch(`/api/admin/config/instructor-roles?id=${id}`, { method: 'DELETE' });
-      loadRoles();
-    }
+  const handleDelete = (id: number) => {
+    setDeleteTarget(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteTarget == null) return;
+    await fetch(`/api/admin/config/instructor-roles?id=${deleteTarget}`, { method: 'DELETE' });
+    setDeleteTarget(null);
+    loadRoles();
   };
 
   const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
@@ -225,6 +231,16 @@ export default function RolesTab() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {deleteTarget != null && (
+        <ConfirmDialog
+          title="Delete role?"
+          message="Delete this role? Instructors with this role will be unaffected."
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );

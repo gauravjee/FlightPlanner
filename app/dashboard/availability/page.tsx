@@ -9,6 +9,7 @@ import { AvailabilityRecord } from '@/types';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import AvailabilityForm from '@/components/availability/AvailabilityForm';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RoleGate from '@/components/ui/RoleGate';
 import { AVAILABILITY_VIEW_ROLES } from '@/lib/permissions';
 import { Palmtree, GraduationCap, Plane, ClipboardList, Pencil, Trash2 } from 'lucide-react';
@@ -39,6 +40,7 @@ export default function AvailabilityPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AvailabilityRecord | null>(null);
   const [filterType, setFilterType] = useState<'ALL' | 'instructor' | 'student'>('ALL');
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   // Instructors and Students are both migrated now (SWR, Stage 2 + 3) and
   // fetch themselves via useAvailability()'s own fetcher — no manual load
@@ -87,9 +89,7 @@ export default function AvailabilityPage() {
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm('Delete this leave record?')) {
-      removeAvailability(id);
-    }
+    setDeleteTarget(id);
   };
 
   useSetHeader({
@@ -257,6 +257,16 @@ export default function AvailabilityPage() {
             record={editingRecord}
             onSave={handleSave}
             onClose={() => { setShowForm(false); setEditingRecord(null); }}
+          />
+        )}
+
+        {deleteTarget && (
+          <ConfirmDialog
+            title="Delete leave record?"
+            message="Delete this leave record?"
+            confirmLabel="Delete"
+            onConfirm={() => { removeAvailability(deleteTarget); setDeleteTarget(null); }}
+            onCancel={() => setDeleteTarget(null)}
           />
         )}
       </main>

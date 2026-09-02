@@ -18,6 +18,7 @@
 import { useState, useRef } from 'react';
 import Papa from 'papaparse';
 import { useHolidays, addHoliday, addHolidaysBulk, removeHoliday } from '@/lib/hooks/useHolidays';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { CalendarDays, Plus, Trash2, Upload, Download, LoaderCircle, RefreshCw } from 'lucide-react';
 
 interface CsvImportResult {
@@ -41,6 +42,7 @@ export default function HolidaysTab() {
   });
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
@@ -58,10 +60,14 @@ export default function HolidaysTab() {
     setSaving(false);
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm('Delete this holiday? Scheduling will re-open for this date.')) {
-      await removeHoliday(id);
-    }
+  const handleDelete = (id: string) => {
+    setDeleteTarget(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteTarget) return;
+    await removeHoliday(deleteTarget);
+    setDeleteTarget(null);
   };
 
   const downloadTemplate = () => {
@@ -309,6 +315,16 @@ export default function HolidaysTab() {
       <div className="mt-4 text-xs text-tertiary">
         Showing {sortedHolidays.length} holiday{sortedHolidays.length === 1 ? '' : 's'}
       </div>
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Delete holiday?"
+          message="Delete this holiday? Scheduling will re-open for this date."
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }

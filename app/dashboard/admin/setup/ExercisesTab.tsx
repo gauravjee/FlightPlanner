@@ -8,6 +8,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase-client';
 import { mutate } from 'swr';
 import { exercisesKey } from '@/lib/hooks/useExercises';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import Papa from 'papaparse';
 import { ClipboardList, Pencil, Plus, Save, Trash2, RefreshCw, Search, Upload, Download, LoaderCircle } from 'lucide-react';
 
@@ -32,6 +33,7 @@ export default function ExercisesTab() {
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Exercise | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [form, setForm] = useState({
     exercise_name: '',
@@ -132,11 +134,15 @@ export default function ExercisesTab() {
   };
 
   // Delete
-  const handleDelete = async (id: number) => {
-    if (window.confirm('Delete this exercise? This will not affect existing bookings.')) {
-      await fetch(`/api/admin/config/exercises?id=${id}`, { method: 'DELETE' });
-      loadExercises();
-    }
+  const handleDelete = (id: number) => {
+    setDeleteTarget(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteTarget == null) return;
+    await fetch(`/api/admin/config/exercises?id=${deleteTarget}`, { method: 'DELETE' });
+    setDeleteTarget(null);
+    loadExercises();
   };
 
   // Auto-generate short code from name
@@ -468,6 +474,16 @@ export default function ExercisesTab() {
       <div className="mt-4 text-xs text-tertiary">
         Showing {filteredExercises.length} of {exercises.length} exercises
       </div>
+
+      {deleteTarget != null && (
+        <ConfirmDialog
+          title="Delete exercise?"
+          message="Delete this exercise? This will not affect existing bookings."
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }

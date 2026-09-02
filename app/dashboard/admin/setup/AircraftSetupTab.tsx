@@ -15,6 +15,7 @@ import {
   removeAircraft as removeAircraftRemote,
 } from '@/lib/hooks/useAircraft';
 import type { Aircraft as SharedAircraft } from '@/types';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -100,6 +101,7 @@ export default function AircraftSetupTab() {
   }));
   const [editing, setEditing] = useState<Aircraft | null>(null);
   const [successMessage, setSuccessMessage] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
 
   // Form state for adding/editing
   const [form, setForm] = useState(getDefaultForm);
@@ -226,12 +228,17 @@ export default function AircraftSetupTab() {
   };
 
   // Delete aircraft
-  const handleDelete = async (id: number) => {
-    if (window.confirm('Delete this aircraft? This cannot be undone.')) {
-      await removeAircraftRemote(String(id));
-      setSuccessMessage('Aircraft removed.');
-      setTimeout(() => setSuccessMessage(''), 3000);
-    }
+  const handleDelete = (id: number) => {
+    setDeleteTarget(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteTarget == null) return;
+    const id = deleteTarget;
+    setDeleteTarget(null);
+    await removeAircraftRemote(String(id));
+    setSuccessMessage('Aircraft removed.');
+    setTimeout(() => setSuccessMessage(''), 3000);
   };
 
   // Reset form to defaults
@@ -556,6 +563,16 @@ export default function AircraftSetupTab() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {deleteTarget != null && (
+        <ConfirmDialog
+          title="Delete aircraft?"
+          message="Delete this aircraft? This cannot be undone."
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );

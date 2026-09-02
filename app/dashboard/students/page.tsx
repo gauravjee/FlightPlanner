@@ -11,6 +11,7 @@ import { useInstructors } from '@/lib/hooks/useInstructors';
 import { StudentRecord } from '@/types';
 import StudentCard from '@/components/students/StudentCard';
 import StudentFormModal from '@/components/students/StudentFormModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RoleGate from '@/components/ui/RoleGate';
 import { Plus, Search, GraduationCap } from 'lucide-react';
 
@@ -37,6 +38,7 @@ export default function StudentsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('ALL');
   const [successMessage, setSuccessMessage] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const filteredStudents = students.filter(s => {
     const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -105,9 +107,7 @@ export default function StudentsPage() {
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to remove this student?')) {
-      removeStudent(id);
-    }
+    setDeleteTarget(id);
   };
 
   useSetHeader({
@@ -188,6 +188,16 @@ export default function StudentsPage() {
       {showForm && (
         <StudentFormModal student={editingStudent} onSave={handleSave}
           onClose={() => { setShowForm(false); setEditingStudent(null); }} />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Remove student?"
+          message="Are you sure you want to remove this student?"
+          confirmLabel="Remove"
+          onConfirm={() => { removeStudent(deleteTarget); setDeleteTarget(null); }}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </main>
     </RoleGate>

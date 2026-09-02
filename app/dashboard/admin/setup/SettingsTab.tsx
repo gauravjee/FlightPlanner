@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase-client';
 import { DAY_NAMES, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { mutate } from 'swr';
 import { ftoSettingsKey } from '@/lib/hooks/useFtoSettings';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import {
   Settings, School, Image as ImageIcon, Upload, LoaderCircle, Plane, Trash2,
   Clock, Calendar, Save, ClipboardList, CircleCheck, CalendarOff,
@@ -69,6 +70,7 @@ export default function SettingsTab() {
   const [uploading, setUploading] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [confirmRemoveLogo, setConfirmRemoveLogo] = useState(false);
 
   /**
    * Load all FTO settings from the database
@@ -342,9 +344,12 @@ export default function SettingsTab() {
    * Remove the current logo
    * Clears the URL and disables logo display
    */
-  const handleRemoveLogo = async () => {
-    if (!window.confirm('Remove the current logo? The default logo will be used instead.')) return;
+  const handleRemoveLogo = () => {
+    setConfirmRemoveLogo(true);
+  };
 
+  const handleRemoveLogoConfirm = async () => {
+    setConfirmRemoveLogo(false);
     setValue('logo_url', '');
     setValue('show_logo', 'false');
 
@@ -835,6 +840,16 @@ export default function SettingsTab() {
             </div>
           </div>
         </div>
+      )}
+
+      {confirmRemoveLogo && (
+        <ConfirmDialog
+          title="Remove logo?"
+          message="Remove the current logo? The default logo will be used instead."
+          confirmLabel="Remove"
+          onConfirm={handleRemoveLogoConfirm}
+          onCancel={() => setConfirmRemoveLogo(false)}
+        />
       )}
     </div>
   );

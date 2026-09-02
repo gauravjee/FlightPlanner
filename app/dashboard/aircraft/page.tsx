@@ -8,6 +8,7 @@ import { useAircraft, addAircraft, updateAircraft, removeAircraft } from '@/lib/
 import { Aircraft } from '@/types';
 import AircraftCard from '@/components/aircraft/AircraftCard';
 import AircraftFormModal from '@/components/aircraft/AircraftFormModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RoleGate from '@/components/ui/RoleGate';
 import { AIRCRAFT_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
@@ -29,6 +30,7 @@ export default function AircraftPage() {
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const filteredAircraft = aircraft.filter(ac => {
     const matchesSearch = ac.registration.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -68,9 +70,7 @@ export default function AircraftPage() {
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm('Are you sure you want to remove this aircraft?')) {
-      removeAircraft(id);
-    }
+    setDeleteTarget(id);
   };
 
   useSetHeader({
@@ -167,6 +167,16 @@ export default function AircraftPage() {
               setShowForm(false);
               setEditingAircraft(null);
             }}
+          />
+        )}
+
+        {deleteTarget && (
+          <ConfirmDialog
+            title="Remove aircraft?"
+            message="Are you sure you want to remove this aircraft?"
+            confirmLabel="Remove"
+            onConfirm={() => { removeAircraft(deleteTarget); setDeleteTarget(null); }}
+            onCancel={() => setDeleteTarget(null)}
           />
         )}
     </main>

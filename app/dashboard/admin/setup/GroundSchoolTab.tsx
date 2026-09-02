@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase-client';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { School, Pencil, Plus, Save, Trash2 } from 'lucide-react';
 
 interface Subject {
@@ -21,6 +22,7 @@ export default function GroundSchoolTab() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Subject | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [form, setForm] = useState({
     subject_name: '',
     subject_code: '',
@@ -68,11 +70,15 @@ export default function GroundSchoolTab() {
     setForm({ subject_name: s.subject_name, subject_code: s.subject_code, validity_years: s.validity_years, required_before_hours: s.required_before_hours, is_mandatory: s.is_mandatory, sort_order: s.sort_order, is_active: s.is_active });
   };
 
-  const handleDelete = async (id: number) => {
-    if (window.confirm('Delete this subject?')) {
-      await fetch(`/api/admin/config/ground-school-subjects?id=${id}`, { method: 'DELETE' });
-      loadSubjects();
-    }
+  const handleDelete = (id: number) => {
+    setDeleteTarget(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteTarget == null) return;
+    await fetch(`/api/admin/config/ground-school-subjects?id=${deleteTarget}`, { method: 'DELETE' });
+    setDeleteTarget(null);
+    loadSubjects();
   };
 
   const inputClass = "surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
@@ -128,6 +134,16 @@ export default function GroundSchoolTab() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {deleteTarget != null && (
+        <ConfirmDialog
+          title="Delete subject?"
+          message="Delete this subject?"
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );

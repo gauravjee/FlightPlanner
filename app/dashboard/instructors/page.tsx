@@ -8,6 +8,7 @@ import { useInstructors, addInstructor, updateInstructor, removeInstructor } fro
 import { Instructor } from '@/types';
 import InstructorCard from '@/components/instructors/InstructorCard';
 import InstructorFormModal from '@/components/instructors/InstructorFormModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
@@ -27,6 +28,7 @@ export default function InstructorsPage() {
   const [editingInstructor, setEditingInstructor] = useState<Instructor | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   // Filter instructors based on search and status
   const filteredInstructors = instructors.filter(i => {
@@ -65,9 +67,7 @@ export default function InstructorsPage() {
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm('Remove this instructor?')) {
-      removeInstructor(id);
-    }
+    setDeleteTarget(id);
   };
 
   useSetHeader({
@@ -139,6 +139,16 @@ export default function InstructorsPage() {
       {showForm && (
         <InstructorFormModal instructor={editingInstructor} onSave={handleSave}
           onClose={() => { setShowForm(false); setEditingInstructor(null); }} />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Remove instructor?"
+          message="Remove this instructor?"
+          confirmLabel="Remove"
+          onConfirm={() => { removeInstructor(deleteTarget); setDeleteTarget(null); }}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </main>
     </RoleGate>

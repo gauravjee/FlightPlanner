@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase-client';
 import { mutate } from 'swr';
 import { sortieTypesKey } from '@/lib/hooks/useSortieTypes';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { Target, Pencil, Plus, Save, Trash2, CircleCheck } from 'lucide-react';
 
 interface SortieType {
@@ -38,6 +39,7 @@ export default function SortieTypesTab() {
   const [sortieTypes, setSortieTypes] = useState<SortieType[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<SortieType | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [form, setForm] = useState({
     type_name: '',
     type_code: '',
@@ -117,11 +119,15 @@ export default function SortieTypesTab() {
   };
 
   // Delete
-  const handleDelete = async (id: number) => {
-    if (window.confirm('Delete this sortie type? This may affect existing bookings.')) {
-      await fetch(`/api/admin/config/sortie-types?id=${id}`, { method: 'DELETE' });
-      loadSortieTypes();
-    }
+  const handleDelete = (id: number) => {
+    setDeleteTarget(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteTarget == null) return;
+    await fetch(`/api/admin/config/sortie-types?id=${deleteTarget}`, { method: 'DELETE' });
+    setDeleteTarget(null);
+    loadSortieTypes();
   };
 
   const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
@@ -294,6 +300,16 @@ export default function SortieTypesTab() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {deleteTarget != null && (
+        <ConfirmDialog
+          title="Delete sortie type?"
+          message="Delete this sortie type? This may affect existing bookings."
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );

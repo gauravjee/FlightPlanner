@@ -6,6 +6,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase-client';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { CircleCheck, Pencil, Plus, Save, Trash2, Lock, RefreshCw } from 'lucide-react';
 
 interface TrainingProgram {
@@ -40,6 +41,7 @@ export default function RequirementsTab() {
   const [loading, setLoading] = useState(true);
   const [selectedProgram, setSelectedProgram] = useState('CPL');
   const [editing, setEditing] = useState<Requirement | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   // "Sync to Students" — see app/api/admin/requirements/sync/route.ts.
   // Backfills any student on the selected program who's missing a
   // requirement that exists here as a template (new students created
@@ -181,11 +183,15 @@ export default function RequirementsTab() {
   };
 
   // Delete
-  const handleDelete = async (id: number) => {
-    if (window.confirm('Delete this requirement template? This will not affect existing student requirements.')) {
-      await fetch(`/api/admin/config/requirement-templates?id=${id}`, { method: 'DELETE' });
-      loadRequirements();
-    }
+  const handleDelete = (id: number) => {
+    setDeleteTarget(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteTarget == null) return;
+    await fetch(`/api/admin/config/requirement-templates?id=${deleteTarget}`, { method: 'DELETE' });
+    setDeleteTarget(null);
+    loadRequirements();
   };
 
   const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
@@ -431,6 +437,16 @@ export default function RequirementsTab() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {deleteTarget != null && (
+        <ConfirmDialog
+          title="Delete requirement?"
+          message="Delete this requirement template? This will not affect existing student requirements."
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );

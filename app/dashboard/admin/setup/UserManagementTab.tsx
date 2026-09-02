@@ -21,6 +21,7 @@ import { Users, UserPlus, Mail, RefreshCw, Trash2, TriangleAlert, CircleCheck, S
 import { OVERRIDE_ELIGIBLE_ROLES, USER_ROLE_OPTIONS, type PermissionOverrides } from '@/lib/permissions';
 import UserPermissionsModal from '@/components/admin/UserPermissionsModal';
 import UserEditModal from '@/components/admin/UserEditModal';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -65,6 +66,7 @@ export default function UserManagementTab() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{ userId: string; userEmail: string } | null>(null);
   // Which user's "Edit Permissions" modal (if any) is currently open — see
   // components/admin/UserPermissionsModal.tsx and the 2026-08-17
   // (second round) per-user permission override feature.
@@ -212,7 +214,7 @@ export default function UserManagementTab() {
    * immediate UX feedback).
    *****************************************************/
 
-      const handleDeleteUser = async (userId: string, userEmail: string) => {
+      const handleDeleteUser = (userId: string, userEmail: string) => {
         const currentUserEmail = session?.user?.email;
 
         if (userEmail === currentUserEmail) {
@@ -220,17 +222,22 @@ export default function UserManagementTab() {
           return;
         }
 
-        if (window.confirm(`Are you sure you want to permanently delete ${userEmail}? This action cannot be undone.`)) {
-          const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+        setDeleteTarget({ userId, userEmail });
+      };
 
-          if (!res.ok) {
-            const { error } = await res.json().catch(() => ({ error: 'Unknown error' }));
-            alert('❌ Error deleting user: ' + error);
-          } else {
-            loadUsers();
-            setSuccessMessage(`User ${userEmail} deleted successfully.`);
-            setTimeout(() => setSuccessMessage(''), 3000);
-          }
+      const handleDeleteUserConfirm = async () => {
+        if (!deleteTarget) return;
+        const { userId, userEmail } = deleteTarget;
+        setDeleteTarget(null);
+        const res = await fetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
+
+        if (!res.ok) {
+          const { error } = await res.json().catch(() => ({ error: 'Unknown error' }));
+          alert('❌ Error deleting user: ' + error);
+        } else {
+          loadUsers();
+          setSuccessMessage(`User ${userEmail} deleted successfully.`);
+          setTimeout(() => setSuccessMessage(''), 3000);
         }
       };
 
@@ -485,6 +492,16 @@ export default function UserManagementTab() {
           user={editingUser}
           onClose={() => setEditingUser(null)}
           onSaved={loadUsers}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Delete user?"
+          message={`Are you sure you want to permanently delete ${deleteTarget.userEmail}? This action cannot be undone.`}
+          confirmLabel="Delete"
+          onConfirm={handleDeleteUserConfirm}
+          onCancel={() => setDeleteTarget(null)}
         />
       )}
     </div>

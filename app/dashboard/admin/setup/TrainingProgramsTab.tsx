@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase-client';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { BookOpen, Pencil, Plus, Save, Trash2 } from 'lucide-react';
 
 interface TrainingProgram {
@@ -38,6 +39,7 @@ export default function TrainingProgramsTab() {
   const [programs, setPrograms] = useState<TrainingProgram[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<TrainingProgram | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [form, setForm] = useState({
     program_name: '',
     program_code: '',
@@ -131,11 +133,15 @@ export default function TrainingProgramsTab() {
   };
 
   // Delete program
-  const handleDelete = async (id: number) => {
-    if (window.confirm('Delete this program?')) {
-      await fetch(`/api/admin/config/training-programs?id=${id}`, { method: 'DELETE' });
-      loadPrograms();
-    }
+  const handleDelete = (id: number) => {
+    setDeleteTarget(id);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (deleteTarget == null) return;
+    await fetch(`/api/admin/config/training-programs?id=${deleteTarget}`, { method: 'DELETE' });
+    setDeleteTarget(null);
+    loadPrograms();
   };
 
   const inputClass = "surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
@@ -301,6 +307,16 @@ export default function TrainingProgramsTab() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {deleteTarget != null && (
+        <ConfirmDialog
+          title="Delete program?"
+          message="Delete this program?"
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
+        />
       )}
     </div>
   );
