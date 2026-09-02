@@ -16,6 +16,7 @@
 
 import { useFlightStore } from '@/lib/store';
 import { cancelFlight, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
+import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { useAircraft, getAircraftById } from '@/lib/hooks/useAircraft';
 import { useInstructors, getInstructorById } from '@/lib/hooks/useInstructors';
 import { useStudents, getStudentById } from '@/lib/hooks/useStudents';
@@ -50,8 +51,9 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   const {
     weather,                  // Current weather data
     notams,                   // Active NOTAMs
-    getFTOSetting,             // School name / airport code for the printed brief header
   } = useFlightStore();
+  // FTO Settings is SWR-migrated (Stage 8, 2026-09-02) — fetch-on-mount.
+  const { ftoSettings } = useFtoSettings();
   // cancelFlight/updateScheduledFlight now come from the SWR hook (Stage 5,
   // 2026-09-01) — both local-splice their write, so no manual reload needed.
 
@@ -120,8 +122,8 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
    * chrome) rather than the app's screen styling.
    */
   const handlePrint = () => {
-    const schoolName = getFTOSetting('school_name') || 'Horizon Flight Training Academy';
-    const location = getLocationDisplay(getFTOSetting('airport_code'), getFTOSetting('location_name'));
+    const schoolName = getFtoSetting(ftoSettings, 'school_name') || 'Horizon Flight Training Academy';
+    const location = getLocationDisplay(getFtoSetting(ftoSettings, 'airport_code'), getFtoSetting(ftoSettings, 'location_name'));
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;

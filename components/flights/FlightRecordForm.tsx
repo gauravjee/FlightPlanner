@@ -2,11 +2,12 @@
 // Modal form for logging a new flight in a student's logbook
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useFlightStore } from '@/lib/store';
+import { useState } from 'react';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
+import { useSortieTypes } from '@/lib/hooks/useSortieTypes';
+import { useExercises } from '@/lib/hooks/useExercises';
 import { updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { addFlightRecord } from '@/lib/hooks/useFlightRecords';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -46,18 +47,11 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
   const { aircraft } = useAircraft();
   const { instructors } = useInstructors();
   const { students } = useStudents();
-  const {
-    sortieTypes, exercises,
-    loadSortieTypes, loadExercises,
-  } = useFlightStore();
-
-  // Load data if empty. Instructors and Students are migrated (SWR, Stage
-  // 2 + 3) and now fetch themselves via useInstructors()/useStudents()
-  // above, no manual load needed.
-  useEffect(() => {
-    if (sortieTypes.length === 0) loadSortieTypes();
-    if (exercises.length === 0) loadExercises();
-  }, [sortieTypes.length, exercises.length, loadSortieTypes, loadExercises]);
+  // Sortie Types and Exercises are SWR-migrated (Stage 8, 2026-09-02) — like
+  // Instructors/Students above, they fetch themselves on mount, no manual
+  // load-if-empty effect needed anymore.
+  const { sortieTypes } = useSortieTypes();
+  const { exercises } = useExercises();
 
   const today = new Date().toISOString().split('T')[0];
 

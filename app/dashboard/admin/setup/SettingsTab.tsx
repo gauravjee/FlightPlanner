@@ -8,7 +8,9 @@
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase-client';
-import { useFlightStore, DAY_NAMES, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
+import { DAY_NAMES, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
+import { mutate } from 'swr';
+import { ftoSettingsKey } from '@/lib/hooks/useFtoSettings';
 import {
   Settings, School, Image as ImageIcon, Upload, LoaderCircle, Plane, Trash2,
   Clock, Calendar, Save, ClipboardList, CircleCheck, CalendarOff,
@@ -45,17 +47,22 @@ export default function SettingsTab() {
   // ----- State -----
   // This tab manages its own local formValues/settings state (below) and
   // writes straight to Supabase in handleSave — it does NOT use the shared
-  // app store's `ftoSettings`. That store (read by BookingForm/
-  // ScheduleBoard/GroundSchoolCalendar for the weekly-off/partial-weekly-
-  // off/time-slot/etc. checks) only loads once per session and otherwise
-  // stays cached in memory, so without an explicit refresh here, a change
-  // saved on this tab would silently NOT take effect anywhere else in the
-  // app until a full page reload (2026-08-25 bugfix — found via a user
-  // report that a new Partial Weekly Off Day rule wasn't blocking the
-  // calendar right after saving). `loadFTOSettings` is called at the end
-  // of handleSave to close that gap for every setting on this tab, not
-  // just the new one.
-  const loadFTOSettings = useFlightStore((s) => s.loadFTOSettings);
+  // `useFtoSettings()` SWR cache (read by BookingForm/ScheduleBoard/
+  // GroundSchoolCalendar for the weekly-off/partial-weekly-off/time-slot/
+  // etc. checks). Without an explicit `mutate(ftoSettingsKey)` here, a
+  // change saved on this tab would silently NOT take effect anywhere else
+  // in the app until that cache happened to revalidate on its own
+  // (2026-08-25 bugfix — found via a user report that a new Partial Weekly
+  // Off Day rule wasn't blocking the calendar right after saving; carried
+  // forward into the SWR migration, Stage 8, 2026-09-02, as
+  // `mutate(ftoSettingsKey)` — same cache-invalidation treatment
+  // Exercises/Sortie Types got in this same stage). Note this tab's own
+  // direct-to-Supabase write (see handleSave below) predates and is
+  // unrelated to this migration — flagged separately in the migration plan
+  // doc as a pre-existing gap (no server-side role check on this table,
+  // unlike Exercises/Sortie Types which route through
+  // `/api/admin/config/[table]`), not fixed here to keep this stage a pure
+  // refactor.
   const [settings, setSettings] = useState<FTOSetting[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -225,7 +232,7 @@ export default function SettingsTab() {
       setSuccessMessage(`✅ ${updatedCount} settings saved successfully!`);
       setTimeout(() => setSuccessMessage(''), 3000);
       loadSettings(); // Reload this tab's own local state to reflect changes
-      loadFTOSettings(); // Refresh the shared app store too — see the note by useFlightStore's import above
+      mutate(ftoSettingsKey); // Refresh the shared cache too — see the note above
     } catch (err) {
       console.error('❌ Error saving settings:', err);
       setSuccessMessage('❌ Error saving settings. Please try again.');
@@ -316,6 +323,10 @@ export default function SettingsTab() {
 
       // Reload settings to reflect the new logo
       loadSettings();
+      // 2026-09-02 (Stage 8): this write never refreshed the shared cache
+      // either (Header.tsx reads logo_url/show_logo from it directly) —
+      // same gap as handleSave above, fixed the same way.
+      mutate(ftoSettingsKey);
 
     } catch (err) {
       console.error('❌ Unexpected upload error:', err);
@@ -351,6 +362,7 @@ export default function SettingsTab() {
     setSuccessMessage('🗑️ Logo removed. Default logo will be used.');
     setTimeout(() => setSuccessMessage(''), 3000);
     loadSettings();
+    mutate(ftoSettingsKey); // Same cache-invalidation fix as handleLogoUpload above
   };
 
   const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";

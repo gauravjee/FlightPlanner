@@ -52,9 +52,10 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '@/lib/supabase-client';
-import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
+import { getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useHolidays } from '@/lib/hooks/useHolidays';
+import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Save, CircleCheck, X } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -162,7 +163,7 @@ export default function GroundSchoolCalendar() {
   // cannot be scheduled on a holiday or the FTO's weekly off day. SWR-
   // migrated (Stage 7, 2026-09-02) — fetch-on-mount, no manual load needed.
   const { holidays } = useHolidays();
-  const ftoSettings = useFlightStore((s) => s.ftoSettings);
+  const { ftoSettings } = useFtoSettings();
   const weeklyOffDays = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
   const partialWeeklyOffRule = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
 

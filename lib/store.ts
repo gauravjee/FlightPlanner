@@ -47,6 +47,15 @@
 //   Maintenance Records + Maintenance Schedule Templates moved to
 //   lib/hooks/useMaintenanceRecords.ts (SWR migration, Stage 6, 2026-09-01)
 //   — computeMaintenanceDueItems()/getMaintenanceDueItems() moved there too.
+//   Holidays moved to lib/hooks/useHolidays.ts (SWR migration, Stage 7,
+//   2026-09-02) — findHolidayForDate()/getSchedulingBlockReason() (and the
+//   weekly-off-day helpers the latter depends on) stay in this file, still
+//   genuinely shared pure functions.
+//   FTO Settings moved to lib/hooks/useFtoSettings.ts, Exercises to
+//   lib/hooks/useExercises.ts, Sortie Types to lib/hooks/useSortieTypes.ts,
+//   and My Permission Overrides to lib/hooks/usePermissionOverrides.ts (SWR
+//   migration, Stage 8, 2026-09-02) — Training Requirements is Stage 8's
+//   one remaining domain, not yet migrated.
 // ============================================================
 
 'use client';
@@ -373,19 +382,11 @@ interface FlightStore {
   // null until fetchGeneralWeather() has been called at least once.
   generalWeather: GeneralWeatherData | null;
   trainingRequirements: TrainingRequirement[];
-  ftoSettings: Record<string, string>;      // FTO settings as key-value pairs
-  // True once loadFTOSettings() has resolved at least once (success or
-  // failure). Distinguishes "still loading, don't know yet" from "loaded,
-  // and genuinely has no airport_code set" — needed so the weather widget
-  // doesn't flash a wrong state before settings arrive. Starts false.
-  ftoSettingsLoaded: boolean;
-  exercises: { exercise_name: string; short_code: string; full_description: string }[];
-  // requires_instructor / requires_student are used to derive whether a
-  // sortie counts as SOLO or DUAL (see addFlightRecord / FlightRecordForm),
-  // now that Flight Type is no longer a separate field.
-  sortieTypes: { id: number; type_name: string; type_code: string; requires_instructor: boolean; requires_student: boolean }[];
-  // (holidays/loadingHolidays state moved to lib/hooks/useHolidays.ts,
-  // Stage 7 of the SWR migration, 2026-09-02.)
+  // (ftoSettings/ftoSettingsLoaded moved to lib/hooks/useFtoSettings.ts,
+  // exercises moved to lib/hooks/useExercises.ts, sortieTypes moved to
+  // lib/hooks/useSortieTypes.ts — all Stage 8 of the SWR migration,
+  // 2026-09-02. holidays/loadingHolidays moved to lib/hooks/useHolidays.ts,
+  // Stage 7, 2026-09-02.)
 
 
   // ==========================================
@@ -403,21 +404,11 @@ interface FlightStore {
   loadingNotams: boolean;
   loadingRequirements: boolean;
 
-  // ==========================================
-  // 0. MY PERMISSION OVERRIDES
-  // ==========================================
-  // The CURRENT signed-in user's own per-user permission overrides (see
-  // lib/permissions.ts's MODULE_ACCESS/getModuleAccessLevel) — null until
-  // loaded, then an object (possibly empty) once it has been. Used by
-  // RoleGate/Sidebar and the write-gated components to combine with the
-  // session's role, so a super_admin-granted override actually shows up in
-  // the UI, not just in server-side enforcement. permissionOverridesFor
-  // tracks which signed-in user's email this was loaded for, so switching
-  // users mid-session (without a full page reload) triggers a re-fetch
-  // instead of showing the previous user's overrides.
-  permissionOverrides: Record<string, 'view' | 'full'> | null;
-  permissionOverridesFor: string | null;
-  loadMyPermissionOverrides: (email: string) => Promise<void>;
+  // (0. MY PERMISSION OVERRIDES — permissionOverrides/permissionOverridesFor/
+  // loadMyPermissionOverrides moved to lib/hooks/usePermissionOverrides.ts,
+  // Stage 8 of the SWR migration, 2026-09-02 — see
+  // lib/useMyPermissionOverrides.ts, the wrapper RoleGate/Sidebar actually
+  // call.)
 
   // ==========================================
   // 1. AIRCRAFT ACTIONS
@@ -469,8 +460,10 @@ interface FlightStore {
   // 10. AVAILABILITY / LEAVE ACTIONS — moved to lib/hooks/useAvailability.ts
   // (SWR migration, Stage 2, 2026-08-28). useAvailability(), addAvailability(),
   // updateAvailability(), removeAvailability(), checkAvailability().
-  loadExercises: () => Promise<void>;
-  loadSortieTypes: () => Promise<void>;
+
+  // (EXERCISES/SORTIE TYPES ACTIONS — loadExercises/loadSortieTypes moved to
+  // lib/hooks/useExercises.ts and lib/hooks/useSortieTypes.ts, Stage 8 of
+  // the SWR migration, 2026-09-02.)
   // ==========================================
   // 11. TRAINING REQUIREMENTS ACTIONS
   // ==========================================
@@ -486,11 +479,8 @@ interface FlightStore {
   removeRequirement: (id: string) => Promise<void>;
   getRequirementsForStudent: (studentId: string) => TrainingRequirement[];
 
-  // ==========================================
-  // 12. FTO SETTINGS ACTIONS
-  // ==========================================
-  loadFTOSettings: () => Promise<void>;
-  getFTOSetting: (key: string) => string;
+  // (12. FTO SETTINGS ACTIONS — loadFTOSettings/getFTOSetting moved to
+  // lib/hooks/useFtoSettings.ts, Stage 8 of the SWR migration, 2026-09-02.)
 
   // (13. HOLIDAYS ACTIONS — loadHolidays/addHoliday/addHolidaysBulk/
   // removeHoliday moved to lib/hooks/useHolidays.ts, Stage 7 of the SWR
@@ -530,8 +520,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // INITIAL STATE
   // ==========================================
   notams: [],
-  exercises: [],
-  sortieTypes: [],
   weather: {
     metar: 'Loading weather...',
     taf: 'Loading forecast...',
@@ -546,8 +534,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
   generalWeather: null,
   trainingRequirements: [],
-  ftoSettings: {},          // Start empty, loaded from database
-  ftoSettingsLoaded: false,
   // Real default lives in the inline script in app/layout.tsx (reads
   // localStorage, falls back to 'dark') which sets data-theme before this
   // store even initializes — 'dark' here is just a same-guess placeholder
@@ -569,25 +555,9 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   loadingNotams: false,
   loadingRequirements: false,
 
-  // ============================================================
-  // 0. MY PERMISSION OVERRIDES
-  // ============================================================
-  permissionOverrides: null,
-  permissionOverridesFor: null,
-  loadMyPermissionOverrides: async (email) => {
-    try {
-      const res = await fetch('/api/me/permissions');
-      if (res.ok) {
-        const { overrides } = await res.json();
-        set({ permissionOverrides: overrides || {}, permissionOverridesFor: email });
-      } else {
-        set({ permissionOverrides: {}, permissionOverridesFor: email });
-      }
-    } catch (err) {
-      console.error('Error loading permission overrides:', err);
-      set({ permissionOverrides: {}, permissionOverridesFor: email });
-    }
-  },
+  // (0. MY PERMISSION OVERRIDES — permissionOverrides/permissionOverridesFor/
+  // loadMyPermissionOverrides moved to lib/hooks/usePermissionOverrides.ts,
+  // Stage 8 of the SWR migration, 2026-09-02.)
 
   // ============================================================
   // 1. AIRCRAFT FUNCTIONS
@@ -762,90 +732,14 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
 
   getRequirementsForStudent: (studentId) => get().trainingRequirements.filter(r => r.studentId === studentId),
 
-  // ============================================================
-  // 12. FTO SETTINGS FUNCTIONS
-  // ============================================================
+  // (12. FTO SETTINGS FUNCTIONS — loadFTOSettings/getFTOSetting moved to
+  // lib/hooks/useFtoSettings.ts, Stage 8 of the SWR migration, 2026-09-02.)
 
-  /**
-   * Load all FTO settings from the database
-   * Stores as key-value pairs for easy access throughout the app
-   * Settings include: school_name, logo_url, timezone, time slots, buffer
-   */
-  loadFTOSettings: async () => {
-    console.log('📋 Loading FTO settings...');
-    const { data, error } = await supabase
-      .from('fto_settings')
-      .select('*');
+  // (EXERCISES FUNCTIONS — loadExercises moved to lib/hooks/useExercises.ts,
+  // Stage 8, 2026-09-02.)
 
-    if (data && !error) {
-      const settings: Record<string, string> = {};
-      data.forEach((row: Record<string, unknown>) => {
-        settings[row.setting_key as string] = row.setting_value as string;
-      });
-      console.log('✅ FTO settings loaded:', Object.keys(settings).length, 'settings');
-      set({ ftoSettings: settings, ftoSettingsLoaded: true });
-    } else {
-      console.error('❌ Error loading FTO settings:', error);
-      // Still flip this to true on failure — otherwise a school with real
-      // DB trouble would leave dependents (like the weather widget) stuck
-      // showing "loading" forever instead of falling back sensibly.
-      set({ ftoSettingsLoaded: true });
-    }
-  },
-
-  /**
-   * Get a specific FTO setting by key
-   * @param key - The setting key (e.g., 'school_name', 'logo_url', 'timezone')
-   * @returns The setting value or empty string if not found
-   */
-  getFTOSetting: (key: string) => {
-    return get().ftoSettings[key] || '';
-  },
-
-    // ============================================================
-  // EXERCISES FUNCTIONS (from database)
-  // ============================================================
-  /**
-   * Load all active exercises from the database
-   * Used by ScheduleBoard for short code lookup and legend display
-   * Managed via Super Admin Setup Wizard
-   */
-  loadExercises: async () => {
-    const { data, error } = await supabase
-      .from('exercises')
-      .select('exercise_name, short_code, full_description')
-      .eq('is_active', true)
-      .order('sort_order', { ascending: true });
-    
-    if (data && !error) {
-      set({ exercises: data });
-    } else {
-      console.error('Error loading exercises:', error);
-    }
-  },
-
-  // ============================================================
-  // SORTIE TYPES (from database)
-  // ============================================================
-  /**
-   * Load all active sortie types from the database.
-   * Managed via Admin Setup → Sortie Types. Used by FlightRecordForm's
-   * "Sortie Type" dropdown, which used to be a hardcoded list unrelated
-   * to whatever an admin actually configured there.
-   */
-  loadSortieTypes: async () => {
-    const { data, error } = await supabase
-      .from('sortie_types')
-      .select('id, type_name, type_code, requires_instructor, requires_student')
-      .eq('is_active', true)
-      .order('id', { ascending: true });
-
-    if (data && !error) {
-      set({ sortieTypes: data });
-    } else {
-      console.error('Error loading sortie types:', error);
-    }
-  },
+  // (SORTIE TYPES FUNCTIONS — loadSortieTypes moved to
+  // lib/hooks/useSortieTypes.ts, Stage 8, 2026-09-02.)
 
   // (13. HOLIDAYS FUNCTIONS — loadHolidays/addHoliday/addHolidaysBulk/
   // removeHoliday moved to lib/hooks/useHolidays.ts, Stage 7 of the SWR

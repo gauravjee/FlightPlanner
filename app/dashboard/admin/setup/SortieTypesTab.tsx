@@ -6,6 +6,8 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase-client';
+import { mutate } from 'swr';
+import { sortieTypesKey } from '@/lib/hooks/useSortieTypes';
 import { Target, Pencil, Plus, Save, Trash2, CircleCheck } from 'lucide-react';
 
 interface SortieType {
@@ -60,6 +62,13 @@ export default function SortieTypesTab() {
       setSortieTypes(data || []);
     }
     setLoading(false);
+    // 2026-09-02 (SWR migration, Stage 8): this tab's own list above is
+    // unfiltered (includes inactive rows, for management) so it can't be
+    // spliced straight into the shared active-only `sortieTypesKey` cache —
+    // revalidate it instead, so FlightRecordForm/the Flights page pick up
+    // an add/edit/delete made here without a manual reload. Same
+    // cache-invalidation fix as ExercisesTab.tsx.
+    mutate(sortieTypesKey);
   };
 
   // Load sortie types on mount

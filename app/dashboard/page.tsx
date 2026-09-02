@@ -23,6 +23,7 @@ import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
+import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -59,12 +60,13 @@ export default function DashboardPage() {
     }
   }, [session, router]);
 
-  // Fetch FTO settings on page load
-  const { ftoSettingsLoaded, loadFTOSettings, getFTOSetting } = useFlightStore();
-
-  useEffect(() => {
-    loadFTOSettings();
-  }, [loadFTOSettings]);
+  // FTO Settings is SWR-migrated (Stage 8, 2026-09-02) — fetch-on-mount, no
+  // manual load effect needed. `ftoSettingsLoaded` is `!isLoading`: SWR's
+  // isLoading is true only until the first fetch resolves (success OR
+  // error), same as the old store's own `ftoSettingsLoaded` semantics — see
+  // useFtoSettings.ts's own comment.
+  const { ftoSettings, isLoading: loadingFtoSettings } = useFtoSettings();
+  const ftoSettingsLoaded = !loadingFtoSettings;
 
   // The school's configured primary airport (Settings → School Information
   // → "Primary Airport (ICAO)"). This field is optional — a school flying
@@ -73,13 +75,13 @@ export default function DashboardPage() {
   // No fallback to a default code here: an empty station means "no live
   // weather configured", handled explicitly below, rather than silently
   // showing another airport's weather.
-  const station = getFTOSetting('airport_code');
+  const station = getFtoSetting(ftoSettings, 'airport_code');
 
   // Fallback coordinates for general (non-aviation) weather, used only when
   // there's no ICAO/reference station. Both must be present and parse as
   // finite numbers, otherwise this falls through to "no live weather".
-  const latRaw = getFTOSetting('latitude');
-  const lonRaw = getFTOSetting('longitude');
+  const latRaw = getFtoSetting(ftoSettings, 'latitude');
+  const lonRaw = getFtoSetting(ftoSettings, 'longitude');
   const lat = parseFloat(latRaw);
   const lon = parseFloat(lonRaw);
   const hasValidLatLon = latRaw !== '' && lonRaw !== '' && Number.isFinite(lat) && Number.isFinite(lon);
@@ -216,9 +218,9 @@ export default function DashboardPage() {
   //     it needs refueling before anything more can be booked on it today.
   // Slots already in the past today don't count as "available".
   const availableSlotsToday = useMemo(() => {
-    const slotStartStr = getFTOSetting('time_slot_start') || '06:00';
-    const slotEndStr = getFTOSetting('time_slot_end') || '22:00';
-    const slotIntervalMin = parseInt(getFTOSetting('time_slot_interval'), 10) || 30;
+    const slotStartStr = getFtoSetting(ftoSettings, 'time_slot_start') || '06:00';
+    const slotEndStr = getFtoSetting(ftoSettings, 'time_slot_end') || '22:00';
+    const slotIntervalMin = parseInt(getFtoSetting(ftoSettings, 'time_slot_interval'), 10) || 30;
     const [startH, startM] = slotStartStr.split(':').map(Number);
     const [endH, endM] = slotEndStr.split(':').map(Number);
     const startTotal = startH * 60 + startM;
@@ -230,7 +232,7 @@ export default function DashboardPage() {
     const todayStr = new Date().toLocaleDateString('en-CA');
     const now = new Date();
     const activeAircraft = aircraft.filter(a => a.status === 'ACTIVE');
-    const turnaroundMin = parseTurnaroundBufferSetting(getFTOSetting('buffer_minutes'));
+    const turnaroundMin = parseTurnaroundBufferSetting(getFtoSetting(ftoSettings, 'buffer_minutes'));
 
     let available = 0;
     for (const ac of activeAircraft) {
@@ -272,7 +274,7 @@ export default function DashboardPage() {
       }
     }
     return available;
-  }, [aircraft, scheduledFlights, getFTOSetting]);
+  }, [aircraft, scheduledFlights, ftoSettings]);
 
 
   useSetHeader({

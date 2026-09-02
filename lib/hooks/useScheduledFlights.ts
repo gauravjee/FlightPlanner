@@ -37,12 +37,13 @@
 import useSWR, { mutate } from 'swr';
 import { supabase } from '@/lib/supabase';
 import {
-  useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule,
+  getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule,
   getAircraftBufferMinutes, parseTurnaroundBufferSetting, getProjectedFuelAfter,
   FUELING_BUFFER_MIN, LOW_FUEL_THRESHOLD_L,
 } from '@/lib/store';
 import { fetchAircraft } from './useAircraft';
 import { fetchHolidays } from './useHolidays';
+import { fetchFtoSettings } from './useFtoSettings';
 import type { Aircraft, Instructor, ScheduledFlight, StudentRecord, TimeConflict } from '@/types';
 
 export const scheduledFlightsKey = ['scheduledFlights'] as const;
@@ -138,11 +139,12 @@ export function withScheduledFlightNames(
 
 // ---------------------------------------------------------------------------
 // Writes — plain exported async functions, same shape and same
-// failure-handling decisions as the original store actions. Holidays are
-// SWR-migrated (Stage 7, 2026-09-02) — read via fetchHolidays() below.
-// FTO Settings isn't migrated yet (Stage 8) — still read as a one-shot
-// useFlightStore.getState() snapshot, the same interim pattern
-// useAvailability.ts used for Students between Stage 2 and Stage 3.
+// failure-handling decisions as the original store actions. Holidays
+// (Stage 7) and FTO Settings (Stage 8) are both SWR-migrated now
+// (2026-09-02) — read via fetchHolidays()/fetchFtoSettings() below instead
+// of the old useFlightStore.getState() interim snapshot pattern
+// (useAvailability.ts used the same interim pattern for Students, between
+// Stage 2 and Stage 3).
 // ---------------------------------------------------------------------------
 
 // Ported as-is from lib/store.ts's checkConflicts — buffer is per-aircraft,
@@ -157,7 +159,7 @@ export async function checkConflicts(
   excludeId?: string
 ): Promise<TimeConflict> {
   const bufferAircraft = (await fetchAircraft()).find(a => String(a.id) === String(aircraftId));
-  const turnaroundMin = parseTurnaroundBufferSetting(useFlightStore.getState().ftoSettings['buffer_minutes']);
+  const turnaroundMin = parseTurnaroundBufferSetting((await fetchFtoSettings())['buffer_minutes']);
   const durationMin = Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / 60000);
   const bufferBeforeMin = getAircraftBufferMinutes(bufferAircraft?.currentFuel, turnaroundMin);
   const projectedFuelAfter = getProjectedFuelAfter(bufferAircraft, durationMin);
@@ -194,13 +196,12 @@ export async function checkConflicts(
 export async function bookFlight(
   booking: Omit<ScheduledFlight, 'id' | 'aircraftReg' | 'studentName' | 'instructorName' | 'duration'>
 ): Promise<{ success: boolean; message: string }> {
-  const state = useFlightStore.getState();
   const bookingDateStr = new Date(booking.startTime).toLocaleDateString('en-CA');
-  const holidays = await fetchHolidays();
+  const [holidays, ftoSettings] = await Promise.all([fetchHolidays(), fetchFtoSettings()]);
   const blockReason = getSchedulingBlockReason(
     bookingDateStr, holidays,
-    parseWeeklyOffDays(state.ftoSettings['weekly_off_days']),
-    parsePartialWeeklyOffRule(state.ftoSettings['partial_weekly_off_days'])
+    parseWeeklyOffDays(ftoSettings['weekly_off_days']),
+    parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days'])
   );
   if (blockReason) {
     return { success: false, message: `❌ FTO is closed (${blockReason.label}) — cannot book flights on this date.` };
@@ -208,7 +209,7 @@ export async function bookFlight(
   const conflict = await checkConflicts(booking.aircraftId, booking.startTime, booking.endTime);
   if (conflict.hasConflict) {
     const conflictAircraft = (await fetchAircraft()).find(a => String(a.id) === String(booking.aircraftId));
-    const turnaroundMin = parseTurnaroundBufferSetting(state.ftoSettings['buffer_minutes']);
+    const turnaroundMin = parseTurnaroundBufferSetting(ftoSettings['buffer_minutes']);
     const durationMin = Math.round((new Date(booking.endTime).getTime() - new Date(booking.startTime).getTime()) / 60000);
     const bufferBeforeMin = getAircraftBufferMinutes(conflictAircraft?.currentFuel, turnaroundMin);
     const projectedFuelAfter = getProjectedFuelAfter(conflictAircraft, durationMin);
@@ -274,13 +275,12 @@ export async function updateScheduledFlight(id: string, updates: Partial<Schedul
   // update) rather than throwing, matching the original store action's
   // return type (void).
   if (updates.startTime !== undefined) {
-    const state = useFlightStore.getState();
     const newDateStr = new Date(updates.startTime).toLocaleDateString('en-CA');
-    const holidays = await fetchHolidays();
+    const [holidays, ftoSettings] = await Promise.all([fetchHolidays(), fetchFtoSettings()]);
     const blockReason = getSchedulingBlockReason(
       newDateStr, holidays,
-      parseWeeklyOffDays(state.ftoSettings['weekly_off_days']),
-      parsePartialWeeklyOffRule(state.ftoSettings['partial_weekly_off_days'])
+      parseWeeklyOffDays(ftoSettings['weekly_off_days']),
+      parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days'])
     );
     if (blockReason) {
       console.error(`❌ Cannot reschedule flight ${id} to ${newDateStr} — FTO is closed (${blockReason.label}).`);

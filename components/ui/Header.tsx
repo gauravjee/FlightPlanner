@@ -7,7 +7,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { signOut, useSession } from 'next-auth/react';
 import { ArrowLeft, Plane, Wrench, Crown, GraduationCap, ClipboardList, UserRound, KeyRound, LogOut, LayoutDashboard, ShieldCheck } from 'lucide-react';
-import { useFlightStore } from '@/lib/store';
+import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { getLocationDisplay } from '@/lib/location';
 import ThemeToggle from './ThemeToggle';
 import { useHeaderConfig } from './HeaderContext';
@@ -203,20 +203,14 @@ const BACK_URLS_COVERED_BY_SIDEBAR = ['/dashboard', '/dashboard/student', '/dash
 export default function Header(props: HeaderProps = {}) {
   const headerConfig = useHeaderConfig();
   const { data: session, status } = useSession();
-  const store = useFlightStore();
-  const ftoSettings = store.ftoSettings;
-
-  // Defensive load — this header renders on every dashboard page, but only
-  // the main dashboard page (app/dashboard/page.tsx) previously called
-  // loadFTOSettings(). Landing directly on any other page (bookmark, deep
-  // link, refresh) meant ftoSettings was still empty here: this affected
-  // both the custom-logo lookup just below (silently fell back to the
-  // default icon) and the airport label further down (bug fix: used to
-  // just hardcode "VOBL - Bangalore" regardless of this at all).
-  useEffect(() => {
-    if (Object.keys(ftoSettings).length === 0) store.loadFTOSettings();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ftoSettings]);
+  // FTO Settings is SWR-migrated (Stage 8, 2026-09-02) — fetch-on-mount,
+  // shared across every page via the same cache, so the old defensive
+  // per-page load effect this header used to need (landing directly on a
+  // non-dashboard page used to leave ftoSettings empty here — silently
+  // falling back to the default icon and a hardcoded "VOBL - Bangalore"
+  // airport label) is no longer necessary: this hook fetches itself
+  // regardless of which page renders first.
+  const { ftoSettings } = useFtoSettings();
 
   const title = props.title ?? headerConfig.title;
   const subtitle = props.subtitle ?? headerConfig.subtitle;

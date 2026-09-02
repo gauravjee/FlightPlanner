@@ -6,6 +6,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase-client';
+import { mutate } from 'swr';
+import { exercisesKey } from '@/lib/hooks/useExercises';
 import Papa from 'papaparse';
 import { ClipboardList, Pencil, Plus, Save, Trash2, RefreshCw, Search, Upload, Download, LoaderCircle } from 'lucide-react';
 
@@ -59,6 +61,15 @@ export default function ExercisesTab() {
       setExercises(data || []);
     }
     setLoading(false);
+    // 2026-09-02 (SWR migration, Stage 8): this tab's own list above is
+    // unfiltered (includes inactive rows, for management) so it can't be
+    // spliced straight into the shared active-only `exercisesKey` cache —
+    // revalidate it instead, so every real consumer (BookingForm,
+    // FlightRecordForm, ScheduleBoard's legend, the Flights page) picks up
+    // an add/edit/delete/CSV-import made here without a manual reload. This
+    // fixes the same cache-invalidation gap Stage 6 found and fixed for
+    // AircraftMaintenanceScheduleTab.
+    mutate(exercisesKey);
   };
 
   // Load exercises on mount

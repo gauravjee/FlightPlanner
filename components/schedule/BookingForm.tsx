@@ -39,6 +39,8 @@ import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useScheduledFlights, bookFlight, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { useHolidays } from '@/lib/hooks/useHolidays';
+import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
+import { useExercises } from '@/lib/hooks/useExercises';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -112,33 +114,23 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // logic only reads aircraftId/studentId/instructorId/status/startTime/
   // endTime, never .aircraftReg/.studentName/.instructorName.
   const { scheduledFlights } = useScheduledFlights();
-  // Holidays are SWR-migrated (Stage 7, 2026-09-02) — fetch-on-mount, no
-  // manual load needed, unlike ftoSettings/exercises below (not yet migrated).
+  // Holidays, FTO Settings, and Exercises are all SWR-migrated now (Stages
+  // 7-8, 2026-09-02) — fetch-on-mount, no manual load effect needed anymore.
   const { holidays } = useHolidays();
+  const { ftoSettings } = useFtoSettings();
+  // Exercise dropdown used to be a hardcoded EXERCISES array (removed
+  // 2026-08-19) that didn't reflect anything added/edited/removed via
+  // Admin Setup -> Exercises — the two lists could silently drift. Now
+  // sourced live from the same `exercises` cache FlightRecordForm.tsx
+  // already uses, so there's exactly one place exercises are managed. See
+  // the Exercise <select> below for the "CODE - Name" value format this
+  // preserves.
+  const { exercises } = useExercises();
   const {
     loadTrainingRequirements,
     getRequirementsForStudent,
     loadingRequirements,
-    ftoSettings, loadFTOSettings,
-    exercises, loadExercises,
   } = useFlightStore();
-
-  // ----- Initial data load. Students is migrated (SWR, Stage 3) and now
-  // fetches itself via useStudents() above, no manual load needed. -----
-  useEffect(() => {
-    if (Object.keys(ftoSettings).length === 0) loadFTOSettings();
-    // Exercise dropdown used to be a hardcoded EXERCISES array (removed
-    // 2026-08-19) that didn't reflect anything added/edited/removed via
-    // Admin Setup -> Exercises — the two lists could silently drift.
-    // Now sourced live from the same `exercises` store slice
-    // FlightRecordForm.tsx already uses, so there's exactly one place
-    // exercises are managed. See the Exercise <select> below for the
-    // "CODE - Name" value format this preserves.
-    if (exercises.length === 0) loadExercises();
-  }, [
-    ftoSettings, exercises.length,
-    loadFTOSettings, loadExercises,
-  ]);
 
   // FTO-wide blackout days — weekly recurring off day(s) (Settings -> Time &
   // Scheduling -> "Weekly Off Day(s)") parsed from the raw comma-separated

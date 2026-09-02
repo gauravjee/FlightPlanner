@@ -5,14 +5,15 @@ import { useSetHeader } from '@/components/ui/HeaderContext';
 
 import { generateStudentLogbook } from '@/lib/pdf';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { useFlightStore } from '@/lib/store';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
+import { useSortieTypes } from '@/lib/hooks/useSortieTypes';
+import { useExercises } from '@/lib/hooks/useExercises';
 import FlightRecordForm from '@/components/flights/FlightRecordForm';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
@@ -41,10 +42,10 @@ export default function FlightsPage() {
   // the Pending Logbook Entries panel below.
   const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
   const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
-  const {
-    sortieTypes, exercises,
-    loadSortieTypes, loadExercises,
-  } = useFlightStore();
+  // Sortie Types and Exercises are SWR-migrated (Stage 8, 2026-09-02) —
+  // fetch-on-mount, no manual load effect needed anymore.
+  const { sortieTypes } = useSortieTypes();
+  const { exercises } = useExercises();
   const [showForm, setShowForm] = useState(false);
   const [selectedStudent, setSelectedStudent] = useState('ALL');
   // The flight a "Complete Entry" click opened FlightRecordForm for — see
@@ -59,10 +60,6 @@ export default function FlightsPage() {
   // any of them for that reason either. students below comes from
   // useStudents() purely for this page's own UI (the student filter
   // dropdown), on its own independent fetch-on-mount.
-  useEffect(() => {
-    loadSortieTypes();
-    loadExercises();
-  }, [loadSortieTypes, loadExercises]);
 
   const filteredRecords = selectedStudent === 'ALL'
     ? flightRecords

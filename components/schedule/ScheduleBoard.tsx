@@ -24,6 +24,8 @@ import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays, parsePart
 import { useScheduledFlights, withScheduledFlightNames, checkConflicts, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { useMaintenanceRecords } from '@/lib/hooks/useMaintenanceRecords';
 import { useHolidays } from '@/lib/hooks/useHolidays';
+import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
+import { useExercises } from '@/lib/hooks/useExercises';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
@@ -153,14 +155,11 @@ export default function ScheduleBoard() {
   // scheduledDate off each record for slot-blocking checks below, never
   // aircraftReg/aircraftType.
   const { maintenanceRecords } = useMaintenanceRecords();
-  const ftoSettings = store.ftoSettings;                    // School name / airport code for the printed schedule header
-  const loadFTOSettings = store.loadFTOSettings;
-  const getFTOSetting = store.getFTOSetting;
-  // Holidays come from SWR (Stage 7, 2026-09-02) — fetch-on-mount, no manual
-  // load call needed, unlike ftoSettings/exercises below (not yet migrated).
+  // Holidays, FTO Settings, and Exercises are all SWR-migrated now (Stages
+  // 7-8, 2026-09-02) — fetch-on-mount, no manual load calls needed.
   const { holidays } = useHolidays();                       // FTO-wide blackout dates
-  const exercises = store.exercises;                        // Exercise codes (Admin Setup -> Exercises), for the legend below
-  const loadExercises = store.loadExercises;
+  const { ftoSettings } = useFtoSettings();                 // School name / airport code for the printed schedule header
+  const { exercises } = useExercises();                     // Exercise codes (Admin Setup -> Exercises), for the legend below
 
   // Same "CODE - Name" / short-code tuple shape the legend table and print
   // report were already built around, now sourced from the live exercises
@@ -179,26 +178,14 @@ export default function ScheduleBoard() {
   const partialWeeklyOffRule = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
 
   // ----- Load data when component mounts -----
-  // Aircraft, Instructors, Students, Scheduled Flights, and now Maintenance
-  // Records all come from SWR hooks above (fetch-on-mount + dedup,
-  // 2026-08-28/09-01 SWR migration, Stages 1-3, 5, and 6).
-  useEffect(() => {
-    if (exercises.length === 0) loadExercises(); // Load exercise codes for the legend below
-  }, [exercises.length, loadExercises]);
+  // Aircraft, Instructors, Students, Scheduled Flights, Maintenance Records,
+  // Holidays, FTO Settings, and Exercises all come from SWR hooks above
+  // (fetch-on-mount + dedup, 2026-08-28 through 2026-09-02 SWR migration,
+  // Stages 1-3 and 5-8).
 
   // Is the currently viewed date blocked for scheduling — a holiday or the
   // FTO's weekly off day? null if the date is open.
   const dateBlockReason = getSchedulingBlockReason(selectedDate, holidays, weeklyOffDays, partialWeeklyOffRule);
-
-  // Loaded defensively in its own effect (not just relying on the main
-  // dashboard having already loaded it) so the Print Schedule sheet below
-  // shows the real configured school name/airport even if a user lands
-  // directly on this page without visiting the dashboard first. Kept
-  // separate from the effect above so it doesn't re-trigger the other
-  // (unrelated) data loads once ftoSettings populates.
-  useEffect(() => {
-    if (Object.keys(ftoSettings).length === 0) loadFTOSettings();
-  }, [ftoSettings, loadFTOSettings]);
 
   // ----- Filter flights for the selected date -----
  // Excludes CANCELLED: cancelFlight() now soft-cancels (keeps the row,
@@ -504,8 +491,8 @@ export default function ScheduleBoard() {
     // Settings page. Falls back to those same defaults only if a school
     // hasn't set them yet. Location combines the (optional) ICAO code with
     // the (optional) free-text location name, same rule as the header.
-    const printSchoolName = getFTOSetting('school_name') || 'Horizon Flight Training Academy';
-    const printLocation = getLocationDisplay(getFTOSetting('airport_code'), getFTOSetting('location_name'));
+    const printSchoolName = getFtoSetting(ftoSettings, 'school_name') || 'Horizon Flight Training Academy';
+    const printLocation = getLocationDisplay(getFtoSetting(ftoSettings, 'airport_code'), getFtoSetting(ftoSettings, 'location_name'));
 
     // Format the selected date for the report header
     const dateStr = new Date(selectedDate).toLocaleDateString('en-US', {
