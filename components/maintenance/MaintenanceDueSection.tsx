@@ -2,8 +2,8 @@
 // Aircraft Maintenance Schedule — Phase 1 (2026-08-26)
 //
 // Non-blocking due/overdue warnings, computed client-side from
-// useFlightStore().getMaintenanceDueItems() (see computeMaintenanceDueItems
-// in lib/store.ts). Two staff-confirmed actions, both just create a
+// getMaintenanceDueItems() (see computeMaintenanceDueItems in
+// lib/hooks/useMaintenanceRecords.ts). Two staff-confirmed actions, both just create a
 // COMPLETED maintenance_records row via the existing addMaintenanceRecord —
 // there is no silent background auto-insert, per the scope simplification
 // noted in the handoff doc:
@@ -18,9 +18,11 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useFlightStore } from '@/lib/store';
+import { useState } from 'react';
 import { useAircraft } from '@/lib/hooks/useAircraft';
+import {
+  addMaintenanceRecord, useMaintenanceRecords, useMaintenanceScheduleTemplates, getMaintenanceDueItems,
+} from '@/lib/hooks/useMaintenanceRecords';
 import { MaintenanceDueItem } from '@/types';
 import { TriangleAlert, Clock, CircleAlert, Wrench, X } from 'lucide-react';
 
@@ -33,7 +35,6 @@ interface LogModalProps {
 }
 
 function LogMaintenanceItemModal({ item, aircraftReg, currentHobbs, mode, onClose }: LogModalProps) {
-  const addMaintenanceRecord = useFlightStore(s => s.addMaintenanceRecord);
   const todayLocal = new Date().toLocaleDateString('en-CA');
   const [completedDate, setCompletedDate] = useState(todayLocal);
   const [hobbs, setHobbs] = useState(String(currentHobbs));
@@ -135,21 +136,16 @@ function LogMaintenanceItemModal({ item, aircraftReg, currentHobbs, mode, onClos
 
 export default function MaintenanceDueSection({ canWrite }: { canWrite: boolean }) {
   const { aircraft } = useAircraft();
-  const {
-    maintenanceScheduleTemplates, loadMaintenanceScheduleTemplates,
-    getMaintenanceDueItems,
-  } = useFlightStore();
-
-  useEffect(() => {
-    if (maintenanceScheduleTemplates.length === 0) loadMaintenanceScheduleTemplates();
-  }, [maintenanceScheduleTemplates.length, loadMaintenanceScheduleTemplates]);
+  const { maintenanceScheduleTemplates } = useMaintenanceScheduleTemplates();
+  const { maintenanceRecords } = useMaintenanceRecords();
 
   const [modalState, setModalState] = useState<{ item: MaintenanceDueItem; mode: 'baseline' | 'complete' } | null>(null);
 
   // One row per (aircraft, active template item) that has a template
-  // matching its model — computed fresh each render from the store, same
-  // "pure function over current state" pattern as getSchedulingBlockReason.
-  const allDueItems = aircraft.flatMap(ac => getMaintenanceDueItems(ac));
+  // matching its model — computed fresh each render from the two SWR
+  // caches, same "pure function over current state" pattern as
+  // getSchedulingBlockReason.
+  const allDueItems = aircraft.flatMap(ac => getMaintenanceDueItems(ac, maintenanceScheduleTemplates, maintenanceRecords));
 
   const attention = allDueItems.filter(i => i.status !== 'OK');
   if (attention.length === 0) return null;

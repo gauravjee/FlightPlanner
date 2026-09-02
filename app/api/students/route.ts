@@ -12,17 +12,23 @@
 // NextAuth session:
 //   - staff roles (admin/instructor/super_admin/operations) get the full
 //     list, matching the existing RoleGate on /dashboard/students
-//   - the 'safety_officer' role gets a scoped, non-PII projection (name,
-//     status, SPL number, no DOB/phone/email/medical) — just enough to
-//     resolve "which student is this" on the Breath Analyser Register's
+//   - 'safety_officer' and 'maintenance' get a scoped, non-PII projection
+//     (name, status, SPL number, no DOB/phone/email/medical) — enough to
+//     resolve "which student is this" for a display join without exposing
+//     the full record. safety_officer: the Breath Analyser Register's
 //     "Select student" dropdown (see BA_TEST_WRITE_ROLES in
-//     lib/permissions.ts), without exposing the full record the way
-//     STUDENT_STAFF_ROLES does
+//     lib/permissions.ts). maintenance: flight records always show
+//     studentName (see mapFlightRecordRows in lib/hooks/useFlightRecords.ts)
+//     and maintenance can view flight records, so it needs this too even
+//     though it has no roster-browsing UI of its own (2026-09-02).
 //   - the 'student' role gets ONLY their own record
 //
-// See lib/permissions.ts's STUDENT_ROSTER_VIEW_ROLES for the combined list
-// of every role this GET returns something other than 403 for — keep that
-// constant's roles in sync with the branches below if either changes.
+// See lib/permissions.ts's STUDENT_ROSTER_VIEW_ROLES for the roles that
+// have an actual student-roster UI surface (the two Dashboard widgets) —
+// keep that in sync with the staff/student branches below. maintenance is
+// deliberately NOT in that constant: it gets non-403 data from this route
+// (the scoped branch above), but has no roster-browsing widget that should
+// light up for it — the two are independent, don't conflate them.
 //
 // This on its own does not stop someone from calling Supabase's REST API
 // directly with the anon key — that requires Row Level Security to be
@@ -60,14 +66,19 @@ export async function GET() {
     return NextResponse.json({ students: data || [] });
   }
 
-  // 'safety_officer': a scoped, non-PII projection — enough for the Breath
-  // Analyser Register to list active students by name and auto-fill their
-  // SPL number, without handing over DOB/phone/email/medical data the way
-  // the staff branch above does. lib/hooks/useStudents.ts's mapper already
-  // defaults every field not selected here to '' /undefined, so this reuses
-  // the same fetcher/hook/type as every other role — the BA Register page
-  // itself needed no changes for this fix.
-  if (role === 'safety_officer') {
+  // 'safety_officer' and 'maintenance': the same scoped, non-PII projection
+  // — no DOB/phone/email/medical the way the staff branch above hands over.
+  // safety_officer needs it for the Breath Analyser Register's "Select
+  // student" dropdown. maintenance needs it for a different reason: it's in
+  // FLIGHT_RECORDS_VIEW_ROLES, and every flight record display joins in
+  // studentName (see mapFlightRecordRows in lib/hooks/useFlightRecords.ts,
+  // which calls fetchStudents() directly, unconditionally, for every
+  // flight-records reader) — without this branch that join 403'd for
+  // maintenance on every page that shows flight records (found 2026-09-02).
+  // lib/hooks/useStudents.ts's mapper already defaults every field not
+  // selected here to '' /undefined, so this reuses the same fetcher/hook/
+  // type as every other role — no client-side changes needed for either use.
+  if (role === 'safety_officer' || role === 'maintenance') {
     const { data, error: dbError } = await supabaseAdmin
       .from('students')
       .select('id, name, initials, status, spl_number, enrollment_id, training_stage, total_hours')

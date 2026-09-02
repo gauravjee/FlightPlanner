@@ -38,6 +38,7 @@ import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useScheduledFlights, bookFlight, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
+import { useHolidays } from '@/lib/hooks/useHolidays';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -111,12 +112,14 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // logic only reads aircraftId/studentId/instructorId/status/startTime/
   // endTime, never .aircraftReg/.studentName/.instructorName.
   const { scheduledFlights } = useScheduledFlights();
+  // Holidays are SWR-migrated (Stage 7, 2026-09-02) — fetch-on-mount, no
+  // manual load needed, unlike ftoSettings/exercises below (not yet migrated).
+  const { holidays } = useHolidays();
   const {
     loadTrainingRequirements,
     getRequirementsForStudent,
     loadingRequirements,
     ftoSettings, loadFTOSettings,
-    holidays, loadHolidays,
     exercises, loadExercises,
   } = useFlightStore();
 
@@ -124,7 +127,6 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // fetches itself via useStudents() above, no manual load needed. -----
   useEffect(() => {
     if (Object.keys(ftoSettings).length === 0) loadFTOSettings();
-    if (holidays.length === 0) loadHolidays();
     // Exercise dropdown used to be a hardcoded EXERCISES array (removed
     // 2026-08-19) that didn't reflect anything added/edited/removed via
     // Admin Setup -> Exercises — the two lists could silently drift.
@@ -134,8 +136,8 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     // "CODE - Name" value format this preserves.
     if (exercises.length === 0) loadExercises();
   }, [
-    ftoSettings, holidays.length, exercises.length,
-    loadFTOSettings, loadHolidays, loadExercises,
+    ftoSettings, exercises.length,
+    loadFTOSettings, loadExercises,
   ]);
 
   // FTO-wide blackout days — weekly recurring off day(s) (Settings -> Time &

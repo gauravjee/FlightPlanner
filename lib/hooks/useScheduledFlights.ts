@@ -42,6 +42,7 @@ import {
   FUELING_BUFFER_MIN, LOW_FUEL_THRESHOLD_L,
 } from '@/lib/store';
 import { fetchAircraft } from './useAircraft';
+import { fetchHolidays } from './useHolidays';
 import type { Aircraft, Instructor, ScheduledFlight, StudentRecord, TimeConflict } from '@/types';
 
 export const scheduledFlightsKey = ['scheduledFlights'] as const;
@@ -137,8 +138,9 @@ export function withScheduledFlightNames(
 
 // ---------------------------------------------------------------------------
 // Writes — plain exported async functions, same shape and same
-// failure-handling decisions as the original store actions. Holidays and
-// FTO Settings aren't migrated yet (Stages 7-8) — read as a one-shot
+// failure-handling decisions as the original store actions. Holidays are
+// SWR-migrated (Stage 7, 2026-09-02) — read via fetchHolidays() below.
+// FTO Settings isn't migrated yet (Stage 8) — still read as a one-shot
 // useFlightStore.getState() snapshot, the same interim pattern
 // useAvailability.ts used for Students between Stage 2 and Stage 3.
 // ---------------------------------------------------------------------------
@@ -194,8 +196,9 @@ export async function bookFlight(
 ): Promise<{ success: boolean; message: string }> {
   const state = useFlightStore.getState();
   const bookingDateStr = new Date(booking.startTime).toLocaleDateString('en-CA');
+  const holidays = await fetchHolidays();
   const blockReason = getSchedulingBlockReason(
-    bookingDateStr, state.holidays,
+    bookingDateStr, holidays,
     parseWeeklyOffDays(state.ftoSettings['weekly_off_days']),
     parsePartialWeeklyOffRule(state.ftoSettings['partial_weekly_off_days'])
   );
@@ -273,8 +276,9 @@ export async function updateScheduledFlight(id: string, updates: Partial<Schedul
   if (updates.startTime !== undefined) {
     const state = useFlightStore.getState();
     const newDateStr = new Date(updates.startTime).toLocaleDateString('en-CA');
+    const holidays = await fetchHolidays();
     const blockReason = getSchedulingBlockReason(
-      newDateStr, state.holidays,
+      newDateStr, holidays,
       parseWeeklyOffDays(state.ftoSettings['weekly_off_days']),
       parsePartialWeeklyOffRule(state.ftoSettings['partial_weekly_off_days'])
     );

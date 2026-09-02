@@ -54,6 +54,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabase-client';
 import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { useInstructors } from '@/lib/hooks/useInstructors';
+import { useHolidays } from '@/lib/hooks/useHolidays';
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Save, CircleCheck, X } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -158,9 +159,9 @@ export default function GroundSchoolCalendar() {
   const { instructors } = useInstructors();
 
   // FTO-wide blackout dates — flight bookings and ground-school classes
-  // cannot be scheduled on a holiday or the FTO's weekly off day.
-  const holidays = useFlightStore((s) => s.holidays);
-  const loadHolidays = useFlightStore((s) => s.loadHolidays);
+  // cannot be scheduled on a holiday or the FTO's weekly off day. SWR-
+  // migrated (Stage 7, 2026-09-02) — fetch-on-mount, no manual load needed.
+  const { holidays } = useHolidays();
   const ftoSettings = useFlightStore((s) => s.ftoSettings);
   const weeklyOffDays = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
   const partialWeeklyOffRule = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
@@ -240,13 +241,9 @@ export default function GroundSchoolCalendar() {
   // above now handles its own fetch-on-mount + dedup, so the manual
   // "checked" ref-guard that used to live here is no longer needed.
 
-  // 1b. Ensure the holiday calendar is loaded (same "if empty" guard as
-  // instructors above — holidays rarely change, and re-running loadHolidays
-  // whenever the store re-renders would be wasteful).
-  useEffect(() => {
-    if (holidays.length === 0) loadHolidays();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // 1b. Holiday calendar — 2026-09-02 (SWR migration, Stage 7): useHolidays()
+  // above now handles its own fetch-on-mount + dedup, so the manual
+  // "if empty" load-guard that used to live here is no longer needed.
 
   // 2. Load subjects once on mount (they rarely change)
   useEffect(() => {

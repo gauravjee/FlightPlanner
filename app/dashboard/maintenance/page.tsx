@@ -4,13 +4,17 @@
 
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { useFlightStore } from '@/lib/store';
 import { useAircraft } from '@/lib/hooks/useAircraft';
+import {
+  useMaintenanceRecords, withMaintenanceRecordNames,
+  addMaintenanceRecord, updateMaintenanceRecord, removeMaintenanceRecord,
+} from '@/lib/hooks/useMaintenanceRecords';
 import { MaintenanceRecord } from '@/types';
 import MaintenanceForm from '@/components/maintenance/MaintenanceForm';
 import MaintenanceDueSection from '@/components/maintenance/MaintenanceDueSection';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RoleGate from '@/components/ui/RoleGate';
 import { MAINTENANCE_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
@@ -26,20 +30,18 @@ export default function MaintenancePage() {
   // (requireModuleAccess('maintenance')).
   const canWrite = canWriteModule(session?.user?.role, overrides, 'maintenance');
   const { aircraft } = useAircraft();
-  const {
-    maintenanceRecords, loadingMaintenance,
-    loadMaintenanceRecords, addMaintenanceRecord,
-    updateMaintenanceRecord, removeMaintenanceRecord,
-  } = useFlightStore();
+  const { maintenanceRecords: rawMaintenanceRecords, isLoading: loadingMaintenance } = useMaintenanceRecords();
+  // 2026-09-01 (SWR migration, Stage 6): aircraftReg/aircraftType are no
+  // longer baked into the fetched rows — see lib/hooks/useMaintenanceRecords.ts's
+  // file header for why. No load effect needed either; useMaintenanceRecords()/
+  // useAircraft() fetch on mount themselves.
+  const maintenanceRecords = withMaintenanceRecordNames(rawMaintenanceRecords, aircraft);
 
   const [showForm, setShowForm] = useState(false);
   const [editingRecord, setEditingRecord] = useState<MaintenanceRecord | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<MaintenanceRecord | null>(null);
   const [filterStatus, setFilterStatus] = useState('ALL');
   const [filterAircraft, setFilterAircraft] = useState('ALL');
-
-  useEffect(() => {
-    loadMaintenanceRecords();
-  }, [loadMaintenanceRecords]);
 
   const filteredRecords = maintenanceRecords.filter(r => {
     const matchStatus = filterStatus === 'ALL' || r.status === filterStatus;
@@ -84,10 +86,11 @@ export default function MaintenancePage() {
     });
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Delete this maintenance record?')) {
-      removeMaintenanceRecord(id);
-    }
+  // Themed confirm dialog instead of window.confirm() — see ConfirmDialog.tsx.
+  const handleDeleteClick = (record: MaintenanceRecord) => setDeleteTarget(record);
+  const handleDeleteConfirm = () => {
+    if (deleteTarget) removeMaintenanceRecord(deleteTarget.id);
+    setDeleteTarget(null);
   };
 
   // Quick-extend — bumps an existing maintenanceEnd forward without
@@ -253,7 +256,7 @@ export default function MaintenancePage() {
                               className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }} aria-label={`Edit ${record.aircraftReg} ${record.maintenanceType} record`}>
                               <Pencil className="w-3 h-3" />
                             </button>
-                            <button onClick={() => handleDelete(record.id)}
+                            <button onClick={() => handleDeleteClick(record)}
                               className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }} aria-label={`Delete ${record.aircraftReg} ${record.maintenanceType} record`}>
                               <Trash2 className="w-3 h-3" />
                             </button>
@@ -275,6 +278,16 @@ export default function MaintenancePage() {
           record={editingRecord}
           onSave={handleSave}
           onClose={() => { setShowForm(false); setEditingRecord(null); }}
+        />
+      )}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Delete maintenance record?"
+          message={`This will permanently delete the ${deleteTarget.maintenanceType} record for ${deleteTarget.aircraftReg}. This can't be undone.`}
+          confirmLabel="Delete"
+          onConfirm={handleDeleteConfirm}
+          onCancel={() => setDeleteTarget(null)}
         />
       )}
     </main>

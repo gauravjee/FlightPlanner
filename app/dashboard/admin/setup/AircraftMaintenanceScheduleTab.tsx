@@ -14,9 +14,11 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { mutate } from 'swr';
 import { supabase } from '@/lib/supabase-client';
 import Papa from 'papaparse';
 import { Wrench, Pencil, Plus, Save, Trash2, Upload, Download, LoaderCircle } from 'lucide-react';
+import { maintenanceScheduleTemplatesKey } from '@/lib/hooks/useMaintenanceRecords';
 
 interface ScheduleTemplateRow {
   id: number;
@@ -102,6 +104,14 @@ export default function AircraftMaintenanceScheduleTab() {
       console.error('Error loading maintenance schedule templates:', error.message);
     } else {
       setTemplates(data || []);
+      // 2026-09-01 (SWR migration, Stage 6): this tab keeps its own local
+      // load/state, independent of useMaintenanceScheduleTemplates() — so
+      // every write here (Add/Edit/Delete/Engine Type/CSV import, all of
+      // which already call loadTemplates() on success) also has to nudge
+      // that SWR cache, or the Maintenance Due panel elsewhere in the app
+      // keeps showing templates as they were before this edit until the
+      // cache happens to revalidate on its own.
+      mutate(maintenanceScheduleTemplatesKey);
     }
     setLoading(false);
   }, []);

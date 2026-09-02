@@ -22,6 +22,8 @@ import { useSession } from 'next-auth/react';
 import { Calendar, Printer, Plus, Wrench, TriangleAlert, ClipboardList, X, Lock, Eye } from 'lucide-react';
 import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { useScheduledFlights, withScheduledFlightNames, checkConflicts, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
+import { useMaintenanceRecords } from '@/lib/hooks/useMaintenanceRecords';
+import { useHolidays } from '@/lib/hooks/useHolidays';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
@@ -145,13 +147,18 @@ export default function ScheduleBoard() {
   // which would leave a stale baked-in aircraftReg otherwise.
   const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
   const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
-  const maintenanceRecords = store.maintenanceRecords;      // All maintenance records (for blocking slots)
-  const loadMaintenanceRecords = store.loadMaintenanceRecords;
+  // Maintenance records come from SWR (Stage 6, 2026-09-01) too — no
+  // selector needed here, unlike the Maintenance page/dashboard widget:
+  // this file only reads aircraftId/status/maintenanceStart/maintenanceEnd/
+  // scheduledDate off each record for slot-blocking checks below, never
+  // aircraftReg/aircraftType.
+  const { maintenanceRecords } = useMaintenanceRecords();
   const ftoSettings = store.ftoSettings;                    // School name / airport code for the printed schedule header
   const loadFTOSettings = store.loadFTOSettings;
   const getFTOSetting = store.getFTOSetting;
-  const holidays = store.holidays;                          // FTO-wide blackout dates
-  const loadHolidays = store.loadHolidays;
+  // Holidays come from SWR (Stage 7, 2026-09-02) — fetch-on-mount, no manual
+  // load call needed, unlike ftoSettings/exercises below (not yet migrated).
+  const { holidays } = useHolidays();                       // FTO-wide blackout dates
   const exercises = store.exercises;                        // Exercise codes (Admin Setup -> Exercises), for the legend below
   const loadExercises = store.loadExercises;
 
@@ -172,14 +179,12 @@ export default function ScheduleBoard() {
   const partialWeeklyOffRule = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
 
   // ----- Load data when component mounts -----
-  // Aircraft, Instructors, Students, and now Scheduled Flights come from
-  // SWR hooks above (fetch-on-mount + dedup, 2026-08-28/09-01 SWR migration,
-  // Stages 1-3 and 5).
+  // Aircraft, Instructors, Students, Scheduled Flights, and now Maintenance
+  // Records all come from SWR hooks above (fetch-on-mount + dedup,
+  // 2026-08-28/09-01 SWR migration, Stages 1-3, 5, and 6).
   useEffect(() => {
-    loadMaintenanceRecords(); // Load maintenance records so we can block slots for aircraft under/scheduled for maintenance
-    loadHolidays();           // Load holiday calendar so we can block slots on closed dates
     if (exercises.length === 0) loadExercises(); // Load exercise codes for the legend below
-  }, [loadMaintenanceRecords, loadHolidays, exercises.length, loadExercises]);
+  }, [exercises.length, loadExercises]);
 
   // Is the currently viewed date blocked for scheduling — a holiday or the
   // FTO's weekly off day? null if the date is open.

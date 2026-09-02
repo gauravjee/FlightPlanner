@@ -10,28 +10,31 @@
 // description only) than the full staff MaintenanceForm.
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { useAircraft } from '@/lib/hooks/useAircraft';
-import { useFlightStore } from '@/lib/store';
+import { useMaintenanceRecords, withMaintenanceRecordNames, addMaintenanceRecord } from '@/lib/hooks/useMaintenanceRecords';
 import { SQUAWK_REPORT_ROLES } from '@/lib/permissions';
 import { TriangleAlert } from 'lucide-react';
 
 export default function ReportDefectPage() {
   const { data: session } = useSession();
   const { aircraft } = useAircraft();
-  const { maintenanceRecords, loadingMaintenance, loadMaintenanceRecords, addMaintenanceRecord } = useFlightStore();
+  // 2026-09-01 (SWR migration, Stage 6): aircraftReg (read below) is no
+  // longer baked into the fetched rows — see lib/hooks/useMaintenanceRecords.ts's
+  // file header for why. No load effect needed either; useMaintenanceRecords()/
+  // useAircraft() fetch on mount themselves.
+  const { maintenanceRecords: rawMaintenanceRecords, isLoading: loadingMaintenance } = useMaintenanceRecords();
+  const maintenanceRecords = withMaintenanceRecordNames(rawMaintenanceRecords, aircraft);
 
   const [aircraftId, setAircraftId] = useState('');
   const [description, setDescription] = useState('');
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
-
-  useEffect(() => { loadMaintenanceRecords(); }, [loadMaintenanceRecords]);
 
   useSetHeader({
     title: 'Report a Defect',

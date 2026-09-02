@@ -353,8 +353,9 @@ export interface MaintenanceRecord {
   // completed, or (for a baseline row entered when enabling schedule
   // tracking on an aircraft) the hobbs reading at the last known service.
   // Anchors future HOBBS_HOURS due-calculations — see
-  // computeMaintenanceDueItems() in lib/store.ts. Undefined/null on
-  // records that predate this feature or on CALENDAR_MONTHS-only items.
+  // computeMaintenanceDueItems() in lib/hooks/useMaintenanceRecords.ts.
+  // Undefined/null on records that predate this feature or on
+  // CALENDAR_MONTHS-only items.
   hobbsAtCompletion?: number | null;
   // 2026-08-31: pilot-facing squawk reporting — see
   // add-squawk-reporting.sql and app/api/maintenance-records/route.ts.
@@ -391,7 +392,8 @@ export interface MaintenanceScheduleTemplate {
 }
 
 // Computed (not stored) — one per active template item applicable to a
-// given aircraft, produced by computeMaintenanceDueItems() in lib/store.ts.
+// given aircraft, produced by computeMaintenanceDueItems() in
+// lib/hooks/useMaintenanceRecords.ts.
 export interface MaintenanceDueItem {
   template: MaintenanceScheduleTemplate;
   aircraftId: string;

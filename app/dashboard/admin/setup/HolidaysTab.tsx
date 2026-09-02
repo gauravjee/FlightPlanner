@@ -15,9 +15,9 @@
 
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import Papa from 'papaparse';
-import { useFlightStore } from '@/lib/store';
+import { useHolidays, addHoliday, addHolidaysBulk, removeHoliday } from '@/lib/hooks/useHolidays';
 import { CalendarDays, Plus, Trash2, Upload, Download, LoaderCircle, RefreshCw } from 'lucide-react';
 
 interface CsvImportResult {
@@ -28,12 +28,10 @@ interface CsvImportResult {
 }
 
 export default function HolidaysTab() {
-  const holidays = useFlightStore(s => s.holidays);
-  const loadingHolidays = useFlightStore(s => s.loadingHolidays);
-  const loadHolidays = useFlightStore(s => s.loadHolidays);
-  const addHoliday = useFlightStore(s => s.addHoliday);
-  const addHolidaysBulk = useFlightStore(s => s.addHolidaysBulk);
-  const removeHoliday = useFlightStore(s => s.removeHoliday);
+  // SWR-migrated (Stage 7, 2026-09-02) — fetch-on-mount, no manual load
+  // needed; addHoliday/addHolidaysBulk/removeHoliday are plain imports now,
+  // not store actions.
+  const { holidays, isLoading: loadingHolidays } = useHolidays();
 
   const [form, setForm] = useState({
     holidayName: '',
@@ -47,10 +45,6 @@ export default function HolidaysTab() {
   const [csvUploading, setCsvUploading] = useState(false);
   const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    loadHolidays();
-  }, [loadHolidays]);
 
   const handleSave = async () => {
     if (!form.holidayName || !form.date) return;

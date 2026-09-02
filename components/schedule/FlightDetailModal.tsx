@@ -19,6 +19,7 @@ import { cancelFlight, updateScheduledFlight } from '@/lib/hooks/useScheduledFli
 import { useAircraft, getAircraftById } from '@/lib/hooks/useAircraft';
 import { useInstructors, getInstructorById } from '@/lib/hooks/useInstructors';
 import { useStudents, getStudentById } from '@/lib/hooks/useStudents';
+import { getLocationDisplay } from '@/lib/location';
 import { FlightSlot } from '@/types';
 import { useState } from 'react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -49,6 +50,7 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   const {
     weather,                  // Current weather data
     notams,                   // Active NOTAMs
+    getFTOSetting,             // School name / airport code for the printed brief header
   } = useFlightStore();
   // cancelFlight/updateScheduledFlight now come from the SWR hook (Stage 5,
   // 2026-09-01) — both local-splice their write, so no manual reload needed.
@@ -106,11 +108,176 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   };
 
   /**
-   * Open browser print dialog
-   * Prints the current page (user can select PDF printer)
+   * Print a proper Flight Brief report — not a screenshot of the modal.
+   *
+   * 2026-09-01: originally just called window.print() on the modal itself
+   * (scoped with a CSS visibility trick so the Schedule Board underneath
+   * didn't print too), but that's still just the on-screen widget dumped to
+   * paper — badges, buttons, dark cards. Replaced with the same "build a
+   * clean standalone HTML document in a new window, then print that"
+   * pattern ScheduleBoard.tsx's own Print Schedule already uses: a real
+   * printer-friendly report (light background, bordered sections, no UI
+   * chrome) rather than the app's screen styling.
    */
   const handlePrint = () => {
-    window.print();
+    const schoolName = getFTOSetting('school_name') || 'Horizon Flight Training Academy';
+    const location = getLocationDisplay(getFTOSetting('airport_code'), getFTOSetting('location_name'));
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const statusColors: Record<string, string> = {
+      IN_PROGRESS: '#16a34a',
+      COMPLETED: '#2563eb',
+      CANCELLED: '#dc2626',
+      SCHEDULED: '#b45309',
+    };
+    const statusColor = statusColors[slot.status] || '#64748b';
+
+    const readinessItems = [
+      { label: 'Aircraft Airworthy', ok: aircraft?.status === 'ACTIVE' },
+      { label: 'Weather Within Limits', ok: weather.flightRules === 'VFR' || weather.flightRules === 'MVFR' },
+      { label: 'Fuel Sufficient', ok: (aircraft?.currentFuel || 0) > 30 },
+      { label: 'Student Medical Valid', ok: student ? new Date(student.medicalExpiry) > new Date() : true },
+    ];
+    const readinessRows = readinessItems.map(item => `
+      <div class="checklist-item">
+        <span style="color:${item.ok ? '#16a34a' : '#dc2626'};">${item.ok ? '✔' : '✘'}</span>
+        <span>${item.label}</span>
+      </div>
+    `).join('');
+
+    const notamRows = notams.slice(0, 3).map(n => `
+      <p class="notam"><strong>${n.notamNumber}</strong>: ${n.text}</p>
+    `).join('');
+
+    const exerciseOrSortie = (slot as SlotWithExtras).exercise || slot.sortieType?.replace(/_/g, ' ') || 'N/A';
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Flight Brief – ${aircraft?.registration || 'Aircraft'} – ${formatDate(slot.startTime)}</title>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body {
+              font-family: 'Segoe UI', Arial, sans-serif;
+              padding: 32px;
+              color: #1e293b;
+              background: #fff;
+            }
+            h1 { text-align: center; font-size: 20px; margin-bottom: 4px; }
+            .sub { text-align: center; font-size: 12px; color: #64748b; margin-bottom: 20px; }
+            .status-row {
+              display: flex; justify-content: space-between; align-items: center;
+              margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #1e293b;
+            }
+            .badge {
+              display: inline-block; padding: 4px 12px; border-radius: 999px;
+              font-size: 11px; font-weight: 700; letter-spacing: 0.3px;
+            }
+            .two-col { display: flex; gap: 16px; margin-bottom: 16px; }
+            .section { flex: 1; border: 1px solid #cbd5e1; border-radius: 6px; padding: 12px; margin-bottom: 16px; }
+            .section-title {
+              font-size: 10px; font-weight: 700; letter-spacing: 0.5px; color: #64748b;
+              text-transform: uppercase; margin-bottom: 8px;
+            }
+            .row { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+            .row .label { color: #64748b; }
+            .row .value { font-weight: 600; }
+            .weather-grid { display: flex; justify-content: space-between; text-align: center; }
+            .weather-grid div { flex: 1; }
+            .weather-grid .w-label { font-size: 10px; color: #64748b; }
+            .weather-grid .w-value { font-size: 13px; font-weight: 600; margin-top: 2px; }
+            .notams { border-color: #fbbf24; background: #fffbeb; }
+            .notam { font-size: 11px; margin-bottom: 4px; }
+            .checklist-item { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 6px; }
+            .footer {
+              margin-top: 8px; text-align: center; font-size: 10px;
+              color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 12px;
+            }
+            @media print { body { margin: 0; } }
+          </style>
+        </head>
+        <body>
+          <h1>✈️ FlightPro Manager – Flight Brief</h1>
+          <p class="sub">${schoolName} | ${location}<br/>${formatDate(slot.startTime)}</p>
+
+          <div class="status-row">
+            <span class="badge" style="background:${statusColor}22;color:${statusColor};">${slot.status.replace('_', ' ')}</span>
+            <span style="font-size:12px;color:#64748b;">${duration.toFixed(1)} hours</span>
+          </div>
+
+          <div class="two-col">
+            <div class="section">
+              <div class="section-title">Aircraft</div>
+              <div class="row"><span class="label">Registration</span><span class="value">${aircraft?.registration || '—'}</span></div>
+              <div class="row"><span class="label">Model</span><span class="value">${aircraft?.model || '—'}</span></div>
+              <div class="row"><span class="label">Hobbs</span><span class="value">${aircraft?.hobbsTime ?? '—'}h</span></div>
+              <div class="row"><span class="label">Fuel</span><span class="value">${aircraft?.currentFuel ?? '—'}L / ${aircraft?.fuelCapacity ?? '—'}L</span></div>
+            </div>
+            <div class="section">
+              <div class="section-title">Schedule</div>
+              <div class="row"><span class="label">Time</span><span class="value">${formatIST(slot.startTime)} → ${formatIST(slot.endTime)} IST</span></div>
+              <div class="row"><span class="label">Sortie</span><span class="value">${exerciseOrSortie}</span></div>
+              <div class="row"><span class="label">Type</span><span class="value">${slot.sortieType}</span></div>
+            </div>
+          </div>
+
+          <div class="two-col">
+            <div class="section">
+              <div class="section-title">Instructor</div>
+              ${instructor ? `
+                <div class="row"><span class="label">Name</span><span class="value">${instructor.name}</span></div>
+                <div class="row"><span class="label">Initials</span><span class="value">${instructor.initials}</span></div>
+                <div class="row"><span class="label">License</span><span class="value">${instructor.licenseNumber}</span></div>
+              ` : '<p style="font-size:12px;color:#64748b;">—</p>'}
+            </div>
+            <div class="section">
+              <div class="section-title">${student ? 'Student' : 'Purpose'}</div>
+              ${student ? `
+                <div class="row"><span class="label">Name</span><span class="value">${student.name}</span></div>
+                <div class="row"><span class="label">Stage</span><span class="value">${student.trainingStage}</span></div>
+                <div class="row"><span class="label">Total Hours</span><span class="value">${student.totalHours}h</span></div>
+              ` : '<p style="font-size:12px;font-weight:600;">Maintenance / Check Flight</p>'}
+            </div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">Weather</div>
+            <div class="weather-grid">
+              <div><div class="w-label">Wind</div><div class="w-value">${weather.windDirection}°/${weather.windSpeed}kt</div></div>
+              <div><div class="w-label">Visibility</div><div class="w-value">${weather.visibility >= 9999 ? '10km+' : `${weather.visibility}m`}</div></div>
+              <div><div class="w-label">Ceiling</div><div class="w-value">${weather.ceiling >= 9999 ? 'Clear' : `${weather.ceiling}ft`}</div></div>
+              <div><div class="w-label">Rules</div><div class="w-value">${weather.flightRules}</div></div>
+            </div>
+          </div>
+
+          ${notams.length > 0 ? `
+            <div class="section notams">
+              <div class="section-title">Active NOTAMs</div>
+              ${notamRows}
+            </div>
+          ` : ''}
+
+          <div class="section">
+            <div class="section-title">Flight Readiness</div>
+            ${readinessRows}
+          </div>
+
+          <div class="footer">
+            Generated by FlightPro Manager &nbsp;|&nbsp; ${new Date().toLocaleString('en-IN')}
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+
+    // Give the browser a moment to render, then open the print dialog —
+    // same pattern ScheduleBoard.tsx's Print Schedule uses.
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
   };
 
   // ============================================================
@@ -160,9 +327,8 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   // RENDER
   // ============================================================
   return (
-    // Modal backdrop - click outside to close
-    <div 
-      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4" 
+    <div
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       onClick={onClose}
     >
       {/* Modal content - stop propagation to prevent closing when clicking inside */}

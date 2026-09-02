@@ -42,6 +42,11 @@
 //   joins baked into the fetcher rather than a render-time selector (see
 //   that file's own header comment for why — matches the Availability
 //   precedent, not the Students one).
+//   Scheduled Flights moved to lib/hooks/useScheduledFlights.ts (SWR
+//   migration, Stage 5, 2026-09-01).
+//   Maintenance Records + Maintenance Schedule Templates moved to
+//   lib/hooks/useMaintenanceRecords.ts (SWR migration, Stage 6, 2026-09-01)
+//   — computeMaintenanceDueItems()/getMaintenanceDueItems() moved there too.
 // ============================================================
 
 'use client';
@@ -50,42 +55,27 @@ import { create } from 'zustand';
 import {
   Aircraft, FlightSlot,
   WeatherData, GeneralWeatherData, NOTAM,
-  MaintenanceRecord,
   TrainingRequirement, Holiday,
-  MaintenanceScheduleTemplate, MaintenanceDueItem
 } from '@/types';
 import { supabase } from './supabase';
 // SWR migration, Stage 1 (2026-08-28): aircraft moved out of this store's
-// own state into lib/hooks/useAircraft.ts. loadMaintenanceRecords below
-// (the remaining not-yet-migrated loader that needs an aircraft
-// name-join) calls fetchAircraft() directly for a fresh read instead of
-// reading this store's own (now-removed) `aircraft` state.
-// updateMaintenanceRecord still revalidates aircraftKey directly after a
-// server-derived aircraft change (status reset) — the "server derived
-// something the client didn't send, so revalidate rather than locally
-// splice" case the migration plan calls out. (Flight Records', Fuel
-// Records', and Scheduled Flights' own equivalent aircraftKey/fetchAircraft
-// uses — hobbs bump, current_fuel bump, checkConflicts/bookFlight's
-// fuel-buffer calc — moved out of this file along with those domains in
-// Stages 4 and 5; see lib/hooks/useFlightRecords.ts / useFuelRecords.ts /
-// useScheduledFlights.ts.)
-import { fetchAircraft, aircraftKey } from './hooks/useAircraft';
+// own state into lib/hooks/useAircraft.ts.
 // SWR migration, Stage 2 (2026-08-28): instructors and availability moved
 // out of this store's own state into lib/hooks/useInstructors.ts and
-// lib/hooks/useAvailability.ts. (The one not-yet-migrated loader that used
-// to call fetchInstructors() directly for a name-join —
-// loadScheduledFlights — moved out along with the rest of that domain in
-// Stage 5; see lib/hooks/useScheduledFlights.ts.)
+// lib/hooks/useAvailability.ts.
 // SWR migration, Stage 3 (2026-08-28): students moved out of this store's
-// own state into lib/hooks/useStudents.ts. (loadScheduledFlights, the
-// remaining not-yet-migrated loader that called fetchStudents() directly
-// for a student name-join, moved out along with the rest of that domain in
-// Stage 5; see lib/hooks/useScheduledFlights.ts. Flight Records' own
-// equivalent — loadFlightRecords/loadStudentFlightRecords' fetchStudents()
-// call, and addFlightRecord's studentsKey revalidation for the
-// server-derived hours/solo-date bump — moved out of this file along with
-// that domain in Stage 4; see lib/hooks/useFlightRecords.ts.)
-import { mutate } from 'swr';
+// own state into lib/hooks/useStudents.ts.
+// SWR migration, Stage 4 (2026-08-29): flight records and fuel records
+// moved out into lib/hooks/useFlightRecords.ts / useFuelRecords.ts.
+// SWR migration, Stage 5 (2026-09-01): scheduled flights moved out into
+// lib/hooks/useScheduledFlights.ts.
+// SWR migration, Stage 6 (2026-09-01): maintenance records and maintenance
+// schedule templates — the store's last not-yet-migrated domains that
+// still called fetchAircraft()/mutate(aircraftKey) directly for a name-join
+// and a server-derived-status revalidation — moved out into
+// lib/hooks/useMaintenanceRecords.ts, along with those two imports. This
+// store no longer imports fetchAircraft/aircraftKey/mutate at all; nothing
+// left here needs them.
 
 // ============================================================
 // SCHEDULING RULES — booking-duration, turnaround & fuel-burn constants
@@ -241,25 +231,11 @@ export function findHolidayForDate(dateStr: string, holidays: Holiday[]): Holida
   return holidays.find(h => (h.isRecurring ? h.date.slice(5) === monthDay : h.date === dateStr)) ?? null;
 }
 
-// "Flag for manual review, don't touch" support for addHoliday/addHolidaysBulk:
-// counts already-scheduled, non-cancelled flights and ground-school classes
-// that fall on `dateStr` ('YYYY-MM-DD'), using the same +05:30 day-bounds
-// convention as ScheduleBoard, so admins get a heads-up without anything
-// being auto-modified or auto-cancelled.
-async function countScheduleConflictsOnDate(dateStr: string): Promise<{ conflictingFlights: number; conflictingClasses: number }> {
-  const dayStart = `${dateStr}T00:00:00+05:30`;
-  const dayEnd = `${dateStr}T23:59:59.999+05:30`;
-  const [flightsRes, classesRes] = await Promise.all([
-    supabase.from('scheduled_flights').select('id', { count: 'exact', head: true })
-      .gte('start_time', dayStart).lte('start_time', dayEnd).neq('status', 'CANCELLED'),
-    supabase.from('ground_school_classes').select('id', { count: 'exact', head: true })
-      .eq('class_date', dateStr).neq('status', 'CANCELLED'),
-  ]);
-  return {
-    conflictingFlights: flightsRes.count || 0,
-    conflictingClasses: classesRes.count || 0,
-  };
-}
+// (countScheduleConflictsOnDate — the addHoliday/addHolidaysBulk "flag for
+// manual review" helper — moved to lib/hooks/useHolidays.ts, Stage 7 of the
+// SWR migration (2026-09-02): it had exactly one caller each, both of which
+// moved there too, same "single-caller helper moves with its caller" call
+// Stage 6 made for computeMaintenanceDueItems.)
 
 // ============================================================
 // WEEKLY OFF DAY — FTO-wide recurring weekly closure (Settings -> Time &
@@ -372,101 +348,16 @@ export function getSchedulingBlockReason(
 }
 
 // ============================================================
-// AIRCRAFT MAINTENANCE SCHEDULE — Phase 1 (2026-08-26)
+// AIRCRAFT MAINTENANCE SCHEDULE — moved to lib/hooks/useMaintenanceRecords.ts
+// (SWR migration, Stage 6, 2026-09-01). dueSoonHobbsWindow(),
+// dueSoonCalendarWindowDays(), normalizeItemName(), addMonthsToDateStr(),
+// and computeMaintenanceDueItems() all live there now — this was the one
+// pure-function group in this file with exactly one caller
+// (getMaintenanceDueItems, only ever called from MaintenanceDueSection.tsx),
+// unlike getSchedulingBlockReason/getAircraftBufferMinutes/
+// getProjectedFuelAfter above, which stay here because BookingForm.tsx's
+// own client-side validation genuinely shares them.
 // ============================================================
-// Warnings + staff-confirmed record creation only — see
-// add-aircraft-maintenance-schedule.sql's header for full scope, and the
-// handoff doc's "Aircraft Maintenance Schedule" section for the confirmed
-// design (Phase 2 hard-blocking is deliberately deferred, not built here).
-//
-// "Due soon" windows — how close to due before an OK item flips to
-// DUE_SOON. 2026-08-26: changed from flat constants to a percentage of the
-// item's own interval (capped) after adding short-interval items like a
-// 50-hour Oil Change alongside the original long-interval ones (2000-hour
-// TBO) — a flat 25-hour window meant a 50-hour oil change spent HALF its
-// life showing DUE_SOON, which is noise, not a warning. 20% of the
-// interval, floored/capped so both short and long intervals get a
-// sensible window (a 50-hr item gets a 10-hr warning; a 2000-hr item gets
-// the same 25-hr cap as before).
-function dueSoonHobbsWindow(intervalHours: number): number {
-  return Math.max(5, Math.min(25, intervalHours * 0.2));
-}
-function dueSoonCalendarWindowDays(intervalMonths: number): number {
-  return Math.max(7, Math.min(30, intervalMonths * 30 * 0.2));
-}
-
-// Loose match for tying a logged maintenance_records row back to a
-// schedule template item by name — case/whitespace-insensitive so a
-// record logged via the standard "Log Maintenance" form's fixed Type
-// dropdown (e.g. "Oil Change") still matches a template item_name seeded
-// with the same intent, even if casing ever drifts between the two.
-function normalizeItemName(name: string): string {
-  return name.trim().toLowerCase();
-}
-
-function addMonthsToDateStr(dateStr: string, months: number): string {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setMonth(d.getMonth() + months);
-  return d.toISOString().split('T')[0];
-}
-
-// Pure function: given one aircraft's active template items and its
-// completed/baseline maintenance history, work out due/overdue status for
-// each item. Mirrors the getSchedulingBlockReason pure-function pattern —
-// callable from the store itself and, if ever needed, directly from a
-// component/test without going through Zustand.
-//
-// `records` should be every maintenance_records row for this aircraft
-// (any status is fine — only COMPLETED rows, which is what a baseline row
-// is also stored as, are used as the "last known service" anchor).
-export function computeMaintenanceDueItems(
-  aircraftId: string,
-  currentHobbs: number,
-  templates: MaintenanceScheduleTemplate[],
-  records: MaintenanceRecord[]
-): MaintenanceDueItem[] {
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const todayStr = today.toISOString().split('T')[0];
-  const completed = records
-    .filter(r => r.aircraftId === aircraftId && r.status === 'COMPLETED' && r.completedDate)
-    .sort((a, b) => (a.completedDate! < b.completedDate! ? 1 : -1)); // newest first
-
-  return templates
-    .filter(t => t.isActive)
-    .map((template): MaintenanceDueItem => {
-      // Most recent COMPLETED record whose description/maintenanceType
-      // matches this item's name — a lightweight text match rather than a
-      // foreign key, consistent with maintenance_records having no
-      // template_id column in Phase 1 (records aren't required to
-      // originate from a template item at all). Case/whitespace-insensitive
-      // — see normalizeItemName().
-      const targetName = normalizeItemName(template.itemName);
-      const last = completed.find(r =>
-        normalizeItemName(r.maintenanceType || '') === targetName || normalizeItemName(r.description || '') === targetName
-      );
-
-      const lastHobbs = last?.hobbsAtCompletion ?? null;
-      const lastDate = last?.completedDate ?? null;
-
-      if (template.intervalType === 'HOBBS_HOURS') {
-        if (lastHobbs == null) {
-          return { template, aircraftId, lastHobbs, lastDate, dueAtHobbs: null, dueAtDate: null, status: 'NO_BASELINE' };
-        }
-        const dueAtHobbs = lastHobbs + template.intervalValue;
-        const remaining = dueAtHobbs - currentHobbs;
-        const status: MaintenanceDueItem['status'] = remaining < 0 ? 'OVERDUE' : remaining <= dueSoonHobbsWindow(template.intervalValue) ? 'DUE_SOON' : 'OK';
-        return { template, aircraftId, lastHobbs, lastDate, dueAtHobbs, dueAtDate: null, status };
-      } else {
-        if (lastDate == null) {
-          return { template, aircraftId, lastHobbs, lastDate, dueAtHobbs: null, dueAtDate: null, status: 'NO_BASELINE' };
-        }
-        const dueAtDate = addMonthsToDateStr(lastDate, template.intervalValue);
-        const daysRemaining = Math.ceil((new Date(dueAtDate + 'T00:00:00').getTime() - new Date(todayStr + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24));
-        const status: MaintenanceDueItem['status'] = daysRemaining < 0 ? 'OVERDUE' : daysRemaining <= dueSoonCalendarWindowDays(template.intervalValue) ? 'DUE_SOON' : 'OK';
-        return { template, aircraftId, lastHobbs, lastDate, dueAtHobbs: null, dueAtDate, status };
-      }
-    });
-}
 
 // ============================================================
 // TYPE DEFINITION
@@ -475,12 +366,6 @@ interface FlightStore {
   // ==========================================
   // DATA COLLECTIONS
   // ==========================================
-  maintenanceRecords: MaintenanceRecord[];
-  // 2026-08-26: Aircraft Maintenance Schedule, Phase 1 — active + inactive
-  // template rows (see AircraftMaintenanceScheduleTab.tsx). Used with
-  // computeMaintenanceDueItems() to work out due/overdue status per
-  // aircraft.
-  maintenanceScheduleTemplates: MaintenanceScheduleTemplate[];
   notams: NOTAM[];
   weather: WeatherData;
   // General (non-aviation) weather for a configured lat/long — only used
@@ -499,11 +384,8 @@ interface FlightStore {
   // sortie counts as SOLO or DUAL (see addFlightRecord / FlightRecordForm),
   // now that Flight Type is no longer a separate field.
   sortieTypes: { id: number; type_name: string; type_code: string; requires_instructor: boolean; requires_student: boolean }[];
-  // FTO-wide blackout dates — flights/ground-school classes cannot be
-  // scheduled on these (see findHolidayForDate above). Managed via Admin
-  // Setup -> Holiday Calendar.
-  holidays: Holiday[];
-  loadingHolidays: boolean;
+  // (holidays/loadingHolidays state moved to lib/hooks/useHolidays.ts,
+  // Stage 7 of the SWR migration, 2026-09-02.)
 
 
   // ==========================================
@@ -518,7 +400,6 @@ interface FlightStore {
   toggleTheme: () => void;
   selectedSlot: FlightSlot | null;
   hoveredSlot: string | null;
-  loadingMaintenance: boolean;
   loadingNotams: boolean;
   loadingRequirements: boolean;
 
@@ -563,21 +444,12 @@ interface FlightStore {
   // withScheduledFlightNames() (render-time join selector), bookFlight(),
   // checkConflicts(), cancelFlight(), updateScheduledFlight().
 
-  // ==========================================
-  // 6. MAINTENANCE ACTIONS
-  // ==========================================
-  loadMaintenanceRecords: () => Promise<void>;
-  addMaintenanceRecord: (record: Omit<MaintenanceRecord, 'id' | 'aircraftReg' | 'aircraftType' | 'isOverdue' | 'daysUntilDue'>) => Promise<void>;
-  updateMaintenanceRecord: (id: string, updates: Partial<MaintenanceRecord>) => Promise<void>;
-  removeMaintenanceRecord: (id: string) => Promise<void>;
-  getMaintenanceForAircraft: (aircraftId: string) => MaintenanceRecord[];
-  // 2026-08-26: Aircraft Maintenance Schedule, Phase 1.
-  loadMaintenanceScheduleTemplates: () => Promise<void>;
-  // 2026-08-28 (SWR migration, Stage 1): takes the aircraft record itself
-  // rather than an id to look up — every call site already has it in hand
-  // (it's iterating useAircraft()'s own list), and this store no longer
-  // holds an aircraft copy of its own to look the id up in.
-  getMaintenanceDueItems: (aircraft: Pick<Aircraft, 'id' | 'model' | 'hobbsTime'>) => MaintenanceDueItem[];
+  // 6. MAINTENANCE ACTIONS — moved to lib/hooks/useMaintenanceRecords.ts
+  // (SWR migration, Stage 6, 2026-09-01). useMaintenanceRecords(),
+  // useMaintenanceScheduleTemplates(), withMaintenanceRecordNames()
+  // (render-time join selector), addMaintenanceRecord(),
+  // updateMaintenanceRecord(), removeMaintenanceRecord(),
+  // getMaintenanceForAircraft(), getMaintenanceDueItems().
 
   // 7. INSTRUCTOR ACTIONS — moved to lib/hooks/useInstructors.ts (SWR
   // migration, Stage 2, 2026-08-28). useInstructors(), addInstructor(),
@@ -620,19 +492,9 @@ interface FlightStore {
   loadFTOSettings: () => Promise<void>;
   getFTOSetting: (key: string) => string;
 
-  // ==========================================
-  // 13. HOLIDAYS ACTIONS
-  // ==========================================
-  loadHolidays: () => Promise<void>;
-  // "Flag for manual review, don't touch" — returns how many already-scheduled
-  // flights/ground-school classes (non-cancelled) fall on the new holiday's
-  // date, so the calling UI can warn the admin. Nothing is auto-modified.
-  addHoliday: (holiday: Omit<Holiday, 'id'>) => Promise<{ success: boolean; message: string; conflictingFlights?: number; conflictingClasses?: number }>;
-  addHolidaysBulk: (holidays: Omit<Holiday, 'id'>[]) => Promise<{
-    added: number; skipped: number; skippedNames: string[];
-    conflictingFlights: number; conflictingClasses: number;
-  }>;
-  removeHoliday: (id: string) => Promise<void>;
+  // (13. HOLIDAYS ACTIONS — loadHolidays/addHoliday/addHolidaysBulk/
+  // removeHoliday moved to lib/hooks/useHolidays.ts, Stage 7 of the SWR
+  // migration, 2026-09-02.)
 
   // ==========================================
   // UI ACTIONS
@@ -667,13 +529,9 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // ==========================================
   // INITIAL STATE
   // ==========================================
-  maintenanceRecords: [],
-  maintenanceScheduleTemplates: [],
   notams: [],
   exercises: [],
   sortieTypes: [],
-  holidays: [],
-  loadingHolidays: false,
   weather: {
     metar: 'Loading weather...',
     taf: 'Loading forecast...',
@@ -708,7 +566,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
   selectedSlot: null,
   hoveredSlot: null,
-  loadingMaintenance: false,
   loadingNotams: false,
   loadingRequirements: false,
 
@@ -736,9 +593,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // 1. AIRCRAFT FUNCTIONS
   // ============================================================
   // Migrated to lib/hooks/useAircraft.ts (SWR migration, Stage 1,
-  // 2026-08-28). Not-yet-migrated domains below that need aircraft data
-  // call the exported fetchAircraft()/mutate(aircraftKey) from that file
-  // directly — see the import comment at the top of this file.
+  // 2026-08-28).
 
   // 2. STUDENT FUNCTIONS — moved to lib/hooks/useStudents.ts (SWR
   // migration, Stage 3, 2026-08-28).
@@ -758,137 +613,14 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // ============================================================
 
   // ============================================================
-  // 6. MAINTENANCE FUNCTIONS
+  // 6. MAINTENANCE FUNCTIONS — moved to lib/hooks/useMaintenanceRecords.ts
+  // (SWR migration, Stage 6, 2026-09-01). useMaintenanceRecords(),
+  // useMaintenanceScheduleTemplates(), withMaintenanceRecordNames()
+  // (render-time join selector — replaces the fetch-time aircraftReg/
+  // aircraftType enrichment this used to do), addMaintenanceRecord(),
+  // updateMaintenanceRecord(), removeMaintenanceRecord(),
+  // getMaintenanceForAircraft(), getMaintenanceDueItems().
   // ============================================================
-  loadMaintenanceRecords: async () => {
-    set({ loadingMaintenance: true });
-    const { data, error } = await supabase.from('maintenance_records').select('*').order('scheduled_date', { ascending: true });
-    if (data && !error) {
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      const now = new Date();
-      // 2026-08-28 (SWR migration, Stage 1): aircraft is no longer part of
-      // this store's own state — fetch it directly for this client-side
-      // name-join, the same pattern lib/hooks/useFlightRecords.ts's
-      // fetcher now uses since Stage 4.
-      const aircraftList = await fetchAircraft();
-      set({
-        maintenanceRecords: data.map((row: Record<string, unknown>) => {
-          const ac = aircraftList.find(a => String(a.id) === String(row.aircraft_id));
-          const maintenanceEnd = (row.maintenance_end as string) || null;
-          const isActive = row.status === 'SCHEDULED' || row.status === 'IN_PROGRESS';
-          // Prefer the precise maintenanceEnd for overdue/days-until-due when
-          // it's set (exact moment, not just a day) — falls back to the
-          // original whole-day scheduledDate comparison for legacy/simple
-          // records that never got a precise window.
-          let isOverdue: boolean; let daysUntilDue: number;
-          if (maintenanceEnd) {
-            const end = new Date(maintenanceEnd);
-            isOverdue = isActive && end < now;
-            daysUntilDue = Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          } else {
-            const scheduledDate = new Date(row.scheduled_date as string);
-            daysUntilDue = Math.ceil((scheduledDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-            isOverdue = isActive && daysUntilDue < 0;
-          }
-          return {
-            id: String(row.id), aircraftId: String(row.aircraft_id),
-            maintenanceType: row.maintenance_type as string, description: row.description as string,
-            scheduledDate: row.scheduled_date as string, completedDate: row.completed_date as string || null,
-            status: row.status as MaintenanceRecord['status'], cost: row.cost as number,
-            performedBy: row.performed_by as string, notes: row.notes as string,
-            maintenanceStart: (row.maintenance_start as string) || null,
-            maintenanceEnd,
-            hobbsAtCompletion: (row.hobbs_at_completion as number) ?? null,
-            reportedBy: (row.reported_by as string) || null,
-            isSquawk: Boolean(row.is_squawk),
-            aircraftReg: ac?.registration || 'Unknown', aircraftType: ac?.type || '',
-            isOverdue, daysUntilDue,
-          };
-        }),
-        loadingMaintenance: false,
-      });
-    } else { console.error('Error loading maintenance records:', error); set({ loadingMaintenance: false }); }
-  },
-
-  // Writes go through app/api/maintenance-records/** now instead of
-  // straight to Supabase — gated to MAINTENANCE_WRITE_ROLES (admin/
-  // super_admin/maintenance; instructor/operations can view but not log
-  // maintenance, per the 2026-08-17 role/tab matrix). See lib/api-auth.ts.
-  addMaintenanceRecord: async (record) => {
-    const res = await fetch('/api/maintenance-records', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(record),
-    });
-    if (res.ok) await get().loadMaintenanceRecords();
-    else console.error('Error adding maintenance record:', await res.text());
-  },
-
-  // The "auto-clear the aircraft's status back to ACTIVE once its last
-  // active maintenance record completes/cancels" side effect (see the long
-  // comment that used to live here) now happens server-side, inside
-  // app/api/maintenance-records/[id]/route.ts's PATCH handler — via
-  // supabaseAdmin directly on the aircraft row, NOT by calling
-  // updateAircraft/app/api/aircraft/[id] from here, since that route is
-  // gated to AIRCRAFT_WRITE_ROLES (admin/super_admin only) and would 403
-  // for the `maintenance`-role user who triggers this side effect most
-  // often. See that route's own comment for the full explanation.
-  updateMaintenanceRecord: async (id, updates) => {
-    const res = await fetch(`/api/maintenance-records/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates),
-    });
-    if (res.ok) {
-      set(state => ({ maintenanceRecords: state.maintenanceRecords.map(m => m.id === id ? { ...m, ...updates } : m) }));
-      // The aircraft-status side effect happened server-side above (if
-      // applicable) — revalidate the SWR aircraft cache so any mounted
-      // useAircraft() consumer's copy of that status reflects it instead
-      // of going stale until the next full page load.
-      if (updates.status === 'COMPLETED' || updates.status === 'CANCELLED') {
-        await mutate(aircraftKey);
-      }
-    } else {
-      console.error('Error updating maintenance record:', await res.text());
-    }
-  },
-
-  removeMaintenanceRecord: async (id) => {
-    const res = await fetch(`/api/maintenance-records/${id}`, { method: 'DELETE' });
-    if (res.ok) set(state => ({ maintenanceRecords: state.maintenanceRecords.filter(m => m.id !== id) }));
-    else console.error('Error removing maintenance record:', await res.text());
-  },
-
-  getMaintenanceForAircraft: (aircraftId) => get().maintenanceRecords.filter(m => m.aircraftId === aircraftId),
-
-  // 2026-08-26: Aircraft Maintenance Schedule, Phase 1. Read-only —
-  // writes go through AircraftMaintenanceScheduleTab.tsx's own fetch calls
-  // to app/api/admin/config/aircraft-maintenance-schedule, same as every
-  // other config-CRUD tab; this just keeps the shared store's copy in
-  // sync so getMaintenanceDueItems() below has fresh data.
-  loadMaintenanceScheduleTemplates: async () => {
-    const { data, error } = await supabase.from('aircraft_maintenance_schedule_templates').select('*');
-    if (error) { console.error('Error loading maintenance schedule templates:', error); return; }
-    set({
-      maintenanceScheduleTemplates: (data || []).map((row: Record<string, unknown>) => ({
-        id: row.id as number,
-        aircraftModel: row.aircraft_model as string,
-        itemName: row.item_name as string,
-        intervalType: row.interval_type as MaintenanceScheduleTemplate['intervalType'],
-        intervalValue: row.interval_value as number,
-        notes: (row.notes as string) || null,
-        isActive: row.is_active as boolean,
-        engineType: (row.engine_type as string) || null,
-      })),
-    });
-  },
-
-  // 2026-08-28 (SWR migration, Stage 1): takes the aircraft record itself
-  // now instead of an id — see the interface comment above.
-  getMaintenanceDueItems: (aircraft) => {
-    const templatesForModel = get().maintenanceScheduleTemplates.filter(t => t.aircraftModel === aircraft.model);
-    return computeMaintenanceDueItems(aircraft.id, aircraft.hobbsTime, templatesForModel, get().maintenanceRecords);
-  },
 
   // 7. INSTRUCTOR FUNCTIONS — moved to lib/hooks/useInstructors.ts (SWR
   // migration, Stage 2, 2026-08-28).
@@ -1115,96 +847,10 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     }
   },
 
-  // ============================================================
-  // 13. HOLIDAYS FUNCTIONS
-  // ============================================================
-  // FTO-wide blackout dates — see the Holiday type in types/index.ts and the
-  // findHolidayForDate/getSchedulingBlockReason helpers above this store.
-  // Managed via Admin Setup -> Holiday Calendar.
-  loadHolidays: async () => {
-    set({ loadingHolidays: true });
-    const { data, error } = await supabase.from('holidays').select('*').order('holiday_date', { ascending: true });
-    if (data && !error) {
-      set({
-        holidays: data.map((row: Record<string, unknown>) => ({
-          id: String(row.id),
-          holidayName: row.holiday_name as string,
-          date: row.holiday_date as string,
-          isRecurring: !!row.is_recurring,
-          notes: (row.notes as string) || '',
-        })),
-        loadingHolidays: false,
-      });
-    } else {
-      console.error('Error loading holidays:', error);
-      set({ loadingHolidays: false });
-    }
-  },
-
-  // 2026-08-21 (security hardening round): holiday-calendar writes used to
-  // go straight to Supabase from the browser — one of the direct-write-
-  // bypass instances named in the whole-frontend security review. Now
-  // routed through the shared, role-checked config route (Admin Setup is
-  // super_admin-only) instead — see app/api/admin/config/[table]/route.ts.
-  addHoliday: async (holiday) => {
-    const res = await fetch('/api/admin/config/holidays', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        holiday_name: holiday.holidayName,
-        holiday_date: holiday.date,
-        is_recurring: holiday.isRecurring,
-        notes: holiday.notes || '',
-      }),
-    });
-    if (!res.ok) {
-      console.error('Error adding holiday:', await res.text());
-      return { success: false, message: '❌ Failed to add holiday.' };
-    }
-    await get().loadHolidays();
-    const { conflictingFlights, conflictingClasses } = await countScheduleConflictsOnDate(holiday.date);
-    const conflictNote = (conflictingFlights + conflictingClasses) > 0
-      ? ` ⚠️ ${conflictingFlights} flight(s) and ${conflictingClasses} ground-school class(es) already scheduled on this date — please review manually, nothing was changed.`
-      : '';
-    return { success: true, message: `✅ Holiday added.${conflictNote}`, conflictingFlights, conflictingClasses };
-  },
-
-  // "Append + skip duplicates" — a row is a duplicate if a holiday already
-  // exists (in the DB, or earlier in this same CSV batch) with the same
-  // date + isRecurring combination. Existing holidays are never overwritten.
-  addHolidaysBulk: async (holidaysToAdd) => {
-    const seen = new Set(get().holidays.map(h => `${h.date}|${h.isRecurring}`));
-    let added = 0, skipped = 0;
-    const skippedNames: string[] = [];
-    let conflictingFlights = 0, conflictingClasses = 0;
-    for (const h of holidaysToAdd) {
-      const key = `${h.date}|${h.isRecurring}`;
-      if (seen.has(key)) { skipped++; skippedNames.push(h.holidayName); continue; }
-      seen.add(key);
-      const res = await fetch('/api/admin/config/holidays', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          holiday_name: h.holidayName,
-          holiday_date: h.date,
-          is_recurring: h.isRecurring,
-          notes: h.notes || '',
-        }),
-      });
-      if (!res.ok) { skipped++; skippedNames.push(h.holidayName); continue; }
-      added++;
-      const conflicts = await countScheduleConflictsOnDate(h.date);
-      conflictingFlights += conflicts.conflictingFlights;
-      conflictingClasses += conflicts.conflictingClasses;
-    }
-    if (added > 0) await get().loadHolidays();
-    return { added, skipped, skippedNames, conflictingFlights, conflictingClasses };
-  },
-
-  removeHoliday: async (id) => {
-    const res = await fetch(`/api/admin/config/holidays?id=${id}`, { method: 'DELETE' });
-    if (res.ok) set(state => ({ holidays: state.holidays.filter(h => h.id !== id) }));
-  },
+  // (13. HOLIDAYS FUNCTIONS — loadHolidays/addHoliday/addHolidaysBulk/
+  // removeHoliday moved to lib/hooks/useHolidays.ts, Stage 7 of the SWR
+  // migration, 2026-09-02. findHolidayForDate/getSchedulingBlockReason stay
+  // above this store — see their own comments for why.)
 
   // ============================================================
   // UI STATE FUNCTIONS
