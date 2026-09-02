@@ -14,12 +14,12 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
-import { useFlightStore } from '@/lib/store';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
+import { useTrainingRequirementsForStudents } from '@/lib/hooks/useTrainingRequirements';
 import { supabase } from '@/lib/supabase-client';
 import { matchTrainingProgram } from '@/lib/training-programs';
 import { useSetHeader } from '@/components/ui/HeaderContext';
@@ -49,9 +49,6 @@ export default function InstructorDashboardPage() {
   // dedup, names joined at render time (see withScheduledFlightNames).
   const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
   const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
-  const {
-    trainingRequirements, loadTrainingRequirementsForStudents,
-  } = useFlightStore();
 
   // Find the instructor's database ID from their email
   const [instructorId, setInstructorId] = useState('');
@@ -127,15 +124,14 @@ export default function InstructorDashboardPage() {
   // Previously this page called loadTrainingRequirements() with no
   // studentId, which pulls the ENTIRE table — every student's requirement
   // rows plus every other instructor's — into the browser and filtered it
-  // client-side afterward. loadTrainingRequirementsForStudents (lib/store.ts)
-  // queries only these students' rows instead. Re-runs whenever the
-  // assigned-student list changes (e.g. instructorId resolves after the
-  // session loads).
-  useEffect(() => {
-    if (myStudents.length > 0) {
-      loadTrainingRequirementsForStudents(myStudents.map(s => s.id));
-    }
-  }, [myStudents, loadTrainingRequirementsForStudents]);
+  // client-side afterward; then loadTrainingRequirementsForStudents scoped
+  // that query. SWR migration, Stage 8 (2026-09-02): now a keyed hook —
+  // useTrainingRequirementsForStudents skips the fetch entirely (SWR's
+  // null-key idiom) while myStudents is still empty, same short-circuit the
+  // old store's explicit "set empty, return" had, and re-fetches on its own
+  // whenever the assigned-student-id list actually changes, no effect needed.
+  const myStudentIds = useMemo(() => myStudents.map(s => s.id), [myStudents]);
+  const { trainingRequirements } = useTrainingRequirementsForStudents(myStudentIds);
 
   // Recent debriefs (completed flights with instructor notes)
   const recentDebriefs = useMemo(() => {

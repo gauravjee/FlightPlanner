@@ -16,8 +16,8 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useFlightStore } from '@/lib/store';
+import { useState } from 'react';
+import { useTrainingRequirements, toggleRequirement } from '@/lib/hooks/useTrainingRequirements';
 import { useStudents, updateStudent } from '@/lib/hooks/useStudents';
 import { useSession } from 'next-auth/react';
 import { syncGroundSchoolFromChecklist, getGroundSchoolSubject } from '@/lib/ground-school-sync';
@@ -32,11 +32,10 @@ interface Props {
 
 export default function RequirementsChecklist({ studentId }: Props) {
   // ----- Store access -----
-  const {
-    trainingRequirements,
-    loadTrainingRequirements,
-    toggleRequirement,
-  } = useFlightStore();
+  // SWR migration, Stage 8 (2026-09-02): keyed per-studentId — this replaces
+  // the old load-on-mount effect + whole-store trainingRequirements array +
+  // student filter below with a fetch scoped to this student alone.
+  const { trainingRequirements: studentReqs } = useTrainingRequirements(studentId);
   const { students } = useStudents();
 
   const [loading, setLoading] = useState(false);
@@ -83,15 +82,6 @@ export default function RequirementsChecklist({ studentId }: Props) {
   // incomplete blocking requirement is never hidden from view on load.
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
-  // ----- Load requirements on mount / when student changes -----
-  useEffect(() => {
-    loadTrainingRequirements(studentId);
-  }, [studentId, loadTrainingRequirements]);
-
-  // ----- Filter requirements for this student -----
-  const studentReqs = trainingRequirements.filter(
-    (r) => r.studentId === studentId
-  );
   const completedCount = studentReqs.filter((r) => r.isCompleted).length;
   const totalCount = studentReqs.length;
   const progressPercent =

@@ -53,9 +53,13 @@
 //   genuinely shared pure functions.
 //   FTO Settings moved to lib/hooks/useFtoSettings.ts, Exercises to
 //   lib/hooks/useExercises.ts, Sortie Types to lib/hooks/useSortieTypes.ts,
-//   and My Permission Overrides to lib/hooks/usePermissionOverrides.ts (SWR
-//   migration, Stage 8, 2026-09-02) — Training Requirements is Stage 8's
-//   one remaining domain, not yet migrated.
+//   My Permission Overrides to lib/hooks/usePermissionOverrides.ts, and
+//   Training Requirements to lib/hooks/useTrainingRequirements.ts (SWR
+//   migration, Stage 8, 2026-09-02) — Training Requirements was Stage 8's
+//   last domain, closing out the whole 9-stage SWR migration (Stages 0-8).
+//   This store now holds only weather/NOTAMs (live external APIs, never
+//   migrated — no Supabase table to key an SWR cache off) and small UI
+//   state (theme, selected/hovered slot).
 // ============================================================
 
 'use client';
@@ -64,9 +68,8 @@ import { create } from 'zustand';
 import {
   Aircraft, FlightSlot,
   WeatherData, GeneralWeatherData, NOTAM,
-  TrainingRequirement, Holiday,
+  Holiday,
 } from '@/types';
-import { supabase } from './supabase';
 // SWR migration, Stage 1 (2026-08-28): aircraft moved out of this store's
 // own state into lib/hooks/useAircraft.ts.
 // SWR migration, Stage 2 (2026-08-28): instructors and availability moved
@@ -85,6 +88,14 @@ import { supabase } from './supabase';
 // lib/hooks/useMaintenanceRecords.ts, along with those two imports. This
 // store no longer imports fetchAircraft/aircraftKey/mutate at all; nothing
 // left here needs them.
+// SWR migration, Stage 7 (2026-09-02): holidays moved out into
+// lib/hooks/useHolidays.ts (findHolidayForDate/getSchedulingBlockReason and
+// the weekly-off-day helpers stay here — genuinely shared pure functions).
+// SWR migration, Stage 8 (2026-09-02): FTO Settings, Exercises, Sortie
+// Types, My Permission Overrides, and — last — Training Requirements all
+// moved out into their own lib/hooks/use*.ts files. This closes out the
+// whole 9-stage SWR migration (Stages 0-8); this store now holds only
+// weather/NOTAMs (live external APIs) and small UI state.
 
 // ============================================================
 // SCHEDULING RULES — booking-duration, turnaround & fuel-burn constants
@@ -381,7 +392,8 @@ interface FlightStore {
   // when there's no ICAO/reference station to source real METAR/TAF from.
   // null until fetchGeneralWeather() has been called at least once.
   generalWeather: GeneralWeatherData | null;
-  trainingRequirements: TrainingRequirement[];
+  // (trainingRequirements moved to lib/hooks/useTrainingRequirements.ts,
+  // Stage 8 of the SWR migration, 2026-09-02.)
   // (ftoSettings/ftoSettingsLoaded moved to lib/hooks/useFtoSettings.ts,
   // exercises moved to lib/hooks/useExercises.ts, sortieTypes moved to
   // lib/hooks/useSortieTypes.ts — all Stage 8 of the SWR migration,
@@ -402,7 +414,8 @@ interface FlightStore {
   selectedSlot: FlightSlot | null;
   hoveredSlot: string | null;
   loadingNotams: boolean;
-  loadingRequirements: boolean;
+  // (loadingRequirements moved to lib/hooks/useTrainingRequirements.ts,
+  // Stage 8 of the SWR migration, 2026-09-02.)
 
   // (0. MY PERMISSION OVERRIDES — permissionOverrides/permissionOverridesFor/
   // loadMyPermissionOverrides moved to lib/hooks/usePermissionOverrides.ts,
@@ -464,20 +477,12 @@ interface FlightStore {
   // (EXERCISES/SORTIE TYPES ACTIONS — loadExercises/loadSortieTypes moved to
   // lib/hooks/useExercises.ts and lib/hooks/useSortieTypes.ts, Stage 8 of
   // the SWR migration, 2026-09-02.)
-  // ==========================================
-  // 11. TRAINING REQUIREMENTS ACTIONS
-  // ==========================================
-  loadTrainingRequirements: (studentId?: string) => Promise<void>;
-  // 2026-08-19: for pages that legitimately need several specific students'
-  // requirements at once (e.g. the Instructor Dashboard's per-student
-  // progress list) — NOT for "give me everything." Replaces
-  // trainingRequirements with just this set, same replace-whole-array
-  // semantics as loadTrainingRequirements. See app/dashboard/instructor/page.tsx.
-  loadTrainingRequirementsForStudents: (studentIds: string[]) => Promise<void>;
-  toggleRequirement: (id: string, isCompleted: boolean) => Promise<void>;
-  addRequirement: (requirement: Omit<TrainingRequirement, 'id'>) => Promise<void>;
-  removeRequirement: (id: string) => Promise<void>;
-  getRequirementsForStudent: (studentId: string) => TrainingRequirement[];
+
+  // (11. TRAINING REQUIREMENTS ACTIONS — loadTrainingRequirements/
+  // loadTrainingRequirementsForStudents/toggleRequirement/addRequirement/
+  // removeRequirement/getRequirementsForStudent moved to
+  // lib/hooks/useTrainingRequirements.ts, Stage 8 of the SWR migration,
+  // 2026-09-02 — the final domain of the whole 9-stage migration.)
 
   // (12. FTO SETTINGS ACTIONS — loadFTOSettings/getFTOSetting moved to
   // lib/hooks/useFtoSettings.ts, Stage 8 of the SWR migration, 2026-09-02.)
@@ -492,24 +497,6 @@ interface FlightStore {
   
   setSelectedSlot: (slot: FlightSlot | null) => void;
   setHoveredSlot: (id: string | null) => void;
-}
-
-// Shared row -> TrainingRequirement mapper, used by both
-// loadTrainingRequirements (one student, or — historically — everything)
-// and loadTrainingRequirementsForStudents (an explicit set of students).
-// Factored out so the two can't drift apart on field mapping.
-function mapTrainingRequirementRow(row: Record<string, unknown>): TrainingRequirement {
-  return {
-    id: String(row.id), studentId: String(row.student_id),
-    templateId: row.template_id != null ? String(row.template_id) : undefined,
-    requirementName: row.requirement_name as string, requirementCategory: row.requirement_category as string,
-    isCompleted: row.is_completed as boolean, completedDate: row.completed_date as string || undefined,
-    completedBy: row.completed_by as string || undefined, notes: row.notes as string || undefined,
-    sortOrder: row.sort_order as number, validityYears: row.validity_years as number || undefined,
-    requiredBeforeHours: row.required_before_hours as number || undefined,
-    blocksSolo: row.blocks_solo as boolean, blocksAllFlights: row.blocks_all_flights as boolean,
-    programCode: row.program_code as string,
-  };
 }
 
 // ============================================================
@@ -533,7 +520,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     isLoading: true, error: null,
   },
   generalWeather: null,
-  trainingRequirements: [],
   // Real default lives in the inline script in app/layout.tsx (reads
   // localStorage, falls back to 'dark') which sets data-theme before this
   // store even initializes — 'dark' here is just a same-guess placeholder
@@ -553,7 +539,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   selectedSlot: null,
   hoveredSlot: null,
   loadingNotams: false,
-  loadingRequirements: false,
 
   // (0. MY PERMISSION OVERRIDES — permissionOverrides/permissionOverridesFor/
   // loadMyPermissionOverrides moved to lib/hooks/usePermissionOverrides.ts,
@@ -630,107 +615,12 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   // 10. AVAILABILITY / LEAVE FUNCTIONS — moved to lib/hooks/useAvailability.ts
   // (SWR migration, Stage 2, 2026-08-28).
 
-  // ============================================================
-  // 11. TRAINING REQUIREMENTS FUNCTIONS
-  // ============================================================
-  loadTrainingRequirements: async (studentId?: string) => {
-    set({ loadingRequirements: true });
-    let query = supabase.from('training_requirements').select('*').order('sort_order', { ascending: true });
-    if (studentId) query = query.eq('student_id', studentId);
-    const { data, error } = await query;
-    if (data && !error) {
-      set({
-        trainingRequirements: data.map(mapTrainingRequirementRow),
-        loadingRequirements: false,
-      });
-    } else { console.error('Error loading training requirements:', error); set({ loadingRequirements: false }); }
-  },
-
-  // 2026-08-19: added alongside the training_requirements/
-  // training_requirement_templates split (see
-  // split-training-requirement-templates.sql) to fix
-  // app/dashboard/instructor/page.tsx calling loadTrainingRequirements()
-  // with NO student filter at all — which pulled every student's
-  // requirements (completion status, audit trail) school-wide into any
-  // instructor's browser just to build a progress list for their own
-  // assigned students. This scopes the query to exactly the students
-  // asked for via .in(), instead of "everything" or "exactly one."
-  loadTrainingRequirementsForStudents: async (studentIds: string[]) => {
-    if (studentIds.length === 0) {
-      set({ trainingRequirements: [] });
-      return;
-    }
-    set({ loadingRequirements: true });
-    const { data, error } = await supabase
-      .from('training_requirements')
-      .select('*')
-      .in('student_id', studentIds)
-      .order('sort_order', { ascending: true });
-    if (data && !error) {
-      set({
-        trainingRequirements: data.map(mapTrainingRequirementRow),
-        loadingRequirements: false,
-      });
-    } else { console.error('Error loading training requirements for students:', error); set({ loadingRequirements: false }); }
-  },
-
-  // Routes through a server-side API route (requireRole-gated to
-  // REQUIREMENTS_WRITE_ROLES, completedBy derived from the verified
-  // session) instead of writing to Supabase directly from the client — see
-  // app/api/admin/requirements/toggle/route.ts. Previously this took a
-  // completedBy argument from the caller and wrote it straight to Supabase;
-  // that meant both "who's allowed to toggle a requirement" and "who gets
-  // credited for it" were enforced client-side only, and a modified client
-  // could claim to be anyone. 2026-08-19 hardening: the caller no longer
-  // supplies completedBy at all — the server is the only source of truth
-  // for it now, read back from the API response below.
-  toggleRequirement: async (id, isCompleted) => {
-    const res = await fetch('/api/admin/requirements/toggle', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, isCompleted }),
-    });
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      console.error('Error toggling training requirement:', errBody.error || res.statusText);
-      return;
-    }
-    const { completedBy } = await res.json();
-    set(state => ({
-      trainingRequirements: state.trainingRequirements.map(r =>
-        r.id === id ? { ...r, isCompleted, completedDate: isCompleted ? new Date().toISOString().split('T')[0] : undefined, completedBy: isCompleted ? completedBy : undefined } : r
-      )
-    }));
-  },
-
-  addRequirement: async (requirement) => {
-    // student_id is required (2026-08-19: training_requirements now only
-    // ever holds real per-student assignments — see
-    // split-training-requirement-templates.sql). template_id is optional;
-    // this action has no current callers that set it, so a row added this
-    // way just isn't linked back to a template, same as before the split.
-    const { data, error } = await supabase.from('training_requirements').insert({
-      student_id: requirement.studentId, template_id: requirement.templateId || null,
-      requirement_name: requirement.requirementName,
-      requirement_category: requirement.requirementCategory, is_completed: false,
-      sort_order: requirement.sortOrder || 99, notes: requirement.notes || '',
-      validity_years: requirement.validityYears, required_before_hours: requirement.requiredBeforeHours,
-      blocks_solo: requirement.blocksSolo || false, blocks_all_flights: requirement.blocksAllFlights || false,
-      program_code: requirement.programCode,
-    }).select().single();
-    if (data && !error) {
-      set(state => ({
-        trainingRequirements: [...state.trainingRequirements, { ...requirement, id: String(data.id), isCompleted: false }]
-      }));
-    }
-  },
-
-  removeRequirement: async (id) => {
-    await supabase.from('training_requirements').delete().eq('id', id);
-    set(state => ({ trainingRequirements: state.trainingRequirements.filter(r => r.id !== id) }));
-  },
-
-  getRequirementsForStudent: (studentId) => get().trainingRequirements.filter(r => r.studentId === studentId),
+  // (11. TRAINING REQUIREMENTS FUNCTIONS — loadTrainingRequirements/
+  // loadTrainingRequirementsForStudents/toggleRequirement/addRequirement/
+  // removeRequirement/getRequirementsForStudent, plus the shared
+  // mapTrainingRequirementRow mapper, all moved to
+  // lib/hooks/useTrainingRequirements.ts, Stage 8 of the SWR migration,
+  // 2026-09-02 — the final domain of the whole 9-stage migration.)
 
   // (12. FTO SETTINGS FUNCTIONS — loadFTOSettings/getFTOSetting moved to
   // lib/hooks/useFtoSettings.ts, Stage 8 of the SWR migration, 2026-09-02.)

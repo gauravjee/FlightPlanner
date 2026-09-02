@@ -5,10 +5,10 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
-import { useFlightStore } from '@/lib/store';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
+import { useTrainingRequirements } from '@/lib/hooks/useTrainingRequirements';
 import { supabase } from '@/lib/supabase-client';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
@@ -101,10 +101,6 @@ export default function ProgressPage() {
   const { aircraft } = useAircraft();
   const { students } = useStudents();
   const { flightRecords } = useFlightRecords();
-  const {
-    loadTrainingRequirements,
-    getRequirementsForStudent,
-  } = useFlightStore();
 
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [selectedStage, setSelectedStage] = useState<string>('ALL');
@@ -152,25 +148,18 @@ export default function ProgressPage() {
   // Get selected student object
   const selectedStudent = students.find(s => s.id === selectedStudentId);
 
-  // Load the selected student's requirements so the Solo Release status
-  // badge below can render as soon as a student is picked, without waiting
-  // for the RequirementsChecklist widget further down the page to mount
-  // and load them itself. `trainingRequirements` is a single-active-student
-  // cache in the store (loadTrainingRequirements replaces the whole array
-  // with just one student's rows — see lib/store.ts), so this and the
-  // checklist widget end up loading the same data; harmless, just one
-  // extra request, and it's what lets the badge show up in the banner
-  // above the checklist instead of only inside it.
-  useEffect(() => {
-    if (selectedStudentId) loadTrainingRequirements(selectedStudentId);
-  }, [selectedStudentId, loadTrainingRequirements]);
+  // SWR migration, Stage 8 (2026-09-02): keyed per-studentId, so this and
+  // the RequirementsChecklist widget further down the page share one SWR
+  // cache entry for the same student (one real request, not a duplicate) —
+  // this is what lets the Solo Release badge show up in the banner above
+  // the checklist instead of only inside it, without a manual load effect
+  // or a "does the cache still match the selected student" guard (the old
+  // store's single-active-student cache needed `soloReqsMatchSelectedStudent`
+  // for exactly that; per-key caching makes the question moot).
+  const { trainingRequirements: selectedStudentReqs } = useTrainingRequirements(selectedStudentId || null);
 
   // "Released for solo" = no incomplete requirement flagged Blocks Solo —
-  // same rule BookingForm.tsx enforces at booking time. Guards against the
-  // brief window right after switching students where the cache may still
-  // hold the previous student's rows.
-  const selectedStudentReqs = selectedStudentId ? getRequirementsForStudent(selectedStudentId) : [];
-  const soloReqsMatchSelectedStudent = selectedStudentReqs.length > 0 && selectedStudentReqs.every(r => r.studentId === selectedStudentId);
+  // same rule BookingForm.tsx enforces at booking time.
   const blockingSoloReqs = selectedStudentReqs.filter(r => r.blocksSolo && !r.isCompleted);
 
   // Resolve the admin-configured training_programs row for the selected
@@ -392,7 +381,7 @@ export default function ProgressPage() {
                       below) since it's the one status instructors most
                       often need at a glance. Same blocksSolo rule
                       BookingForm.tsx enforces at booking time. */}
-                  {soloReqsMatchSelectedStudent && (
+                  {selectedStudentReqs.length > 0 && (
                     <div className="mt-4 pt-4 border-t divider">
                       {blockingSoloReqs.length > 0 ? (
                         <p className="text-sm flex items-center gap-1.5" style={{ color: 'var(--danger)' }}>

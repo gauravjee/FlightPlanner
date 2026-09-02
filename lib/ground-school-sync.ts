@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 
 import { supabase } from '@/lib/supabase-client';
-import { useFlightStore } from '@/lib/store';
+import { fetchTrainingRequirements, toggleRequirement } from '@/lib/hooks/useTrainingRequirements';
 
 /**
  * Extract the ground school subject name from a requirement name.
@@ -162,18 +162,22 @@ export async function syncRequirementsFromGroundSchoolPass(
   studentId: string,
   subjectName: string
 ): Promise<number> {
-  const { loadTrainingRequirements, toggleRequirement } = useFlightStore.getState();
-  await loadTrainingRequirements(studentId);
-
+  // SWR migration, Stage 8 (2026-09-02): this is a plain (non-component,
+  // non-hook) utility file, so it calls the hook file's exported fetcher/
+  // write functions directly rather than going through a React hook — same
+  // "one-shot fetch, bypass the cache" pattern used elsewhere for a
+  // write-adjacent read (e.g. useHolidays.ts's fetchHolidays() inside
+  // bookFlight). fetchTrainingRequirements(studentId) already scopes the
+  // query server-side, so no client-side studentId re-filter is needed.
+  //
   // Uses the same includes()-based name matching as the rest of this file —
   // requirement names carry suffixes like "Air Regulations (valid 5 yrs)".
-  const currentReqs = useFlightStore.getState().trainingRequirements;
-  const matchingReqs = currentReqs.filter(
-    (r) => r.studentId === studentId && r.requirementName.includes(subjectName)
-  );
+  const currentReqs = await fetchTrainingRequirements(studentId);
+  const matchingReqs = currentReqs.filter((r) => r.requirementName.includes(subjectName));
 
   // 2026-08-19: toggleRequirement no longer accepts a completedBy argument
-  // at all — it's a server-side API route now (see lib/store.ts and
+  // at all — it's a server-side API route now (see
+  // lib/hooks/useTrainingRequirements.ts and
   // app/api/admin/requirements/toggle/route.ts), and the server always
   // derives completedBy from the verified session making the request, i.e.
   // whichever instructor/admin is actually recording this exam pass. That

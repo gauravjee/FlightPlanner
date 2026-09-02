@@ -27,7 +27,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import {
-  useFlightStore, getAircraftBufferMinutes, parseTurnaroundBufferSetting,
+  getAircraftBufferMinutes, parseTurnaroundBufferSetting,
   MIN_FLIGHT_DURATION_MIN, FLIGHT_DURATION_INCREMENT_MIN,
   LOW_FUEL_THRESHOLD_L, FUELING_BUFFER_MIN,
   getAircraftFuelBurnRate, getProjectedFuelAfter,
@@ -41,6 +41,7 @@ import { useScheduledFlights, bookFlight, updateScheduledFlight } from '@/lib/ho
 import { useHolidays } from '@/lib/hooks/useHolidays';
 import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { useExercises } from '@/lib/hooks/useExercises';
+import { useTrainingRequirements, fetchTrainingRequirements } from '@/lib/hooks/useTrainingRequirements';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -126,11 +127,6 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // the Exercise <select> below for the "CODE - Name" value format this
   // preserves.
   const { exercises } = useExercises();
-  const {
-    loadTrainingRequirements,
-    getRequirementsForStudent,
-    loadingRequirements,
-  } = useFlightStore();
 
   // FTO-wide blackout days — weekly recurring off day(s) (Settings -> Time &
   // Scheduling -> "Weekly Off Day(s)") parsed from the raw comma-separated
@@ -339,17 +335,19 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     }
   }, [isMaintenance, form.exercise]);
 
-  // Eagerly load the selected student's requirements as soon as they're
-  // picked (not just at submit time) — powers the live "Solo Release"
-  // status badge shown under the Student field below. handleSubmit's own
-  // requirement check further down does its own loadTrainingRequirements
-  // call regardless, so this is purely for the earlier, informational
-  // badge — it doesn't change what's actually enforced at submit time.
-  useEffect(() => {
-    if (form.studentId && !isMaintenance) {
-      loadTrainingRequirements(form.studentId);
-    }
-  }, [form.studentId, isMaintenance, loadTrainingRequirements]);
+  // SWR migration, Stage 8 (2026-09-02): keyed per-studentId (null while
+  // Maintenance or no student picked, via SWR's null-key idiom), so
+  // switching students just gets a different cache entry — no more manual
+  // load effect, and no more "does this array still match the currently-
+  // selected student" guard (the old store's single-active-student cache
+  // needed `reqsMatchSelectedStudent` for exactly that; per-key caching
+  // makes the question moot). handleSubmit's own requirement check further
+  // down does its own one-shot fetchTrainingRequirements() call regardless,
+  // so this hook is purely for the earlier, informational Solo Release
+  // badge shown under the Student field below — it doesn't change what's
+  // actually enforced at submit time.
+  const { trainingRequirements: selectedStudentReqs, isLoading: loadingRequirements } =
+    useTrainingRequirements(!isMaintenance ? form.studentId : null);
 
   // Selected aircraft object for fuel display
   const selectedAircraft = aircraft.find(a => String(a.id) === String(form.aircraftId));
@@ -358,14 +356,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // "Released for solo" = no incomplete requirement flagged Blocks Solo —
   // the exact same rule handleSubmit enforces further down. This is purely
   // informational (shown before the user fills out the rest of the form);
-  // the real enforcement still happens in handleSubmit. `trainingRequirements`
-  // is a single-active-student cache in the store (see loadTrainingRequirements
-  // in lib/store.ts, which replaces the whole array with just one student's
-  // rows), so `reqsMatchSelectedStudent` guards against the brief window
-  // right after switching students where the array may still hold the
-  // previous student's rows.
-  const selectedStudentReqs = (!isMaintenance && form.studentId) ? getRequirementsForStudent(form.studentId) : [];
-  const reqsMatchSelectedStudent = selectedStudentReqs.length > 0 && selectedStudentReqs.every(r => r.studentId === form.studentId);
+  // the real enforcement still happens in handleSubmit.
   const blockingSoloReqs = selectedStudentReqs.filter(r => r.blocksSolo && !r.isCompleted);
 
   // Estimated fuel remaining at the end of THIS booking, from the selected
@@ -630,8 +621,11 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     // after the setLoading(true) above, unlike the validation checks
     // earlier in this handler.
     if (!isMaintenance && form.studentId) {
-      await loadTrainingRequirements(form.studentId);
-      const studentReqs = getRequirementsForStudent(form.studentId);
+      // One-shot fetch, bypassing SWR's cache — same pattern useHolidays.ts's
+      // fetchHolidays() uses inside bookFlight — so this check always sees
+      // this instant's real data, not whatever the informational badge
+      // above happens to have cached.
+      const studentReqs = await fetchTrainingRequirements(form.studentId);
 
       const spl = studentReqs.find(r => isSPLRequirement(r.requirementName));
       if (spl && !spl.isCompleted) {
@@ -930,13 +924,13 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                 rule. Surfaced here so it's visible before filling out the
                 rest of the form, not just as a submit-time error. */}
             {form.studentId && !isMaintenance && (
-              loadingRequirements && !reqsMatchSelectedStudent ? (
+              loadingRequirements ? (
                 <p className="text-xs text-tertiary mt-1">Checking solo release status…</p>
-              ) : reqsMatchSelectedStudent && blockingSoloReqs.length > 0 ? (
+              ) : blockingSoloReqs.length > 0 ? (
                 <p className="text-xs text-red-400 mt-1">
                   🔒 Not released for solo — missing: {blockingSoloReqs.map(r => r.requirementName).join(', ')}
                 </p>
-              ) : reqsMatchSelectedStudent ? (
+              ) : selectedStudentReqs.length > 0 ? (
                 <p className="text-xs text-green-400 mt-1">✅ Released for solo</p>
               ) : null
             )}
