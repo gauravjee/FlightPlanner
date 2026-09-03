@@ -1,13 +1,19 @@
 // ============================================================
-// lib/store.ts — weather, NOTAMs, UI state + shared scheduling helpers
+// lib/store.ts — shared scheduling, fuel and calendar helpers
 // ============================================================
-// What's left in this Zustand store after the SWR migration (Stages 0-8,
-// 2026-08-28 .. 2026-09-02, see claude/swr-migration-plan doc):
-//   - weather / generalWeather / NOTAMs — live external APIs, never
-//     migrated: no Supabase table to key an SWR cache off.
-//   - theme, selectedSlot, hoveredSlot — small UI state.
+// Despite the name, there is no store here any more. This file is a set of
+// pure functions with no React and no state, kept under the old path so the
+// ~10 files importing from '@/lib/store' didn't all need touching for a
+// rename.
 //
-// Every data domain now lives in its own SWR hook file:
+// History, briefly: this was the app's Zustand store, holding every data
+// domain. The SWR migration (Stages 0-8, 2026-08-28 .. 2026-09-02) moved
+// each domain to its own hook, and 2026-09-03 the remainder went too —
+// weather/NOTAMs to lib/hooks/useWeather.ts, theme to ThemeToggle.tsx (it
+// reads the data-theme attribute directly), selected/hovered slot to
+// ScheduleBoard.tsx's own local state. Zustand is no longer a dependency.
+//
+// Where the data domains live now:
 //   aircraft            -> lib/hooks/useAircraft.ts
 //   students            -> lib/hooks/useStudents.ts
 //   instructors         -> lib/hooks/useInstructors.ts
@@ -16,25 +22,41 @@
 //   scheduled flights   -> lib/hooks/useScheduledFlights.ts
 //   maintenance         -> lib/hooks/useMaintenanceRecords.ts
 //   holidays            -> lib/hooks/useHolidays.ts
+//   weather / NOTAMs    -> lib/hooks/useWeather.ts
 //   FTO settings etc.   -> lib/hooks/useFtoSettings.ts, useExercises.ts,
 //                          useSortieTypes.ts, usePermissionOverrides.ts,
 //                          useTrainingRequirements.ts
 //
-// The pure helpers below stay in this file (rather than moving with their
-// domain) because more than one caller genuinely shares them: BookingForm's
-// own client-side validation, the dashboard's "Available Slots" tile, and
+// The helpers below stay here because more than one caller genuinely shares
+// them: BookingForm's own client-side validation, the dashboard's
+// "Available Slots" tile, ScheduleBoard, GroundSchoolCalendar and
 // useScheduledFlights.ts all call getSchedulingBlockReason /
 // getAircraftBufferMinutes / getProjectedFuelAfter. A helper with exactly
 // one caller moved to that caller's file instead.
 // ============================================================
-'use client';
 
-import { create } from 'zustand';
-import {
-  Aircraft, FlightSlot,
-  WeatherData, GeneralWeatherData, NOTAM,
-  Holiday,
-} from '@/types';
+import { Aircraft, Holiday } from '@/types';
+
+// ============================================================
+// SCHEDULING RULES — booking-duration, turnaround & fuel-burn constants
+// ============================================================
+// Shared by BookingForm's client-side validation and the dashboard's
+// "Available Slots" tile (the conflict check itself — checkConflicts/
+// bookFlight — lives in lib/hooks/useScheduledFlights.ts):
+//   - A flight must be at least MIN_FLIGHT_DURATION_MIN long, in
+//     FLIGHT_DURATION_INCREMENT_MIN steps (45, 60, 75, 90 minutes, ...).
+//   - Every aircraft needs a turnaround gap of clear time immediately
+//     before and after each flight (crew/passenger changeover, walk-around,
+//     etc). This is the FTO's own configurable `buffer_minutes` setting
+//     (Settings -> Time & Scheduling -> "Buffer Between Flights") — that
+//     setting already existed in the Settings UI but nothing actually read
+//     it anywhere in the app; every conflict check silently used a
+//     hardcoded 30 minutes instead. Now wired up for real, defaulting to
+//     DEFAULT_TURNAROUND_BUFFER_MIN if the FTO hasn't set it explicitly.
+//   - If an aircraft's fuel is at or below LOW_FUEL_THRESHOLD_L — either
+//     right now, or projected to be after a given flight — an additional
+//     FUELING_BUFFER_MIN is required on top of the turnaround gap, a
+//     mandatory refuel window before it can fly again.
 export const DEFAULT_TURNAROUND_BUFFER_MIN = 15;
 export const MIN_FLIGHT_DURATION_MIN = 45;
 export const FLIGHT_DURATION_INCREMENT_MIN = 15;
@@ -259,125 +281,3 @@ export function getSchedulingBlockReason(
   }
   return null;
 }
-
-// ============================================================
-// TYPE DEFINITION
-// ============================================================
-interface FlightStore {
-  // ==========================================
-  // DATA COLLECTIONS
-  // ==========================================
-  notams: NOTAM[];
-  weather: WeatherData;
-  // General (non-aviation) weather for a configured lat/long — only used
-  // when there's no ICAO/reference station to source real METAR/TAF from.
-  // null until fetchGeneralWeather() has been called at least once.
-  generalWeather: GeneralWeatherData | null;
-
-  // ==========================================
-  // UI STATE
-  // ==========================================
-  // Dark/light theme. Persisted to localStorage; the actual DOM attribute
-  // (data-theme on <html>) is set both by an inline anti-flash script in
-  // app/layout.tsx on first paint and here on every change, so the two
-  // stay in sync regardless of which one ran first.
-  theme: 'dark' | 'light';
-  setTheme: (theme: 'dark' | 'light') => void;
-  toggleTheme: () => void;
-  selectedSlot: FlightSlot | null;
-  hoveredSlot: string | null;
-  loadingNotams: boolean;
-
-  // ==========================================
-  // WEATHER ACTIONS (live FAA API)
-  // ==========================================
-  fetchWeather: (station?: string) => Promise<void>;
-  fetchGeneralWeather: (lat: number, lon: number) => Promise<void>;
-
-  // ==========================================
-  // NOTAM ACTIONS (live FAA API)
-  // ==========================================
-  loadNOTAMs: (station?: string) => Promise<void>;
-
-  // ==========================================
-  // UI ACTIONS
-  // ==========================================
-  setSelectedSlot: (slot: FlightSlot | null) => void;
-  setHoveredSlot: (id: string | null) => void;
-}
-
-// ============================================================
-// STORE CREATION
-// ============================================================
-export const useFlightStore = create<FlightStore>((set, get) => ({
-  // ==========================================
-  // INITIAL STATE
-  // ==========================================
-  notams: [],
-  weather: {
-    metar: 'Loading weather...',
-    taf: 'Loading forecast...',
-    temperature: 0, dewpoint: 0,
-    windDirection: 0, windSpeed: 0,
-    visibility: 0, ceiling: 0,
-    qnh: 0, altimeter: 0,
-    flightRules: 'VFR',
-    warnings: [],
-    time: '', station: 'VOBL',
-    isLoading: true, error: null,
-  },
-  generalWeather: null,
-  // Real default lives in the inline script in app/layout.tsx (reads
-  // localStorage, falls back to 'dark') which sets data-theme before this
-  // store even initializes — 'dark' here is just a same-guess placeholder
-  // so the store's own value doesn't briefly disagree with the DOM.
-  theme: 'dark',
-  setTheme: (theme) => {
-    if (typeof window !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', theme);
-      window.localStorage.setItem('fp-theme', theme);
-    }
-    set({ theme });
-  },
-  toggleTheme: () => {
-    const next = get().theme === 'dark' ? 'light' : 'dark';
-    get().setTheme(next);
-  },
-  selectedSlot: null,
-  hoveredSlot: null,
-  loadingNotams: false,
-
-  // ============================================================
-  // WEATHER FUNCTIONS (LIVE FAA API)
-  // ============================================================
-  fetchWeather: async (station = 'VOBL') => {
-    const { fetchWeather } = await import('./weather');
-    const data = await fetchWeather(station);
-    set({ weather: data });
-  },
-
-  // General (non-aviation) weather by lat/long — used only as a fallback
-  // for schools with no ICAO/reference station configured. See
-  // GeneralWeatherData for why this is kept separate from `weather`.
-  fetchGeneralWeather: async (lat: number, lon: number) => {
-    const { fetchGeneralWeather } = await import('./weather');
-    const data = await fetchGeneralWeather(lat, lon);
-    set({ generalWeather: data });
-  },
-
-  // ============================================================
-  // NOTAM FUNCTIONS (LIVE FAA API)
-  // ============================================================
-  loadNOTAMs: async (station = 'VOBL') => {
-    set({ loadingNotams: true });
-    const { fetchNOTAMs } = await import('./notam');
-    const data = await fetchNOTAMs(station);
-    set({ notams: data, loadingNotams: false });
-  },
-
-  // ============================================================
-  // UI STATE FUNCTIONS
-  // ============================================================
-  setSelectedSlot: (slot) => set({ selectedSlot: slot }),
-  setHoveredSlot: (id) => set({ hoveredSlot: id }),
-}));

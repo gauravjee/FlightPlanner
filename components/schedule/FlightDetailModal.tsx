@@ -14,9 +14,9 @@
 
 'use client';
 
-import { useFlightStore } from '@/lib/store';
 import { cancelFlight, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
+import { useWeather, useNotams } from '@/lib/hooks/useWeather';
 import { useAircraft, getAircraftById } from '@/lib/hooks/useAircraft';
 import { useInstructors, getInstructorById } from '@/lib/hooks/useInstructors';
 import { useStudents, getStudentById } from '@/lib/hooks/useStudents';
@@ -48,12 +48,17 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   const { aircraft: allAircraft } = useAircraft();
   const { instructors: allInstructors } = useInstructors();
   const { students: allStudents } = useStudents();
-  const {
-    weather,                  // Current weather data
-    notams,                   // Active NOTAMs
-  } = useFlightStore();
   // FTO Settings is SWR-migrated (Stage 8, 2026-09-02) — fetch-on-mount.
   const { ftoSettings } = useFtoSettings();
+  // Weather + NOTAMs from SWR (lib/hooks/useWeather.ts, 2026-09-03). This
+  // used to read them off the Zustand store without ever fetching, so the
+  // briefing below was blank unless the Dashboard had already loaded them
+  // this session — opening a flight straight from the Schedule Board showed
+  // the "Loading weather..." placeholder indefinitely. Same SWR key as the
+  // Dashboard, so this shares its cache rather than adding a request.
+  const station = getFtoSetting(ftoSettings, 'airport_code');
+  const { weather } = useWeather(station);
+  const { notams } = useNotams(station);
   // cancelFlight/updateScheduledFlight now come from the SWR hook (Stage 5,
   // 2026-09-01) — both local-splice their write, so no manual reload needed.
 

@@ -20,7 +20,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { Calendar, Printer, Plus, Wrench, TriangleAlert, ClipboardList, X, Lock, Eye } from 'lucide-react';
-import { useFlightStore, getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
+import { getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { useScheduledFlights, withScheduledFlightNames, checkConflicts, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { useMaintenanceRecords } from '@/lib/hooks/useMaintenanceRecords';
 import { useHolidays } from '@/lib/hooks/useHolidays';
@@ -109,9 +109,6 @@ export default function ScheduleBoard() {
   const todayLocal = new Date().toLocaleDateString('en-CA');       // e.g. "2026-08-03"
   const [selectedDate, setSelectedDate] = useState(todayLocal);    // Currently selected date
 
-  // ----- Global State (from Zustand store) -----
-  const store = useFlightStore();
-
   // Data collections
   const { aircraft } = useAircraft();            // Fleet data
   const { instructors } = useInstructors();      // Instructor list
@@ -134,11 +131,13 @@ export default function ScheduleBoard() {
     (!!sessionRole && SCHEDULE_CREATE_ROLES.includes(sessionRole)) ||
     (sessionRole === 'instructor' && !!currentInstructor?.canSelfBook);
 
-  // UI state from store
-  const selectedSlot = store.selectedSlot;       // Currently clicked slot for modal
-  const hoveredSlot = store.hoveredSlot;         // Currently hovered slot for highlight
-  const setSelectedSlot = store.setSelectedSlot; // Open/close detail modal
-  const setHoveredSlot = store.setHoveredSlot;   // Track hover state
+  // ----- UI state -----
+  // Both were global Zustand state until 2026-09-03; this board is the only
+  // component that has ever read or written either, so they're plain local
+  // state now. Nothing else observes them, and nothing needs them to
+  // survive this component unmounting.
+  const [selectedSlot, setSelectedSlot] = useState<FlightSlot | null>(null); // Clicked slot -> detail modal
+  const [hoveredSlot, setHoveredSlot] = useState<string | null>(null);       // Hovered flight id -> row highlight
 
   // Data loading actions
   // Scheduled flights come from SWR (Stage 5, 2026-09-01) — fetch-on-mount +

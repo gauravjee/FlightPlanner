@@ -16,7 +16,7 @@
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import { useEffect, useMemo } from 'react';
 import {
-  useFlightStore, getAircraftBufferMinutes, parseTurnaroundBufferSetting, MIN_FLIGHT_DURATION_MIN,
+  getAircraftBufferMinutes, parseTurnaroundBufferSetting, MIN_FLIGHT_DURATION_MIN,
   getAircraftFuelBurnRate, getProjectedFuelAfter,
 } from '@/lib/store';
 import { useAircraft } from '@/lib/hooks/useAircraft';
@@ -24,6 +24,7 @@ import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
+import { useWeather, useGeneralWeather, useNotams } from '@/lib/hooks/useWeather';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -35,16 +36,9 @@ import {
 } from 'lucide-react';
 
 export default function DashboardPage() {
-  const store = useFlightStore();
   const { aircraft } = useAircraft();
   const { instructors } = useInstructors();
   const { students } = useStudents();
-  const weather = store.weather;
-  const generalWeather = store.generalWeather;
-  const fetchWeather = store.fetchWeather;
-  const fetchGeneralWeather = store.fetchGeneralWeather;
-  const notams = store.notams;
-  const loadNOTAMs = store.loadNOTAMs;
   // Scheduled flights come from SWR (Stage 5, 2026-09-01) — fetch-on-mount +
   // dedup, names joined at render time (see withScheduledFlightNames).
   const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
@@ -86,61 +80,23 @@ export default function DashboardPage() {
   const lon = parseFloat(lonRaw);
   const hasValidLatLon = latRaw !== '' && lonRaw !== '' && Number.isFinite(lat) && Number.isFinite(lon);
 
-  // Fetch live weather on page load, and re-fetch if the configured airport
-  // changes. Waits for fto_settings to finish loading (ftoSettingsLoaded)
-  // so it doesn't fire once for a not-yet-loaded empty station and again
-  // for the real one, and skips entirely once loaded if no station is
-  // configured — the "no live weather available" UI below handles that
-  // case instead of quietly defaulting to some other airport.
-  //
-  // Bug fix (kept from earlier): the setTimeout/setInterval pair here were
-  // previously never cleared on unmount — the `return () => clearTimeout(timeout)`
-  // lived inside the async `.then()` callback, where React never sees it
-  // (it's just the resolved value of a promise nobody reads). Effect
-  // cleanup only runs the function this *outer* effect body returns. Every
-  // time this effect re-ran (route re-visits, fast refresh) it left another
-  // orphaned 30-minute poller running forever, compounding into duplicate
-  // weather fetches over a long session. Both timers are hoisted so the
-  // real cleanup below can clear them.
-  useEffect(() => {
-    if (!ftoSettingsLoaded || !station) return undefined;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    let interval: ReturnType<typeof setInterval> | undefined;
-    let cancelled = false;
-    import('@/lib/weather').then(({ getTimeUntilNextMetar }) => {
-      if (cancelled) return;
-      fetchWeather(station);
-      const timeUntil = getTimeUntilNextMetar();
-      timeout = setTimeout(() => {
-        fetchWeather(station);
-        interval = setInterval(() => fetchWeather(station), 30 * 60 * 1000);
-      }, timeUntil);
-    });
-    return () => {
-      cancelled = true;
-      if (timeout) clearTimeout(timeout);
-      if (interval) clearInterval(interval);
-    };
-  }, [fetchWeather, station, ftoSettingsLoaded]);
-
-  // Fetch live NOTAMs — same station, same "only once settings are loaded
-  // and a station is actually configured" behavior.
-  useEffect(() => {
-    if (!ftoSettingsLoaded || !station) return;
-    loadNOTAMs(station);
-  }, [loadNOTAMs, station, ftoSettingsLoaded]);
-
-  // Fetch general (non-aviation) weather by lat/long — only when there's no
-  // ICAO/reference station configured (station takes priority: real METAR
-  // beats a general forecast). Refreshed every 30 minutes, same cadence as
-  // the METAR poller above, but without METAR's fixed :20/:50 issuance
-  // timing since general forecasts don't follow that schedule.
-  useEffect(() => {
-    if (!ftoSettingsLoaded || station || !hasValidLatLon) return undefined;
-    fetchGeneralWeather(lat, lon);
-    const interval = setInterval(() => fetchGeneralWeather(lat, lon), 30 * 60 * 1000);
-    return () => clearInterval(interval);
-  }, [fetchGeneralWeather, station, lat, lon, hasValidLatLon, ftoSettingsLoaded]);
+  // Weather / general weather / NOTAMs come from SWR (lib/hooks/useWeather.ts,
+  // 2026-09-03 — the last domains to leave the Zustand store). Each hook is
+  // keyed by the station (or lat/long) it's asking about and does nothing at
+  // all when there's none configured, which replaces the three
+  // fetch-on-mount effects that used to live here along with their
+  // setTimeout/setInterval bookkeeping:
+  //   - the METAR poller now re-aligns to the real :20/:50 issuance after
+  //     every fetch (see metarRefreshInterval) instead of drifting off it
+  //     with a fixed 30-minute timer;
+  //   - SWR owns timer cleanup, so the orphaned-poller bug fixed here
+  //     earlier (a `return () => clearTimeout(...)` stranded inside an
+  //     async .then() callback, which React never sees) cannot recur;
+  //   - station takes priority over lat/long exactly as before: general
+  //     weather is enabled only when no station is configured.
+  const { weather, refresh: refreshWeather } = useWeather(station, ftoSettingsLoaded);
+  const { notams } = useNotams(station, ftoSettingsLoaded);
+  const { generalWeather, refresh: refreshGeneralWeather } = useGeneralWeather(lat, lon, ftoSettingsLoaded && !station && hasValidLatLon);
 
   // Aircraft, Instructors, Students, and now Scheduled Flights all come
   // from SWR hooks (fetch-on-mount + dedup) — nothing to preload here.
@@ -412,7 +368,7 @@ export default function DashboardPage() {
                     {/* Refresh Weather Button */}
                     <div className="mt-4 flex justify-end">
                       <button
-                        onClick={async () => { await fetchWeather(station); }}
+                        onClick={async () => { await refreshWeather(); }}
                         className="pill-btn-accent px-3 py-1.5 rounded-lg text-xs hover:opacity-80 transition flex items-center gap-1.5"
                       >
                         <RefreshCw className="w-3 h-3" /> Refresh Weather
@@ -470,7 +426,7 @@ export default function DashboardPage() {
 
                     <div className="mt-4 flex justify-end">
                       <button
-                        onClick={async () => { await fetchGeneralWeather(lat, lon); }}
+                        onClick={async () => { await refreshGeneralWeather(); }}
                         className="pill-btn-accent px-3 py-1.5 rounded-lg text-xs hover:opacity-80 transition flex items-center gap-1.5"
                       >
                         <RefreshCw className="w-3 h-3" /> Refresh Weather

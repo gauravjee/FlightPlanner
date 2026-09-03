@@ -3,31 +3,54 @@
 // light exists specifically for outdoor/field use (instructors and
 // maintenance crew checking the app in direct sunlight, where the
 // translucent dark cards are hard to read), not as a generic preference
-// toggle. See lib/store.ts for how the choice is persisted.
+// toggle.
+//
+// The theme lives in exactly two places, neither of them React state:
+// the `data-theme` attribute on <html> (what the CSS actually reads) and
+// the 'fp-theme' localStorage key (what survives a reload). The inline
+// script in app/layout.tsx sets the attribute before first paint so the
+// page never flashes the wrong theme; this component is the only thing
+// that ever changes it afterwards.
+//
+// Until 2026-09-03 the value was also mirrored into the Zustand store,
+// which meant a third copy that had to be re-synced from the DOM in a
+// mount effect. useSyncExternalStore reads the attribute directly instead
+// — React's own primitive for subscribing to a mutable external source.
+// It is SSR-safe (getServerSnapshot returns the same 'dark' default the
+// inline script falls back to) and needs no mount effect, so there's no
+// setState-in-effect to lint around.
 'use client';
 
-import { useEffect } from 'react';
+import { useSyncExternalStore } from 'react';
 import { Sun, Moon } from 'lucide-react';
-import { useFlightStore } from '@/lib/store';
+
+type Theme = 'dark' | 'light';
+
+// The <html> attribute is only ever written here and by layout.tsx's
+// pre-paint script, but observing it keeps this honest if anything else
+// (a devtools poke, a future settings page) changes it.
+function subscribe(onChange: () => void) {
+  const observer = new MutationObserver(onChange);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+  return () => observer.disconnect();
+}
+
+const getTheme = (): Theme =>
+  document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
 
 export default function ThemeToggle() {
-  const theme = useFlightStore(state => state.theme);
-  const setTheme = useFlightStore(state => state.setTheme);
-  const toggleTheme = useFlightStore(state => state.toggleTheme);
+  const theme = useSyncExternalStore(subscribe, getTheme, () => 'dark' as Theme);
 
-  // The store's initial value is a fixed guess ('dark') so server and
-  // client render the same thing on first paint. The inline script in
-  // app/layout.tsx already set the correct data-theme attribute on <html>
-  // before this ever rendered — this effect just brings the store's state
-  // (and therefore this toggle's icon) in line with whatever that script
-  // decided, without touching the DOM attribute again.
-  useEffect(() => {
-    const current = document.documentElement.getAttribute('data-theme');
-    if (current === 'light' || current === 'dark') {
-      if (current !== theme) setTheme(current);
+  const toggleTheme = () => {
+    const next: Theme = theme === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', next);
+    try {
+      window.localStorage.setItem('fp-theme', next);
+    } catch {
+      // Private mode / storage disabled — the theme still applies for this
+      // page view, it just won't survive a reload. Not worth failing over.
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  };
 
   const isLight = theme === 'light';
 
