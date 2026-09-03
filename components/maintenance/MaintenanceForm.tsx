@@ -177,6 +177,9 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
           <h3 className="text-lg font-semibold flex items-center gap-2">
             {isEditing ? <Pencil className="w-4 h-4" /> : <Wrench className="w-4 h-4" />}
             {isEditing ? 'Edit Maintenance' : 'Log Maintenance'}
+            {isEditing && record?.ticketNumber && (
+              <span className="text-xs font-mono font-normal text-tertiary">{record.ticketNumber}</span>
+            )}
           </h3>
           <button onClick={onClose} className="p-2 rounded-lg cursor-pointer hover:opacity-80" aria-label="Close">
             <X className="w-5 h-5 text-tertiary" />

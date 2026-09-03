@@ -176,6 +176,7 @@ export default function MaintenancePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
+                    <th className="pb-3">Ticket #</th>
                     <th className="pb-3">Aircraft</th>
                     <th className="pb-3">Type</th>
                     <th className="pb-3">Scheduled</th>
@@ -200,6 +201,9 @@ export default function MaintenancePage() {
                         backgroundColor: record.isOverdue ? 'var(--danger-soft)' : undefined,
                       }}
                     >
+                      <td className={`py-3 text-xs font-mono ${record.isSquawk ? '' : 'text-tertiary'}`} style={record.isSquawk ? { color: 'var(--warning-text)' } : undefined}>
+                        {record.ticketNumber || '—'}
+                      </td>
                       <td className="py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{record.aircraftReg}</td>
                       <td className="py-3 text-xs">{record.maintenanceType}</td>
                       <td className="py-3 text-xs">

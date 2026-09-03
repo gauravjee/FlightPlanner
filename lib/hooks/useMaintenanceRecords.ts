@@ -81,6 +81,7 @@ export async function fetchMaintenanceRecords(): Promise<MaintenanceRecord[]> {
       hobbsAtCompletion: (row.hobbs_at_completion as number) ?? null,
       reportedBy: (row.reported_by as string) || null,
       isSquawk: Boolean(row.is_squawk),
+      ticketNumber: (row.ticket_number as string) || null,
       // Deliberately NOT resolved here — see the file header above.
       // withMaintenanceRecordNames() below fills these in at render time.
       aircraftReg: undefined, aircraftType: undefined,
@@ -124,12 +125,16 @@ export function getMaintenanceForAircraft(records: MaintenanceRecord[], aircraft
 // matrix). See lib/api-auth.ts.
 //
 // Revalidates rather than splicing: the POST body omits id/aircraftReg/
-// aircraftType/isOverdue/daysUntilDue, all of which are either
-// server-assigned or computed by the fetcher above from fields the client
-// didn't send — same "server derived it, don't locally splice" case the
-// migration plan's cache-update rule calls out.
+// aircraftType/isOverdue/daysUntilDue/ticketNumber, all of which are
+// either server-assigned or computed by the fetcher above from fields the
+// client didn't send — same "server derived it, don't locally splice" case
+// the migration plan's cache-update rule calls out. (The server does hand
+// the new ticketNumber straight back in the response — see
+// app/api/maintenance-records/route.ts — but the revalidate-on-success
+// below already picks it up from the refetched list, so there's no need
+// to thread it through the return value here too.)
 export async function addMaintenanceRecord(
-  record: Omit<MaintenanceRecord, 'id' | 'aircraftReg' | 'aircraftType' | 'isOverdue' | 'daysUntilDue'>
+  record: Omit<MaintenanceRecord, 'id' | 'aircraftReg' | 'aircraftType' | 'isOverdue' | 'daysUntilDue' | 'ticketNumber'>
 ): Promise<void> {
   const res = await fetch('/api/maintenance-records', {
     method: 'POST',

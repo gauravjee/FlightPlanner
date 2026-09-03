@@ -364,6 +364,12 @@ export interface MaintenanceRecord {
   // badging/filtering separately from routine maintenance.
   reportedBy?: string | null;
   isSquawk?: boolean;
+  // 2026-09-03: year-scoped ticket number assigned on insert — RMT-<year>-NNN
+  // for a staff-logged record, IMT-<year>-NNN for a pilot-filed squawk
+  // (isSquawk). See add-maintenance-ticket-numbering.sql and
+  // nextTicketNumber() in app/api/maintenance-records/route.ts. Null on
+  // records that predate this feature.
+  ticketNumber?: string | null;
   // Display fields (looked up from aircraft table)
   aircraftReg?: string;
   aircraftType?: string;

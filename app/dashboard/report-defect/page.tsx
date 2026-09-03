@@ -113,7 +113,12 @@ export default function ReportDefectPage() {
                   {mySquawks.map(r => (
                     <div key={r.id} className="surface-inner p-3 flex items-start justify-between gap-3">
                       <div>
-                        <p className="text-sm">{r.aircraftReg} — {r.description || 'No description'}</p>
+                        <p className="text-sm">
+                          {r.ticketNumber && (
+                            <span className="font-mono text-xs mr-1.5" style={{ color: 'var(--warning-text)' }}>{r.ticketNumber}</span>
+                          )}
+                          {r.aircraftReg} — {r.description || 'No description'}
+                        </p>
                         <p className="text-xs text-tertiary mt-1">Reported {r.scheduledDate}</p>
                       </div>
                       <span className={`badge ${statusBadgeClass(r.status)}`}>{r.status.replace('_', ' ')}</span>
