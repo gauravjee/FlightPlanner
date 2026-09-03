@@ -1,67 +1,32 @@
 // ============================================================
-// lib/store.ts - CENTRAL STATE MANAGEMENT (ZUSTAND STORE)
+// lib/store.ts — weather, NOTAMs, UI state + shared scheduling helpers
 // ============================================================
-// This file is the brain of the FlightPro application. It:
-// 1. Stores ALL application data (11 modules) from Supabase
-// 2. Provides full CRUD functions for each module
-// 3. Manages UI state (selected items, loading indicators, hover)
-// 4. Maps database columns (snake_case) to TypeScript (camelCase)
-// 5. Handles conflict detection for flight scheduling
-// 6. Calculates derived values (overdue, costs, flight hours)
-// 7. Fetches LIVE weather from FAA API
-// 8. Fetches LIVE NOTAMs from FAA API
-// 9. Loads FTO settings (school name, logo, timezone, etc.)
+// What's left in this Zustand store after the SWR migration (Stages 0-8,
+// 2026-08-28 .. 2026-09-02, see claude/swr-migration-plan doc):
+//   - weather / generalWeather / NOTAMs — live external APIs, never
+//     migrated: no Supabase table to key an SWR cache off.
+//   - theme, selectedSlot, hoveredSlot — small UI state.
 //
-// MODULES:
-//   1. Aircraft Fleet        - Registration, type, fuel, status, maintenance
-//   2. Student Records       - Enrollment, training stage, medical expiry
-//   3. Flight Records        - Digital logbook with maneuvers and performance
-//   4. Fuel Management       - Refueling log with cost tracking
-//   5. Schedule/Booking      - Flight slot booking with conflict detection
-//   6. Maintenance           - Records with overdue alerts
-//   7. Instructors           - Name, license, ratings, daily hour limits
-//   8. Weather               - LIVE METAR/TAF from FAA (free)
-//   9. NOTAMs                - LIVE NOTAMs from FAA (free)
-//  10. Availability/Leave    - Instructor & student leave tracking
-//  11. Training Requirements - Checklist for student milestones
-//  12. FTO Settings          - School name, logo, timezone, time slots
+// Every data domain now lives in its own SWR hook file:
+//   aircraft            -> lib/hooks/useAircraft.ts
+//   students            -> lib/hooks/useStudents.ts
+//   instructors         -> lib/hooks/useInstructors.ts
+//   availability/leave  -> lib/hooks/useAvailability.ts
+//   flight/fuel records -> lib/hooks/useFlightRecords.ts, useFuelRecords.ts
+//   scheduled flights   -> lib/hooks/useScheduledFlights.ts
+//   maintenance         -> lib/hooks/useMaintenanceRecords.ts
+//   holidays            -> lib/hooks/useHolidays.ts
+//   FTO settings etc.   -> lib/hooks/useFtoSettings.ts, useExercises.ts,
+//                          useSortieTypes.ts, usePermissionOverrides.ts,
+//                          useTrainingRequirements.ts
 //
-// HOW TO USE:
-//   import { useFlightStore } from '@/lib/store';
-//   const { students, ftoSettings } = useFlightStore();
-//   Aircraft moved to lib/hooks/useAircraft.ts (SWR migration, Stage 1,
-//   2026-08-28) — import { useAircraft } from '@/lib/hooks/useAircraft'.
-//   Instructors moved to lib/hooks/useInstructors.ts and Availability to
-//   lib/hooks/useAvailability.ts (SWR migration, Stage 2, 2026-08-28).
-//   Students moved to lib/hooks/useStudents.ts (SWR migration, Stage 3,
-//   2026-08-28) — the instructor-name join students used to carry
-//   pre-baked now lives in that file's withInstructorNames() selector.
-//   Flight Records moved to lib/hooks/useFlightRecords.ts and Fuel Records
-//   to lib/hooks/useFuelRecords.ts (SWR migration, Stage 4, 2026-08-29) —
-//   unlike Students, both keep their aircraft/instructor/student name
-//   joins baked into the fetcher rather than a render-time selector (see
-//   that file's own header comment for why — matches the Availability
-//   precedent, not the Students one).
-//   Scheduled Flights moved to lib/hooks/useScheduledFlights.ts (SWR
-//   migration, Stage 5, 2026-09-01).
-//   Maintenance Records + Maintenance Schedule Templates moved to
-//   lib/hooks/useMaintenanceRecords.ts (SWR migration, Stage 6, 2026-09-01)
-//   — computeMaintenanceDueItems()/getMaintenanceDueItems() moved there too.
-//   Holidays moved to lib/hooks/useHolidays.ts (SWR migration, Stage 7,
-//   2026-09-02) — findHolidayForDate()/getSchedulingBlockReason() (and the
-//   weekly-off-day helpers the latter depends on) stay in this file, still
-//   genuinely shared pure functions.
-//   FTO Settings moved to lib/hooks/useFtoSettings.ts, Exercises to
-//   lib/hooks/useExercises.ts, Sortie Types to lib/hooks/useSortieTypes.ts,
-//   My Permission Overrides to lib/hooks/usePermissionOverrides.ts, and
-//   Training Requirements to lib/hooks/useTrainingRequirements.ts (SWR
-//   migration, Stage 8, 2026-09-02) — Training Requirements was Stage 8's
-//   last domain, closing out the whole 9-stage SWR migration (Stages 0-8).
-//   This store now holds only weather/NOTAMs (live external APIs, never
-//   migrated — no Supabase table to key an SWR cache off) and small UI
-//   state (theme, selected/hovered slot).
+// The pure helpers below stay in this file (rather than moving with their
+// domain) because more than one caller genuinely shares them: BookingForm's
+// own client-side validation, the dashboard's "Available Slots" tile, and
+// useScheduledFlights.ts all call getSchedulingBlockReason /
+// getAircraftBufferMinutes / getProjectedFuelAfter. A helper with exactly
+// one caller moved to that caller's file instead.
 // ============================================================
-
 'use client';
 
 import { create } from 'zustand';
@@ -70,53 +35,6 @@ import {
   WeatherData, GeneralWeatherData, NOTAM,
   Holiday,
 } from '@/types';
-// SWR migration, Stage 1 (2026-08-28): aircraft moved out of this store's
-// own state into lib/hooks/useAircraft.ts.
-// SWR migration, Stage 2 (2026-08-28): instructors and availability moved
-// out of this store's own state into lib/hooks/useInstructors.ts and
-// lib/hooks/useAvailability.ts.
-// SWR migration, Stage 3 (2026-08-28): students moved out of this store's
-// own state into lib/hooks/useStudents.ts.
-// SWR migration, Stage 4 (2026-08-29): flight records and fuel records
-// moved out into lib/hooks/useFlightRecords.ts / useFuelRecords.ts.
-// SWR migration, Stage 5 (2026-09-01): scheduled flights moved out into
-// lib/hooks/useScheduledFlights.ts.
-// SWR migration, Stage 6 (2026-09-01): maintenance records and maintenance
-// schedule templates — the store's last not-yet-migrated domains that
-// still called fetchAircraft()/mutate(aircraftKey) directly for a name-join
-// and a server-derived-status revalidation — moved out into
-// lib/hooks/useMaintenanceRecords.ts, along with those two imports. This
-// store no longer imports fetchAircraft/aircraftKey/mutate at all; nothing
-// left here needs them.
-// SWR migration, Stage 7 (2026-09-02): holidays moved out into
-// lib/hooks/useHolidays.ts (findHolidayForDate/getSchedulingBlockReason and
-// the weekly-off-day helpers stay here — genuinely shared pure functions).
-// SWR migration, Stage 8 (2026-09-02): FTO Settings, Exercises, Sortie
-// Types, My Permission Overrides, and — last — Training Requirements all
-// moved out into their own lib/hooks/use*.ts files. This closes out the
-// whole 9-stage SWR migration (Stages 0-8); this store now holds only
-// weather/NOTAMs (live external APIs) and small UI state.
-
-// ============================================================
-// SCHEDULING RULES — booking-duration, turnaround & fuel-burn constants
-// ============================================================
-// Shared by BookingForm's client-side validation and the dashboard's
-// "Available Slots" tile (the store's own conflict check — checkConflicts/
-// bookFlight — moved to lib/hooks/useScheduledFlights.ts in Stage 5):
-//   - A flight must be at least MIN_FLIGHT_DURATION_MIN long, in
-//     FLIGHT_DURATION_INCREMENT_MIN steps (45, 60, 75, 90 minutes, ...).
-//   - Every aircraft needs a turnaround gap of clear time immediately
-//     before and after each flight (crew/passenger changeover, walk-around,
-//     etc). This is the FTO's own configurable `buffer_minutes` setting
-//     (Settings -> Time & Scheduling -> "Buffer Between Flights") — that
-//     setting already existed in the Settings UI but nothing actually read
-//     it anywhere in the app; every conflict check silently used a
-//     hardcoded 30 minutes instead. Now wired up for real, defaulting to
-//     DEFAULT_TURNAROUND_BUFFER_MIN if the FTO hasn't set it explicitly.
-//   - If an aircraft's fuel is at or below LOW_FUEL_THRESHOLD_L — either
-//     right now, or projected to be after a given flight — an additional
-//     FUELING_BUFFER_MIN is required on top of the turnaround gap, a
-//     mandatory refuel window before it can fly again.
 export const DEFAULT_TURNAROUND_BUFFER_MIN = 15;
 export const MIN_FLIGHT_DURATION_MIN = 45;
 export const FLIGHT_DURATION_INCREMENT_MIN = 15;
@@ -251,31 +169,6 @@ export function findHolidayForDate(dateStr: string, holidays: Holiday[]): Holida
   return holidays.find(h => (h.isRecurring ? h.date.slice(5) === monthDay : h.date === dateStr)) ?? null;
 }
 
-// (countScheduleConflictsOnDate — the addHoliday/addHolidaysBulk "flag for
-// manual review" helper — moved to lib/hooks/useHolidays.ts, Stage 7 of the
-// SWR migration (2026-09-02): it had exactly one caller each, both of which
-// moved there too, same "single-caller helper moves with its caller" call
-// Stage 6 made for computeMaintenanceDueItems.)
-
-// ============================================================
-// WEEKLY OFF DAY — FTO-wide recurring weekly closure (Settings -> Time &
-// Scheduling -> "Weekly Off Day(s)"), stored as the `weekly_off_days`
-// fto_settings key: a comma-separated list of day-of-week numbers
-// (0=Sunday..6=Saturday), e.g. "0" for Sundays-only or "0,6" for
-// Sunday+Saturday. Empty/unset means no weekly off day.
-//
-// PARTIAL WEEKLY OFF DAY (2026-08-25) — a second, independent rule for the
-// "every 2nd/4th Saturday" or "1st/3rd/5th Saturday" pattern some FTOs use
-// on top of (or instead of) a full weekly off day. Stored as a separate
-// `partial_weekly_off_days` fto_settings key, JSON-encoded:
-// {"day": 6, "occurrences": [2, 4]} — day is 0=Sunday..6=Saturday,
-// occurrences are which occurrence(s) of that weekday in the month
-// (1st..5th) are closed. Deliberately scoped to ONE day at a time (per
-// user confirmation) — a day already in the full `weekly_off_days` set
-// should not also carry a partial rule (enforced in the Settings UI, not
-// here, since this file has no UI concerns). Empty/unset/malformed means
-// no partial rule.
-// ============================================================
 export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th'];
 
@@ -368,18 +261,6 @@ export function getSchedulingBlockReason(
 }
 
 // ============================================================
-// AIRCRAFT MAINTENANCE SCHEDULE — moved to lib/hooks/useMaintenanceRecords.ts
-// (SWR migration, Stage 6, 2026-09-01). dueSoonHobbsWindow(),
-// dueSoonCalendarWindowDays(), normalizeItemName(), addMonthsToDateStr(),
-// and computeMaintenanceDueItems() all live there now — this was the one
-// pure-function group in this file with exactly one caller
-// (getMaintenanceDueItems, only ever called from MaintenanceDueSection.tsx),
-// unlike getSchedulingBlockReason/getAircraftBufferMinutes/
-// getProjectedFuelAfter above, which stay here because BookingForm.tsx's
-// own client-side validation genuinely shares them.
-// ============================================================
-
-// ============================================================
 // TYPE DEFINITION
 // ============================================================
 interface FlightStore {
@@ -392,14 +273,6 @@ interface FlightStore {
   // when there's no ICAO/reference station to source real METAR/TAF from.
   // null until fetchGeneralWeather() has been called at least once.
   generalWeather: GeneralWeatherData | null;
-  // (trainingRequirements moved to lib/hooks/useTrainingRequirements.ts,
-  // Stage 8 of the SWR migration, 2026-09-02.)
-  // (ftoSettings/ftoSettingsLoaded moved to lib/hooks/useFtoSettings.ts,
-  // exercises moved to lib/hooks/useExercises.ts, sortieTypes moved to
-  // lib/hooks/useSortieTypes.ts — all Stage 8 of the SWR migration,
-  // 2026-09-02. holidays/loadingHolidays moved to lib/hooks/useHolidays.ts,
-  // Stage 7, 2026-09-02.)
-
 
   // ==========================================
   // UI STATE
@@ -414,87 +287,21 @@ interface FlightStore {
   selectedSlot: FlightSlot | null;
   hoveredSlot: string | null;
   loadingNotams: boolean;
-  // (loadingRequirements moved to lib/hooks/useTrainingRequirements.ts,
-  // Stage 8 of the SWR migration, 2026-09-02.)
-
-  // (0. MY PERMISSION OVERRIDES — permissionOverrides/permissionOverridesFor/
-  // loadMyPermissionOverrides moved to lib/hooks/usePermissionOverrides.ts,
-  // Stage 8 of the SWR migration, 2026-09-02 — see
-  // lib/useMyPermissionOverrides.ts, the wrapper RoleGate/Sidebar actually
-  // call.)
 
   // ==========================================
-  // 1. AIRCRAFT ACTIONS
-  // ==========================================
-  // Migrated to lib/hooks/useAircraft.ts (SWR migration, Stage 1,
-  // 2026-08-28) — see useAircraft()/addAircraft()/updateAircraft()/
-  // removeAircraft()/getAircraftById() there.
-
-  // 2. STUDENT ACTIONS — moved to lib/hooks/useStudents.ts (SWR migration,
-  // Stage 3, 2026-08-28). useStudents(), addStudent(), updateStudent(),
-  // removeStudent(), getStudentById(), assignInstructor(),
-  // withInstructorNames() (the render-time instructor-name join selector).
-
-  // 3. FLIGHT RECORD ACTIONS — moved to lib/hooks/useFlightRecords.ts (SWR
-  // migration, Stage 4, 2026-08-29). useFlightRecords(), addFlightRecord(),
-  // useStudentFlightRecords()/fetchStudentFlightRecords() (ported, unused).
-
-  // 4. FUEL MANAGEMENT ACTIONS — moved to lib/hooks/useFuelRecords.ts (SWR
-  // migration, Stage 4, 2026-08-29). useFuelRecords(), addFuelRecord(),
-  // getFuelRecordsForAircraft() (ported selector, unused).
-
-  // 5. SCHEDULE / BOOKING ACTIONS — moved to lib/hooks/useScheduledFlights.ts
-  // (SWR migration, Stage 5, 2026-09-01). useScheduledFlights(),
-  // withScheduledFlightNames() (render-time join selector), bookFlight(),
-  // checkConflicts(), cancelFlight(), updateScheduledFlight().
-
-  // 6. MAINTENANCE ACTIONS — moved to lib/hooks/useMaintenanceRecords.ts
-  // (SWR migration, Stage 6, 2026-09-01). useMaintenanceRecords(),
-  // useMaintenanceScheduleTemplates(), withMaintenanceRecordNames()
-  // (render-time join selector), addMaintenanceRecord(),
-  // updateMaintenanceRecord(), removeMaintenanceRecord(),
-  // getMaintenanceForAircraft(), getMaintenanceDueItems().
-
-  // 7. INSTRUCTOR ACTIONS — moved to lib/hooks/useInstructors.ts (SWR
-  // migration, Stage 2, 2026-08-28). useInstructors(), addInstructor(),
-  // updateInstructor(), removeInstructor(), getInstructorById().
-
-  // ==========================================
-  // 8. WEATHER ACTIONS
+  // WEATHER ACTIONS (live FAA API)
   // ==========================================
   fetchWeather: (station?: string) => Promise<void>;
   fetchGeneralWeather: (lat: number, lon: number) => Promise<void>;
 
   // ==========================================
-  // 9. NOTAM ACTIONS
+  // NOTAM ACTIONS (live FAA API)
   // ==========================================
   loadNOTAMs: (station?: string) => Promise<void>;
-
-  // 10. AVAILABILITY / LEAVE ACTIONS — moved to lib/hooks/useAvailability.ts
-  // (SWR migration, Stage 2, 2026-08-28). useAvailability(), addAvailability(),
-  // updateAvailability(), removeAvailability(), checkAvailability().
-
-  // (EXERCISES/SORTIE TYPES ACTIONS — loadExercises/loadSortieTypes moved to
-  // lib/hooks/useExercises.ts and lib/hooks/useSortieTypes.ts, Stage 8 of
-  // the SWR migration, 2026-09-02.)
-
-  // (11. TRAINING REQUIREMENTS ACTIONS — loadTrainingRequirements/
-  // loadTrainingRequirementsForStudents/toggleRequirement/addRequirement/
-  // removeRequirement/getRequirementsForStudent moved to
-  // lib/hooks/useTrainingRequirements.ts, Stage 8 of the SWR migration,
-  // 2026-09-02 — the final domain of the whole 9-stage migration.)
-
-  // (12. FTO SETTINGS ACTIONS — loadFTOSettings/getFTOSetting moved to
-  // lib/hooks/useFtoSettings.ts, Stage 8 of the SWR migration, 2026-09-02.)
-
-  // (13. HOLIDAYS ACTIONS — loadHolidays/addHoliday/addHolidaysBulk/
-  // removeHoliday moved to lib/hooks/useHolidays.ts, Stage 7 of the SWR
-  // migration, 2026-09-02.)
 
   // ==========================================
   // UI ACTIONS
   // ==========================================
-  
   setSelectedSlot: (slot: FlightSlot | null) => void;
   setHoveredSlot: (id: string | null) => void;
 }
@@ -540,52 +347,8 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   hoveredSlot: null,
   loadingNotams: false,
 
-  // (0. MY PERMISSION OVERRIDES — permissionOverrides/permissionOverridesFor/
-  // loadMyPermissionOverrides moved to lib/hooks/usePermissionOverrides.ts,
-  // Stage 8 of the SWR migration, 2026-09-02.)
-
   // ============================================================
-  // 1. AIRCRAFT FUNCTIONS
-  // ============================================================
-  // Migrated to lib/hooks/useAircraft.ts (SWR migration, Stage 1,
-  // 2026-08-28).
-
-  // 2. STUDENT FUNCTIONS — moved to lib/hooks/useStudents.ts (SWR
-  // migration, Stage 3, 2026-08-28).
-
-  // 3. FLIGHT RECORDS / LOGBOOK FUNCTIONS — moved to
-  // lib/hooks/useFlightRecords.ts (SWR migration, Stage 4, 2026-08-29).
-
-  // 4. FUEL MANAGEMENT FUNCTIONS — moved to lib/hooks/useFuelRecords.ts
-  // (SWR migration, Stage 4, 2026-08-29).
-
-  // ============================================================
-  // 5. SCHEDULED FLIGHTS / BOOKING FUNCTIONS — moved to
-  // lib/hooks/useScheduledFlights.ts (SWR migration, Stage 5, 2026-09-01).
-  // useScheduledFlights(), withScheduledFlightNames() (render-time join
-  // selector — replaces the fetch-time enrichment this used to do),
-  // bookFlight(), checkConflicts(), cancelFlight(), updateScheduledFlight().
-  // ============================================================
-
-  // ============================================================
-  // 6. MAINTENANCE FUNCTIONS — moved to lib/hooks/useMaintenanceRecords.ts
-  // (SWR migration, Stage 6, 2026-09-01). useMaintenanceRecords(),
-  // useMaintenanceScheduleTemplates(), withMaintenanceRecordNames()
-  // (render-time join selector — replaces the fetch-time aircraftReg/
-  // aircraftType enrichment this used to do), addMaintenanceRecord(),
-  // updateMaintenanceRecord(), removeMaintenanceRecord(),
-  // getMaintenanceForAircraft(), getMaintenanceDueItems().
-  // ============================================================
-
-  // 7. INSTRUCTOR FUNCTIONS — moved to lib/hooks/useInstructors.ts (SWR
-  // migration, Stage 2, 2026-08-28).
-  // assignInstructor — moved to lib/hooks/useStudents.ts (SWR migration,
-  // Stage 3, 2026-08-28). Was already dead code (no callers) before this
-  // migration; ported for interface completeness.
-
-
-  // ============================================================
-  // 8. WEATHER FUNCTIONS (LIVE FAA API)
+  // WEATHER FUNCTIONS (LIVE FAA API)
   // ============================================================
   fetchWeather: async (station = 'VOBL') => {
     const { fetchWeather } = await import('./weather');
@@ -603,7 +366,7 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
   },
 
   // ============================================================
-  // 9. NOTAM FUNCTIONS (LIVE FAA API)
+  // NOTAM FUNCTIONS (LIVE FAA API)
   // ============================================================
   loadNOTAMs: async (station = 'VOBL') => {
     set({ loadingNotams: true });
@@ -611,30 +374,6 @@ export const useFlightStore = create<FlightStore>((set, get) => ({
     const data = await fetchNOTAMs(station);
     set({ notams: data, loadingNotams: false });
   },
-
-  // 10. AVAILABILITY / LEAVE FUNCTIONS — moved to lib/hooks/useAvailability.ts
-  // (SWR migration, Stage 2, 2026-08-28).
-
-  // (11. TRAINING REQUIREMENTS FUNCTIONS — loadTrainingRequirements/
-  // loadTrainingRequirementsForStudents/toggleRequirement/addRequirement/
-  // removeRequirement/getRequirementsForStudent, plus the shared
-  // mapTrainingRequirementRow mapper, all moved to
-  // lib/hooks/useTrainingRequirements.ts, Stage 8 of the SWR migration,
-  // 2026-09-02 — the final domain of the whole 9-stage migration.)
-
-  // (12. FTO SETTINGS FUNCTIONS — loadFTOSettings/getFTOSetting moved to
-  // lib/hooks/useFtoSettings.ts, Stage 8 of the SWR migration, 2026-09-02.)
-
-  // (EXERCISES FUNCTIONS — loadExercises moved to lib/hooks/useExercises.ts,
-  // Stage 8, 2026-09-02.)
-
-  // (SORTIE TYPES FUNCTIONS — loadSortieTypes moved to
-  // lib/hooks/useSortieTypes.ts, Stage 8, 2026-09-02.)
-
-  // (13. HOLIDAYS FUNCTIONS — loadHolidays/addHoliday/addHolidaysBulk/
-  // removeHoliday moved to lib/hooks/useHolidays.ts, Stage 7 of the SWR
-  // migration, 2026-09-02. findHolidayForDate/getSchedulingBlockReason stay
-  // above this store — see their own comments for why.)
 
   // ============================================================
   // UI STATE FUNCTIONS
