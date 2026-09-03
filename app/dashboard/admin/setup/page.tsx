@@ -10,7 +10,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { useSetHeader } from '@/components/ui/HeaderContext';
@@ -67,15 +67,17 @@ const TABS = [
 export default function SetupWizardPage() {
   const [activeTab, setActiveTab] = useState('settings');
 
-  // Track which tabs have been visited (completed)
-  const [completedTabs, setCompletedTabs] = useState<string[]>([]);
+  // Track which tabs have been visited (completed). 'settings' starts
+  // completed since it's the initial tab — previously an effect reacting
+  // to activeTab marked it completed after mount; now selectTab below does
+  // the marking directly, at the moment a tab is actually visited, so no
+  // effect is needed at all.
+  const [completedTabs, setCompletedTabs] = useState<string[]>(['settings']);
 
-  // Mark current tab as completed when it changes
-  useEffect(() => {
-    if (!completedTabs.includes(activeTab)) {
-      setCompletedTabs(prev => [...prev, activeTab]);
-    }
-  }, [activeTab, completedTabs]);
+  const selectTab = (id: string) => {
+    setActiveTab(id);
+    setCompletedTabs(prev => prev.includes(id) ? prev : [...prev, id]);
+  };
 
   // Calculate progress percentage
   const progressPercent = Math.round((completedTabs.length / TABS.length) * 100);
@@ -100,7 +102,7 @@ export default function SetupWizardPage() {
    */
   const goToPrevTab = () => {
     if (!isFirstTab) {
-      setActiveTab(TABS[currentIndex - 1].id);
+      selectTab(TABS[currentIndex - 1].id);
     }
   };
 
@@ -109,7 +111,7 @@ export default function SetupWizardPage() {
    */
   const goToNextTab = () => {
     if (!isLastTab) {
-      setActiveTab(TABS[currentIndex + 1].id);
+      selectTab(TABS[currentIndex + 1].id);
     }
   };
 
@@ -156,7 +158,7 @@ export default function SetupWizardPage() {
                     <div key={tab.id} className="flex items-center">
                       {/* Step Circle */}
                       <button
-                        onClick={() => setActiveTab(tab.id)}
+                        onClick={() => selectTab(tab.id)}
                         className="flex items-center space-x-1 px-3 py-1.5 rounded-full text-xs font-medium transition"
                         style={
                           isActive
@@ -192,7 +194,7 @@ export default function SetupWizardPage() {
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
+                    onClick={() => selectTab(tab.id)}
                     className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5"
                     style={
                       activeTab === tab.id

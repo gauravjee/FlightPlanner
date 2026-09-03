@@ -2,7 +2,7 @@
 // Modal form for adding/editing leave/availability records for instructors and students
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { AvailabilityRecord } from '@/types';
@@ -23,36 +23,39 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
 
   const today = new Date().toLocaleDateString('en-CA');
 
-  const [form, setForm] = useState({
-    personType: 'instructor' as 'instructor' | 'student',
-    personId: '',
-    leaveType: 'UNAVAILABLE',
-    startDate: today,
-    endDate: today,
-    startTime: '',
-    endTime: '',
-    reason: '',
-    status: 'APPROVED',
-    createdBy: '',
-  });
-
-  // Populate form when editing
-  useEffect(() => {
-    if (record) {
-      setForm({
-        personType: record.personType,
-        personId: record.personId,
-        leaveType: record.leaveType,
-        startDate: record.startDate,
-        endDate: record.endDate,
-        startTime: record.startTime || '',
-        endTime: record.endTime || '',
-        reason: record.reason,
-        status: record.status,
-        createdBy: record.createdBy || '',
-      });
-    }
-  }, [record]);
+  // The parent only ever renders this modal conditionally ({showForm &&
+  // <AvailabilityForm .../>}), so `record` is fixed for this instance's
+  // whole lifetime — a fresh mount happens every time it's opened for a
+  // different record (or for Add New). That means the form can seed
+  // straight from the prop in a lazy initializer instead of syncing it in
+  // via an effect after the fact.
+  const [form, setForm] = useState(() =>
+    record
+      ? {
+          personType: record.personType,
+          personId: record.personId,
+          leaveType: record.leaveType,
+          startDate: record.startDate,
+          endDate: record.endDate,
+          startTime: record.startTime || '',
+          endTime: record.endTime || '',
+          reason: record.reason,
+          status: record.status,
+          createdBy: record.createdBy || '',
+        }
+      : {
+          personType: 'instructor' as 'instructor' | 'student',
+          personId: '',
+          leaveType: 'UNAVAILABLE',
+          startDate: today,
+          endDate: today,
+          startTime: '',
+          endTime: '',
+          reason: '',
+          status: 'APPROVED',
+          createdBy: '',
+        }
+  );
 
   // Get the list of people based on selected type
   const people = form.personType === 'instructor' ? instructors : students;

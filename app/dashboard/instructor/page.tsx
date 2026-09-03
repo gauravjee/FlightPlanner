@@ -50,25 +50,18 @@ export default function InstructorDashboardPage() {
   const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
   const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
 
-  // Find the instructor's database ID from their email
-  const [instructorId, setInstructorId] = useState('');
+  // Find the instructor's database ID from their email — derived, not
+  // stored state (nothing else ever sets it), so no effect is needed to
+  // keep it in sync with instructorEmail/instructors.
+  const instructorId = useMemo(() => {
+    return instructors.find(i => i.email === instructorEmail)?.id || '';
+  }, [instructorEmail, instructors]);
 
   // Admin-configured per-program required hours (Admin Setup -> Training
   // Programs) — see lib/training-programs.ts. Loaded the same way
   // components/dashboard/StudentProgressWidget.tsx and
   // app/dashboard/progress/page.tsx do.
   const [trainingPrograms, setTrainingPrograms] = useState<TrainingProgramHours[]>([]);
-
-  useEffect(() => {
-    if (instructorEmail && instructors.length > 0) {
-      const inst = instructors.find(i => i.email === instructorEmail);
-      if (inst) {
-        setInstructorId(inst.id);
-      }
-    }
-  }, [instructorEmail, instructors]);
-
-
 
   // Load all data on mount. Instructors, Students, Flight Records, and now
   // Scheduled Flights are all SWR-migrated (Stages 2, 3, 4, 5) and fetch

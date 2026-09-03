@@ -32,30 +32,37 @@ export default function GroundSchoolPage() {
   const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
   const [classes, setClasses] = useState<GroundSchoolClassRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedStudent, setSelectedStudent] = useState<string>('');
+  // Not stored state — a student's own ID from the session always wins for
+  // that role (they never get a picker here), and nothing else ever sets
+  // this, so it's a plain derived value rather than state synced via an
+  // effect.
+  const selectedStudent = userRole === 'student' && userStudentId ? userStudentId : '';
 
-  const loadData = async () => {
-    setLoading(true);
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchGroundSchoolData = async () => {
     const [subjRes, enrollRes, classRes] = await Promise.all([
       supabase.from('ground_school_subjects').select('*').eq('is_active', true).order('sort_order'),
       supabase.from('ground_school_enrollment').select('*'),
       supabase.from('ground_school_classes').select('*, ground_school_subjects(subject_name)').order('class_date', { ascending: false }).limit(10),
     ]);
-    setSubjects(subjRes.data || []);
-    setEnrollments(enrollRes.data || []);
-    setClasses(classRes.data || []);
-    setLoading(false);
+    return {
+      subjects: subjRes.data || [],
+      enrollments: enrollRes.data || [],
+      classes: classRes.data || [],
+    };
   };
 
   useEffect(() => {
-    loadData();
+    fetchGroundSchoolData().then(data => {
+      setSubjects(data.subjects);
+      setEnrollments(data.enrollments);
+      setClasses(data.classes);
+      setLoading(false);
+    });
   }, []);
-
-  useEffect(() => {
-    if (userRole === 'student' && userStudentId) {
-      setSelectedStudent(userStudentId);
-    }
-  }, [userRole, userStudentId]);
 
   // Calculate progress per subject
   const subjectProgress = useMemo(() => {

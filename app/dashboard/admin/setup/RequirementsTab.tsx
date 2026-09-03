@@ -4,7 +4,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase-client';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { CircleCheck, Pencil, Plus, Save, Trash2, Lock, RefreshCw } from 'lucide-react';
@@ -49,10 +49,12 @@ export default function RequirementsTab() {
   // picked up a template requirement added after they were provisioned).
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<{ studentsChecked: number; totalProvisioned: number } | string | null>(null);
+  // requirement_category/program_code are NOT stored here — they always
+  // equal selectedProgram (requirements are fetched filtered by it, and
+  // handleSave sends selectedProgram explicitly), so keeping a separate
+  // copy in sync via effect would just be duplicated state.
   const [form, setForm] = useState({
     requirement_name: '',
-    requirement_category: 'CPL',
-    program_code: 'CPL',
     sort_order: 99,
     validity_years: null as number | null,
     required_before_hours: null as number | null,
@@ -61,14 +63,18 @@ export default function RequirementsTab() {
     notes: '',
   });
 
-  const loadPrograms = useCallback(async () => {
+  // Pure fetches — no setState in either, so they're safe to call from an
+  // effect too (react-hooks/set-state-in-effect flags any named function
+  // that sets state anywhere in its body, even safely after an await, when
+  // called from an effect — so the state-setting has to live at each call
+  // site instead).
+  const fetchPrograms = async (): Promise<TrainingProgram[]> => {
     const { data } = await supabase.from('training_programs').select('*').order('sort_order');
-    setPrograms(data || []);
-  }, []);
+    return data || [];
+  };
 
-  const loadRequirements = useCallback(async () => {
-    setLoading(true);
-    console.log('Fetching requirements for', selectedProgram);
+  const fetchRequirements = async (program: string): Promise<Requirement[]> => {
+    console.log('Fetching requirements for', program);
 
     // Templates now live in their own table — see
     // split-training-requirement-templates.sql — instead of being the
@@ -76,30 +82,44 @@ export default function RequirementsTab() {
     const { data, error } = await supabase
       .from('training_requirement_templates')
       .select('*')
-      .eq('program_code', selectedProgram)
+      .eq('program_code', program)
       .order('sort_order', { ascending: true });
 
     if (error) {
       console.error('Error loading requirements:', error.message);
-    } else {
-      console.log('Loaded requirements:', data?.length, 'items');
-      setRequirements(data || []);
+      return [];
     }
+    console.log('Loaded requirements:', data?.length, 'items');
+    return data || [];
+  };
+
+  // Used by Save/Delete below — event-handler calls, where setState is
+  // always fine.
+  const loadRequirements = async () => {
+    setRequirements(await fetchRequirements(selectedProgram));
     setLoading(false);
+  };
+
+  // Load programs once on mount
+  useEffect(() => {
+    fetchPrograms().then(setPrograms);
+  }, []);
+
+  // Load requirements on mount and whenever the selected program changes
+  useEffect(() => {
+    fetchRequirements(selectedProgram).then(data => { setRequirements(data); setLoading(false); });
   }, [selectedProgram]);
 
-  // Load data on mount
-  useEffect(() => {
-    loadPrograms();
-    loadRequirements();
-  }, [loadPrograms, loadRequirements]);
-
-  // Reload when program changes
-  useEffect(() => {
-    loadRequirements();
-    setForm(p => ({ ...p, program_code: selectedProgram, requirement_category: selectedProgram }));
+  // Switching programs — clear any stale sync-result banner and any
+  // in-progress edit from the previous program. Done in the event handler
+  // that changes selectedProgram, not in an effect reacting to it, since
+  // these aren't derived from selectedProgram — they just need resetting
+  // at the moment of the switch.
+  const handleSelectProgram = (code: string) => {
+    setSelectedProgram(code);
     setSyncResult(null);
-  }, [selectedProgram, loadRequirements]);
+    setEditing(null);
+  };
 
   // Add or update requirement
   //
@@ -112,25 +132,25 @@ export default function RequirementsTab() {
   const handleSave = async () => {
     if (!form.requirement_name) return;
 
+    const body = { ...form, program_code: selectedProgram, requirement_category: selectedProgram };
+
     if (editing) {
       await fetch('/api/admin/config/requirement-templates', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editing.id, ...form }),
+        body: JSON.stringify({ id: editing.id, ...body }),
       });
     } else {
       await fetch('/api/admin/config/requirement-templates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(body),
       });
     }
 
     setEditing(null);
     setForm({
       requirement_name: '',
-      requirement_category: selectedProgram,
-      program_code: selectedProgram,
       sort_order: 99,
       validity_years: null,
       required_before_hours: null,
@@ -146,8 +166,6 @@ export default function RequirementsTab() {
     setEditing(req);
     setForm({
       requirement_name: req.requirement_name,
-      requirement_category: req.requirement_category,
-      program_code: req.program_code,
       sort_order: req.sort_order,
       validity_years: req.validity_years,
       required_before_hours: req.required_before_hours,
@@ -212,7 +230,7 @@ export default function RequirementsTab() {
           {programs.map(prog => (
             <button
               key={prog.id}
-              onClick={() => setSelectedProgram(prog.program_code)}
+              onClick={() => handleSelectProgram(prog.program_code)}
               className="px-4 py-2 rounded-lg text-sm transition"
               style={
                 selectedProgram === prog.program_code
@@ -334,8 +352,7 @@ export default function RequirementsTab() {
               onClick={() => {
                 setEditing(null);
                 setForm({
-                  requirement_name: '', requirement_category: selectedProgram,
-                  program_code: selectedProgram, sort_order: 99,
+                  requirement_name: '', sort_order: 99,
                   validity_years: null, required_before_hours: null,
                   blocks_solo: false, blocks_all_flights: false, notes: '',
                 });

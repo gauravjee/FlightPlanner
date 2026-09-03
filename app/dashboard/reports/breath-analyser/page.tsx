@@ -74,7 +74,7 @@ export default function BreathAnalyserRegisterPage() {
 
   const [date, setDate] = useState(todayStr());
   const [tests, setTests] = useState<BATest[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [safetyOfficers, setSafetyOfficers] = useState<SafetyOfficer[]>([]);
 
@@ -83,13 +83,23 @@ export default function BreathAnalyserRegisterPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchForDate = async (d: string): Promise<BATest[]> => {
+    const res = await fetch(`/api/ba-tests?date=${d}`);
+    const json = await res.json().catch(() => ({}));
+    return json.baTests || [];
+  };
+
+  // Used by Save/Delete below — event-handler calls, where setState is
+  // always fine.
   const loadForDate = useCallback(async (d: string) => {
     setLoading(true);
     setErrorMsg('');
     try {
-      const res = await fetch(`/api/ba-tests?date=${d}`);
-      const json = await res.json().catch(() => ({}));
-      setTests(json.baTests || []);
+      setTests(await fetchForDate(d));
     } catch {
       setErrorMsg('Failed to load BA test register.');
     } finally {
@@ -97,7 +107,16 @@ export default function BreathAnalyserRegisterPage() {
     }
   }, []);
 
-  useEffect(() => { loadForDate(date); }, [date, loadForDate]);
+  // Loads on mount (loading starts true above) and whenever the date
+  // changes — the date picker's onChange flips loading back to true for
+  // that case, since doing it here directly would itself be a synchronous
+  // setState-in-effect.
+  useEffect(() => {
+    fetchForDate(date)
+      .then(setTests)
+      .catch(() => setErrorMsg('Failed to load BA test register.'))
+      .finally(() => setLoading(false));
+  }, [date]);
 
   useEffect(() => {
     if (!canWrite) return;
@@ -260,7 +279,7 @@ export default function BreathAnalyserRegisterPage() {
                 <input
                   type="date"
                   value={date}
-                  onChange={e => setDate(e.target.value)}
+                  onChange={e => { setDate(e.target.value); setLoading(true); }}
                   className="surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>

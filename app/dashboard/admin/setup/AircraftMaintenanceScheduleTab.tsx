@@ -95,8 +95,11 @@ export default function AircraftMaintenanceScheduleTab() {
   const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadTemplates = useCallback(async () => {
-    setLoading(true);
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchTemplates = useCallback(async (): Promise<ScheduleTemplateRow[]> => {
     const { data, error } = await supabase
       .from('aircraft_maintenance_schedule_templates')
       .select('*')
@@ -104,21 +107,30 @@ export default function AircraftMaintenanceScheduleTab() {
       .order('item_name', { ascending: true });
     if (error) {
       console.error('Error loading maintenance schedule templates:', error.message);
-    } else {
-      setTemplates(data || []);
-      // 2026-09-01 (SWR migration, Stage 6): this tab keeps its own local
-      // load/state, independent of useMaintenanceScheduleTemplates() — so
-      // every write here (Add/Edit/Delete/Engine Type/CSV import, all of
-      // which already call loadTemplates() on success) also has to nudge
-      // that SWR cache, or the Maintenance Due panel elsewhere in the app
-      // keeps showing templates as they were before this edit until the
-      // cache happens to revalidate on its own.
-      mutate(maintenanceScheduleTemplatesKey);
+      return [];
     }
-    setLoading(false);
+    // 2026-09-01 (SWR migration, Stage 6): this tab keeps its own local
+    // load/state, independent of useMaintenanceScheduleTemplates() — so
+    // every write here (Add/Edit/Delete/Engine Type/CSV import, all of
+    // which already call loadTemplates() on success) also has to nudge
+    // that SWR cache, or the Maintenance Due panel elsewhere in the app
+    // keeps showing templates as they were before this edit until the
+    // cache happens to revalidate on its own.
+    mutate(maintenanceScheduleTemplatesKey);
+    return data || [];
   }, []);
 
-  useEffect(() => { loadTemplates(); }, [loadTemplates]);
+  // Used by Add/Edit/Delete/Engine Type/CSV import below — event-handler
+  // calls, where setState is always fine.
+  const loadTemplates = useCallback(async () => {
+    setLoading(true);
+    setTemplates(await fetchTemplates());
+    setLoading(false);
+  }, [fetchTemplates]);
+
+  useEffect(() => {
+    fetchTemplates().then(data => { setTemplates(data); setLoading(false); });
+  }, [fetchTemplates]);
 
   // Every distinct model that already has at least one template row, plus
   // the seed list — so a model added purely via the Aircraft form's

@@ -191,9 +191,13 @@ export default function StudentProgressPage() {
   // Load enrollments for the selected student
   // Enrich each enrollment with class details (date, time, subject, instructor)
   // ============================================================
-  const loadEnrollments = useCallback(
-    async (studentId: string) => {
-      if (!studentId) return;
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchEnrollments = useCallback(
+    async (studentId: string): Promise<EnrollmentRecord[]> => {
+      if (!studentId) return [];
       const { data } = await supabase
         .from('ground_school_enrollment')
         .select('*')
@@ -202,7 +206,7 @@ export default function StudentProgressPage() {
 
       // For each enrollment, look up the corresponding class info
       // (class_id may be null for exempted entries)
-      const enriched = (data || []).map((enr) => {
+      return (data || []).map((enr) => {
         const cls = classes.find((c) => c.id === enr.class_id);
         return {
           ...enr,
@@ -213,9 +217,17 @@ export default function StudentProgressPage() {
           instructor_initials: cls?.instructor_initials,
         };
       });
-      setEnrollments(enriched);
     },
     [classes] // Re‑run when classes change
+  );
+
+  // Used by the Direct Exam Entry handler below — event-handler call,
+  // where setState is always fine.
+  const loadEnrollments = useCallback(
+    async (studentId: string) => {
+      setEnrollments(await fetchEnrollments(studentId));
+    },
+    [fetchEnrollments]
   );
 
   // ============================================================
@@ -288,9 +300,9 @@ export default function StudentProgressPage() {
   // Reload enrollments whenever the selected student changes
   useEffect(() => {
     if (selectedStudent) {
-      loadEnrollments(selectedStudent);
+      fetchEnrollments(selectedStudent).then(setEnrollments);
     }
-  }, [selectedStudent, loadEnrollments]);
+  }, [selectedStudent, fetchEnrollments]);
 
   // ============================================================
   // Direct exam entry (for pre‑existing qualifications)

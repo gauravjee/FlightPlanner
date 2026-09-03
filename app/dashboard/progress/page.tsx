@@ -102,7 +102,11 @@ export default function ProgressPage() {
   const { students } = useStudents();
   const { flightRecords } = useFlightRecords();
 
-  const [selectedStudentId, setSelectedStudentId] = useState<string>('');
+  const [selectedStudentIdInput, setSelectedStudentId] = useState<string>('');
+  // A student's own ID from the session always wins for that role (they
+  // never see the picker below); otherwise it's whatever staff picked from
+  // the dropdown. Derived at read time instead of synced via an effect.
+  const selectedStudentId = userRole === 'student' && userStudentId ? userStudentId : selectedStudentIdInput;
   const [selectedStage, setSelectedStage] = useState<string>('ALL');
   // Admin-configured per-program requirement minimums — see
   // TrainingProgramsTab.tsx ("Progress tracking minimums") and
@@ -126,13 +130,6 @@ export default function ProgressPage() {
       }
     })();
   }, []);
-
-  // If student is logged in, auto-select their own record
-  useEffect(() => {
-    if (userRole === 'student' && userStudentId) {
-      setSelectedStudentId(userStudentId);
-    }
-  }, [userRole, userStudentId]);
 
   // Filter students based on role
   const visibleStudents = useMemo(() => {

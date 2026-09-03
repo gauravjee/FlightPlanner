@@ -21,7 +21,7 @@
 
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Papa from 'papaparse';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
@@ -74,7 +74,7 @@ export default function BreathAnalysisReportPage() {
   const [month, setMonth] = useState(todayStr().slice(0, 7));
 
   const [tests, setTests] = useState<BATest[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
 
   useSetHeader({
@@ -94,21 +94,26 @@ export default function BreathAnalysisReportPage() {
     return monthRange(month);
   }, [period, date, weekAnchor, month]);
 
-  const loadRange = useCallback(async (from: string, to: string) => {
-    setLoading(true);
-    setErrorMsg('');
-    try {
-      const res = await fetch(`/api/ba-tests?from=${from}&to=${to}`);
-      const json = await res.json().catch(() => ({}));
-      setTests(json.baTests || []);
-    } catch {
-      setErrorMsg('Failed to load the Breath Analysis Report.');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchRange = async (from: string, to: string): Promise<BATest[]> => {
+    const res = await fetch(`/api/ba-tests?from=${from}&to=${to}`);
+    const json = await res.json().catch(() => ({}));
+    return json.baTests || [];
+  };
 
-  useEffect(() => { loadRange(range.from, range.to); }, [range.from, range.to, loadRange]);
+  // Loads on mount (loading starts true above) and whenever the resolved
+  // range changes — each picker's onChange (and the period buttons) flips
+  // loading back to true for that case, since doing it here directly would
+  // itself be a synchronous setState-in-effect.
+  useEffect(() => {
+    fetchRange(range.from, range.to)
+      .then(setTests)
+      .catch(() => setErrorMsg('Failed to load the Breath Analysis Report.'))
+      .finally(() => setLoading(false));
+  }, [range.from, range.to]);
 
   const stats = useMemo(() => {
     const total = tests.length;
@@ -163,7 +168,7 @@ export default function BreathAnalysisReportPage() {
                 {(['Daily', 'Weekly', 'Monthly'] as Period[]).map(p => (
                   <button
                     key={p}
-                    onClick={() => setPeriod(p)}
+                    onClick={() => { setPeriod(p); setLoading(true); }}
                     className={periodButtonClass(p)}
                     style={period === p ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' } : { color: 'var(--text-secondary)' }}
                   >
@@ -175,15 +180,15 @@ export default function BreathAnalysisReportPage() {
               <div className="flex items-center gap-2">
                 <CalendarDays className="w-4 h-4 text-tertiary" />
                 {period === 'Daily' && (
-                  <input type="date" value={date} onChange={e => setDate(e.target.value)}
+                  <input type="date" value={date} onChange={e => { setDate(e.target.value); setLoading(true); }}
                     className="surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
                 )}
                 {period === 'Weekly' && (
-                  <input type="date" value={weekAnchor} onChange={e => setWeekAnchor(e.target.value)}
+                  <input type="date" value={weekAnchor} onChange={e => { setWeekAnchor(e.target.value); setLoading(true); }}
                     className="surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
                 )}
                 {period === 'Monthly' && (
-                  <input type="month" value={month} onChange={e => setMonth(e.target.value)}
+                  <input type="month" value={month} onChange={e => { setMonth(e.target.value); setLoading(true); }}
                     className="surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
                 )}
                 <span className="text-sm text-secondary">{range.label}</span>

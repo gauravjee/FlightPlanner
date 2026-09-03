@@ -2,7 +2,7 @@
 // Modal form for adding/editing instructors
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Instructor } from '@/types';
 import { Pencil, GraduationCap, Save, X, CalendarCheck } from 'lucide-react';
@@ -24,26 +24,50 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
   // controls who can create new Schedule bookings unsupervised.
   const isSuperAdmin = session?.user?.role === 'super_admin';
 
-  const [form, setForm] = useState({
-    name: '',
-    initials: '',
-    licenseNumber: '',
-    // CPL issue/expiry dates (2026-08-20), paired with licenseNumber above.
-    licenseIssueDate: '',
-    licenseExpiryDate: '',
-    ratings: 'CFI',
-    maxDailyHours: 8,
-    email: '',
-    phone: '',
-    status: 'AVAILABLE' as Instructor['status'],
-    canSelfBook: false,
-  });
+  // The parent only ever renders this modal conditionally ({showForm &&
+  // <InstructorFormModal .../>}), so `instructor` is fixed for this
+  // instance's whole lifetime — a fresh mount happens every time it's
+  // opened for a different instructor (or for Add New). That means the
+  // form can seed straight from the prop in a lazy initializer instead of
+  // syncing it in via an effect after the fact.
+  const [form, setForm] = useState(() =>
+    instructor
+      ? {
+          name: instructor.name,
+          initials: instructor.initials,
+          licenseNumber: instructor.licenseNumber,
+          licenseIssueDate: instructor.licenseIssueDate || '',
+          licenseExpiryDate: instructor.licenseExpiryDate || '',
+          ratings: instructor.ratings,
+          maxDailyHours: instructor.maxDailyHours,
+          email: instructor.email || '',
+          phone: instructor.phone || '',
+          status: instructor.status,
+          canSelfBook: !!instructor.canSelfBook,
+        }
+      : {
+          name: '',
+          initials: '',
+          licenseNumber: '',
+          // CPL issue/expiry dates (2026-08-20), paired with licenseNumber above.
+          licenseIssueDate: '',
+          licenseExpiryDate: '',
+          ratings: 'CFI',
+          maxDailyHours: 8,
+          email: '',
+          phone: '',
+          status: 'AVAILABLE' as Instructor['status'],
+          canSelfBook: false,
+        }
+  );
 
   // CPL Expiry auto-fill (2026-08-21): CPL validity is 10 years from issue.
   // Picking an Issue Date auto-fills Expiry Date, but Expiry Date stays
   // directly editable — once touched (or already on file for an existing
-  // instructor), further issue-date edits won't overwrite it.
-  const [licenseExpiryManuallyEdited, setLicenseExpiryManuallyEdited] = useState(false);
+  // instructor), further issue-date edits won't overwrite it. An existing
+  // instructor with a saved expiry date already on file starts "manually
+  // edited" so a later issue-date edit won't clobber it.
+  const [licenseExpiryManuallyEdited, setLicenseExpiryManuallyEdited] = useState(!!instructor?.licenseExpiryDate);
 
   // 2026-08-25: see the identical helper + full explanation in
   // components/students/StudentFormModal.tsx's addYears —
@@ -69,26 +93,6 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
     const dd = String(d.getDate()).padStart(2, '0');
     return `${yyyy}-${mm}-${dd}`;
   };
-
-  // Populate form when editing
-  useEffect(() => {
-    if (instructor) {
-      setForm({
-        name: instructor.name,
-        initials: instructor.initials,
-        licenseNumber: instructor.licenseNumber,
-        licenseIssueDate: instructor.licenseIssueDate || '',
-        licenseExpiryDate: instructor.licenseExpiryDate || '',
-        ratings: instructor.ratings,
-        maxDailyHours: instructor.maxDailyHours,
-        email: instructor.email || '',
-        phone: instructor.phone || '',
-        status: instructor.status,
-        canSelfBook: !!instructor.canSelfBook,
-      });
-      setLicenseExpiryManuallyEdited(!!instructor.licenseExpiryDate);
-    }
-  }, [instructor]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

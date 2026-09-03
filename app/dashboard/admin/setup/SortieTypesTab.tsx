@@ -49,8 +49,11 @@ export default function SortieTypesTab() {
     is_active: true,
   });
 
-  const loadSortieTypes = async () => {
-    setLoading(true);
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchSortieTypes = async (): Promise<SortieType[]> => {
     console.log('Fetching sortie types...');
     const { data, error } = await supabase
       .from('sortie_types')
@@ -59,11 +62,9 @@ export default function SortieTypesTab() {
 
     if (error) {
       console.error('Error loading sortie types:', error.message);
-    } else {
-      console.log('Loaded sortie types:', data);
-      setSortieTypes(data || []);
+      return [];
     }
-    setLoading(false);
+    console.log('Loaded sortie types:', data);
     // 2026-09-02 (SWR migration, Stage 8): this tab's own list above is
     // unfiltered (includes inactive rows, for management) so it can't be
     // spliced straight into the shared active-only `sortieTypesKey` cache —
@@ -71,11 +72,20 @@ export default function SortieTypesTab() {
     // an add/edit/delete made here without a manual reload. Same
     // cache-invalidation fix as ExercisesTab.tsx.
     mutate(sortieTypesKey);
+    return data || [];
+  };
+
+  // Used by Save/Delete/Cancel below — event-handler calls, where setState
+  // is always fine.
+  const loadSortieTypes = async () => {
+    setLoading(true);
+    setSortieTypes(await fetchSortieTypes());
+    setLoading(false);
   };
 
   // Load sortie types on mount
   useEffect(() => {
-    loadSortieTypes();
+    fetchSortieTypes().then(data => { setSortieTypes(data); setLoading(false); });
   }, []);
 
   // Add or update sortie type

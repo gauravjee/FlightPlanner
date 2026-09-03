@@ -106,9 +106,9 @@ function ResetPasswordForm() {
   // ============================================================
 
   /**
-   * Verify a password reset token from the email link
+   * When the page loads with a 'token' URL parameter, verify it.
    *
-   * Checks three things:
+   * Checks three things (server-side):
    *   1. Token exists in the password_reset_tokens table
    *   2. Token hasn't been used yet (used = false)
    *   3. Token hasn't expired (expires_at > current time)
@@ -116,49 +116,41 @@ function ResetPasswordForm() {
    * If valid:
    *   - Sets tokenVerified = true (switches to token reset mode)
    *   - Pre-fills the email from the associated user account
-   *   - Marks the token as used so it cannot be reused
    *
-   * @param token - The reset token string from the URL
-   */
-  const verifyToken = async (token: string) => {
-    try {
-      // Ask the server whether this token is still valid. This does NOT
-      // mark the token as used — it's only marked used once the password
-      // has actually been changed (see handleReset below), so a page
-      // refresh can't burn a reset link before the user finishes the form.
-      const response = await fetch('/api/auth/reset-password/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok || !data.valid) {
-        setError('❌ Invalid or expired reset link. Please request a new one from the login page.');
-        return;
-      }
-
-      // Token is valid! Set up the form for token-based reset
-      setTokenVerified(true);       // Switch to token reset mode (no old password needed)
-      // setTokenEmail(data.email);    // Store the email associated with the token
-      setEmail(data.email);         // Pre-fill the email field
-
-    } catch {
-      // Handle unexpected errors (network issues, server errors, etc.)
-      setError('❌ Error verifying reset link. Please try again.');
-    }
-  };
-
-  /**
-   * When the page loads with a 'token' URL parameter, verify the token.
-   * This useEffect runs automatically when the component mounts.
-   * Dependencies: [resetToken] - re-runs if the token changes
+   * Defined and invoked entirely inside this effect (not as a separate
+   * function referenced from it) — nothing else ever needs to call this,
+   * so there's no reason for it to live outside.
    */
   useEffect(() => {
-    if (resetToken) {
-      verifyToken(resetToken);  // Verify the token from the URL
-    }
+    if (!resetToken) return;
+
+    (async () => {
+      try {
+        // Ask the server whether this token is still valid. This does NOT
+        // mark the token as used — it's only marked used once the password
+        // has actually been changed (see handleReset below), so a page
+        // refresh can't burn a reset link before the user finishes the form.
+        const response = await fetch('/api/auth/reset-password/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: resetToken }),
+        });
+
+        const data = await response.json();
+
+        if (!response.ok || !data.valid) {
+          setError('❌ Invalid or expired reset link. Please request a new one from the login page.');
+          return;
+        }
+
+        // Token is valid! Set up the form for token-based reset
+        setTokenVerified(true); // Switch to token reset mode (no old password needed)
+        setEmail(data.email);   // Pre-fill the email field
+      } catch {
+        // Handle unexpected errors (network issues, server errors, etc.)
+        setError('❌ Error verifying reset link. Please try again.');
+      }
+    })();
   }, [resetToken]);
 
   // ============================================================

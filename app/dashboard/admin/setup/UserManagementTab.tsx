@@ -87,29 +87,39 @@ export default function UserManagementTab() {
    * Load all users from the database
    * Ordered by creation date (newest first)
    */
-  const loadUsers = async () => {
-    setLoading(true);
-    // Never select password_hash here — this list renders straight into the
-    // browser, and the hash has no business leaving the server. Routed
-    // through /api/admin/users (super_admin only, enforced server-side)
-    // rather than a direct Supabase call.
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect). Never selects password_hash — this list renders
+  // straight into the browser, and the hash has no business leaving the
+  // server. Routed through /api/admin/users (super_admin only, enforced
+  // server-side) rather than a direct Supabase call.
+  const fetchUsers = async (): Promise<User[]> => {
     try {
       const res = await fetch('/api/admin/users');
       if (res.ok) {
         const { users: data } = await res.json();
-        setUsers(data || []);
-      } else {
-        console.error('Error loading users:', await res.text());
+        return data || [];
       }
+      console.error('Error loading users:', await res.text());
+      return [];
     } catch (err) {
       console.error('Error loading users:', err instanceof Error ? err.message : err);
+      return [];
     }
+  };
+
+  // Used after saves elsewhere in this file — event-handler calls, where
+  // setState is always fine.
+  const loadUsers = async () => {
+    setLoading(true);
+    setUsers(await fetchUsers());
     setLoading(false);
   };
 
   // ----- Load existing users on mount -----
   useEffect(() => {
-    loadUsers();
+    fetchUsers().then(data => { setUsers(data); setLoading(false); });
   }, []);
 
   // ============================================================

@@ -54,7 +54,7 @@ export default function DailyFlyingReportPage() {
 
   const [date, setDate] = useState(todayStr());
   const [report, setReport] = useState<DailyFlyingReport | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [remarksDraft, setRemarksDraft] = useState('');
   const [incidents, setIncidents] = useState<SafetyIncident[]>([]);
@@ -65,19 +65,33 @@ export default function DailyFlyingReportPage() {
   const [savingIncident, setSavingIncident] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchForDate = async (d: string) => {
+    const [reportRes, incidentsRes] = await Promise.all([
+      fetch(`/api/reports/daily-flying?date=${d}`),
+      fetch(`/api/safety-incidents?date=${d}`),
+    ]);
+    const reportJson = await reportRes.json().catch(() => ({}));
+    const incidentsJson = await incidentsRes.json().catch(() => ({}));
+    return {
+      report: reportJson.report || null,
+      incidents: incidentsJson.incidents || [],
+    };
+  };
+
+  // Used by the incident-report handler below — event-handler call, where
+  // setState is always fine.
   const loadForDate = useCallback(async (d: string) => {
     setLoading(true);
     setErrorMsg('');
     try {
-      const [reportRes, incidentsRes] = await Promise.all([
-        fetch(`/api/reports/daily-flying?date=${d}`),
-        fetch(`/api/safety-incidents?date=${d}`),
-      ]);
-      const reportJson = await reportRes.json().catch(() => ({}));
-      const incidentsJson = await incidentsRes.json().catch(() => ({}));
-      setReport(reportJson.report || null);
-      setRemarksDraft(reportJson.report?.remarks || '');
-      setIncidents(incidentsJson.incidents || []);
+      const data = await fetchForDate(d);
+      setReport(data.report);
+      setRemarksDraft(data.report?.remarks || '');
+      setIncidents(data.incidents);
     } catch {
       setErrorMsg('Failed to load report data.');
     } finally {
@@ -85,7 +99,20 @@ export default function DailyFlyingReportPage() {
     }
   }, []);
 
-  useEffect(() => { loadForDate(date); }, [date, loadForDate]);
+  // Loads on mount (loading starts true above) and whenever the date
+  // changes — the date picker's onChange flips loading back to true for
+  // that case, since doing it here directly would itself be a synchronous
+  // setState-in-effect.
+  useEffect(() => {
+    fetchForDate(date)
+      .then(data => {
+        setReport(data.report);
+        setRemarksDraft(data.report?.remarks || '');
+        setIncidents(data.incidents);
+      })
+      .catch(() => setErrorMsg('Failed to load report data.'))
+      .finally(() => setLoading(false));
+  }, [date]);
 
   useSetHeader({
     title: 'Daily Flying Report',
@@ -178,7 +205,7 @@ export default function DailyFlyingReportPage() {
                 <input
                   type="date"
                   value={date}
-                  onChange={e => setDate(e.target.value)}
+                  onChange={e => { setDate(e.target.value); setLoading(true); }}
                   className="surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>

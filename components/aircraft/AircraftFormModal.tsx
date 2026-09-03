@@ -29,25 +29,6 @@ const OTHER_MODEL_OPTION = '__other__';
 // free-text "Model" field below.
 const ENGINE_TYPES = ['Single Engine', 'Multi Engine'];
 
-// Default (blank-new-aircraft) form values. Pulled into a function so
-// useState can use it as a lazy initializer — nextMaintenance's
-// Date.now()-based default is then only computed once on mount, not on
-// every render the way a literal `new Date(Date.now() + ...)` inline in
-// useState's argument would be.
-const getDefaultForm = (): Aircraft => ({
-  id: '',
-  registration: '',
-  type: '',
-  model: '',
-  year: new Date().getFullYear(),
-  hobbsTime: 0,
-  fuelCapacity: 200,
-  currentFuel: 200,
-  status: 'ACTIVE',
-  nextMaintenance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-  isSimulator: false,
-});
-
 interface Props {
   aircraft: Aircraft | null;
   onSave: (aircraft: Aircraft) => void;
@@ -58,7 +39,29 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
   useEscapeToClose(onClose);
   const isEditing = !!aircraft;
 
-  const [form, setForm] = useState<Aircraft>(getDefaultForm);
+  // The parent only ever renders this modal conditionally ({showForm &&
+  // <AircraftFormModal .../>}), so `aircraft` is fixed for this instance's
+  // whole lifetime — a fresh mount happens every time it's opened for a
+  // different aircraft (or for Add New). That means the form can seed
+  // straight from the prop in a lazy initializer instead of syncing it in
+  // via an effect after the fact.
+  const [form, setForm] = useState<Aircraft>(() =>
+    aircraft
+      ? { ...aircraft, isSimulator: !!aircraft.isSimulator }
+      : {
+          id: 'ac' + Date.now(),
+          registration: '',
+          type: '',
+          model: '',
+          year: new Date().getFullYear(),
+          hobbsTime: 0,
+          fuelCapacity: 200,
+          currentFuel: 200,
+          status: 'ACTIVE',
+          nextMaintenance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          isSimulator: false,
+        }
+  );
 
   // Whether the Fuel Burn Rate field should keep auto-following the Type
   // dropdown's per-type default (FUEL_BURN_RATE_BY_TYPE_LPH). True for a new
@@ -74,7 +77,15 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
   // Read-only client-side query, same scope convention as every other
   // dropdown-source read in this app.
   const [modelOptions, setModelOptions] = useState<string[]>([]);
-  const [useCustomModel, setUseCustomModel] = useState(false);
+  // Auto-detects once modelOptions has loaded whether the current
+  // form.model matches a known option — but the user can flip it either
+  // way afterward (the "Use list" link, or picking "Other" in the
+  // dropdown), and that override sticks. null = no manual override yet,
+  // so the computed default applies. Derived at render time instead of
+  // synced via an effect (there's nothing to sync until modelOptions
+  // itself finishes loading, at which point this just recomputes).
+  const [customModelOverride, setCustomModelOverride] = useState<boolean | null>(null);
+  const useCustomModel = customModelOverride ?? (modelOptions.length > 0 && !!form.model && !modelOptions.includes(form.model));
   // 2026-08-27: model -> engine-type ('Single Engine'/'Multi Engine'),
   // derived from the same query's engine_type column — see
   // deriveModelEngineTypeMap in lib/store.ts. A model with no engine_type
@@ -103,18 +114,11 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
     loadModelOptions();
   }, [loadModelOptions]);
 
-  // Once model options are loaded, decide whether the current form.model
-  // (from an aircraft being edited) matches a known option or should show
-  // as a custom/"Other" entry. Checked against the FULL model list (not the
+  // useCustomModel above is checked against the FULL model list (not the
   // type-filtered one below) so editing an existing aircraft whose Type and
   // Model happen to be a pre-existing mismatch (data predating this Type
   // filter) still shows it as a known list entry rather than forcing it
   // into "Other" mode.
-  useEffect(() => {
-    if (form.model && modelOptions.length > 0) {
-      setUseCustomModel(!modelOptions.includes(form.model));
-    }
-  }, [modelOptions, form.model]);
 
   // 2026-08-27: Model dropdown filtered down to whichever Type is
   // currently selected (see modelEngineType, derived from the DB above) —
@@ -126,28 +130,6 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
   const filteredModelOptions = form.type
     ? modelOptions.filter(m => !modelEngineType[m] || modelEngineType[m] === form.type)
     : modelOptions;
-
-  useEffect(() => {
-    if (aircraft) {
-      setForm({ ...aircraft, isSimulator: !!aircraft.isSimulator });
-      setAutoBurnRate(aircraft.fuelBurnRateLph == null);
-    } else {
-      setForm({
-        id: 'ac' + Date.now(),
-        registration: '',
-        type: '',
-        model: '',
-        year: new Date().getFullYear(),
-        hobbsTime: 0,
-        fuelCapacity: 200,
-        currentFuel: 200,
-        status: 'ACTIVE',
-        nextMaintenance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        isSimulator: false,
-      });
-      setAutoBurnRate(true);
-    }
-  }, [aircraft]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -265,7 +247,7 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
                     <div className="flex gap-3">
                       <button
                         type="button"
-                        onClick={() => setUseCustomModel(false)}
+                        onClick={() => setCustomModelOverride(false)}
                         className="text-xs text-tertiary underline cursor-pointer"
                       >
                         Use list
@@ -299,7 +281,7 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
                   value={form.model}
                   onChange={e => {
                     if (e.target.value === OTHER_MODEL_OPTION) {
-                      setUseCustomModel(true);
+                      setCustomModelOverride(true);
                       handleChange('model', '');
                     } else {
                       handleChange('model', e.target.value);

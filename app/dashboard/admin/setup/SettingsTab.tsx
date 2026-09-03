@@ -76,10 +76,20 @@ export default function SettingsTab() {
    * Load all FTO settings from the database
    * Builds a form values object for easy access
    */
-  const loadSettings = async () => {
-    setLoading(true);
-    console.log('📋 Fetching FTO settings...');
+  // Key-value map for easy form access — pure, so shared by both the
+  // event-handler load path and the mount effect below.
+  const buildFormValues = (data: FTOSetting[]): Record<string, string> => {
+    const values: Record<string, string> = {};
+    data.forEach(s => { values[s.setting_key] = s.setting_value; });
+    return values;
+  };
 
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchSettings = async (): Promise<FTOSetting[]> => {
+    console.log('📋 Fetching FTO settings...');
     const { data, error } = await supabase
       .from('fto_settings')
       .select('*')
@@ -87,23 +97,29 @@ export default function SettingsTab() {
 
     if (error) {
       console.error('❌ Error loading settings:', error.message);
-    } else {
-      console.log('✅ Loaded settings:', data?.length, 'items');
-      setSettings(data || []);
-
-      // Build a key-value map for easy form access
-      const values: Record<string, string> = {};
-      (data || []).forEach(s => {
-        values[s.setting_key] = s.setting_value;
-      });
-      setFormValues(values);
+      return [];
     }
+    console.log('✅ Loaded settings:', data?.length, 'items');
+    return data || [];
+  };
+
+  // Used after saves elsewhere in this file — event-handler calls, where
+  // setState is always fine.
+  const loadSettings = async () => {
+    setLoading(true);
+    const data = await fetchSettings();
+    setSettings(data);
+    setFormValues(buildFormValues(data));
     setLoading(false);
   };
 
   // ----- Load settings on mount -----
   useEffect(() => {
-    loadSettings();
+    fetchSettings().then(data => {
+      setSettings(data);
+      setFormValues(buildFormValues(data));
+      setLoading(false);
+    });
   }, []);
 
   // ============================================================

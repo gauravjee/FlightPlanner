@@ -48,8 +48,11 @@ export default function ExercisesTab() {
   const [csvResult, setCsvResult] = useState<CsvImportResult | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const loadExercises = async () => {
-    setLoading(true);
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchExercises = async (): Promise<Exercise[]> => {
     console.log('Fetching exercises...');
     const { data, error } = await supabase
       .from('exercises')
@@ -58,11 +61,9 @@ export default function ExercisesTab() {
 
     if (error) {
       console.error('Error loading exercises:', error.message);
-    } else {
-      console.log('Loaded exercises:', data?.length, 'items');
-      setExercises(data || []);
+      return [];
     }
-    setLoading(false);
+    console.log('Loaded exercises:', data?.length, 'items');
     // 2026-09-02 (SWR migration, Stage 8): this tab's own list above is
     // unfiltered (includes inactive rows, for management) so it can't be
     // spliced straight into the shared active-only `exercisesKey` cache —
@@ -72,11 +73,20 @@ export default function ExercisesTab() {
     // fixes the same cache-invalidation gap Stage 6 found and fixed for
     // AircraftMaintenanceScheduleTab.
     mutate(exercisesKey);
+    return data || [];
+  };
+
+  // Used by Save/Delete/Cancel/CSV-import below — event-handler calls,
+  // where setState is always fine.
+  const loadExercises = async () => {
+    setLoading(true);
+    setExercises(await fetchExercises());
+    setLoading(false);
   };
 
   // Load exercises on mount
   useEffect(() => {
-    loadExercises();
+    fetchExercises().then(data => { setExercises(data); setLoading(false); });
   }, []);
 
   // Add or update exercise

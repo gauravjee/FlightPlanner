@@ -21,34 +21,67 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
   const { students } = useStudents();
   const isEditing = !!student;
 
-  const [form, setForm] = useState({
-    enrollmentId: '',
-    name: '',
-    initials: '',
-    // 2026-08-19: no longer defaults to a hardcoded 'PPL' — that assumed a
-    // program that may not actually be configured. Starts unset; the
-    // Training Stage field below requires an explicit choice from
-    // whatever's really in training_programs (see stageOptions).
-    trainingStage: '',
-    totalHours: 0,
-    medicalExpiry: '',
-    email: '',
-    phone: '',
-    dateOfBirth: '',
-    joinedDate: new Date().toISOString().split('T')[0],
-    status: 'ACTIVE',
-    assignedInstructorId: undefined as string | undefined,
-    // Student Pilot License number (2026-08-20) — shown as the "License
-    // Number" on the Breath Analyser Register when this student is the
-    // person tested. Optional — not every student has flown solo yet.
-    splNumber: '',
-    // SPL issue/expiry dates (2026-08-20), paired with splNumber above.
-    splIssueDate: '',
-    splExpiryDate: '',
-    // Medical (DGCA Class 1) issue date (2026-08-25), paired with
-    // medicalExpiry above.
-    medicalIssueDate: '',
-  });
+  // The parent only ever renders this modal conditionally ({showForm &&
+  // <StudentFormModal .../>}), so `student` is fixed for this instance's
+  // whole lifetime — a fresh mount happens every time it's opened for a
+  // different student (or for Add New). That means the form can seed
+  // straight from the prop in a lazy initializer instead of syncing it in
+  // via an effect after the fact.
+  const [form, setForm] = useState(() =>
+    student
+      ? {
+          enrollmentId: student.enrollmentId,
+          name: student.name,
+          initials: student.initials,
+          trainingStage: student.trainingStage,
+          totalHours: student.totalHours,
+          // '|| ''' matters here: student.medicalExpiry can be undefined
+          // (or, before the lib/store.ts fix alongside this one, null) for a
+          // student with no medical expiry on file, and feeding that
+          // straight into this controlled input's value below (rather than
+          // empty string) triggers React's "value prop on input should not
+          // be null" warning (found via testing, 2026-08-25).
+          medicalExpiry: student.medicalExpiry || '',
+          email: student.email || '',
+          phone: student.phone || '',
+          dateOfBirth: student.dateOfBirth || '',
+          joinedDate: student.joinedDate || '',
+          status: student.status,
+          assignedInstructorId: student.assignedInstructorId,
+          splNumber: student.splNumber || '',
+          splIssueDate: student.splIssueDate || '',
+          splExpiryDate: student.splExpiryDate || '',
+          medicalIssueDate: student.medicalIssueDate || '',
+        }
+      : {
+          enrollmentId: '',
+          name: '',
+          initials: '',
+          // 2026-08-19: no longer defaults to a hardcoded 'PPL' — that assumed a
+          // program that may not actually be configured. Starts unset; the
+          // Training Stage field below requires an explicit choice from
+          // whatever's really in training_programs (see stageOptions).
+          trainingStage: '',
+          totalHours: 0,
+          medicalExpiry: '',
+          email: '',
+          phone: '',
+          dateOfBirth: '',
+          joinedDate: new Date().toISOString().split('T')[0],
+          status: 'ACTIVE',
+          assignedInstructorId: undefined as string | undefined,
+          // Student Pilot License number (2026-08-20) — shown as the "License
+          // Number" on the Breath Analyser Register when this student is the
+          // person tested. Optional — not every student has flown solo yet.
+          splNumber: '',
+          // SPL issue/expiry dates (2026-08-20), paired with splNumber above.
+          splIssueDate: '',
+          splExpiryDate: '',
+          // Medical (DGCA Class 1) issue date (2026-08-25), paired with
+          // medicalExpiry above.
+          medicalIssueDate: '',
+        }
+  );
 
   // Training-stage options come entirely from Admin Setup -> Training
   // Programs — no hardcoded fallback list. This used to start from a fixed
@@ -93,14 +126,19 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
     return stageOptions;
   }, [stageOptions, form.trainingStage, student]);
 
-  const [initialsManuallyEdited, setInitialsManuallyEdited] = useState(false);
+  // An existing student is never re-derived (no initials-from-name
+  // auto-fill kicks in for them); a brand-new one starts un-edited so
+  // typing a name auto-generates initials until the user overrides it.
+  const [initialsManuallyEdited, setInitialsManuallyEdited] = useState(!!student);
 
   // SPL Expiry auto-fill (2026-08-21): SPL validity is 10 years from issue.
   // Picking an Issue Date auto-fills Expiry Date, but Expiry Date stays
   // directly editable — same "auto until touched" pattern as the Initials
   // field above. Once the user (or existing saved data) has a real expiry
-  // value, we stop overwriting it on further issue-date edits.
-  const [splExpiryManuallyEdited, setSplExpiryManuallyEdited] = useState(false);
+  // value, we stop overwriting it on further issue-date edits. An existing
+  // student with a saved expiry date already on file starts "manually
+  // edited" so a later issue-date edit won't clobber it.
+  const [splExpiryManuallyEdited, setSplExpiryManuallyEdited] = useState(!!student?.splExpiryDate);
 
   // Medical Expiry auto-fill (2026-08-25): same "auto until touched"
   // pattern as SPL/CPL Expiry above, but the validity period isn't a flat
@@ -108,41 +146,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
   // age-based (see computeMedicalExpiry below). Requires both Date of
   // Birth and Medical Issue Date to be present; recomputes if either one
   // changes, as long as Medical Expiry hasn't been directly touched.
-  const [medicalExpiryManuallyEdited, setMedicalExpiryManuallyEdited] = useState(false);
-
-  useEffect(() => {
-    if (student) {
-      setForm({
-        enrollmentId: student.enrollmentId,
-        name: student.name,
-        initials: student.initials,
-        trainingStage: student.trainingStage,
-        totalHours: student.totalHours,
-        // '|| ''' matters here: student.medicalExpiry can be undefined
-        // (or, before the lib/store.ts fix alongside this one, null) for a
-        // student with no medical expiry on file, and feeding that
-        // straight into this controlled input's value below (rather than
-        // empty string) triggers React's "value prop on input should not
-        // be null" warning (found via testing, 2026-08-25).
-        medicalExpiry: student.medicalExpiry || '',
-        email: student.email || '',
-        phone: student.phone || '',
-        dateOfBirth: student.dateOfBirth || '',
-        joinedDate: student.joinedDate || '',
-        status: student.status,
-        assignedInstructorId: student.assignedInstructorId,
-        splNumber: student.splNumber || '',
-        splIssueDate: student.splIssueDate || '',
-        splExpiryDate: student.splExpiryDate || '',
-        medicalIssueDate: student.medicalIssueDate || '',
-      });
-      setInitialsManuallyEdited(true);
-      // Existing student with a saved expiry date already on file — treat
-      // it as manually set so editing Issue Date later won't clobber it.
-      setSplExpiryManuallyEdited(!!student.splExpiryDate);
-      setMedicalExpiryManuallyEdited(!!student.medicalExpiry);
-    }
-  }, [student]);
+  const [medicalExpiryManuallyEdited, setMedicalExpiryManuallyEdited] = useState(!!student?.medicalExpiry);
 
   // Adds `years` calendar years to a 'YYYY-MM-DD' date string, then
   // subtracts one day, returning the same format. The license-validity

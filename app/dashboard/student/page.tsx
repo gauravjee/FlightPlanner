@@ -10,7 +10,7 @@ import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
-import { useEffect, useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import RoleGate from '@/components/ui/RoleGate';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
@@ -42,7 +42,9 @@ export default function StudentDashboardPage() {
   const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
   const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
 
-  const [studentId, setStudentId] = useState<string | null>(null);
+  // Derived from the session — nothing else ever sets this, so no effect
+  // is needed to keep it in sync.
+  const studentId = session?.user?.studentId || null;
   // "View All" used to link to /dashboard/flights — the staff logbook page,
   // which is RoleGated to admin/instructor/super_admin and 404s (now:
   // redirects to /unauthorized) for a student. That page also shows every
@@ -51,18 +53,6 @@ export default function StudentDashboardPage() {
   // either. myLogbook below already holds this student's complete history
   // client-side, so "View All" just expands it in place instead.
   const [showAllLogbook, setShowAllLogbook] = useState(false);
-
-  // Extract studentId from session. Students, Flight Records, and now
-  // Scheduled Flights are all SWR-migrated (Stages 3, 4, 5) and fetch
-  // themselves — no manual load needed.
-  useEffect(() => {
-    if (session?.user) {
-      const sid = session.user.studentId;
-      if (sid) {
-        setStudentId(sid);
-      }
-    }
-  }, [session]);
 
   // Find the student record
   const student = students.find(s => s.id === studentId);

@@ -25,7 +25,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import {
   getAircraftBufferMinutes, parseTurnaroundBufferSetting,
   MIN_FLIGHT_DURATION_MIN, FLIGHT_DURATION_INCREMENT_MIN,
@@ -240,13 +240,40 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   };
 
   // ----- Form state -----
-  // Lazy initializer so a grid-click prefill (aircraft/date/start time) is
-  // baked into the very first render instead of being patched in via an
-  // effect afterward — BookingForm gets a fresh mount each time it's
-  // opened (see ScheduleBoard), so this always sees the right prefill.
-  // Edit mode (existingFlight) is unaffected — that's handled by the effect
-  // below, same as before.
+  // Lazy initializer so edit mode (existingFlight) or a grid-click prefill
+  // (aircraft/date/start time) is baked into the very first render instead
+  // of being patched in via an effect afterward — the parent only ever
+  // renders BookingForm conditionally ({showBookingForm && <BookingForm
+  // .../>}, see ScheduleBoard), so it gets a fresh mount every time it's
+  // opened, and existingFlight/prefill are fixed for that mount's whole
+  // lifetime.
+  //
+  // The one edge case this simplifies away: existingFlight's start/end
+  // times are snapped to slotIntervalMin (the FTO's configured slot
+  // interval) at mount time — if that setting is still loading right at
+  // this instant (rare; it's fetched app-wide and normally already warm
+  // by the time someone opens this form) and arrives at a different value
+  // a moment later, the snap won't retroactively redo itself the way the
+  // old effect (keyed on slotIntervalMin) did.
   const [form, setForm] = useState(() => {
+    if (existingFlight) {
+      const startDate = new Date(existingFlight.startTime);
+      const endDate = new Date(existingFlight.endTime);
+      return {
+        aircraftId: existingFlight.aircraftId,
+        instructorId: existingFlight.instructorId || '',
+        studentId: existingFlight.studentId || '',
+        date: startDate.toLocaleDateString('en-CA'),
+        // Snapped to the current interval so the Hour/Minute dropdowns below
+        // always have a matching option, even if this flight was originally
+        // booked under a different (e.g. finer) interval setting.
+        startTime: snapToInterval(startDate, slotIntervalMin),
+        endTime: snapToInterval(endDate, slotIntervalMin),
+        sortieType: existingFlight.sortieType || 'DUAL',
+        exercise: existingFlight.exercise || '',
+        notes: existingFlight.notes || '',
+      };
+    }
     if (prefill) {
       return {
         aircraftId: prefill.aircraftId,
@@ -277,28 +304,6 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   const [error, setError] = useState('');
   const [conflictWarning, setConflictWarning] = useState('');
 
-  // ----- Populate form when editing an existing flight -----
-  useEffect(() => {
-    if (existingFlight) {
-      const startDate = new Date(existingFlight.startTime);
-      const endDate = new Date(existingFlight.endTime);
-      setForm({
-        aircraftId: existingFlight.aircraftId,
-        instructorId: existingFlight.instructorId || '',
-        studentId: existingFlight.studentId || '',
-        date: startDate.toLocaleDateString('en-CA'),
-        // Snapped to the current interval so the Hour/Minute dropdowns below
-        // always have a matching option, even if this flight was originally
-        // booked under a different (e.g. finer) interval setting.
-        startTime: snapToInterval(startDate, slotIntervalMin),
-        endTime: snapToInterval(endDate, slotIntervalMin),
-        sortieType: existingFlight.sortieType || 'DUAL',
-        exercise: existingFlight.exercise || '',
-        notes: existingFlight.notes || '',
-      });
-    }
-  }, [existingFlight, slotIntervalMin]);
-
   // ============================================================
   // DERIVED STATE
   // ============================================================
@@ -314,26 +319,9 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // false there without a separate isMaintenance guard.
   const exerciseRequiresSolo = exerciseRequiresSoloRelease(form.exercise);
 
-  // Clear instructor when switching to Solo
-  useEffect(() => {
-    if (isSolo && form.instructorId) {
-      setForm(prev => ({ ...prev, instructorId: '' }));
-    }
-  }, [isSolo, form.instructorId]);
-
-  // Clear student when switching to Maintenance
-  useEffect(() => {
-    if (isMaintenance && form.studentId) {
-      setForm(prev => ({ ...prev, studentId: '' }));
-    }
-  }, [isMaintenance, form.studentId]);
-
-  // Clear exercise when switching to Maintenance
-  useEffect(() => {
-    if (isMaintenance && form.exercise) {
-      setForm(prev => ({ ...prev, exercise: '' }));
-    }
-  }, [isMaintenance, form.exercise]);
+  // instructorId/studentId/exercise are cleared on sortie-type switch in
+  // handleFieldChange (the event handler that causes the switch) rather
+  // than synced here via effect — see the `field === 'sortieType'` branch.
 
   // SWR migration, Stage 8 (2026-09-02): keyed per-studentId (null while
   // Maintenance or no student picked, via SWR's null-key idiom), so
@@ -527,9 +515,18 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
         updated.endTime = addHoursToTime(value, 1);
       }
 
-      // Clear exercise when switching to Maintenance
-      if (field === 'sortieType' && value === 'MAINTENANCE') {
-        updated.exercise = '';
+      // Switching sortie type invalidates fields that don't apply to the
+      // new type — reset them here (in the handler that actually causes
+      // the switch) so a stale prior selection doesn't resurface if the
+      // user switches back later.
+      if (field === 'sortieType') {
+        if (value === 'MAINTENANCE') {
+          updated.exercise = '';
+          updated.studentId = '';
+        }
+        if (value === 'SOLO') {
+          updated.instructorId = '';
+        }
       }
 
       // Validate date/time

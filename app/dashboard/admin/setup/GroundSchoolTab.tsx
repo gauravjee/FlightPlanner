@@ -33,14 +33,26 @@ export default function GroundSchoolTab() {
     is_active: true,
   });
 
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchSubjects = async (): Promise<Subject[]> => {
+    const { data } = await supabase.from('ground_school_subjects').select('*').order('sort_order');
+    return data || [];
+  };
+
+  // Used by Save/Delete/Cancel below — event-handler calls, where setState
+  // is always fine.
   const loadSubjects = async () => {
     setLoading(true);
-    const { data } = await supabase.from('ground_school_subjects').select('*').order('sort_order');
-    setSubjects(data || []);
+    setSubjects(await fetchSubjects());
     setLoading(false);
   };
 
-  useEffect(() => { loadSubjects(); }, []);
+  useEffect(() => {
+    fetchSubjects().then(data => { setSubjects(data); setLoading(false); });
+  }, []);
 
   // 2026-08-21 (security hardening round): routed through the shared,
   // role-checked config route instead of writing to Supabase directly from

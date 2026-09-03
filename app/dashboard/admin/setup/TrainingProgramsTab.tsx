@@ -56,28 +56,37 @@ export default function TrainingProgramsTab() {
     sort_order: 99,
   });
 
-  const loadPrograms = async () => {
-  setLoading(true);
-  console.log('Fetching training programs...');
-
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect — so the state-setting has to live at each call site
+  // instead, either here in loadPrograms for event-handler use, or inline
+  // in the mount effect below).
+  const fetchPrograms = async (): Promise<TrainingProgram[]> => {
+    console.log('Fetching training programs...');
     const { data, error } = await supabase
       .from('training_programs')
       .select('*')
       .order('sort_order', { ascending: true });
-
     if (error) {
       console.error('Error loading programs:', error.message);
-    } else {
-      console.log('Loaded programs:', data);
-      setPrograms(data || []);
-  }
+      return [];
+    }
+    console.log('Loaded programs:', data);
+    return data || [];
+  };
 
-  setLoading(false);
-};
+  // Used by Save/Delete/Cancel below — event-handler calls, where setState
+  // is always fine.
+  const loadPrograms = async () => {
+    setLoading(true);
+    setPrograms(await fetchPrograms());
+    setLoading(false);
+  };
 
-  // Load programs
+  // Load programs on mount
   useEffect(() => {
-    loadPrograms();
+    fetchPrograms().then(data => { setPrograms(data); setLoading(false); });
   }, []);
 
   // Add / Update program

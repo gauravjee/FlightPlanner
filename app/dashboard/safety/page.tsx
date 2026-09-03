@@ -56,7 +56,7 @@ export default function SafetyManagementPage() {
   const myName = session?.user?.name || session?.user?.email || '';
 
   const [incidents, setIncidents] = useState<SafetyIncident[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<'ALL' | SafetyIncident['status']>('ALL');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -71,13 +71,23 @@ export default function SafetyManagementPage() {
   // can PATCH just {status, resolutionNote} — never the manager fields.
   const [resolveNote, setResolveNote] = useState('');
 
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchIncidents = async (): Promise<SafetyIncident[]> => {
+    const res = await fetch('/api/safety-incidents');
+    const json = await res.json().catch(() => ({}));
+    return json.incidents || [];
+  };
+
+  // Used by the triage save/resolve/close handlers below — event-handler
+  // calls, where setState is always fine.
   const load = useCallback(async () => {
     setLoading(true);
     setErrorMsg('');
     try {
-      const res = await fetch('/api/safety-incidents');
-      const json = await res.json().catch(() => ({}));
-      setIncidents(json.incidents || []);
+      setIncidents(await fetchIncidents());
     } catch {
       setErrorMsg('Failed to load incidents.');
     } finally {
@@ -85,7 +95,12 @@ export default function SafetyManagementPage() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    fetchIncidents()
+      .then(setIncidents)
+      .catch(() => setErrorMsg('Failed to load incidents.'))
+      .finally(() => setLoading(false));
+  }, []);
 
   useSetHeader({
     title: 'Safety Management',

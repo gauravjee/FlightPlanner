@@ -19,12 +19,21 @@ function LiveClock() {
   const [time, setTime] = useState<Date | null>(null);
   const [mounted, setMounted] = useState(false);
 
+  // SSR-hydration-safe client-mount pattern: render a static placeholder
+  // until mounted (so server and first client render match), then switch
+  // to the live, ticking clock. There's no effect-free way to do this —
+  // it's a documented false positive for this rule, not something to
+  // restructure around. See https://github.com/facebook/react/issues/34743.
+  /* eslint-disable react-hooks/set-state-in-effect -- the disable has to
+     wrap the whole effect body: eslint-disable-next-line only covers the
+     `useEffect(() => {` line itself, not the setState calls inside it. */
   useEffect(() => {
     setMounted(true);
     setTime(new Date());
     const timer = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   if (!mounted || !time) {
     return (

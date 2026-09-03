@@ -1,7 +1,7 @@
 // app/dashboard/ground-school/attendance/page.tsx
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase-client';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
@@ -57,28 +57,33 @@ export default function AttendancePage() {
   const [availableStudents, setAvailableStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
 
-  const loadClasses = useCallback(async () => {
+  // Pure fetches — no setState in any of these, so they're safe to call
+  // from an effect too (react-hooks/set-state-in-effect flags any named
+  // function that sets state anywhere in its body, even safely after an
+  // await, when called from an effect — so the state-setting has to live
+  // at each call site instead).
+  const fetchClasses = async (): Promise<GroundSchoolClassRow[]> => {
     const { data } = await supabase
       .from('ground_school_classes')
       .select('id, class_date, start_time, end_time, subject_id, ground_school_subjects(subject_name)')
       .order('class_date', { ascending: false })
       .limit(30);
-    setClasses((data || []) as unknown as GroundSchoolClassRow[]);
-  }, []);
+    return (data || []) as unknown as GroundSchoolClassRow[];
+  };
 
-  const loadEnrollments = useCallback(async (classId: number) => {
+  const fetchEnrollments = async (classId: number): Promise<Enrollment[]> => {
     const { data } = await supabase
       .from('ground_school_enrollment')
       .select('*')
       .eq('class_id', classId);
-    setEnrollments(data || []);
-  }, []);
+    return data || [];
+  };
 
   // Fetches active students via the role-scoped /api/students route
   // (not a direct Supabase call — see app/api/students/route.ts) so this
   // keeps working once the anon key can no longer read the `students`
   // table directly.
-  const fetchActiveStudents = useCallback(async (): Promise<Student[]> => {
+  const fetchActiveStudents = async (): Promise<Student[]> => {
     const res = await fetch('/api/students');
     if (!res.ok) return [];
     const { students: rows } = (await res.json()) as {
@@ -87,13 +92,9 @@ export default function AttendancePage() {
     return (rows || [])
       .filter((r) => r.status === 'ACTIVE')
       .map((r) => ({ id: r.id, name: r.name, initials: r.initials }));
-  }, []);
+  };
 
-  const loadStudents = useCallback(async () => {
-    setStudents(await fetchActiveStudents());
-  }, [fetchActiveStudents]);
-
-  const loadAvailableStudents = useCallback(async (classId: number) => {
+  const fetchAvailableStudents = async (classId: number): Promise<Student[]> => {
     // Students not already enrolled
     const { data: enrolled } = await supabase
       .from('ground_school_enrollment')
@@ -101,21 +102,39 @@ export default function AttendancePage() {
       .eq('class_id', classId);
     const enrolledIds = new Set((enrolled || []).map(e => e.student_id));
     const all = await fetchActiveStudents();
-    setAvailableStudents(all.filter(s => !enrolledIds.has(s.id)));
-  }, [fetchActiveStudents]);
+    return all.filter(s => !enrolledIds.has(s.id));
+  };
+
+  // Used by the attendance/exam/add/remove handlers below — event-handler
+  // calls, where setState is always fine.
+  const loadEnrollments = async (classId: number) => {
+    setEnrollments(await fetchEnrollments(classId));
+  };
+
+  const loadAvailableStudents = async (classId: number) => {
+    setAvailableStudents(await fetchAvailableStudents(classId));
+  };
 
   useEffect(() => {
-    loadClasses();
-    loadStudents();
-  }, [loadClasses, loadStudents]);
+    fetchClasses().then(setClasses);
+    fetchActiveStudents().then(setStudents);
+  }, []);
 
+  // Loads the enrolled + available student lists for the selected class.
+  // Previously this fired loadEnrollments/loadAvailableStudents (fire-and-
+  // forget) and then setLoading(false) immediately afterward, in the same
+  // synchronous tick — the "Loading..." state cleared before either async
+  // fetch had actually resolved. Waiting on both here fixes that too.
   useEffect(() => {
     if (selectedClassId) {
-      loadEnrollments(selectedClassId);
-      loadAvailableStudents(selectedClassId);
-      setLoading(false);
+      Promise.all([fetchEnrollments(selectedClassId), fetchAvailableStudents(selectedClassId)])
+        .then(([enr, avail]) => {
+          setEnrollments(enr);
+          setAvailableStudents(avail);
+          setLoading(false);
+        });
     }
-  }, [selectedClassId, loadEnrollments, loadAvailableStudents]);
+  }, [selectedClassId]);
 
   const updateAttendance = async (enrollmentId: number, status: string) => {
     await supabase.from('ground_school_enrollment').update({ attendance_status: status }).eq('id', enrollmentId);

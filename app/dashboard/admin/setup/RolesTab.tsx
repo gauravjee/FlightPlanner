@@ -28,8 +28,11 @@ export default function RolesTab() {
     is_active: true,
   });
 
-  const loadRoles = async () => {
-    setLoading(true);
+  // Pure fetch — no setState here, so it's safe to call from an effect too
+  // (react-hooks/set-state-in-effect flags any named function that sets
+  // state anywhere in its body, even safely after an await, when called
+  // from an effect).
+  const fetchRoles = async (): Promise<InstructorRole[]> => {
     console.log('Fetching instructor roles...');
     const { data, error } = await supabase
       .from('instructor_roles')
@@ -38,16 +41,23 @@ export default function RolesTab() {
 
     if (error) {
       console.error('Error loading roles:', error.message);
-    } else {
-      console.log('Loaded roles:', data);
-      setRoles(data || []);
+      return [];
     }
+    console.log('Loaded roles:', data);
+    return data || [];
+  };
+
+  // Used by Save/Delete/Cancel below — event-handler calls, where setState
+  // is always fine.
+  const loadRoles = async () => {
+    setLoading(true);
+    setRoles(await fetchRoles());
     setLoading(false);
   };
 
   // Load roles on mount
   useEffect(() => {
-    loadRoles();
+    fetchRoles().then(data => { setRoles(data); setLoading(false); });
   }, []);
 
   // Add or update role
