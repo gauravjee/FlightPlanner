@@ -123,7 +123,7 @@ export default function AttendancePage() {
   useEffect(() => {
     fetchClasses().then(setClasses);
     fetchActiveStudents().then(setStudents);
-  }, []);
+  }, [fetchActiveStudents]);
 
   // Loads the enrolled + available student lists for the selected class.
   // Previously this fired loadEnrollments/loadAvailableStudents (fire-and-
