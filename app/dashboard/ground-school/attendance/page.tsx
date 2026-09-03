@@ -1,7 +1,7 @@
 // app/dashboard/ground-school/attendance/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase-client';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
@@ -83,7 +83,7 @@ export default function AttendancePage() {
   // (not a direct Supabase call — see app/api/students/route.ts) so this
   // keeps working once the anon key can no longer read the `students`
   // table directly.
-  const fetchActiveStudents = async (): Promise<Student[]> => {
+  const fetchActiveStudents = useCallback(async (): Promise<Student[]> => {
     const res = await fetch('/api/students');
     if (!res.ok) return [];
     const { students: rows } = (await res.json()) as {
@@ -92,9 +92,14 @@ export default function AttendancePage() {
     return (rows || [])
       .filter((r) => r.status === 'ACTIVE')
       .map((r) => ({ id: r.id, name: r.name, initials: r.initials }));
-  };
+  }, []);
 
-  const fetchAvailableStudents = async (classId: number): Promise<Student[]> => {
+  // useCallback (rather than a plain function, like fetchEnrollments above
+  // it) because this one calls another component-scoped function
+  // (fetchActiveStudents) — the exhaustive-deps rule can't prove a fresh
+  // closure over that reference is stable, so it flags the effect below
+  // that calls this. Memoizing both settles it.
+  const fetchAvailableStudents = useCallback(async (classId: number): Promise<Student[]> => {
     // Students not already enrolled
     const { data: enrolled } = await supabase
       .from('ground_school_enrollment')
@@ -103,7 +108,7 @@ export default function AttendancePage() {
     const enrolledIds = new Set((enrolled || []).map(e => e.student_id));
     const all = await fetchActiveStudents();
     return all.filter(s => !enrolledIds.has(s.id));
-  };
+  }, [fetchActiveStudents]);
 
   // Used by the attendance/exam/add/remove handlers below — event-handler
   // calls, where setState is always fine.
@@ -134,7 +139,7 @@ export default function AttendancePage() {
           setLoading(false);
         });
     }
-  }, [selectedClassId]);
+  }, [selectedClassId, fetchAvailableStudents]);
 
   const updateAttendance = async (enrollmentId: number, status: string) => {
     await supabase.from('ground_school_enrollment').update({ attendance_status: status }).eq('id', enrollmentId);
