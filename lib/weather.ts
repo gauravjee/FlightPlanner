@@ -44,7 +44,7 @@ export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherDat
       dewpoint: metar.dewp || 0,
       windDirection: metar.wdir || 0,
       windSpeed: metar.wspd || 0,
-      visibility: metar.visib ? Math.round(metar.visib * 1609.34) : 9999,
+      visibility: visibilityMeters(metar.visib) ?? 9999,
       ceiling: getCeiling(metar.clouds),
       qnh: metar.altim || 1013,
       altimeter: metar.altim || 29.92,
@@ -79,11 +79,29 @@ interface MetarData {
   dewp?: number;
   wdir?: number;
   wspd: number;
-  visib?: number;
+  visib?: number | string;   // NOAA sends a number OR a string like "6+" / "10+"
   clouds?: MetarCloudLayer[];
   altim?: number;
   fltcat?: string;
   obsTime?: string;
+}
+
+// NOAA's METAR API returns `visib` as a number for most stations but as a
+// string like "6+" or "10+" (statute miles, "at least N") for others —
+// VOBL is one of them. `"6+" * 1609.34` is NaN, and NaN is silently
+// truthy-guarded past `metar.visib ? ... : default`, which used to leave
+// visibility rendering as "NaNm" AND — the real problem — killed the
+// reduced/low-visibility warnings below, since every `NaN < threshold`
+// comparison is false. Parse both shapes here, in one place, so the two
+// call sites can't drift.
+//
+// ponytail: "6+" is treated as exactly 6 SM (a floor, not the real value —
+// the raw METAR for that obs actually reports 9999m/10km+). Conservative in
+// the safe direction for a warning threshold. Upgrade to a proper "at
+// least" bound if a station's exact visibility ever needs displaying.
+function visibilityMeters(visib: number | string | undefined): number | null {
+  const sm = typeof visib === 'number' ? visib : parseFloat(visib ?? '');
+  return Number.isFinite(sm) ? Math.round(sm * 1609.34) : null;
 }
 
 function getCeiling(clouds: MetarCloudLayer[] | undefined): number {
@@ -96,7 +114,7 @@ function getCeiling(clouds: MetarCloudLayer[] | undefined): number {
 
 function getWarnings(metar: MetarData): string[] {
   const warnings: string[] = [];
-  const visMeters = metar.visib ? metar.visib * 1609.34 : 99999;
+  const visMeters = visibilityMeters(metar.visib) ?? 99999;
   if (visMeters < 5000) warnings.push('⚠️ Reduced visibility');
   if (visMeters < 1500) warnings.push('🔴 Low visibility');
   if (metar.wspd > 20) warnings.push('💨 Strong winds');
