@@ -183,10 +183,18 @@ export async function GET(request: Request) {
     const raw: SkylinkNotam[] = Array.isArray(json?.notams) ? json.notams : [];
     const notams = raw.map(n => mapSkylinkNotam(n, station));
 
-    // ----- 4. Write back, best effort -----
-    // Fire-and-forget: a failed cache write must not fail a fetch that
-    // already succeeded. Same pattern as lib/weather.ts's write-back.
-    supabaseAdmin
+    // ----- 4. Write back -----
+    // AWAITED, deliberately. This was fire-and-forget (matching
+    // lib/weather.ts's browser-side write-back) and it silently did nothing
+    // on Vercel: a serverless function can be frozen the moment it returns a
+    // response, so a promise still in flight never completes. Locally the
+    // Node process stays alive, so it worked — which is exactly how this hid.
+    // Measured on production: two consecutive requests both took ~2.3s, i.e.
+    // both went upstream, burning quota on every single page load.
+    //
+    // Awaiting costs ~50-100ms on a cache miss only. A write failure is still
+    // non-fatal: log it and return the NOTAMs we already fetched.
+    const { error: cacheError } = await supabaseAdmin
       .from('notam_cache')
       .upsert(
         {
@@ -196,10 +204,11 @@ export async function GET(request: Request) {
           fetched_at: new Date().toISOString(),
         },
         { onConflict: 'cache_key' }
-      )
-      .then(({ error }) => {
-        if (error) console.warn('⚠️ notam_cache write failed (non-fatal):', error.message);
-      });
+      );
+
+    if (cacheError) {
+      console.warn('⚠️ notam_cache write failed (non-fatal, quota will not be protected):', cacheError.message);
+    }
 
     console.log(`✅ ${notams.length} NOTAM(s) received for ${station}`);
     return Response.json(notams);
