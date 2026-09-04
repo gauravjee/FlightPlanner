@@ -57,8 +57,16 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   // the "Loading weather..." placeholder indefinitely. Same SWR key as the
   // Dashboard, so this shares its cache rather than adding a request.
   const station = getFtoSetting(ftoSettings, 'airport_code');
-  const { weather } = useWeather(station);
+  const { weather, isLoading: weatherLoading, error: weatherError } = useWeather(station);
   const { notams } = useNotams(station);
+
+  // "Weather Within Limits" must not report a verdict it hasn't got. The
+  // loading placeholder's flightRules is 'VFR', so before this guard the
+  // checklist showed a green tick while weather was still loading, when the
+  // fetch had failed, or when no ICAO station is configured at all — a
+  // readiness item asserting a check nobody performed. Three states now:
+  // pass, fail, and unknown (rendered '—', neutral, never green).
+  const weatherUnknown = !station || weatherLoading || !!weatherError || weather.isLoading;
   // cancelFlight/updateScheduledFlight now come from the SWR hook (Stage 5,
   // 2026-09-01) — both local-splice their write, so no manual reload needed.
 
@@ -141,15 +149,19 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
     };
     const statusColor = statusColors[slot.status] || '#64748b';
 
-    const readinessItems = [
+    const readinessItems: { label: string; ok: boolean; unknown?: boolean }[] = [
       { label: 'Aircraft Airworthy', ok: aircraft?.status === 'ACTIVE' },
-      { label: 'Weather Within Limits', ok: weather.flightRules === 'VFR' || weather.flightRules === 'MVFR' },
+      {
+        label: weatherUnknown ? 'Weather — not available' : 'Weather Within Limits',
+        ok: weather.flightRules === 'VFR' || weather.flightRules === 'MVFR',
+        unknown: weatherUnknown,
+      },
       { label: 'Fuel Sufficient', ok: (aircraft?.currentFuel || 0) > 30 },
       { label: 'Student Medical Valid', ok: student ? new Date(student.medicalExpiry) > new Date() : true },
     ];
     const readinessRows = readinessItems.map(item => `
       <div class="checklist-item">
-        <span style="color:${item.ok ? '#16a34a' : '#dc2626'};">${item.ok ? '✔' : '✘'}</span>
+        <span style="color:${item.unknown ? '#64748b' : item.ok ? '#16a34a' : '#dc2626'};">${item.unknown ? '—' : item.ok ? '✔' : '✘'}</span>
         <span>${item.label}</span>
       </div>
     `).join('');
@@ -490,17 +502,26 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
           <div className="bg-[var(--surface-muted)] rounded-lg p-3">
             <p className="text-xs text-secondary mb-3">✅ FLIGHT READINESS</p>
             <div className="space-y-2">
-              {[
+              {([
                 { label: 'Aircraft Airworthy', ok: aircraft?.status === 'ACTIVE' },
-                { label: 'Weather Within Limits', ok: weather.flightRules === 'VFR' || weather.flightRules === 'MVFR' },
+                {
+                  label: weatherUnknown
+                    ? (!station ? 'Weather — no airport code set' : 'Weather — not available')
+                    : 'Weather Within Limits',
+                  ok: weather.flightRules === 'VFR' || weather.flightRules === 'MVFR',
+                  unknown: weatherUnknown,
+                },
                 { label: 'Fuel Sufficient', ok: (aircraft?.currentFuel || 0) > 30 },
                 { label: 'Student Medical Valid', ok: student ? new Date(student.medicalExpiry) > new Date() : true },
-              ].map((item, i) => (
+              ] as { label: string; ok: boolean; unknown?: boolean }[]).map((item, i) => (
                 <div key={i} className="flex items-center space-x-2">
-                  <span className={`text-lg ${item.ok ? 'text-green-400' : 'text-red-400'}`}>
-                    {item.ok ? '✅' : '❌'}
+                  <span className="text-lg" style={item.unknown ? { color: 'var(--text-tertiary)' } : undefined}>
+                    {item.unknown ? '—' : item.ok ? '✅' : '❌'}
                   </span>
-                  <span className={`text-xs ${item.ok ? 'text-secondary' : 'text-red-400'}`}>
+                  <span
+                    className={`text-xs ${item.unknown ? '' : item.ok ? 'text-secondary' : 'text-red-400'}`}
+                    style={item.unknown ? { color: 'var(--text-tertiary)' } : undefined}
+                  >
                     {item.label}
                   </span>
                 </div>

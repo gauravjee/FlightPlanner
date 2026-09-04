@@ -95,7 +95,12 @@ export function useNotams(station: string | undefined, enabled = true) {
     // backoff per mount, which turned one dead request into a burst of
     // console errors once FlightDetailModal started asking for NOTAMs too.
     // One attempt, then show an empty list, matching what the old store did.
-    { refreshInterval: 30 * 60 * 1000, revalidateOnFocus: false, shouldRetryOnError: false }
+    // 1 hour, not 30 minutes: NOTAMs come from a metered API (SkyLink free
+    // tier = 1,000 requests/month) and the server-side notam_cache is what
+    // actually protects the quota — but there's no reason for each mounted
+    // tab to ask this often either. NOTAMs are issued hours ahead and stay
+    // valid for hours-to-days.
+    { refreshInterval: 60 * 60 * 1000, revalidateOnFocus: false, shouldRetryOnError: false }
   );
 
   return { notams: (data ?? []) as NOTAM[], loadingNotams: isLoading, error };

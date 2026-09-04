@@ -388,6 +388,11 @@ export default function SettingsTab() {
 
   const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
 
+  // An airport code wins over latitude/longitude everywhere in the app
+  // (useGeneralWeather is gated on `!station`), so the coordinate fields are
+  // disabled while one is set — see the comment at those inputs.
+  const hasAirportCode = getValue('airport_code').trim() !== '';
+
   // ============================================================
   // RENDER
   // ============================================================
@@ -459,10 +464,41 @@ export default function SettingsTab() {
                 </p>
               </div>
 
+              {/* NOTAM cache duration — paired with the airport code above,
+                  since that's the field it governs. Spends a metered API
+                  quota, so the route clamps it to 1..24h regardless of what
+                  is stored here (see parseNotamTtlHours in
+                  app/api/notam/route.ts). */}
+              <div>
+                <label className="block text-xs text-tertiary mb-1">NOTAM cache duration (hours)</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={24}
+                  step={1}
+                  value={getValue('notam_cache_ttl_hours') || '2'}
+                  onChange={e => setValue('notam_cache_ttl_hours', e.target.value)}
+                  placeholder="2"
+                  className={inputClass}
+                />
+                <p className="text-xs text-tertiary mt-1">
+                  How long NOTAMs are reused before re-fetching, shared across all users. Lower values use
+                  more of the NOTAM API quota: 2 hours ≈ 360 calls/month per airport (free tier is 1,000).
+                  Clamped to 1–24 hours.
+                </p>
+              </div>
+
               {/* Latitude / Longitude — fallback weather source when there's no
                   ICAO code and no nearby reference station. Stored as two
                   separate free-text fields so partial/invalid entries don't
-                  block saving the rest of the form. */}
+                  block saving the rest of the form.
+
+                  Disabled while an airport code is set (user request,
+                  2026-09-05): the app has always ignored these whenever a
+                  station exists (useGeneralWeather is gated on `!station`),
+                  but both fields being editable read as "we use both". The
+                  values are kept rather than cleared, so blanking the ICAO
+                  code restores them. */}
               <div>
                 <label className="block text-xs text-tertiary mb-1">Latitude — optional</label>
                 <input
@@ -471,11 +507,14 @@ export default function SettingsTab() {
                   value={getValue('latitude')}
                   onChange={e => setValue('latitude', e.target.value)}
                   placeholder="e.g., 13.0827"
+                  disabled={hasAirportCode}
                   className={inputClass}
+                  style={hasAirportCode ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                 />
                 <p className="text-xs text-tertiary mt-1">
-                  Only used when the airport code above is blank. Shows general weather (temperature, wind,
-                  cloud cover) for these coordinates — not official aviation METAR/TAF data.
+                  {hasAirportCode
+                    ? 'Not used while an airport code is set above — live METAR/TAF takes priority. Clear the airport code to use coordinates instead.'
+                    : 'Shows general weather (temperature, wind, cloud cover) for these coordinates — not official aviation METAR/TAF data.'}
                 </p>
               </div>
 
@@ -487,7 +526,9 @@ export default function SettingsTab() {
                   value={getValue('longitude')}
                   onChange={e => setValue('longitude', e.target.value)}
                   placeholder="e.g., 80.2707"
+                  disabled={hasAirportCode}
                   className={inputClass}
+                  style={hasAirportCode ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                 />
                 <p className="text-xs text-tertiary mt-1">Used together with Latitude above.</p>
               </div>

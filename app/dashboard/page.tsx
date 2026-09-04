@@ -95,7 +95,7 @@ export default function DashboardPage() {
   //   - station takes priority over lat/long exactly as before: general
   //     weather is enabled only when no station is configured.
   const { weather, refresh: refreshWeather } = useWeather(station, ftoSettingsLoaded);
-  const { notams } = useNotams(station, ftoSettingsLoaded);
+  const { notams, loadingNotams, error: notamError } = useNotams(station, ftoSettingsLoaded);
   const { generalWeather, refresh: refreshGeneralWeather } = useGeneralWeather(lat, lon, ftoSettingsLoaded && !station && hasValidLatLon);
 
   // Aircraft, Instructors, Students, and now Scheduled Flights all come
@@ -530,8 +530,24 @@ export default function DashboardPage() {
                   Active NOTAMs
                 </h2>
                 <div className="space-y-2 max-h-80 overflow-y-auto">
+                  {/* Four distinct states, because "Loading NOTAMs..." forever
+                      was indistinguishable from "there are none" and from
+                      "the service is down" — and the NOTAM proxy currently
+                      fails for every station (see the handoff doc, item 74). */}
                   {notams.length === 0 ? (
-                    <p className="text-xs text-secondary">Loading NOTAMs...</p>
+                    !station ? (
+                      <p className="text-xs text-secondary">
+                        No airport code set — add one in Admin Setup → Settings to see NOTAMs.
+                      </p>
+                    ) : loadingNotams ? (
+                      <p className="text-xs text-secondary">Loading NOTAMs...</p>
+                    ) : notamError ? (
+                      <p className="text-xs" style={{ color: 'var(--warning-text)' }}>
+                        NOTAM service unavailable — check an official source before flight.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-secondary">No active NOTAMs for {station}.</p>
+                    )
                   ) : (
                     notams.map((notam, i) => (
                       <div

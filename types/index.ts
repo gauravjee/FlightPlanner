@@ -95,8 +95,13 @@ export interface NOTAM {
   text: string;                 // Full NOTAM text
   priority: 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
   category: string;
-  startTime: string;
-  endTime: string;
+  // Nullable because real NOTAMs often carry no usable time: a permanent
+  // NOTAM's item C) is 'PERM', not a timestamp (35 of VOBL's 101 live NOTAMs
+  // on 2026-09-05). Substituting "now" for those — the old behaviour — made a
+  // third of the list look expired. null means "no expiry stated"; render it
+  // as PERM/— rather than as a date.
+  startTime: string | null;
+  endTime: string | null;
   isActive: boolean;
 }
 

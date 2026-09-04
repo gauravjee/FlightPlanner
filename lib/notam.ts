@@ -1,62 +1,43 @@
 // lib/notam.ts
-// Live NOTAM service using FAA Aviation Weather Center
+// Client-side fetch for NOTAMs. The real work — calling SkyLink, mapping its
+// fields to this app's NOTAM shape, and caching the result — happens in
+// app/api/notam/route.ts, so this file is just a typed fetch with honest
+// error behaviour.
 import { NOTAM } from '@/types';
 
-// Shape of a single entry in the FAA Aviation Weather Center NOTAM
-// response, as proxied through /api/notam — only the fields we actually
-// read below.
-interface FaaNotamEntry {
-  id?: string;
-  notamNumber?: string;
-  icaoId?: string;
-  text?: string;
-  rawNotam?: string;
-  priority?: string;
-  category?: string;
-  startTime?: string;
-  effectiveStart?: string;
-  endTime?: string;
-  effectiveEnd?: string;
-  isActive?: boolean;
-}
-
 /**
- * Fetch live NOTAMs for an airport via our proxy API
- * Falls back to empty array if API fails
+ * Fetch NOTAMs for an airport via our proxy API.
+ *
+ * THROWS on failure — deliberately, changed 2026-09-05. This used to catch
+ * everything and return [], which meant a dead service was indistinguishable
+ * from "this airport genuinely has no NOTAMs": the Dashboard tile rendered
+ * "No active NOTAMs for VOBL" while the proxy was returning 500 for every
+ * request. A confidently wrong all-clear on a safety-adjacent panel is worse
+ * than saying nothing.
+ *
+ * SWR is the only caller (lib/hooks/useWeather.ts) and is built to receive a
+ * throw: it surfaces it as `error`, which the tile uses to say "NOTAM service
+ * unavailable" instead of inventing an all-clear.
  */
 export async function fetchNOTAMs(airportCode: string = 'VOBL'): Promise<NOTAM[]> {
   try {
-    console.log('🛫 Fetching live NOTAMs for', airportCode);
-    const res = await fetch(`/api/notam?station=${airportCode}`);
+    console.log('🛫 Fetching NOTAMs for', airportCode);
+    const res = await fetch(`/api/notam?station=${encodeURIComponent(airportCode)}`);
+
+    if (!res.ok) {
+      throw new Error(`NOTAM service returned ${res.status}`);
+    }
+
     const data = await res.json();
 
     if (!Array.isArray(data)) {
-      console.warn('⚠️ Invalid NOTAM response');
-      return [];
+      throw new Error('NOTAM service returned an unexpected response shape');
     }
 
-    // Map FAA response to our NOTAM type
-    return data.map((n: FaaNotamEntry) => ({
-      id: n.id || String(Math.random()),
-      notamNumber: n.notamNumber || n.id || 'N/A',
-      airportCode: n.icaoId || airportCode,
-      text: n.text || n.rawNotam || '',
-      priority: mapPriority(n.priority || ''),
-      category: n.category || 'OTHER',
-      startTime: n.startTime || n.effectiveStart || new Date().toISOString(),
-      endTime: n.endTime || n.effectiveEnd || new Date().toISOString(),
-      isActive: n.isActive !== false,
-    }));
+    return data as NOTAM[];
   } catch (error) {
+    // Log, then re-throw so SWR can distinguish failure from emptiness.
     console.error('❌ Error fetching NOTAMs:', error);
-    return [];
+    throw error;
   }
-}
-
-function mapPriority(priority: string): NOTAM['priority'] {
-  const p = priority.toUpperCase();
-  if (p.includes('CRITICAL') || p.includes('EMERGENCY')) return 'CRITICAL';
-  if (p.includes('HIGH')) return 'HIGH';
-  if (p.includes('LOW')) return 'LOW';
-  return 'MODERATE';
 }
