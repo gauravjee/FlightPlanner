@@ -19,6 +19,7 @@ import RoleGate from '@/components/ui/RoleGate';
 import { MAINTENANCE_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Wrench, Check, Pencil, Trash2, TriangleAlert, Hourglass, Eye } from 'lucide-react';
+import { todayIST } from '@/lib/ist';
 
 export default function MaintenancePage() {
   const { data: session } = useSession();
@@ -78,7 +79,7 @@ export default function MaintenancePage() {
   const handleComplete = (record: MaintenanceRecord) => {
     updateMaintenanceRecord(record.id, {
       status: 'COMPLETED',
-      completedDate: new Date().toISOString().split('T')[0],
+      completedDate: todayIST(),
       // Snap the window's end to the real completion time if it wrapped
       // early or was open-ended — doesn't affect blocking (COMPLETED never
       // blocks), just keeps the record's history honest for reporting.

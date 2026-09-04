@@ -24,6 +24,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, REQUIREMENTS_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { todayIST } from '@/lib/ist';
 
 export async function POST(request: Request) {
   const { session, error } = await requireRole(REQUIREMENTS_WRITE_ROLES);
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
       attendance_status: 'EXEMPTED',
       exam_score: score,
       exam_result: 'PASS',
-      exam_date: new Date().toISOString().split('T')[0],
+      exam_date: todayIST(),
       attempts: 1,
       examiner: 'Direct Exam Entry',
       dgca_roll_number: rollNumber,
@@ -106,7 +107,7 @@ export async function POST(request: Request) {
       .from('training_requirements')
       .update({
         is_completed: true,
-        completed_date: new Date().toISOString().split('T')[0],
+        completed_date: todayIST(),
         completed_by: completedBy,
       })
       .eq('id', req.id);

@@ -16,6 +16,7 @@ import {
 } from '@/lib/hooks/useAircraft';
 import type { Aircraft as SharedAircraft } from '@/types';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { daysFromTodayIST } from '@/lib/ist';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -68,7 +69,7 @@ const getDefaultForm = () => ({
   fuel_capacity: 200,
   current_fuel: 200,
   status: 'ACTIVE',
-  next_maintenance: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  next_maintenance: daysFromTodayIST(90),
   is_simulator: false,
 });
 

@@ -58,6 +58,7 @@ import { useHolidays } from '@/lib/hooks/useHolidays';
 import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Save, CircleCheck, X } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
+import { toDateStr } from '@/lib/ist';
 
 // ============================================================
 // Type definitions
@@ -127,7 +128,7 @@ const addDays = (date: Date, days: number): Date => {
 /**
  * Converts a Date to a 'YYYY-MM-DD' string (used for Supabase queries and comparisons).
  */
-const formatDateStr = (date: Date): string => date.toISOString().split('T')[0];
+const formatDateStr = (date: Date): string => toDateStr(date);
 
 /**
  * Checks if two Dates fall on the same calendar day.

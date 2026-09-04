@@ -15,6 +15,7 @@
 
 import { supabase } from '@/lib/supabase-client';
 import { fetchTrainingRequirements, toggleRequirement } from '@/lib/hooks/useTrainingRequirements';
+import { todayIST } from '@/lib/ist';
 
 /**
  * Extract the ground school subject name from a requirement name.
@@ -104,7 +105,7 @@ export async function syncGroundSchoolFromChecklist(
             attendance_status: 'EXEMPTED',
             exam_score: examData?.score ?? 100,
             exam_result: 'PASS',
-            exam_date: new Date().toISOString().split('T')[0],
+            exam_date: todayIST(),
             attempts: 1,
             examiner: 'Requirements Checklist',
             dgca_roll_number: examData?.rollNumber ?? null,

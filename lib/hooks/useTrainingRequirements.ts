@@ -24,6 +24,7 @@
 import useSWR, { mutate } from 'swr';
 import { supabase } from '@/lib/supabase';
 import type { TrainingRequirement } from '@/types';
+import { todayIST } from '@/lib/ist';
 
 export const trainingRequirementsKey = (studentId: string) =>
   ['trainingRequirements', studentId] as const;
@@ -161,7 +162,7 @@ export async function toggleRequirement(id: string, isCompleted: boolean): Promi
           ? {
               ...r,
               isCompleted,
-              completedDate: isCompleted ? new Date().toISOString().split('T')[0] : undefined,
+              completedDate: isCompleted ? todayIST() : undefined,
               completedBy: isCompleted ? completedBy : undefined,
             }
           : r

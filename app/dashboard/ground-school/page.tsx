@@ -9,6 +9,7 @@ import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { Calendar, ClipboardList, ChartColumn } from 'lucide-react';
+import { todayIST } from '@/lib/ist';
 
 interface Subject { id: number; subject_name: string; subject_code: string; }
 interface Enrollment { id: number; class_id: number; student_id: string; attendance_status: string; exam_score: number | null; exam_result: string | null; }
@@ -80,7 +81,7 @@ export default function GroundSchoolPage() {
 
   // Upcoming classes
   const upcomingClasses = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = todayIST();
     return classes.filter((c) => c.class_date >= today && c.status === 'SCHEDULED').slice(0, 5);
   }, [classes]);
 

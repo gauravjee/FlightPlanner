@@ -89,7 +89,13 @@ export function useNotams(station: string | undefined, enabled = true) {
   const { data, error, isLoading } = useSWR(
     enabled && station ? notamsKey(station) : null,
     ([, s]) => fetchNOTAMs(s),
-    { refreshInterval: 30 * 60 * 1000, revalidateOnFocus: false }
+    // shouldRetryOnError: the /api/notam proxy currently 500s for every
+    // station (its upstream aviationweather.gov endpoint returns non-OK —
+    // pre-existing, see the handoff doc). SWR's default is 5 retries with
+    // backoff per mount, which turned one dead request into a burst of
+    // console errors once FlightDetailModal started asking for NOTAMs too.
+    // One attempt, then show an empty list, matching what the old store did.
+    { refreshInterval: 30 * 60 * 1000, revalidateOnFocus: false, shouldRetryOnError: false }
   );
 
   return { notams: (data ?? []) as NOTAM[], loadingNotams: isLoading, error };

@@ -27,6 +27,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, REQUIREMENTS_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { isSPLRequirement } from '@/lib/spl';
+import { todayIST } from '@/lib/ist';
 
 export async function PATCH(request: Request) {
   const { session, error } = await requireRole(REQUIREMENTS_WRITE_ROLES);
@@ -93,7 +94,7 @@ export async function PATCH(request: Request) {
 
   const updates: Record<string, unknown> = { is_completed: isCompleted };
   if (isCompleted) {
-    updates.completed_date = new Date().toISOString().split('T')[0];
+    updates.completed_date = todayIST();
     updates.completed_by = completedBy;
   } else {
     updates.completed_date = null;

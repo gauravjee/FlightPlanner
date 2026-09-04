@@ -11,6 +11,7 @@ import { useExercises } from '@/lib/hooks/useExercises';
 import { updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { addFlightRecord } from '@/lib/hooks/useFlightRecords';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
+import { todayIST } from '@/lib/ist';
 
 interface Props {
   onClose: () => void;
@@ -53,7 +54,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
   const { sortieTypes } = useSortieTypes();
   const { exercises } = useExercises();
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayIST();
 
   const [form, setForm] = useState({
     studentId: studentId || '',

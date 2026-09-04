@@ -8,6 +8,7 @@ import { useStudents } from '@/lib/hooks/useStudents';
 import { supabase } from '@/lib/supabase-client';
 import { Pencil, GraduationCap, Save, Plus, X, CircleCheck } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
+import { todayIST } from '@/lib/ist';
 
 interface Props {
   student: StudentRecord | null;
@@ -67,7 +68,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
           email: '',
           phone: '',
           dateOfBirth: '',
-          joinedDate: new Date().toISOString().split('T')[0],
+          joinedDate: todayIST(),
           status: 'ACTIVE',
           assignedInstructorId: undefined as string | undefined,
           // Student Pilot License number (2026-08-20) — shown as the "License

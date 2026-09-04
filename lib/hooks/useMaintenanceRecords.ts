@@ -33,6 +33,7 @@ import useSWR, { mutate } from 'swr';
 import { supabase } from '@/lib/supabase';
 import { aircraftKey } from './useAircraft';
 import type { Aircraft, MaintenanceDueItem, MaintenanceRecord, MaintenanceScheduleTemplate } from '@/types';
+import { toDateStr } from '@/lib/ist';
 
 export const maintenanceRecordsKey = ['maintenanceRecords'] as const;
 export const maintenanceScheduleTemplatesKey = ['maintenanceScheduleTemplates'] as const;
@@ -264,7 +265,7 @@ function normalizeItemName(name: string): string {
 function addMonthsToDateStr(dateStr: string, months: number): string {
   const d = new Date(dateStr + 'T00:00:00');
   d.setMonth(d.getMonth() + months);
-  return d.toISOString().split('T')[0];
+  return toDateStr(d);
 }
 
 // Pure function: given one aircraft's active template items and its
@@ -282,7 +283,7 @@ export function computeMaintenanceDueItems(
   records: MaintenanceRecord[]
 ): MaintenanceDueItem[] {
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const todayStr = today.toISOString().split('T')[0];
+  const todayStr = toDateStr(today);
   const completed = records
     .filter(r => r.aircraftId === aircraftId && r.status === 'COMPLETED' && r.completedDate)
     .sort((a, b) => (a.completedDate! < b.completedDate! ? 1 : -1)); // newest first

@@ -7,6 +7,7 @@ import { Pencil, Plus, Save, X } from 'lucide-react';
 import { FUEL_BURN_RATE_BY_TYPE_LPH, DEFAULT_FUEL_BURN_RATE_LPH, deriveModelEngineTypeMap } from '@/lib/store';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { supabase } from '@/lib/supabase-client';
+import { daysFromTodayIST } from '@/lib/ist';
 
 // 2026-08-26: sentinel value for the "Other" option in the Model dropdown
 // below — never written to form.model itself, only used to decide whether
@@ -58,7 +59,7 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
           fuelCapacity: 200,
           currentFuel: 200,
           status: 'ACTIVE',
-          nextMaintenance: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          nextMaintenance: daysFromTodayIST(30),
           isSimulator: false,
         }
   );

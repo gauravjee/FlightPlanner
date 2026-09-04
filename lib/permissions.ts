@@ -324,7 +324,6 @@ export const SAFETY_INCIDENT_CATEGORIES = [
   { value: 'OPERATIONAL', label: 'Operational', technical: false },
   { value: 'OTHER', label: 'Other', technical: false },
 ] as const;
-export type SafetyIncidentCategory = typeof SAFETY_INCIDENT_CATEGORIES[number]['value'];
 export const TECHNICAL_INCIDENT_CATEGORIES: string[] =
   SAFETY_INCIDENT_CATEGORIES.filter(c => c.technical).map(c => c.value);
 
