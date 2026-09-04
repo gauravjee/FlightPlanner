@@ -151,7 +151,13 @@ export async function GET(request: Request) {
       const ageMs = Date.now() - new Date(cached.fetched_at as string).getTime();
       if (ageMs < ttlHours * 60 * 60 * 1000) {
         console.log(`📋 Serving cached NOTAMs for ${station} (age ${Math.round(ageMs / 60000)}m, TTL ${ttlHours}h)`);
-        return Response.json(cached.notams);
+        // x-notam-cache makes quota behaviour verifiable from the client.
+        // Latency alone can't distinguish a cache hit from a miss here: a hit
+        // still costs two Supabase round trips plus a ~100KB payload, which
+        // is the same order as the upstream call it replaces.
+        return Response.json(cached.notams, {
+          headers: { 'x-notam-cache': 'hit', 'x-notam-cache-age-min': String(Math.round(ageMs / 60000)) },
+        });
       }
     }
   } catch (err) {
@@ -211,7 +217,9 @@ export async function GET(request: Request) {
     }
 
     console.log(`✅ ${notams.length} NOTAM(s) received for ${station}`);
-    return Response.json(notams);
+    return Response.json(notams, {
+      headers: { 'x-notam-cache': cacheError ? 'miss-write-failed' : 'miss' },
+    });
   } catch (error) {
     console.error('❌ SkyLink NOTAM fetch failed:', error);
     return Response.json({ error: 'Failed to fetch NOTAMs' }, { status: 502 });
