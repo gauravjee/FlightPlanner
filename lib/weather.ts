@@ -5,27 +5,14 @@
 import { WeatherData, GeneralWeatherData } from '@/types';
 import { supabase } from './supabase';
 
-const weatherCache: Map<string, { data: WeatherData; timestamp: number }> = new Map();
-const CACHE_DURATION = 29 * 60 * 1000; // 29 minutes
-
-// In-tab cache for lat/long-based general weather, keyed the same way as
-// the station cache above (by "lat,lon"). This is just a fast first line —
-// the real protection against hammering Open-Meteo's rate limit is the
-// `general_weather_cache` DB table below, which is shared across every
-// browser tab/session/user instead of being per-tab like this Map.
-const generalWeatherCache: Map<string, { data: GeneralWeatherData; timestamp: number }> = new Map();
-// Kept in sync with the DB freshness window below so the two caches never
-// disagree about whether a reading is still "fresh".
-const GENERAL_WEATHER_CACHE_DURATION = 15 * 60 * 1000; // 15 minutes
+// No in-tab cache here. SWR (lib/hooks/useWeather.ts) already dedupes and
+// caches per tab, and the module-level Maps that used to sit here silently
+// swallowed the Dashboard's "Refresh Weather" press: mutate() re-ran the
+// fetcher, the fetcher returned the same cached object, and the user saw a
+// spinner with nothing changing. Quota protection that actually matters is
+// the shared `general_weather_cache` DB table below.
 
 export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherData> {
-  // Check cache first
-  const cached = weatherCache.get(station);
-  if (cached && (Date.now() - cached.timestamp) < CACHE_DURATION) {
-    console.log('📡 Using cached weather for', station);
-    return cached.data;
-  }
-
   try {
     console.log('🌤️ Fetching live weather for', station);
     const res = await fetch(`/api/weather?station=${station}`);
@@ -56,7 +43,6 @@ export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherDat
       error: null,
     };
 
-    weatherCache.set(station, { data: weather, timestamp: Date.now() });
     return weather;
   } catch (error) {
     console.error('❌ Weather API error:', error);
@@ -213,9 +199,8 @@ function getMockGeneralWeather(error: string): GeneralWeatherData {
   };
 }
 
-// How fresh a reading has to be — in the in-tab Map above and in the shared
-// `general_weather_cache` DB table below — before we'll reuse it instead of
-// calling Open-Meteo again. Open-Meteo's free tier has a daily call limit;
+// How fresh a reading in the shared `general_weather_cache` DB table has to
+// be before we'll reuse it instead of calling Open-Meteo again. Open-Meteo's free tier has a daily call limit;
 // sharing one DB-cached reading across every tab/session/user (instead of
 // each firing its own request) is what actually keeps usage under it.
 const GENERAL_WEATHER_FRESHNESS_MS = 15 * 60 * 1000; // 15 minutes
@@ -246,25 +231,17 @@ function rowToGeneralWeather(row: Record<string, unknown>): GeneralWeatherData {
  * Fetch general (non-aviation) weather for a lat/long, for schools whose
  * field has no ICAO code and no nearby reference station configured.
  *
- * Three layers, cheapest first:
- *   1. In-tab Map (generalWeatherCache) — avoids a network round-trip at all
- *      for rapid re-renders/polls within the same browser tab.
- *   2. Shared `general_weather_cache` DB table — avoids calling Open-Meteo
+ * Two layers, cheapest first:
+ *   1. Shared `general_weather_cache` DB table — avoids calling Open-Meteo
  *      again if ANY tab/session/user already fetched this location within
- *      the last 15 minutes. This is the one that actually protects
- *      Open-Meteo's rate limit, since aviation weather traffic isn't
- *      confined to one browser.
- *   3. Open-Meteo itself, only on a genuine cache miss/staleness — result is
- *      written back to both caches for the next reader.
+ *      the last 15 minutes. This is what actually protects Open-Meteo's
+ *      rate limit, since aviation weather traffic isn't confined to one
+ *      browser.
+ *   2. Open-Meteo itself, only on a genuine cache miss/staleness — result is
+ *      written back to the DB cache for the next reader.
  */
 export async function fetchGeneralWeather(lat: number, lon: number): Promise<GeneralWeatherData> {
   const cacheKey = generalWeatherCacheKey(lat, lon);
-
-  const memCached = generalWeatherCache.get(cacheKey);
-  if (memCached && (Date.now() - memCached.timestamp) < GENERAL_WEATHER_CACHE_DURATION) {
-    console.log('📡 Using in-tab cached general weather for', cacheKey);
-    return memCached.data;
-  }
 
   // Shared DB cache — read before hitting Open-Meteo. A read failure (e.g.
   // the migration hasn't been run yet) is not fatal: fall through and fetch
@@ -280,7 +257,6 @@ export async function fetchGeneralWeather(lat: number, lon: number): Promise<Gen
       const fetchedAt = new Date(row.fetched_at as string).getTime();
       if (Date.now() - fetchedAt < GENERAL_WEATHER_FRESHNESS_MS) {
         const weather = rowToGeneralWeather(row as Record<string, unknown>);
-        generalWeatherCache.set(cacheKey, { data: weather, timestamp: Date.now() });
         console.log('📡 Using DB-cached general weather for', cacheKey);
         return weather;
       }
@@ -324,7 +300,6 @@ export async function fetchGeneralWeather(lat: number, lon: number): Promise<Gen
       error: null,
     };
 
-    generalWeatherCache.set(cacheKey, { data: weather, timestamp: Date.now() });
     console.log('✅ Live general weather received!');
 
     // Best-effort write-back to the shared cache so the next reader (this
