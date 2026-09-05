@@ -28,6 +28,7 @@
 // ============================================================
 
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { requireSession } from '@/lib/api-auth';
 import type { NOTAM } from '@/types';
 
 const SKYLINK_URL = 'https://data.skylinkapi.com/v3.1/notams';
@@ -109,12 +110,17 @@ function mapSkylinkNotam(n: SkylinkNotam, station: string): NOTAM {
 }
 
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const station = (searchParams.get('station') || '').trim().toUpperCase();
-
-  if (!station) {
-    return Response.json({ error: 'No station configured.' }, { status: 400 });
-  }
+  // AUTH: added 2026-09-05. This route was unauthenticated from the day it
+  // was written — harmless while its old upstream always failed, but since
+  // the SkyLink integration every distinct station costs one call against a
+  // metered quota (1,000/month free, then $0.007/request). An anonymous
+  // caller iterating ICAO codes could drain it in minutes.
+  //
+  // requireSession, not requireRole: every legitimate caller is a logged-in
+  // user looking at the Dashboard or a flight modal, and no role should be
+  // excluded from seeing NOTAMs.
+  const { error: authError } = await requireSession();
+  if (authError) return authError;
 
   const apiKey = process.env.SKYLINK_API_KEY;
   if (!apiKey) {
@@ -125,18 +131,42 @@ export async function GET(request: Request) {
     return Response.json({ error: 'NOTAM service not configured.' }, { status: 503 });
   }
 
-  // ----- 1. TTL from FTO settings -----
+  // ----- 1. Station and TTL, both from FTO settings -----
+  //
+  // The station is deliberately NOT taken from the query string. The client
+  // still sends ?station=, and it is ignored: the server already knows which
+  // airport this FTO operates from, so accepting an arbitrary ICAO code would
+  // let any authenticated user spend the quota on any airport in the world
+  // for no legitimate benefit. Reading it from settings removes the abuse
+  // case entirely rather than trying to validate it.
   let ttlHours = DEFAULT_TTL_HOURS;
+  let station = '';
   try {
-    const { data: settingRow } = await supabaseAdmin
+    const { data: rows } = await supabaseAdmin
       .from('fto_settings')
-      .select('setting_value')
-      .eq('setting_key', 'notam_cache_ttl_hours')
-      .maybeSingle();
-    ttlHours = parseNotamTtlHours(settingRow?.setting_value as string | undefined);
-  } catch {
-    // Setting unreadable (table missing, transient error) — the default is
-    // safe for the quota, so carry on rather than failing the request.
+      .select('setting_key, setting_value')
+      .in('setting_key', ['notam_cache_ttl_hours', 'airport_code']);
+
+    const settings = Object.fromEntries((rows ?? []).map(r => [r.setting_key, r.setting_value]));
+    ttlHours = parseNotamTtlHours(settings['notam_cache_ttl_hours'] as string | undefined);
+    station = String(settings['airport_code'] ?? '').trim().toUpperCase();
+  } catch (err) {
+    // Settings unreadable — without a station there is nothing to fetch, and
+    // guessing one would spend quota on the wrong airport.
+    console.error('❌ Could not read FTO settings for NOTAMs:', err);
+    return Response.json({ error: 'NOTAM service unavailable.' }, { status: 503 });
+  }
+
+  if (!station) {
+    // No ICAO configured (common — many Indian FTOs fly from club airfields
+    // with no code). The Dashboard tile already renders a "no airport code
+    // set" message for this, so an empty list is the honest answer.
+    return Response.json([], { headers: { 'x-notam-cache': 'no-station' } });
+  }
+
+  const requested = new URL(request.url).searchParams.get('station');
+  if (requested && requested.trim().toUpperCase() !== station) {
+    console.warn(`⚠️ Ignoring requested station "${requested}" — this FTO is configured for ${station}.`);
   }
 
   // ----- 2. Serve from cache when fresh -----
