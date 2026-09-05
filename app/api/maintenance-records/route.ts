@@ -17,6 +17,11 @@
 // app/api/safety-incidents/route.ts exactly, just with two independent
 // counters (one per prefix) sharing the one ticket_number column instead
 // of one.
+//
+// 2026-09-05: also carries the DGCA maintenance-log certification fields
+// (parts used, AME name/licence, CRS reference) — see
+// add-dgca-maintenance-log-fields.sql. Those are staff-only: the squawk
+// path forces them null.
 
 import { NextResponse } from 'next/server';
 import { requireModuleAccess, requireRole } from '@/lib/api-auth';
@@ -72,6 +77,7 @@ export async function POST(request: Request) {
   let {
     maintenanceType, scheduledDate, completedDate, status, cost, performedBy,
     maintenanceStart, maintenanceEnd, hobbsAtCompletion,
+    partsUsed, ameName, ameLicenseNo, crsReference, isBaseline,
   } = body as Record<string, unknown>;
 
   if (!aircraftId) {
@@ -95,6 +101,15 @@ export async function POST(request: Request) {
     maintenanceStart = null;
     maintenanceEnd = null;
     hobbsAtCompletion = null;
+    // 2026-09-05 (item 42): the DGCA certification fields are emphatically
+    // not a pilot's to set. A squawk is a report that something is wrong;
+    // a release to service is a licensed AME certifying it is fixed.
+    // Forced null server-side regardless of what the client sends.
+    partsUsed = null;
+    ameName = null;
+    ameLicenseNo = null;
+    crsReference = null;
+    isBaseline = false;
   } else if (!maintenanceType) {
     return NextResponse.json({ error: 'aircraftId and maintenanceType are required.' }, { status: 400 });
   }
@@ -116,6 +131,17 @@ export async function POST(request: Request) {
     hobbs_at_completion: hobbsAtCompletion ?? null,
     reported_by: restricted ? (session?.user.name || session?.user.email || 'Unknown') : null,
     is_squawk: restricted,
+    // 2026-09-05: DGCA maintenance log (item 42) — see
+    // add-dgca-maintenance-log-fields.sql.
+    // A "Set Baseline" row is a due-clock anchor, not work performed —
+    // excluded from the DGCA Maintenance Log so an auditor never reads a
+    // synthetic row as certified maintenance. See
+    // add-dgca-maintenance-log-fields.sql.
+    is_baseline: Boolean(isBaseline),
+    parts_used: partsUsed ?? null,
+    ame_name: ameName ?? null,
+    ame_license_no: ameLicenseNo ?? null,
+    crs_reference: crsReference ?? null,
   };
 
   const prefix: 'RMT' | 'IMT' = restricted ? 'IMT' : 'RMT';

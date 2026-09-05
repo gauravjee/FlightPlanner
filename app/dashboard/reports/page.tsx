@@ -37,10 +37,11 @@ const REPORT_CARDS = [
     status: 'planned' as const,
   },
   {
+    href: '/dashboard/reports/maintenance-log',
     icon: Wrench,
     title: 'Maintenance Log',
-    description: 'Aircraft maintenance/work record (CA Form 19-10 style) — not yet built.',
-    status: 'planned' as const,
+    description: 'Per-aircraft record of completed maintenance with parts used, certifying AME and CRS reference (CA Form 19-10 style), with PDF and Excel/CSV export. Draft format — verify against your CAMO-approved register before filing.',
+    status: 'live' as const,
   },
   {
     href: '/dashboard/reports/breath-analysis',

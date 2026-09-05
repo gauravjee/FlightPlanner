@@ -4,7 +4,7 @@
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { FlightRecord, StudentRecord, BATest } from '@/types';
+import { FlightRecord, StudentRecord, BATest, MaintenanceRecord } from '@/types';
 
 // jspdf-autotable augments the jsPDF instance with `lastAutoTable` at
 // runtime, but its TS types don't declare that property — this local
@@ -380,4 +380,122 @@ export function generateBreathAnalysisReport(report: {
 
   const safeLabel = report.periodLabel.replace(/[^\w-]+/g, '_');
   doc.save(`Breath_Analysis_Report_${report.period}_${safeLabel}.pdf`);
+}
+/**
+ * Generate the DGCA Aircraft Maintenance Log for one aircraft over a date
+ * range — the printable half of item 42.
+ *
+ * Column set matches docs/dgca-templates/FlightPro_Maintenance_Log_Template_DRAFT.docx.
+ *
+ * ⚠️ TWO THINGS THIS DELIBERATELY DOES NOT DO, both for the same reason —
+ * this document is a RECORD of certification, not an act of it:
+ *   1. It prints a signature block, left blank. The app never renders a
+ *      signature, typed name-as-signature, or "digitally signed by" line.
+ *   2. It carries the draft-format warning until the layout has been
+ *      checked against the FTO's real CAMO-approved register. A compliance
+ *      document that looks official while being unverified is worse than
+ *      one that says so on its face.
+ */
+export function generateMaintenanceLogReport(report: {
+  aircraftReg: string;
+  aircraftType: string;
+  aircraftModel: string;
+  ftoName?: string;
+  from: string;
+  to: string;
+  records: MaintenanceRecord[];
+  formatVerified?: boolean;
+}): void {
+  const doc = new jsPDF({ orientation: 'landscape' }) as JsPDFWithAutoTable;
+  const pageWidth = doc.internal.pageSize.getWidth();
+
+  doc.setFillColor(30, 41, 59);
+  doc.rect(0, 0, pageWidth, 30, 'F');
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Aircraft Maintenance Log', 14, 15);
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${report.aircraftReg} — ${report.aircraftModel || report.aircraftType || 'N/A'}`, 14, 24);
+  const rangeLabel = `${new Date(report.from).toLocaleDateString('en-IN')} to ${new Date(report.to).toLocaleDateString('en-IN')}`;
+  doc.text(rangeLabel, pageWidth - 14, 15, { align: 'right' });
+  doc.text(report.ftoName || '', pageWidth - 14, 24, { align: 'right' });
+
+  doc.setTextColor(0, 0, 0);
+  let cursorY = 38;
+
+  // The draft warning, printed on the document itself rather than only
+  // living in the Word template's first table — see the note above.
+  if (!report.formatVerified) {
+    doc.setFillColor(254, 243, 199);
+    doc.rect(14, cursorY - 5, pageWidth - 28, 12, 'F');
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'bold');
+    doc.text(
+      'DRAFT FORMAT — not yet verified against the official DGCA / CAMO-approved register. Verify before use as a compliance record.',
+      16, cursorY + 2,
+    );
+    doc.setFont('helvetica', 'normal');
+    cursorY += 14;
+  }
+
+  const body = report.records.map(r => [
+    r.completedDate ? new Date(r.completedDate).toLocaleDateString('en-IN') : '—',
+    r.ticketNumber || '—',
+    r.hobbsAtCompletion != null ? r.hobbsAtCompletion.toFixed(1) : '—',
+    r.description || '—',
+    r.notes || '—',
+    r.partsUsed || '—',
+    [r.ameName, r.ameLicenseNo].filter(Boolean).join(' / ') || '—',
+    r.crsReference || '—',
+  ]);
+
+  autoTable(doc, {
+    startY: cursorY,
+    head: [['Date', 'Ticket', 'Airframe Hrs', 'Defect / Snag Reported', 'Rectification Action Taken', 'Parts / Materials Used', 'AME Name & Licence No.', 'CRS Ref.']],
+    body: body.length ? body : [['—', '—', '—', 'No completed maintenance in this period.', '—', '—', '—', '—']],
+    theme: 'grid',
+    styles: { fontSize: 7, cellPadding: 2 },
+    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 7 },
+    columnStyles: {
+      0: { cellWidth: 20 }, 1: { cellWidth: 24 }, 2: { cellWidth: 18 },
+      3: { cellWidth: 50 }, 4: { cellWidth: 50 }, 5: { cellWidth: 42 },
+      6: { cellWidth: 38 }, 7: { cellWidth: 28 },
+    },
+  });
+
+  let y = (doc.lastAutoTable?.finalY ?? cursorY) + 10;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  if (y > pageHeight - 45) { doc.addPage(); y = 20; }
+
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Certificate of Release to Service (CRS) — Summary', 14, y);
+  y += 6;
+
+  doc.setFontSize(7.5);
+  doc.setFont('helvetica', 'normal');
+  const cert = 'Certified that the work specified above (except as otherwise stated) was carried out in accordance with the applicable requirements of Rule 61 of the Aircraft Rules, 1937, and in respect of that work, the aircraft/component is considered fit for release to service.';
+  doc.text(doc.splitTextToSize(cert, pageWidth - 28), 14, y);
+  y += 16;
+
+  // Blank signature block — the app records a CRS, it does not issue one.
+  doc.setFontSize(8);
+  doc.text('AME Name: ______________________________', 14, y);
+  doc.text('Licence No. & Category: ______________________________', 120, y);
+  y += 12;
+  doc.text('Signature: ______________________________', 14, y);
+  doc.text('Date: ______________________________', 120, y);
+
+  doc.setFontSize(7);
+  doc.setTextColor(120, 120, 120);
+  doc.text(
+    `Generated by FlightPro Manager on ${new Date().toLocaleDateString('en-IN')}. This printout is a record of maintenance carried out; it is not itself a Certificate of Release to Service.`,
+    14, pageHeight - 8,
+  );
+
+  doc.save(`Maintenance_Log_${report.aircraftReg}_${report.from}_to_${report.to}.pdf`);
 }

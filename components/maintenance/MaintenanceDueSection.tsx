@@ -62,6 +62,14 @@ function LogMaintenanceItemModal({ item, aircraftReg, currentHobbs, mode, onClos
       maintenanceStart: null,
       maintenanceEnd: null,
       hobbsAtCompletion: item.template.intervalType === 'HOBBS_HOURS' && hobbs ? parseFloat(hobbs) : null,
+      // 2026-09-05: marks a "Set Baseline" row as what it actually is — a
+      // due-clock anchor, not work performed. Keeps it out of the DGCA
+      // Maintenance Log report, which would otherwise present a synthetic
+      // row to an auditor as certified maintenance. A structural marker
+      // rather than a description-string match, so a future copy edit to
+      // the text above cannot quietly put these rows back into a
+      // regulatory register. See add-dgca-maintenance-log-fields.sql.
+      isBaseline: mode === 'baseline',
     });
     setSaving(false);
     onClose();

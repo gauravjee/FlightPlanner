@@ -8,7 +8,7 @@ import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useScheduledFlights } from '@/lib/hooks/useScheduledFlights';
 import { MaintenanceRecord } from '@/types';
-import { Pencil, Wrench, X, Hourglass, TriangleAlert } from 'lucide-react';
+import { Pencil, Wrench, X, Hourglass, TriangleAlert, FileCheck } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface Props {
@@ -51,6 +51,7 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
   const { scheduledFlights } = useScheduledFlights();
   const isEditing = !!record;
 
+
   const todayLocal = new Date().toLocaleDateString('en-CA');
 
   // Existing record's precise window (if any) split into the form's pieces.
@@ -74,6 +75,13 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
     // "Create Maintenance Record" action. Optional — omitting it just means
     // this completion won't reset that item's due clock.
     hobbsAtCompletion: record?.hobbsAtCompletion != null ? String(record.hobbsAtCompletion) : '',
+    // 2026-09-05: DGCA maintenance log (item 42) — the certification half
+    // of the record. Only shown once status is COMPLETED, because a
+    // Certificate of Release to Service describes finished, certified work.
+    partsUsed: record?.partsUsed || '',
+    ameName: record?.ameName || '',
+    ameLicenseNo: record?.ameLicenseNo || '',
+    crsReference: record?.crsReference || '',
     // Precise window — off by default (blocks the whole Scheduled Date, the
     // original/simple behavior). Turning it on reveals Start/End pickers.
     usePreciseWindow: !!record?.maintenanceStart,
@@ -87,6 +95,12 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
     endHour: existingEnd?.hour || '',
     endMinute: existingEnd?.minute || '00',
   });
+
+  // The aircraft this record is against — used to offer its current Hobbs
+  // reading as the airframe-hours value, so the DGCA log's "Airframe Total
+  // Hrs" comes from the app's own tracking instead of being retyped (and
+  // able to disagree with it).
+  const selectedAircraft = aircraft.find(a => String(a.id) === String(form.aircraftId));
 
   const [error, setError] = useState('');
 
@@ -162,6 +176,10 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
       maintenanceStart: form.usePreciseWindow ? buildISTIso(form.startDate, form.startHour, form.startMinute) : null,
       maintenanceEnd: form.usePreciseWindow && !form.openEnded ? buildISTIso(form.endDate, form.endHour, form.endMinute) : null,
       hobbsAtCompletion: form.hobbsAtCompletion ? parseFloat(form.hobbsAtCompletion) : null,
+      partsUsed: form.partsUsed.trim() || null,
+      ameName: form.ameName.trim() || null,
+      ameLicenseNo: form.ameLicenseNo.trim() || null,
+      crsReference: form.crsReference.trim() || null,
     });
     onClose();
   };
@@ -250,11 +268,68 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
           {form.status === 'COMPLETED' && (
             <div>
               <label className="block text-xs text-secondary mb-1">
-                Hobbs at Completion <span className="text-tertiary">(for maintenance-schedule tracking)</span>
+                Hobbs at Completion <span className="text-tertiary">(airframe total hours — also the DGCA log&apos;s &quot;Airframe Total Hrs&quot;)</span>
               </label>
-              <input type="number" step="0.1" placeholder="e.g., 1245.3" value={form.hobbsAtCompletion}
-                onChange={e => setForm(p => ({ ...p, hobbsAtCompletion: e.target.value }))}
-                className={inputClass} />
+              <div className="flex gap-2">
+                <input type="number" step="0.1" placeholder="e.g., 1245.3" value={form.hobbsAtCompletion}
+                  onChange={e => setForm(p => ({ ...p, hobbsAtCompletion: e.target.value }))}
+                  className={inputClass} />
+                {selectedAircraft && (
+                  <button type="button"
+                    onClick={() => setForm(p => ({ ...p, hobbsAtCompletion: String(selectedAircraft.hobbsTime) }))}
+                    className="px-3 py-2 rounded-lg text-xs whitespace-nowrap surface-inner cursor-pointer"
+                    title={`Use ${selectedAircraft.registration}'s current Hobbs reading`}>
+                    Use {selectedAircraft.hobbsTime}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* 2026-09-05 (item 42): DGCA maintenance log / Certificate of
+              Release to Service. Gated on COMPLETED for the same reason as
+              Hobbs above — there is nothing to certify until the work is
+              done, and an AME licence number sitting on a SCHEDULED record
+              would read as a release to service that was never issued.
+
+              ⚠️ The app RECORDS a CRS; it does not ISSUE one. The signature
+              stays on paper (user decision, 2026-09-05) — these fields are
+              the audit trail pointing at it, which is why the reference
+              number is a field and there is no e-sign flow. */}
+          {form.status === 'COMPLETED' && (
+            <div className="rounded-lg p-3 space-y-3" style={{ border: '1px solid var(--border)' }}>
+              <p className="text-xs font-medium flex items-center gap-1.5">
+                <FileCheck className="w-3.5 h-3.5" /> DGCA Maintenance Log — Release to Service
+              </p>
+              <p className="text-xs text-tertiary">
+                Optional, but required for this record to appear complete on the DGCA Maintenance Log report.
+                The signed CRS itself stays on paper; this records its reference.
+              </p>
+
+              <div>
+                <label className="block text-xs text-secondary mb-1">Parts / Materials Used</label>
+                <textarea value={form.partsUsed} onChange={e => setForm(p => ({ ...p, partsUsed: e.target.value }))}
+                  rows={2} placeholder="e.g., 1x oil filter CH48110-1, 6 qt Aeroshell W100" className={inputClass} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-secondary mb-1">AME Name</label>
+                  <input type="text" value={form.ameName} onChange={e => setForm(p => ({ ...p, ameName: e.target.value }))}
+                    placeholder="Certifying engineer" className={inputClass} />
+                </div>
+                <div>
+                  <label className="block text-xs text-secondary mb-1">AME Licence No. &amp; Category</label>
+                  <input type="text" value={form.ameLicenseNo} onChange={e => setForm(p => ({ ...p, ameLicenseNo: e.target.value }))}
+                    placeholder="e.g., AME-1234 / Cat A" className={inputClass} />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs text-secondary mb-1">CRS Reference</label>
+                <input type="text" value={form.crsReference} onChange={e => setForm(p => ({ ...p, crsReference: e.target.value }))}
+                  placeholder="Certificate of Release to Service ref." className={inputClass} />
+              </div>
             </div>
           )}
 

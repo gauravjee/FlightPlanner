@@ -29,6 +29,12 @@ const FIELD_MAP: Record<string, string> = {
   // 2026-08-26: aircraft maintenance schedule, Phase 1 — see
   // add-aircraft-maintenance-schedule.sql.
   hobbsAtCompletion: 'hobbs_at_completion',
+  // 2026-09-05: DGCA maintenance log (item 42) — see
+  // add-dgca-maintenance-log-fields.sql.
+  partsUsed: 'parts_used',
+  ameName: 'ame_name',
+  ameLicenseNo: 'ame_license_no',
+  crsReference: 'crs_reference',
 };
 
 export async function PATCH(request: Request, context: RouteContext) {

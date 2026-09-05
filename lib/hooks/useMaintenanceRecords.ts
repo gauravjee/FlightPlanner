@@ -83,6 +83,11 @@ export async function fetchMaintenanceRecords(): Promise<MaintenanceRecord[]> {
       reportedBy: (row.reported_by as string) || null,
       isSquawk: Boolean(row.is_squawk),
       ticketNumber: (row.ticket_number as string) || null,
+      isBaseline: Boolean(row.is_baseline),
+      partsUsed: (row.parts_used as string) || null,
+      ameName: (row.ame_name as string) || null,
+      ameLicenseNo: (row.ame_license_no as string) || null,
+      crsReference: (row.crs_reference as string) || null,
       // Deliberately NOT resolved here — see the file header above.
       // withMaintenanceRecordNames() below fills these in at render time.
       aircraftReg: undefined, aircraftType: undefined,

@@ -369,6 +369,21 @@ export interface MaintenanceRecord {
   // badging/filtering separately from routine maintenance.
   reportedBy?: string | null;
   isSquawk?: boolean;
+  // 2026-09-05: DGCA maintenance log fields (item 42) — see
+  // add-dgca-maintenance-log-fields.sql. Only meaningful on a COMPLETED
+  // record: they describe the work as certified, not the work as planned.
+  // Airframe hours deliberately reuse hobbsAtCompletion above rather than
+  // adding a second hours field.
+  partsUsed?: string | null;
+  // True for a synthetic "Set Baseline" row (Maintenance Due panel) that
+  // exists only to anchor an item's due clock — no work was performed and
+  // nobody certified anything, so it is EXCLUDED from the DGCA Maintenance
+  // Log report. A structural marker, deliberately not a description-string
+  // match — see add-dgca-maintenance-log-fields.sql.
+  isBaseline?: boolean;
+  ameName?: string | null;
+  ameLicenseNo?: string | null;
+  crsReference?: string | null;
   // 2026-09-03: year-scoped ticket number assigned on insert — RMT-<year>-NNN
   // for a staff-logged record, IMT-<year>-NNN for a pilot-filed squawk
   // (isSquawk). See add-maintenance-ticket-numbering.sql and
