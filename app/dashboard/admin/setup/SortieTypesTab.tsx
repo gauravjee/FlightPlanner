@@ -4,12 +4,10 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase-client';
 import { mutate } from 'swr';
+import ConfigTable, { type ConfigField, type ConfigColumn } from '@/components/admin/ConfigTable';
 import { sortieTypesKey } from '@/lib/hooks/useSortieTypes';
-import ConfirmDialog from '@/components/ui/ConfirmDialog';
-import { Target, Pencil, Plus, Save, Trash2, CircleCheck } from 'lucide-react';
+import { Target, CircleCheck } from 'lucide-react';
 
 interface SortieType {
   id: number;
@@ -23,304 +21,96 @@ interface SortieType {
 
 // Predefined color options for the Gantt chart
 const COLOR_OPTIONS = [
-  { name: 'Blue', hex: '#2563eb' },
-  { name: 'Green', hex: '#16a34a' },
-  { name: 'Yellow', hex: '#ca8a04' },
-  { name: 'Red', hex: '#dc2626' },
-  { name: 'Purple', hex: '#7c3aed' },
-  { name: 'Orange', hex: '#ea580c' },
-  { name: 'Cyan', hex: '#0891b2' },
-  { name: 'Pink', hex: '#db2777' },
-  { name: 'Teal', hex: '#0d9488' },
-  { name: 'Indigo', hex: '#4f46e5' },
+  { label: 'Blue (#2563eb)', value: '#2563eb' },
+  { label: 'Green (#16a34a)', value: '#16a34a' },
+  { label: 'Yellow (#ca8a04)', value: '#ca8a04' },
+  { label: 'Red (#dc2626)', value: '#dc2626' },
+  { label: 'Purple (#7c3aed)', value: '#7c3aed' },
+  { label: 'Orange (#ea580c)', value: '#ea580c' },
+  { label: 'Cyan (#0891b2)', value: '#0891b2' },
+  { label: 'Pink (#db2777)', value: '#db2777' },
+  { label: 'Teal (#0d9488)', value: '#0d9488' },
+  { label: 'Indigo (#4f46e5)', value: '#4f46e5' },
+];
+
+const FIELDS: ConfigField[] = [
+  { name: 'type_name', type: 'text', default: '', placeholder: 'Display Name (e.g., Dual)', required: true, full: true },
+  { name: 'type_code', type: 'text', default: '', placeholder: 'Code (e.g., DUAL)', required: true, uppercase: true, full: true },
+  {
+    name: 'color_hex', type: 'select', default: '#2563eb', label: 'Gantt Chart Color',
+    options: COLOR_OPTIONS, group: 'options',
+    after: value => (
+      <div className="mt-1 flex items-center space-x-2">
+        <div className="w-6 h-6 rounded" style={{ backgroundColor: String(value), border: '1px solid var(--border)' }} />
+        <span className="text-xs text-tertiary">{String(value)}</span>
+      </div>
+    ),
+  },
+  { name: 'requires_instructor', type: 'checkbox', default: true, label: 'Requires Instructor', group: 'options' },
+  { name: 'requires_student', type: 'checkbox', default: true, label: 'Requires Student', group: 'options' },
+  { name: 'is_active', type: 'checkbox', default: true, hidden: true },
+];
+
+const required = (yes: boolean) =>
+  yes ? (
+    <span className="flex items-center gap-1" style={{ color: 'var(--success)' }}>
+      <CircleCheck className="w-3.5 h-3.5" /> Required
+    </span>
+  ) : (
+    <span className="text-tertiary">— Not Required</span>
+  );
+
+const COLUMNS: ConfigColumn<SortieType>[] = [
+  { header: 'Type', render: s => s.type_name, primary: true },
+  {
+    header: 'Code',
+    render: s => (
+      <span className="px-2 py-0.5 rounded text-xs text-white font-medium" style={{ backgroundColor: s.color_hex }}>
+        {s.type_code}
+      </span>
+    ),
+  },
+  {
+    header: 'Color',
+    render: s => (
+      <div className="flex items-center space-x-2">
+        <div className="w-4 h-4 rounded" style={{ backgroundColor: s.color_hex }} />
+        <span className="text-xs">{s.color_hex}</span>
+      </div>
+    ),
+  },
+  { header: 'Instructor', render: s => required(s.requires_instructor) },
+  { header: 'Student', render: s => required(s.requires_student) },
+  {
+    header: 'Status',
+    render: s => (
+      <span className={`badge ${s.is_active ? 'badge-success' : 'badge-danger'}`}>
+        {s.is_active ? 'Active' : 'Inactive'}
+      </span>
+    ),
+  },
 ];
 
 export default function SortieTypesTab() {
-  const [sortieTypes, setSortieTypes] = useState<SortieType[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<SortieType | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
-  const [form, setForm] = useState({
-    type_name: '',
-    type_code: '',
-    color_hex: '#2563eb',
-    requires_instructor: true,
-    requires_student: true,
-    is_active: true,
-  });
-
-  // Pure fetch — no setState here, so it's safe to call from an effect too
-  // (react-hooks/set-state-in-effect flags any named function that sets
-  // state anywhere in its body, even safely after an await, when called
-  // from an effect).
-  const fetchSortieTypes = async (): Promise<SortieType[]> => {
-    console.log('Fetching sortie types...');
-    const { data, error } = await supabase
-      .from('sortie_types')
-      .select('*')
-      .order('id', { ascending: true });
-
-    if (error) {
-      console.error('Error loading sortie types:', error.message);
-      return [];
-    }
-    console.log('Loaded sortie types:', data);
-    // 2026-09-02 (SWR migration, Stage 8): this tab's own list above is
-    // unfiltered (includes inactive rows, for management) so it can't be
-    // spliced straight into the shared active-only `sortieTypesKey` cache —
-    // revalidate it instead, so FlightRecordForm/the Flights page pick up
-    // an add/edit/delete made here without a manual reload. Same
-    // cache-invalidation fix as ExercisesTab.tsx.
-    mutate(sortieTypesKey);
-    return data || [];
-  };
-
-  // Used by Save/Delete/Cancel below — event-handler calls, where setState
-  // is always fine.
-  const loadSortieTypes = async () => {
-    setLoading(true);
-    setSortieTypes(await fetchSortieTypes());
-    setLoading(false);
-  };
-
-  // Load sortie types on mount
-  useEffect(() => {
-    fetchSortieTypes().then(data => { setSortieTypes(data); setLoading(false); });
-  }, []);
-
-  // Add or update sortie type
-  //
-  // 2026-08-21 (security hardening round): routed through the shared,
-  // role-checked config route instead of writing to Supabase directly from
-  // the browser — see app/api/admin/config/[table]/route.ts.
-  const handleSave = async () => {
-    if (!form.type_name || !form.type_code) return;
-
-    if (editing) {
-      await fetch('/api/admin/config/sortie-types', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editing.id, ...form }),
-      });
-    } else {
-      await fetch('/api/admin/config/sortie-types', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      });
-    }
-
-    setEditing(null);
-    setForm({ type_name: '', type_code: '', color_hex: '#2563eb', requires_instructor: true, requires_student: true, is_active: true });
-    loadSortieTypes();
-  };
-
-  // Edit existing
-  const handleEdit = (sortie: SortieType) => {
-    setEditing(sortie);
-    setForm({
-      type_name: sortie.type_name,
-      type_code: sortie.type_code,
-      color_hex: sortie.color_hex,
-      requires_instructor: sortie.requires_instructor,
-      requires_student: sortie.requires_student,
-      is_active: sortie.is_active,
-    });
-  };
-
-  // Delete
-  const handleDelete = (id: number) => {
-    setDeleteTarget(id);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (deleteTarget == null) return;
-    await fetch(`/api/admin/config/sortie-types?id=${deleteTarget}`, { method: 'DELETE' });
-    setDeleteTarget(null);
-    loadSortieTypes();
-  };
-
-  const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
-
   return (
-    <div className="surface-card p-6">
-      <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-        <Target className="w-4 h-4 text-secondary" /> Sortie Types
-      </h2>
-      <p className="text-sm text-secondary mb-4">
-        Configure the types of flights your FTO offers. Each type can have its own color, and you can specify whether an instructor or student is required.
-      </p>
-
-      {/* Add/Edit Form */}
-      <div className="surface-inner p-4 mb-6">
-        <h3 className="text-sm font-medium mb-3 flex items-center gap-1.5">
-          {editing ? <><Pencil className="w-3.5 h-3.5" /> Edit Sortie Type</> : <><Plus className="w-3.5 h-3.5" /> Add New Sortie Type</>}
-        </h3>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
-          {/* Type Name */}
-          <input
-            type="text"
-            placeholder="Display Name (e.g., Dual)"
-            value={form.type_name}
-            onChange={e => setForm(p => ({ ...p, type_name: e.target.value }))}
-            className={inputClass}
-          />
-
-          {/* Type Code */}
-          <input
-            type="text"
-            placeholder="Code (e.g., DUAL)"
-            value={form.type_code}
-            onChange={e => setForm(p => ({ ...p, type_code: e.target.value.toUpperCase() }))}
-            className={inputClass}
-          />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-          {/* Color Picker */}
-          <div>
-            <label className="block text-xs text-tertiary mb-1">Gantt Chart Color</label>
-            <select
-              value={form.color_hex}
-              onChange={e => setForm(p => ({ ...p, color_hex: e.target.value }))}
-              className={inputClass}
-            >
-              {COLOR_OPTIONS.map(color => (
-                <option key={color.hex} value={color.hex}>
-                  {color.name} ({color.hex})
-                </option>
-              ))}
-            </select>
-            {/* Color Preview */}
-            <div className="mt-1 flex items-center space-x-2">
-              <div className="w-6 h-6 rounded" style={{ backgroundColor: form.color_hex, border: '1px solid var(--border)' }} />
-              <span className="text-xs text-tertiary">{form.color_hex}</span>
-            </div>
-          </div>
-
-          {/* Requires Instructor */}
-          <div className="flex items-center space-x-2 pt-5">
-            <input
-              type="checkbox"
-              checked={form.requires_instructor}
-              onChange={e => setForm(p => ({ ...p, requires_instructor: e.target.checked }))}
-              className="w-4 h-4"
-            />
-            <label className="text-sm text-secondary">Requires Instructor</label>
-          </div>
-
-          {/* Requires Student */}
-          <div className="flex items-center space-x-2 pt-5">
-            <input
-              type="checkbox"
-              checked={form.requires_student}
-              onChange={e => setForm(p => ({ ...p, requires_student: e.target.checked }))}
-              className="w-4 h-4"
-            />
-            <label className="text-sm text-secondary">Requires Student</label>
-          </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex space-x-2">
-          <button
-            onClick={handleSave}
-            className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
-          >
-            {editing ? <><Save className="w-3.5 h-3.5" /> Update Sortie</> : <><Plus className="w-3.5 h-3.5" /> Add Sortie</>}
-          </button>
-          {editing && (
-            <button
-              onClick={() => {
-                setEditing(null);
-                setForm({ type_name: '', type_code: '', color_hex: '#2563eb', requires_instructor: true, requires_student: true, is_active: true });
-              }}
-              className="px-4 py-2 rounded-lg text-sm transition surface-inner"
-            >
-              Cancel
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Sortie Types List */}
-      {loading ? (
-        <p className="text-secondary text-center py-4">Loading...</p>
-      ) : sortieTypes.length === 0 ? (
-        <p className="text-secondary text-center py-4">No sortie types defined yet. Add your first one above.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
-                <th className="pb-3">Type</th>
-                <th className="pb-3">Code</th>
-                <th className="pb-3">Color</th>
-                <th className="pb-3">Instructor</th>
-                <th className="pb-3">Student</th>
-                <th className="pb-3">Status</th>
-                <th className="pb-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="text-secondary">
-              {sortieTypes.map(sortie => (
-                <tr key={sortie.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
-                  <td className="py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{sortie.type_name}</td>
-                  <td className="py-3">
-                    <span
-                      className="px-2 py-0.5 rounded text-xs text-white font-medium"
-                      style={{ backgroundColor: sortie.color_hex }}
-                    >
-                      {sortie.type_code}
-                    </span>
-                  </td>
-                  <td className="py-3">
-                    <div className="flex items-center space-x-2">
-                      <div className="w-4 h-4 rounded" style={{ backgroundColor: sortie.color_hex }} />
-                      <span className="text-xs">{sortie.color_hex}</span>
-                    </div>
-                  </td>
-                  <td className="py-3">
-                    {sortie.requires_instructor ? (
-                      <span className="flex items-center gap-1" style={{ color: 'var(--success)' }}><CircleCheck className="w-3.5 h-3.5" /> Required</span>
-                    ) : (
-                      <span className="text-tertiary">— Not Required</span>
-                    )}
-                  </td>
-                  <td className="py-3">
-                    {sortie.requires_student ? (
-                      <span className="flex items-center gap-1" style={{ color: 'var(--success)' }}><CircleCheck className="w-3.5 h-3.5" /> Required</span>
-                    ) : (
-                      <span className="text-tertiary">— Not Required</span>
-                    )}
-                  </td>
-                  <td className="py-3">
-                    <span className={`badge ${sortie.is_active ? 'badge-success' : 'badge-danger'}`}>
-                      {sortie.is_active ? 'Active' : 'Inactive'}
-                    </span>
-                  </td>
-                  <td className="py-3">
-                    <button onClick={() => handleEdit(sortie)} className="mr-2" style={{ color: 'var(--accent)' }} aria-label={`Edit ${sortie.type_name}`}><Pencil className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => handleDelete(sortie.id)} style={{ color: 'var(--danger)' }} aria-label={`Delete ${sortie.type_name}`}><Trash2 className="w-3.5 h-3.5" /></button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {deleteTarget != null && (
-        <ConfirmDialog
-          title="Delete sortie type?"
-          message="Delete this sortie type? This may affect existing bookings."
-          confirmLabel="Delete"
-          onConfirm={handleDeleteConfirm}
-          onCancel={() => setDeleteTarget(null)}
-        />
-      )}
-    </div>
+    <ConfigTable<SortieType>
+      title="Sortie Types"
+      singular="Sortie Type"
+      icon={<Target className="w-4 h-4 text-secondary" />}
+      description="Configure the types of flights your FTO offers. Each type can have its own color, and you can specify whether an instructor or student is required."
+      table="sortie_types"
+      endpoint="sortie-types"
+      fields={FIELDS}
+      columns={COLUMNS}
+      groups={{ options: { note: 'Display and crew requirements', cols: 3, baseCols: 1 } }}
+      deleteMessage="Delete this sortie type? This may affect existing bookings."
+      labelFor={s => s.type_name}
+      // This tab's list is unfiltered (it includes inactive rows, for
+      // management) so it can't be spliced into the shared active-only
+      // `sortieTypesKey` cache — revalidate it instead, so FlightRecordForm
+      // and the Flights page pick up an add/edit/delete made here without a
+      // manual reload.
+      onChanged={() => mutate(sortieTypesKey)}
+    />
   );
 }
