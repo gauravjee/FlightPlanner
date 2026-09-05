@@ -529,6 +529,16 @@ export default function DashboardPage() {
                   <TriangleAlert className="w-4 h-4" style={{ stroke: 'var(--warning)' }} />
                   Active NOTAMs
                 </h2>
+                {/* Provenance, deliberately visible. NOTAMs here come from
+                    SkyLink, which redistributes the FAA's SWIM feed — useful
+                    for situational awareness, but NOT the authoritative
+                    source for Indian airspace. AAI's AIM India is. Same
+                    "say what this is and isn't" pattern as the Duty Hours
+                    page's non-regulatory notice. */}
+                <p className="text-xs text-tertiary mb-3">
+                  Source: SkyLink (FAA SWIM feed). Situational awareness only — not an official briefing.
+                  Verify with AIM India (aim-india.aai.aero) before flight.
+                </p>
                 <div className="space-y-2 max-h-80 overflow-y-auto">
                   {/* Four distinct states, because "Loading NOTAMs..." forever
                       was indistinguishable from "there are none" and from
