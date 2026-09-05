@@ -30,14 +30,14 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import Papa from 'papaparse';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { REPORTS_VIEW_ROLES } from '@/lib/permissions';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useMaintenanceRecords } from '@/lib/hooks/useMaintenanceRecords';
-import { generateMaintenanceLogReport } from '@/lib/pdf';
+import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
+import { generateMaintenanceLogReport, formatLogDate } from '@/lib/pdf';
 import { todayIST, daysFromTodayIST } from '@/lib/ist';
 import { Wrench, FileDown, FileSpreadsheet, TriangleAlert } from 'lucide-react';
 
@@ -49,6 +49,7 @@ export default function MaintenanceLogPage() {
 
   const { aircraft } = useAircraft();
   const { maintenanceRecords, isLoading } = useMaintenanceRecords();
+  const { ftoSettings } = useFtoSettings();
 
   const [aircraftId, setAircraftId] = useState('');
   const [from, setFrom] = useState(() => daysFromTodayIST(-90));
@@ -82,31 +83,134 @@ export default function MaintenanceLogPage() {
       aircraftReg: selected.registration,
       aircraftType: selected.type,
       aircraftModel: selected.model,
+      // Whose register this is — see the PDF header. Same
+      // getFtoSetting('school_name') the print headers in ScheduleBoard and
+      // FlightDetailModal use.
+      ftoName: getFtoSetting(ftoSettings, 'school_name'),
       from, to, records: rows,
     });
   };
 
-  const exportCsv = () => {
+  // Real .xlsx, not CSV. CSV is plain text and cannot carry bold headers,
+  // column widths or borders — a "formatted CSV" does not exist — and this
+  // sheet gets handed to a CAMO or an auditor, so it should look like a
+  // register rather than a dump.
+  //
+  // write-excel-file rather than exceljs: exceljs pulls ~96 transitive
+  // packages (several EOL, with open advisories) into the lockfile to write
+  // one styled worksheet; this one has a single dependency. Imported
+  // DYNAMICALLY so it is fetched on click, not in the page bundle.
+  //
+  // ⚠️ API NOTES FOR v4 — all three of these differ from the library's own
+  // README, which documents v2/v3. Check node_modules/write-excel-file/types
+  // before changing this, not the docs site:
+  //   • the import is the '/browser' SUBPATH; there is no bare '.' export
+  //   • there is no `fileName` option — the call returns { toBlob, toFile }
+  //   • cell props are `textColor` and `columnSpan`, not `color` and `span`
+  const exportXlsx = async () => {
     if (!selected) return;
-    const csvRows = rows.map(r => ({
-      Date: r.completedDate || '',
-      Ticket: r.ticketNumber || '',
-      'Airframe Hrs': r.hobbsAtCompletion ?? '',
-      'Defect / Snag Reported': r.description || '',
-      'Rectification Action Taken': r.notes || '',
-      'Parts / Materials Used': r.partsUsed || '',
-      'AME Name': r.ameName || '',
-      'AME Licence No.': r.ameLicenseNo || '',
-      'CRS Ref.': r.crsReference || '',
-    }));
-    const csv = `Aircraft Maintenance Log\nAircraft: ${selected.registration} (${selected.model || selected.type})\nPeriod: ${from} to ${to}\n\n${Papa.unparse(csvRows)}\n`;
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `Maintenance_Log_${selected.registration}_${from}_to_${to}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const writeXlsxFile = (await import('write-excel-file/browser')).default;
+
+    const HEADERS = [
+      'Date', 'Ticket', 'Airframe Hrs', 'Defect / Snag Reported',
+      'Rectification Action Taken', 'Parts / Materials Used',
+      'AME Name', 'AME Licence No.', 'CRS Ref.',
+    ];
+    const WIDTHS = [13, 16, 13, 38, 38, 32, 20, 20, 18];
+    const COLS = HEADERS.length;
+    const BORDER = { borderStyle: 'thin' as const, borderColor: '#D1D5DB' };
+
+    // A full-width banner row: one spanning cell plus (COLS - 1) empty cells,
+    // which is how this library expresses a merge.
+    const banner = (
+      value: string,
+      opts: {
+        fontWeight?: 'bold'; fontSize?: number; backgroundColor?: string;
+        wrap?: boolean; height?: number;
+      } = {},
+    ) => [{ value, type: String, columnSpan: COLS, ...opts }, ...Array(COLS - 1).fill(null)];
+
+    // Omit `type` when there is no value: a typed cell with an empty value
+    // is rejected, but the cell still has to exist so the grid's borders
+    // stay unbroken across blank fields.
+    const cell = (value: string | null) => ({
+      ...(value ? { value, type: String } : {}),
+      alignVertical: 'top' as const, wrap: true, ...BORDER,
+    });
+
+    const data = [
+      banner('Aircraft Maintenance Log', { fontWeight: 'bold', fontSize: 14 }),
+      banner(`${selected.registration} — ${selected.model || selected.type}`, { fontSize: 11 }),
+      // Same ranking as the PDF header: the operating FTO identifies the
+      // record and gets its own bold line; the period is a labelled filter
+      // beneath it. The two artifacts of one register should not disagree
+      // about what matters or about how a date is written.
+      banner(getFtoSetting(ftoSettings, 'school_name') || 'FTO name not set', { fontWeight: 'bold', fontSize: 11 }),
+      banner(`Period: ${formatLogDate(from)} to ${formatLogDate(to)}`, { fontSize: 10 }),
+      // The same draft-format warning the page and the PDF carry — an
+      // unverified compliance layout must say so on every artifact it
+      // produces, not just the one that happens to be on screen.
+      banner(
+        'DRAFT FORMAT — not yet verified against the official DGCA / CAMO-approved register. Verify before use as a compliance record.',
+        { fontWeight: 'bold', fontSize: 9, backgroundColor: '#FEF3C7', wrap: true, height: 24 },
+      ),
+      Array(COLS).fill(null),
+      HEADERS.map(value => ({
+        value, type: String, fontWeight: 'bold' as const,
+        textColor: '#FFFFFF', backgroundColor: '#1E293B',
+        alignVertical: 'center' as const, wrap: true, height: 26,
+      })),
+      ...rows.map(r => {
+        const certified = Boolean(r.ameLicenseNo || r.crsReference);
+        return [
+          // A real date cell, not a string: in a spreadsheet the date column
+          // is what people sort and filter on, and text sorts lexically.
+          // Parsed at local NOON rather than midnight so no timezone
+          // conversion anywhere can roll it back a day.
+          {
+            ...(r.completedDate
+              ? { value: new Date(`${r.completedDate}T12:00:00`), type: Date, format: 'dd mmm yyyy' }
+              : {}),
+            alignVertical: 'top' as const, ...BORDER,
+          },
+          cell(r.ticketNumber ?? null),
+          {
+            ...(r.hobbsAtCompletion != null ? { value: r.hobbsAtCompletion, type: Number } : {}),
+            alignVertical: 'top' as const, ...BORDER,
+          },
+          cell(r.description ?? null),
+          cell(r.notes ?? null),
+          cell(r.partsUsed ?? null),
+          // An uncertified row is the gap this register exists to surface,
+          // so it stays visible in the spreadsheet too — not only on screen.
+          certified
+            ? cell(r.ameName ?? null)
+            : {
+                value: 'Not certified', type: String,
+                textColor: '#B91C1C', fontStyle: 'italic' as const,
+                alignVertical: 'top' as const, ...BORDER,
+              },
+          cell(r.ameLicenseNo ?? null),
+          cell(r.crsReference ?? null),
+        ];
+      }),
+      Array(COLS).fill(null),
+      banner(
+        'Certified that the work specified above (except as otherwise stated) was carried out in accordance with the applicable requirements of Rule 61 of the Aircraft Rules, 1937, and in respect of that work, the aircraft/component is considered fit for release to service.',
+        { fontSize: 9, wrap: true, height: 32 },
+      ),
+      Array(COLS).fill(null),
+      // Blank signature block — the app records a CRS, it does not issue one.
+      ['AME Name:', null, null, 'Licence No. & Category:', null, null, 'Signature:', null, 'Date:']
+        .map(v => (v ? { value: v, type: String, fontWeight: 'bold' as const } : null)),
+    ];
+
+    await writeXlsxFile(data, {
+      columns: WIDTHS.map(width => ({ width })),
+      sheet: 'Maintenance Log',
+      orientation: 'landscape',
+      stickyRowsCount: 7,
+    }).toFile(`Maintenance_Log_${selected.registration}_${from}_to_${to}.xlsx`);
   };
 
   const inputClass = 'w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]';
@@ -157,9 +261,9 @@ export default function MaintenanceLogPage() {
                     className="px-4 py-2 rounded-lg text-sm flex items-center gap-1.5 surface-inner cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
                     <FileDown className="w-4 h-4" /> Export PDF
                   </button>
-                  <button onClick={exportCsv} disabled={!rows.length}
+                  <button onClick={exportXlsx} disabled={!rows.length}
                     className="px-4 py-2 rounded-lg text-sm flex items-center gap-1.5 surface-inner cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-                    <FileSpreadsheet className="w-4 h-4" /> Export Excel/CSV
+                    <FileSpreadsheet className="w-4 h-4" /> Export Excel
                   </button>
                 </div>
               )}
