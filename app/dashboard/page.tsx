@@ -27,6 +27,7 @@ import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { useWeather, useGeneralWeather, useNotams } from '@/lib/hooks/useWeather';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import { useSession } from 'next-auth/react';
+import { STUDENT_ROSTER_VIEW_ROLES } from '@/lib/permissions';
 import { useRouter } from 'next/navigation';
 import StudentProgressWidget from '@/components/dashboard/StudentProgressWidget';
 import NotificationWidget from '@/components/dashboard/NotificationWidget';
@@ -36,15 +37,38 @@ import {
 } from 'lucide-react';
 
 export default function DashboardPage() {
+  // Session first: the students fetch below is gated on it, so it has to be
+  // read before that hook runs.
+  const { data: session } = useSession();
+
   const { aircraft } = useAircraft();
   const { instructors } = useInstructors();
-  const { students } = useStudents();
+
+  // 2026-09-05 (item 81/53): gated, matching StudentProgressWidget and
+  // NotificationWidget. This call used to be UNCONDITIONAL, which caused two
+  // separate problems:
+  //
+  //   1. A doomed request for roles outside STUDENT_ROSTER_VIEW_ROLES.
+  //      GET /api/students 403s for e.g. `maintenance`, and the widgets were
+  //      gated for exactly this reason on 2026-08-29 — this page was missed,
+  //      so the failing request kept firing from here on every load.
+  //   2. TWO /api/students requests per dashboard load for roles that CAN
+  //      see students. Hooks run before <ProtectedRoute> gates anything, so
+  //      this fired immediately, before the session was known; the two
+  //      widgets' keys were null until the session resolved, and flipping
+  //      null -> ['students'] then mounted a fresh subscription = a second
+  //      fetch. `dedupingInterval` does NOT collapse those, because SWR only
+  //      dedupes requests that are IN FLIGHT together and the first had
+  //      already settled. Gating here makes all three subscribe in the same
+  //      commit, so they share one request.
+  const role = session?.user?.role;
+  const canViewStudents = !!role && STUDENT_ROSTER_VIEW_ROLES.includes(role);
+  const { students } = useStudents(canViewStudents);
   // Scheduled flights come from SWR (Stage 5, 2026-09-01) — fetch-on-mount +
   // dedup, names joined at render time (see withScheduledFlightNames).
   const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
   const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
 
-  const { data: session } = useSession();
   const router = useRouter();
 
   // Redirect students to their own dashboard

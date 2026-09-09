@@ -35,7 +35,33 @@ import type { Instructor, StudentRecord } from '@/types';
 
 export const studentsKey = ['students'] as const;
 
-export async function fetchStudents(): Promise<StudentRecord[]> {
+// ---------------------------------------------------------------------------
+// In-flight dedupe (item 81, 2026-09-05).
+//
+// THE BUG: the Dashboard issued TWO GET /api/students per load. Only one came
+// from useStudents/SWR. The other came from fetchFlightRecords ->
+// mapFlightRecordRows, which calls fetchStudents() DIRECTLY to bake the
+// studentName join into its rows (a deliberate, documented decision — see the
+// header of useFlightRecords.ts). SWR cannot dedupe that: it never sees the
+// call. Found by logging a stack trace inside the fetcher; three rounds of
+// reasoning about SWR keys had blamed the wrong thing entirely.
+//
+// ⚠️ THIS IS NOT A DATA CACHE, and the distinction matters. `inFlightStudents`
+// holds a PROMISE and is cleared the instant that promise settles, so it can
+// only merge callers that overlap in time — it can never hand anyone a stale
+// list. That is the exact opposite of the module-level Maps removed from
+// lib/weather.ts earlier the same day (item 71), which held RESOLVED data for
+// 29 minutes and thereby made the Refresh Weather button a silent no-op.
+// Anything that outlives its own request is a cache, and a cache belongs in
+// SWR or the database — not in a fetcher.
+let inFlightStudents: Promise<StudentRecord[]> | null = null;
+
+export function fetchStudents(): Promise<StudentRecord[]> {
+  inFlightStudents ??= fetchStudentsUncached().finally(() => { inFlightStudents = null; });
+  return inFlightStudents;
+}
+
+async function fetchStudentsUncached(): Promise<StudentRecord[]> {
   // Routed through /api/students (not a direct Supabase call) so the
   // server can scope the result by role — see the file header above.
   const res = await fetch('/api/students');
