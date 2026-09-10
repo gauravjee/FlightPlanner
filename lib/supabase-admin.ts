@@ -19,21 +19,43 @@ if (typeof window !== 'undefined') {
 const serviceKey = process.env.SUPABASE_SERVICE_KEY;
 
 if (!serviceKey) {
-  // We still fall back to the anon key so the app doesn't hard-crash if this
-  // env var hasn't been configured yet, but that means these server routes
-  // are subject to the exact same Row Level Security policies as the browser
-  // — i.e. no extra protection. Set SUPABASE_SERVICE_KEY in your environment
-  // (Supabase project settings → API → service_role key) to fix this.
-  console.warn(
-    '⚠️ SUPABASE_SERVICE_KEY is not set. Falling back to the anon key for ' +
-    'server-side operations in lib/supabase-admin.ts — this provides no more ' +
-    'protection than a direct client-side call. Set SUPABASE_SERVICE_KEY.'
+  // ⚠️ 2026-09-10: this used to fall back to the ANON KEY so the app wouldn't
+  // hard-crash on a missing env var. That fallback is removed, and the reason
+  // matters more than the code.
+  //
+  // Every route in app/api/ that does a privileged read or write imports this
+  // client — students, admin config, requirements, maintenance records,
+  // safety incidents, NOTAM, the daily flying report. With the anon key they
+  // all still "work": no errors, no 500s, queries return successfully. They
+  // just return whatever Row Level Security lets an ANONYMOUS caller see,
+  // which for tables like users/students is nothing at all.
+  //
+  // So the failure mode was an app that looks healthy and quietly serves
+  // filtered or empty data from routes whose entire job is to bypass RLS
+  // after a role check. That is far worse than an outage: it is a security
+  // control that reports success while doing nothing. The cron route
+  // (app/api/cron/check-notifications/route.ts) hit exactly this and now
+  // refuses to run without the key — see its comment for the same reasoning.
+  //
+  // Deliberately NOT throwing at module load: these modules are imported
+  // during `next build`, and a build-time env gap would fail the deploy
+  // rather than surface the problem. Constructing with an EMPTY key instead
+  // means every query fails loudly with an auth error at the moment it runs,
+  // which is exactly when someone can act on it — and it can never
+  // masquerade as an anonymous caller.
+  console.error(
+    '🚨 SUPABASE_SERVICE_KEY is not set. lib/supabase-admin.ts is being ' +
+    'constructed WITHOUT a key, so every privileged server query will fail ' +
+    'with an auth error. This is deliberate: the previous behaviour fell ' +
+    'back to the anon key, which made role-checked routes silently return ' +
+    'RLS-filtered (usually empty) data while appearing to succeed. Set ' +
+    'SUPABASE_SERVICE_KEY (Supabase project settings → API → service_role key).'
   );
 }
 
 export const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  serviceKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '',
+  serviceKey || '',
   {
     auth: {
       persistSession: false,
