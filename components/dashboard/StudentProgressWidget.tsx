@@ -12,7 +12,7 @@ import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useSc
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { supabase } from '@/lib/supabase-client';
-import { matchTrainingProgram } from '@/lib/training-programs';
+import { matchTrainingProgram, requirementPercent } from '@/lib/training-programs';
 import { STUDENT_ROSTER_VIEW_ROLES } from '@/lib/permissions';
 
 // Admin-configured per-program required hours (Admin Setup -> Training
@@ -91,8 +91,16 @@ export default function StudentProgressWidget() {
         // fallback case instead of being the only source of truth.
         const matchedProgram = matchTrainingProgram(student.trainingStage, trainingPrograms);
         const isPPL = student.trainingStage?.includes('PPL');
-        const targetHours = matchedProgram?.required_hours ?? (isPPL ? 40 : 200);
-        const progressPercent = Math.min(100, Math.round((totalHours / targetHours) * 100));
+        // `||`, not `??`: Admin Setup -> Training Programs coerces a cleared
+        // Required Hours box to 0 (`parseInt(value) || 0`, no null option),
+        // so 0 here means "not set" rather than "zero hours required" —
+        // and dividing by it made this widget's bar read NaN%. Falls back
+        // to the same built-in default an unmatched stage gets.
+        const targetHours = matchedProgram?.required_hours || (isPPL ? 40 : 200);
+        // ?? 0 can't actually fire now that targetHours is guaranteed > 0;
+        // it's here so a future change to targetHours can't reintroduce
+        // NaN silently. See requirementPercent().
+        const progressPercent = requirementPercent(totalHours, targetHours) ?? 0;
 
         // Get today's flight for this student. Excludes CANCELLED bookings —
         // a flight that was cancelled today never happened, so listing the

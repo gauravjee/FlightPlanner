@@ -21,7 +21,7 @@ import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
 import { useTrainingRequirementsForStudents } from '@/lib/hooks/useTrainingRequirements';
 import { supabase } from '@/lib/supabase-client';
-import { matchTrainingProgram } from '@/lib/training-programs';
+import { matchTrainingProgram, requirementPercent } from '@/lib/training-programs';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
@@ -164,8 +164,12 @@ export default function InstructorDashboardPage() {
       // student's target hours.
       const matchedProgram = matchTrainingProgram(student.trainingStage, trainingPrograms);
       const isPPL = student.trainingStage?.includes('PPL');
-      const targetHours = matchedProgram?.required_hours ?? (isPPL ? 40 : 200);
-      const progressPercent = Math.min(100, Math.round((totalHours / targetHours) * 100));
+      // `||`, not `??` — a cleared Required Hours box in Admin Setup saves
+      // as 0, and dividing by it made this bar read NaN%. Same reasoning
+      // and same fallback as StudentProgressWidget.tsx; see
+      // requirementPercent().
+      const targetHours = matchedProgram?.required_hours || (isPPL ? 40 : 200);
+      const progressPercent = requirementPercent(totalHours, targetHours) ?? 0;
 
       // Get requirements completion
       const studentReqs = trainingRequirements.filter(r => r.studentId === student.id);

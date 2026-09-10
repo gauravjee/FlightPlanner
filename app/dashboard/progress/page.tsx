@@ -17,7 +17,7 @@ import { PROGRESS_VIEW_ROLES } from '@/lib/permissions';
 import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist';
 import { ChartColumn, TrendingUp, School, ArrowRight, Plane } from 'lucide-react';
 import { isCrossCountrySortie, isInstrumentSortie, isNightSortie, isMultiEngineFlight, isSimulatorFlight } from '@/lib/flight-classification';
-import { matchTrainingProgram } from '@/lib/training-programs';
+import { matchTrainingProgram, requirementPercent } from '@/lib/training-programs';
 
 // ============================================================
 // TRAINING STAGE REQUIREMENTS — built-in fallback defaults (DGCA/CAA
@@ -213,7 +213,13 @@ export default function ProgressPage() {
       ? CPL_REQUIREMENTS
       : PPL_REQUIREMENTS;
     const requirements = {
-      totalHours: matchedProgram?.required_hours ?? fallback.totalHours,
+      // `||`, not `??`, for this one only: Required Hours is the single
+      // metric with no null option in Admin Setup — a cleared box saves as
+      // 0 — so 0 means "not set" and should inherit the built-in default
+      // rather than hide the Total Hours card. The five below DO have a
+      // blank/null state in that form, so a 0 there is a deliberate "none
+      // required" and is honoured as such.
+      totalHours: matchedProgram?.required_hours || fallback.totalHours,
       soloHours: matchedProgram?.solo_hours ?? fallback.soloHours,
       crossCountry: matchedProgram?.cross_country_hours ?? fallback.crossCountry,
       instrument: matchedProgram?.instrument_hours ?? fallback.instrument,
@@ -238,20 +244,20 @@ export default function ProgressPage() {
       simulatorHours: Math.round(simulatorHours * 10) / 10,
       totalLandings,
       requirements,
-      hoursPercent: Math.min(100, Math.round((totalHours / requirements.totalHours) * 100)),
-      soloPercent: Math.min(100, Math.round((soloHours / requirements.soloHours) * 100)),
-      crossCountryPercent: Math.min(100, Math.round((crossCountryHours / requirements.crossCountry) * 100)),
-      instrumentPercent: Math.min(100, Math.round((instrumentHours / requirements.instrument) * 100)),
-      nightPercent: Math.min(100, Math.round((nightHours / requirements.nightHours) * 100)),
-      landingsPercent: Math.min(100, Math.round((totalLandings / requirements.landings) * 100)),
-      // null when the program hasn't configured this metric — the card
-      // and its contribution to overallPercent both get skipped below.
-      multiEnginePercent: requirements.multiEngine != null
-        ? Math.min(100, Math.round((multiEngineHours / requirements.multiEngine) * 100))
-        : null,
-      simulatorPercent: requirements.simulator != null
-        ? Math.min(100, Math.round((simulatorHours / requirements.simulator) * 100))
-        : null,
+      // ALL EIGHT are `number | null`. null means "this program sets no
+      // target for this metric" — either it was left unconfigured, or an
+      // admin deliberately entered 0. Both the metric's card and its
+      // contribution to overallPercent get skipped below. See
+      // requirementPercent() for why the previous inline arithmetic
+      // rendered NaN% here whenever a target was 0.
+      hoursPercent: requirementPercent(totalHours, requirements.totalHours),
+      soloPercent: requirementPercent(soloHours, requirements.soloHours),
+      crossCountryPercent: requirementPercent(crossCountryHours, requirements.crossCountry),
+      instrumentPercent: requirementPercent(instrumentHours, requirements.instrument),
+      nightPercent: requirementPercent(nightHours, requirements.nightHours),
+      landingsPercent: requirementPercent(totalLandings, requirements.landings),
+      multiEnginePercent: requirementPercent(multiEngineHours, requirements.multiEngine),
+      simulatorPercent: requirementPercent(simulatorHours, requirements.simulator),
       overallPercent: 0,
     };
   }, [studentFlights, selectedStudent, matchedProgram, aircraft]);
@@ -449,6 +455,13 @@ export default function ProgressPage() {
 
               {/* Progress Cards Grid */}
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+                {/* A card is rendered only for a metric this program
+                    actually targets. The filter below is what enforces
+                    that: a null percent means no target (unconfigured, or
+                    an explicit 0), and a card reading "Target: 0h — NaN%"
+                    is worse than no card. Multi Engine / Simulator were
+                    always conditional this way; the other six now are too,
+                    on the same rule rather than a hand-written one. */}
                 {[
                   { label: 'Total Hours', value: `${stats.totalHours}h`, target: `${stats.requirements.totalHours}h`, percent: stats.hoursPercent },
                   { label: 'Solo Hours', value: `${stats.soloHours}h`, target: `${stats.requirements.soloHours}h`, percent: stats.soloPercent },
@@ -456,17 +469,10 @@ export default function ProgressPage() {
                   { label: 'Instrument', value: `${stats.instrumentHours}h`, target: `${stats.requirements.instrument}h`, percent: stats.instrumentPercent },
                   { label: 'Night Hours', value: `${stats.nightHours}h`, target: `${stats.requirements.nightHours}h`, percent: stats.nightPercent },
                   { label: 'Landings', value: stats.totalLandings.toString(), target: stats.requirements.landings.toString(), percent: stats.landingsPercent },
-                  // Multi Engine / Simulator only show up when the matched
-                  // program has configured a target for them — these aren't
-                  // universal like the six above (e.g. a PPL student
-                  // typically has no Multi Engine target at all).
-                  ...(stats.requirements.multiEngine != null && stats.multiEnginePercent != null
-                    ? [{ label: 'Multi Engine', value: `${stats.multiEngineHours}h`, target: `${stats.requirements.multiEngine}h`, percent: stats.multiEnginePercent }]
-                    : []),
-                  ...(stats.requirements.simulator != null && stats.simulatorPercent != null
-                    ? [{ label: 'Simulator', value: `${stats.simulatorHours}h`, target: `${stats.requirements.simulator}h`, percent: stats.simulatorPercent }]
-                    : []),
-                ].map((item, i) => (
+                  { label: 'Multi Engine', value: `${stats.multiEngineHours}h`, target: `${stats.requirements.multiEngine}h`, percent: stats.multiEnginePercent },
+                  { label: 'Simulator', value: `${stats.simulatorHours}h`, target: `${stats.requirements.simulator}h`, percent: stats.simulatorPercent },
+                ].filter((item): item is typeof item & { percent: number } => item.percent != null)
+                 .map((item, i) => (
                   <div key={i} className="surface-inner p-4">
                     <p className="text-xs text-tertiary mb-2">{item.label}</p>
                     <p className="text-lg font-bold">{item.value}</p>

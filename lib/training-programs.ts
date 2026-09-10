@@ -60,3 +60,36 @@ export function matchTrainingProgram<T extends ProgramLike>(
   if (!leadingCode) return undefined;
   return programs.find(p => p.program_code?.trim().toUpperCase() === leadingCode);
 }
+
+/**
+ * Percentage of a training requirement completed, or `null` when there is
+ * no requirement to measure against.
+ *
+ * 2026-09-10: added because every caller was writing
+ * `Math.min(100, Math.round((actual / required) * 100))` inline, which
+ * produces **NaN** the moment `required` is 0 — and 0 is reachable two
+ * different ways:
+ *
+ *  - deliberately, for the per-metric targets (Solo/Cross-Country/
+ *    Instrument/Night/Landings/Multi Engine/Simulator), where an admin
+ *    typing 0 means "this program requires none of it";
+ *  - accidentally, for `required_hours`, whose Admin Setup input coerces a
+ *    cleared field to 0 (`parseInt(value) || 0`) with no null option.
+ *
+ * Either way the old code rendered a literal "NaN%" label and a
+ * `width: NaN%` bar, and — worse — a single NaN metric poisoned the
+ * averaged overallPercent on the Progress page, so ONE zeroed target made
+ * a student's entire progress read NaN.
+ *
+ * `null` rather than 0 because "no requirement" and "0% of the way there"
+ * are different facts and must not render the same. Callers hide the
+ * metric on null (matching how Multi Engine / Simulator already behave
+ * when unconfigured) and exclude it from any average.
+ */
+export function requirementPercent(
+  actual: number,
+  required: number | null | undefined
+): number | null {
+  if (required == null || !(required > 0)) return null;
+  return Math.min(100, Math.round((actual / required) * 100));
+}
