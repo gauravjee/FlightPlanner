@@ -905,7 +905,7 @@ export default function GroundSchoolCalendar() {
           {toastMessage}
           <button
             onClick={() => setToastMessage('')}
-            className="ml-3"
+            className="ml-3" aria-label="Dismiss notification"
           >
             <X className="w-4 h-4" />
           </button>

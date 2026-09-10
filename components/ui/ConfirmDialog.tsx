@@ -9,6 +9,7 @@
 'use client';
 
 import { TriangleAlert } from 'lucide-react';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface Props {
   title: string;
@@ -20,6 +21,13 @@ interface Props {
 }
 
 export default function ConfirmDialog({ title, message, confirmLabel = 'Confirm', danger = true, onConfirm, onCancel }: Props) {
+  // 2026-09-10: this was the one modal in the app missing Escape handling —
+  // the shared hook's own comment claimed all 15 were covered, and this is
+  // the destructive-confirmation dialog, i.e. the single dialog a keyboard
+  // user most needs to be able to back out of. Escape cancels; it never
+  // confirms.
+  useEscapeToClose(onCancel);
+
   return (
     <div
       className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4"

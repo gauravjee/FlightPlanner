@@ -156,7 +156,7 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b sticky top-0 z-10 rounded-t-xl bg-[var(--surface)]" style={{ borderColor: 'var(--border)' }}>
           <h3 className="text-lg font-semibold">✅ Flight Debrief & Check-Out</h3>
-          <button onClick={onClose} className="p-2 hover:bg-[var(--surface-muted)] rounded-lg cursor-pointer">
+          <button onClick={onClose} className="p-2 hover:bg-[var(--surface-muted)] rounded-lg cursor-pointer" aria-label="Close">
             <span className="text-secondary text-xl">✕</span>
           </button>
         </div>

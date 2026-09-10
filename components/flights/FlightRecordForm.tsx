@@ -155,7 +155,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
           <h3 className="text-lg font-semibold">
             📝 {scheduledFlightId ? 'Complete Pending Logbook Entry' : 'Log Flight Record'}
           </h3>
-          <button onClick={onClose} className="p-2 hover:bg-[var(--surface-muted)] rounded-lg cursor-pointer">
+          <button onClick={onClose} className="p-2 hover:bg-[var(--surface-muted)] rounded-lg cursor-pointer" aria-label="Close">
             <span className="text-secondary text-xl">✕</span>
           </button>
         </div>
