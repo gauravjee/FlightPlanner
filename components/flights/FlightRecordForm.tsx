@@ -72,6 +72,13 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
     instructorNotes: prefill?.instructorNotes || '',
     studentPerformance: prefill?.studentPerformance ?? 3,
     weatherConditions: prefill?.weatherConditions || 'VMC',
+    // 2026-09-10 (PICUS). Two fields rather than one nullable number: the
+    // checkbox is the instructor's assertion that the student commanded the
+    // flight, the number is how much of it. Keeping them separate means
+    // clearing the box to retype a figure doesn't read as "not PIC", and a
+    // deliberate 0 stays distinguishable from "never marked".
+    studentWasPic: false,
+    picusHours: '',
   });
 
   // Calculate total hours from departure/arrival times
@@ -83,6 +90,25 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
   };
 
   const totalHours = calcHours(form.departureTime, form.arrivalTime);
+
+  // 2026-09-10: lifted out of handleSubmit, where it used to live, because
+  // the PICUS block below has to know whether this is a DUAL sortie while
+  // the form is still being filled in — not only at submit time. Same
+  // derivation, one copy. (See the long comment at its use site below for
+  // why flight type is derived from the sortie's flags at all.)
+  const selectedSortie = sortieTypes.find(st => st.type_code === form.sortieType);
+  const derivedFlightType = selectedSortie
+    ? selectedSortie.requires_instructor && selectedSortie.requires_student
+      ? 'DUAL'
+      : !selectedSortie.requires_instructor && selectedSortie.requires_student
+        ? 'SOLO'
+        : selectedSortie.type_code
+    : form.sortieType;
+
+  // PICUS only applies to a DUAL sortie. On a solo the student is commander
+  // for the whole flight by definition and the hours are derived, so
+  // offering the field there would invite double-counting.
+  const isDual = derivedFlightType === 'DUAL';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,15 +127,6 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
     //   anything else (e.g. a Maintenance Flight sortie, which requires
     //     neither) -> falls back to the sortie's own code, so it isn't
     //     miscounted as either SOLO or DUAL hours.
-    const selectedSortie = sortieTypes.find(st => st.type_code === form.sortieType);
-    const derivedFlightType = selectedSortie
-      ? selectedSortie.requires_instructor && selectedSortie.requires_student
-        ? 'DUAL'
-        : !selectedSortie.requires_instructor && selectedSortie.requires_student
-          ? 'SOLO'
-          : selectedSortie.type_code
-      : form.sortieType;
-
     const result = await addFlightRecord({
       studentId: form.studentId,
       aircraftId: form.aircraftId,
@@ -128,6 +145,12 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
       instructorNotes: form.instructorNotes,
       studentPerformance: form.studentPerformance,
       weatherConditions: form.weatherConditions,
+      // Only sent for a dual sortie the instructor actually ticked.
+      // `undefined` (not 0) when unticked, so an unassessed flight stays
+      // NULL in the DB rather than asserting "no PIC time flown".
+      picusHours: isDual && form.studentWasPic
+        ? Math.min(parseFloat(form.picusHours) || 0, totalHours)
+        : undefined,
     });
 
     if (result.success) {
@@ -270,6 +293,58 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
                 min={0} className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
             </div>
           </div>
+
+          {/* PIC / PICUS — dual sorties only. 2026-09-10. */}
+          {isDual && (
+            <div className="surface-inner rounded-lg p-3">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.studentWasPic}
+                  onChange={e => setForm(p => ({
+                    ...p,
+                    studentWasPic: e.target.checked,
+                    // Prefill the full duration on tick — the common case is
+                    // the student commanding the whole sortie. Cleared on
+                    // untick so a stale figure can't be submitted later.
+                    picusHours: e.target.checked ? String(totalHours) : '',
+                  }))}
+                  className="mt-0.5"
+                />
+                <span className="text-sm">
+                  Student acted as Pilot in Command (PICUS)
+                  <span className="block text-[11px] text-tertiary">
+                    Tick if the student was the commander for part or all of this dual sortie.
+                    Counts toward their PIC hours on the Progress page.
+                  </span>
+                </span>
+              </label>
+              {form.studentWasPic && (
+                <div className="mt-3 flex items-end gap-3">
+                  <div>
+                    <label className="block text-xs text-tertiary mb-1">PICUS Hours</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      max={totalHours}
+                      value={form.picusHours}
+                      onChange={e => setForm(p => ({ ...p, picusHours: e.target.value }))}
+                      className="w-28 surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]"
+                    />
+                  </div>
+                  <p className="text-[11px] text-tertiary pb-2">
+                    of {totalHours} hrs flown.
+                    {parseFloat(form.picusHours) > totalHours && (
+                      <span className="block" style={{ color: 'var(--danger)' }}>
+                        More than the flight duration — will be capped at {totalHours}h on save.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Sortie, Exercise & Weather */}
           <div className="grid grid-cols-3 gap-3">

@@ -69,6 +69,10 @@ async function mapFlightRecordRows(data: Record<string, unknown>[]): Promise<Fli
       exercise: (row.exercise as string) || undefined,
       maneuvers: row.maneuvers as string, instructorNotes: row.instructor_notes as string,
       studentPerformance: row.student_performance as number, weatherConditions: row.weather_conditions as string,
+      // Nullish check, not truthiness: a recorded 0 is meaningful (marked
+      // student-PIC, no PIC time flown) and must survive as 0, not become
+      // undefined. See add-picus-hours.sql.
+      picusHours: row.picus_hours != null ? Number(row.picus_hours) : undefined,
       studentName: student?.name || 'Unknown', aircraftReg: ac?.registration || 'Unknown', instructorName: inst?.name || 'Unknown',
     };
   });

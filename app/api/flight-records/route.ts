@@ -34,6 +34,7 @@ export async function POST(request: Request) {
     studentId, aircraftId, instructorId, flightDate, departureTime, arrivalTime,
     hobbsStart, hobbsEnd, landings, flightType, sortieType, exercise, maneuvers,
     instructorNotes, studentPerformance, weatherConditions, totalHours,
+    picusHours,
   } = body as Record<string, unknown>;
 
   if (!studentId || !aircraftId) {
@@ -57,6 +58,12 @@ export async function POST(request: Request) {
     instructor_notes: instructorNotes,
     student_performance: studentPerformance,
     weather_conditions: weatherConditions,
+    // 2026-09-10: DGCA PICUS on a dual sortie. `?? null` rather than
+    // `|| null` so a deliberate 0 is stored as 0 — see add-picus-hours.sql
+    // for why NULL and 0 are different facts here. Only ever set on DUAL;
+    // the forms don't offer it on a solo sortie, where the student is
+    // commander for the whole flight by definition.
+    picus_hours: flightType === 'SOLO' ? null : (picusHours ?? null),
   });
 
   if (dbError) {

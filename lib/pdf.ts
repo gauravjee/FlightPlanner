@@ -5,6 +5,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { FlightRecord, StudentRecord, BATest, MaintenanceRecord } from '@/types';
+import { totalPicHours, totalSoloHours } from '@/lib/flight-hours';
 
 // jspdf-autotable augments the jsPDF instance with `lastAutoTable` at
 // runtime, but its TS types don't declare that property — this local
@@ -101,7 +102,13 @@ export function generateStudentLogbook(student: StudentRecord, flights: FlightRe
   // ============================================================
   const totalHours = flights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
   const totalLandings = flights.reduce((sum, f) => sum + (f.landings || 0), 0);
-  const soloHours = flights.filter(f => f.flightType === 'SOLO').reduce((sum, f) => sum + (f.totalHours || 0), 0);
+  // 2026-09-10: PIC reported alongside solo rather than instead of it. A
+  // logbook summary legitimately shows both — solo is a fact about the
+  // flight, PIC is the figure a licence requirement is measured against,
+  // and they differ by the PICUS flown on dual sorties. See
+  // lib/flight-hours.ts.
+  const soloHours = totalSoloHours(flights);
+  const picHours = totalPicHours(flights);
   const dualHours = flights.filter(f => f.flightType === 'DUAL').reduce((sum, f) => sum + (f.totalHours || 0), 0);
   
   const finalY = (doc as JsPDFWithAutoTable).lastAutoTable?.finalY || 150;
@@ -117,6 +124,7 @@ export function generateStudentLogbook(student: StudentRecord, flights: FlightRe
     `Total Hours: ${totalHours.toFixed(1)}h`,
     `Total Landings: ${totalLandings}`,
     `Solo Hours: ${soloHours.toFixed(1)}h`,
+    `PIC Hours (incl. PICUS): ${picHours.toFixed(1)}h`,
     `Dual Hours: ${dualHours.toFixed(1)}h`,
   ];
   summary.forEach((line, i) => {

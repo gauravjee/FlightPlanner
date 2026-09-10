@@ -39,6 +39,10 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
     studentPerformance: 3,
     weatherConditions: 'VMC',
     createLogbook: true,
+    // 2026-09-10 (PICUS) — see FlightRecordForm.tsx for why this is two
+    // fields rather than one nullable number.
+    studentWasPic: false,
+    picusHours: '',
   });
 
   const [loading, setLoading] = useState(false);
@@ -53,6 +57,11 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
   };
 
   const flightHours = calcHours();
+
+  // Same derivation the logbook write below uses. PICUS applies to a dual
+  // sortie only — on a solo the student commands the whole flight and the
+  // hours are derived, so offering the field would invite double-counting.
+  const isDual = !flight.sortieType?.includes('SOLO');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -87,6 +96,9 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
           instructorNotes: form.instructorNotes,
           studentPerformance: form.studentPerformance,
           weatherConditions: form.weatherConditions,
+          picusHours: isDual && form.studentWasPic
+            ? Math.min(parseFloat(form.picusHours) || 0, flightHours)
+            : undefined,
         });
         await updateScheduledFlight(flight.id, { status: 'COMPLETED', logbookPending: false, pendingDebrief: null });
       } else {
@@ -240,6 +252,57 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
               onChange={e => setForm(p => ({ ...p, landings: parseInt(e.target.value) || 0 }))}
               className={inputClass} />
           </div>
+
+          {/* PIC / PICUS — dual sorties only, and only when the logbook
+              entry is being created here. With "Auto-create logbook entry"
+              unchecked the record is finished later from the Flights page,
+              and pendingDebrief has no field to carry this through; hiding
+              it is better than accepting a tick that would be silently
+              dropped. The instructor sets it on FlightRecordForm instead,
+              which is where that deferred entry gets completed. */}
+          {isDual && form.createLogbook && (
+            <div className="surface-inner rounded-lg p-3">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.studentWasPic}
+                  onChange={e => setForm(p => ({
+                    ...p,
+                    studentWasPic: e.target.checked,
+                    picusHours: e.target.checked ? String(flightHours) : '',
+                  }))}
+                  className="mt-0.5"
+                />
+                <span className="text-sm">
+                  Student acted as Pilot in Command (PICUS)
+                  <span className="block text-[11px] text-tertiary">
+                    Counts toward the student&apos;s PIC hours on the Progress page.
+                  </span>
+                </span>
+              </label>
+              {form.studentWasPic && (
+                <div className="mt-3 flex items-end gap-3">
+                  <div>
+                    <label className="block text-xs text-secondary mb-1">PICUS Hours</label>
+                    <input
+                      type="number" step="0.1" min={0} max={flightHours}
+                      value={form.picusHours}
+                      onChange={e => setForm(p => ({ ...p, picusHours: e.target.value }))}
+                      className={inputClass}
+                    />
+                  </div>
+                  <p className="text-[11px] text-tertiary pb-2">
+                    of {flightHours.toFixed(1)} hrs flown.
+                    {parseFloat(form.picusHours) > flightHours && (
+                      <span className="block" style={{ color: 'var(--danger)' }}>
+                        More than the flight time — will be capped at {flightHours.toFixed(1)}h on save.
+                      </span>
+                    )}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Maneuvers */}
           <div>

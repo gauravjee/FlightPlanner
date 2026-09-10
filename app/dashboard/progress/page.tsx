@@ -18,6 +18,7 @@ import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist'
 import { ChartColumn, TrendingUp, School, ArrowRight, Plane } from 'lucide-react';
 import { isCrossCountrySortie, isInstrumentSortie, isNightSortie, isMultiEngineFlight, isSimulatorFlight } from '@/lib/flight-classification';
 import { matchTrainingProgram, requirementPercent } from '@/lib/training-programs';
+import { totalPicHours, totalSoloHours } from '@/lib/flight-hours';
 
 // ============================================================
 // TRAINING STAGE REQUIREMENTS — built-in fallback defaults (DGCA/CAA
@@ -186,8 +187,14 @@ export default function ProgressPage() {
     const aircraftById = new Map(aircraft.map(a => [a.id, a]));
 
     const totalHours = flights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
-    const soloFlights = flights.filter(f => f.flightType === 'SOLO');
-    const soloHours = soloFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
+    // 2026-09-10: this metric is PIC (pilot-in-command), not solo. It was
+    // solo-only until now, which undercounted every CPL candidate who
+    // commanded a dual sortie under supervision — see lib/flight-hours.ts.
+    // The requirement it is measured against is still the program's
+    // `solo_hours` column; only the meaning of the numerator changed, so
+    // no migration and no re-entry of anyone's configured targets.
+    const picHours = totalPicHours(flights);
+    const soloHours = totalSoloHours(flights);
     const dualHours = totalHours - soloHours;
     const crossCountryFlights = flights.filter(f => isCrossCountrySortie(f.sortieType));
     const crossCountryHours = crossCountryFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
@@ -235,6 +242,7 @@ export default function ProgressPage() {
     return {
       totalFlights: flights.length,
       totalHours: Math.round(totalHours * 10) / 10,
+      picHours: Math.round(picHours * 10) / 10,
       soloHours: Math.round(soloHours * 10) / 10,
       dualHours: Math.round(dualHours * 10) / 10,
       crossCountryHours: Math.round(crossCountryHours * 10) / 10,
@@ -251,7 +259,7 @@ export default function ProgressPage() {
       // requirementPercent() for why the previous inline arithmetic
       // rendered NaN% here whenever a target was 0.
       hoursPercent: requirementPercent(totalHours, requirements.totalHours),
-      soloPercent: requirementPercent(soloHours, requirements.soloHours),
+      picPercent: requirementPercent(picHours, requirements.soloHours),
       crossCountryPercent: requirementPercent(crossCountryHours, requirements.crossCountry),
       instrumentPercent: requirementPercent(instrumentHours, requirements.instrument),
       nightPercent: requirementPercent(nightHours, requirements.nightHours),
@@ -269,7 +277,7 @@ export default function ProgressPage() {
   // (their percent is null otherwise), so a PPL student with no
   // multi-engine target isn't dragged down by a metric that doesn't apply.
   const applicablePercents = [
-    stats.hoursPercent, stats.soloPercent, stats.crossCountryPercent,
+    stats.hoursPercent, stats.picPercent, stats.crossCountryPercent,
     stats.instrumentPercent, stats.nightPercent, stats.landingsPercent,
     stats.multiEnginePercent, stats.simulatorPercent,
   ].filter((p): p is number => p != null);
@@ -464,7 +472,13 @@ export default function ProgressPage() {
                     on the same rule rather than a hand-written one. */}
                 {[
                   { label: 'Total Hours', value: `${stats.totalHours}h`, target: `${stats.requirements.totalHours}h`, percent: stats.hoursPercent },
-                  { label: 'Solo Hours', value: `${stats.soloHours}h`, target: `${stats.requirements.soloHours}h`, percent: stats.soloPercent },
+                  // PIC = solo hours + PICUS logged on dual sorties. The
+                  // sub-label spells the split out because the two numbers
+                  // differing is the normal case, not an error, and an
+                  // instructor checking a student's CPL eligibility needs
+                  // to see which part is which.
+                  { label: 'PIC Hours', value: `${stats.picHours}h`, target: `${stats.requirements.soloHours}h`, percent: stats.picPercent,
+                    note: stats.picHours > stats.soloHours ? `${stats.soloHours}h solo + ${Math.round((stats.picHours - stats.soloHours) * 10) / 10}h PICUS` : `all solo` },
                   { label: 'Cross Country', value: `${stats.crossCountryHours}h`, target: `${stats.requirements.crossCountry}h`, percent: stats.crossCountryPercent },
                   { label: 'Instrument', value: `${stats.instrumentHours}h`, target: `${stats.requirements.instrument}h`, percent: stats.instrumentPercent },
                   { label: 'Night Hours', value: `${stats.nightHours}h`, target: `${stats.requirements.nightHours}h`, percent: stats.nightPercent },
@@ -484,6 +498,14 @@ export default function ProgressPage() {
                       />
                     </div>
                     <p className="text-xs text-tertiary mt-1">{item.percent}%</p>
+                    {/* `in` rather than an optional field on all eight:
+                        only the PIC card carries a breakdown, and widening
+                        every other card's shape to hold an always-undefined
+                        property to avoid one narrowing check is the wrong
+                        trade. */}
+                    {'note' in item && item.note && (
+                      <p className="text-[10px] text-tertiary mt-0.5">{item.note}</p>
+                    )}
                   </div>
                 ))}
               </div>

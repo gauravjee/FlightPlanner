@@ -41,7 +41,11 @@ const FIELDS: ConfigField[] = [
   { name: 'program_code', type: 'text', default: '', placeholder: 'Code (e.g., PPL)', required: true },
   { name: 'required_hours', type: 'number', default: 40, placeholder: 'Required Hours', integer: true },
 
-  target('solo_hours', 'Solo Hours', 'e.g., 10'),
+  // 2026-09-10: label only. The COLUMN stays solo_hours — the target
+  // number a school configured hasn't changed meaning, only what the app
+  // counts against it (solo + PICUS instead of solo alone), so renaming
+  // the column would be a migration that buys nothing.
+  target('solo_hours', 'PIC Hours (incl. PICUS)', 'e.g., 10'),
   target('cross_country_hours', 'Cross-Country Hours', 'e.g., 5'),
   target('instrument_hours', 'Instrument Hours', 'e.g., 3'),
   target('night_hours', 'Night Hours', 'e.g., 3'),
@@ -65,7 +69,7 @@ const COLUMNS: ConfigColumn<TrainingProgram>[] = [
     render: p => (
       <span className="text-xs text-tertiary">
         {[
-          p.solo_hours != null ? `Solo ${p.solo_hours}h` : null,
+          p.solo_hours != null ? `PIC ${p.solo_hours}h` : null,
           p.cross_country_hours != null ? `X-Ctry ${p.cross_country_hours}h` : null,
           p.instrument_hours != null ? `Instr ${p.instrument_hours}h` : null,
           p.night_hours != null ? `Night ${p.night_hours}h` : null,

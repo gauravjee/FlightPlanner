@@ -172,6 +172,14 @@ export interface FlightRecord {
   instructorNotes: string;
   studentPerformance: number;
   weatherConditions: string;
+  // 2026-09-10: DGCA PICUS — hours the STUDENT acted as Pilot in Command
+  // Under Supervision on a DUAL sortie. `undefined` means the instructor
+  // never marked this flight as student-PIC (true of every record predating
+  // the feature); 0 means marked but no PIC time flown. Solo sorties do NOT
+  // set this — their PIC time is the whole flight, derived from totalHours,
+  // so it can never disagree with a later duration correction. See
+  // add-picus-hours.sql and picHoursFor() in lib/flight-hours.ts.
+  picusHours?: number;
   studentName?: string;
   aircraftReg?: string;
   instructorName?: string;
