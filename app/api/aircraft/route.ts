@@ -28,6 +28,7 @@ export async function POST(request: Request) {
   const {
     registration, type, model, year, hobbsTime, fuelCapacity,
     currentFuel, status, nextMaintenance, fuelBurnRateLph, isSimulator,
+    logBookSerialNo,
   } = body as Record<string, unknown>;
 
   if (!registration || !type || !model) {
@@ -45,6 +46,8 @@ export async function POST(request: Request) {
       next_maintenance: nextMaintenance,
       fuel_burn_rate_lph: fuelBurnRateLph ?? null,
       is_simulator: isSimulator ?? false,
+      // Optional placeholder — see add-logbook-and-camo-refs.sql.
+      log_book_serial_no: logBookSerialNo || null,
     })
     .select()
     .single();

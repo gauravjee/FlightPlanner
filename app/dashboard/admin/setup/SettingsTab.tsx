@@ -445,6 +445,29 @@ export default function SettingsTab() {
                 <p className="text-xs text-tertiary mt-1">City or airstrip name, shown in the header next to the airport code (or alone if you have no ICAO code)</p>
               </div>
 
+              {/* CAMO / AMO Approval No. — item 5 placeholder (2026-09-10).
+                  Organisation-level, unlike the per-aircraft Log Book Serial
+                  No. on the Aircraft form: one approval number covers the
+                  whole fleet's paperwork. Optional and unvalidated until
+                  someone checks a real approval certificate — see
+                  add-logbook-and-camo-refs.sql. */}
+              <div>
+                <label className="block text-xs text-tertiary mb-1">CAMO / AMO Approval No. — optional</label>
+                <input
+                  type="text"
+                  value={getValue('camo_approval_no')}
+                  onChange={e => setValue('camo_approval_no', e.target.value)}
+                  placeholder="e.g., DGCA/CAMO/1234"
+                  className={inputClass}
+                />
+                <p className="text-xs text-tertiary mt-1">
+                  Your organisation&apos;s DGCA continuing-airworthiness approval number. Printed in the
+                  DGCA Maintenance Log header when set, omitted when blank. <strong>Placeholder field</strong> —
+                  the exact label (&ldquo;CAMO&rdquo; vs &ldquo;AMO&rdquo;) and format are not yet confirmed
+                  against a real approval certificate, so leave it empty until they are.
+                </p>
+              </div>
+
               {/* Airport Code */}
               <div>
                 <label className="block text-xs text-tertiary mb-1">Primary Airport (ICAO) — optional</label>

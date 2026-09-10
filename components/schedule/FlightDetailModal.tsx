@@ -274,8 +274,12 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
 
           ${notams.length > 0 ? `
             <div class="section notams">
-              <div class="section-title">Active NOTAMs</div>
+              <div class="section-title">Active NOTAMs (${notams.length} total, first 3 shown)</div>
               ${notamRows}
+              <p style="font-size:10px;color:#64748b;margin-top:8px;">
+                Source: SkyLink (FAA SWIM feed). Situational awareness only — this is not an official
+                pre-flight briefing. Verify against AIM India (aim-india.aai.aero) before flight.
+              </p>
             </div>
           ` : ''}
 
@@ -495,6 +499,14 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
                   <span className="font-medium">{n.notamNumber}</span>: {n.text}
                 </p>
               ))}
+              {notams.length > 3 && (
+                <p className="text-xs text-yellow-300/60 mt-2">
+                  + {notams.length - 3} more — see the full briefing.
+                </p>
+              )}
+              <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                Source: SkyLink (FAA SWIM). Not an official briefing — verify with AIM India.
+              </p>
             </div>
           )}
 

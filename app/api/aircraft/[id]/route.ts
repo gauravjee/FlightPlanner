@@ -28,6 +28,7 @@ const FIELD_MAP: Record<string, string> = {
   nextMaintenance: 'next_maintenance',
   fuelBurnRateLph: 'fuel_burn_rate_lph',
   isSimulator: 'is_simulator',
+  logBookSerialNo: 'log_book_serial_no',
 };
 
 export async function PATCH(request: Request, context: RouteContext) {

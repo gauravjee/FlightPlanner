@@ -418,6 +418,14 @@ export function generateMaintenanceLogReport(report: {
   aircraftType: string;
   aircraftModel: string;
   ftoName?: string;
+  // 2026-09-10 (item 5): optional identifiers from the draft template's
+  // header block. Both PLACEHOLDERS — unverified against real paperwork,
+  // so each prints only when actually set. A label with an empty value on
+  // a register handed to a regulator reads as a missing record rather than
+  // a field nobody filled in, which is why these are omitted rather than
+  // printed as "—". See add-logbook-and-camo-refs.sql.
+  logBookSerialNo?: string;
+  camoApprovalNo?: string;
   from: string;
   to: string;
   records: MaintenanceRecord[];
@@ -451,6 +459,17 @@ export function generateMaintenanceLogReport(report: {
 
   doc.setTextColor(0, 0, 0);
   let cursorY = 38;
+
+  const refs = [
+    report.camoApprovalNo && `CAMO / AMO Approval No.: ${report.camoApprovalNo}`,
+    report.logBookSerialNo && `Log Book Serial No.: ${report.logBookSerialNo}`,
+  ].filter(Boolean).join('        ');
+  if (refs) {
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'normal');
+    doc.text(refs, 14, cursorY);
+    cursorY += 8;
+  }
 
   // The draft warning, printed on the document itself rather than only
   // living in the Word template's first table — see the note above.

@@ -36,6 +36,13 @@ export interface Aircraft {
   // counts toward a student's Simulator Hours — see
   // isSimulatorFlight() in lib/flight-classification.ts.
   isSimulator?: boolean;
+  // 2026-09-10 (item 5): serial of the physical airframe log book volume
+  // this aircraft's maintenance register corresponds to. PLACEHOLDER —
+  // optional everywhere and never validated, because nobody has checked
+  // the label or format against a real DGCA log book cover yet. The
+  // maintenance-log report omits its header line when this is unset rather
+  // than printing an empty field. See add-logbook-and-camo-refs.sql.
+  logBookSerialNo?: string;
 }
 
 

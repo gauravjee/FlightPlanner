@@ -422,6 +422,24 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
             </p>
           </div>
 
+          {/* Log Book Serial No. — item 5 placeholder */}
+          <div>
+            <label className="block text-sm text-secondary mb-1">Log Book Serial No. (optional)</label>
+            <input
+              type="text"
+              value={form.logBookSerialNo ?? ''}
+              onChange={e => handleChange('logBookSerialNo', e.target.value)}
+              placeholder="e.g. AF/2024/017"
+              className={inputClass}
+            />
+            <p className="text-xs text-tertiary mt-1">
+              Serial of the physical airframe log book volume this aircraft&apos;s maintenance
+              register corresponds to. Printed on the DGCA Maintenance Log when set, omitted when
+              blank. <strong>Placeholder field</strong> — the label and format have not yet been
+              checked against a real DGCA log book, so leave it empty until they have.
+            </p>
+          </div>
+
           {/* Buttons */}
           <div className="flex space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <button

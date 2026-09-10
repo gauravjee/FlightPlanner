@@ -58,6 +58,7 @@ export async function fetchAircraft(): Promise<Aircraft[]> {
     nextMaintenance: row.next_maintenance as string,
     fuelBurnRateLph: row.fuel_burn_rate_lph != null ? (row.fuel_burn_rate_lph as number) : undefined,
     isSimulator: !!row.is_simulator,
+    logBookSerialNo: (row.log_book_serial_no as string) || undefined,
   }));
 }
 

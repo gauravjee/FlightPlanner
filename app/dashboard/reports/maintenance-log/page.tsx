@@ -87,6 +87,12 @@ export default function MaintenanceLogPage() {
       // getFtoSetting('school_name') the print headers in ScheduleBoard and
       // FlightDetailModal use.
       ftoName: getFtoSetting(ftoSettings, 'school_name'),
+      // 2026-09-10 (item 5): both OPTIONAL placeholders. Passed as '' when
+      // unset and the PDF omits the whole line rather than printing a
+      // label with nothing after it — an empty "Log Book Serial No.:" on a
+      // compliance register reads as a missing record, not a blank field.
+      logBookSerialNo: selected.logBookSerialNo || '',
+      camoApprovalNo: getFtoSetting(ftoSettings, 'camo_approval_no'),
       from, to, records: rows,
     });
   };
@@ -147,6 +153,14 @@ export default function MaintenanceLogPage() {
       // about what matters or about how a date is written.
       banner(getFtoSetting(ftoSettings, 'school_name') || 'FTO name not set', { fontWeight: 'bold', fontSize: 11 }),
       banner(`Period: ${formatLogDate(from)} to ${formatLogDate(to)}`, { fontSize: 10 }),
+      // Item 5 placeholders — the row is emitted only when there is
+      // something to put in it, same rule as the PDF. `.filter(Boolean)`
+      // on a spread of at-most-one row keeps the sheet's row indices
+      // honest when neither is set.
+      ...[[
+        getFtoSetting(ftoSettings, 'camo_approval_no') && `CAMO / AMO Approval No.: ${getFtoSetting(ftoSettings, 'camo_approval_no')}`,
+        selected.logBookSerialNo && `Log Book Serial No.: ${selected.logBookSerialNo}`,
+      ].filter(Boolean).join('    ')].filter(Boolean).map(text => banner(text, { fontSize: 10 })),
       // The same draft-format warning the page and the PDF carry — an
       // unverified compliance layout must say so on every artifact it
       // produces, not just the one that happens to be on screen.
