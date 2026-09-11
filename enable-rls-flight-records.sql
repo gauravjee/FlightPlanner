@@ -1,0 +1,57 @@
+-- enable-rls-flight-records.sql
+-- ============================================================
+-- Companion step for the flight-records server-route patch
+-- (app/api/flight-records/route.ts's new GET handler, 2026-09-11).
+--
+-- WHY THIS IS NEEDED — same reasoning as enable-rls-users-students.sql:
+-- The patch moves the app's own reads of `flight_records` behind a
+-- server-side API route (using the service-role key), so a signed-in
+-- `student` session is now scoped server-side to their own records instead
+-- of the previous top-100-across-everyone. That stops the *app* from ever
+-- sending another student's logbook to a browser it shouldn't. It does NOT
+-- stop someone taking the public anon key (visible in the site's JS
+-- bundle — normal and expected for a Supabase anon key) and calling
+-- Supabase's REST API directly, e.g.:
+--   curl "https://<project>.supabase.co/rest/v1/flight_records?select=*" \
+--     -H "apikey: <anon key>"
+-- Right now, if Row Level Security is off (or has a permissive policy) on
+-- `flight_records`, that request returns every student's full logbook —
+-- instructor notes, performance ratings, PICUS hours — regardless of any
+-- code change in the app itself. RLS is the only thing that closes that.
+--
+-- WHAT THIS SCRIPT DOES:
+-- Enables RLS on `flight_records` with NO policies defined. With RLS on
+-- and zero policies, every request made with the anon key is denied by
+-- default. Requests made with the service-role key are UNAFFECTED — RLS
+-- never applies to the service role — so the app keeps working normally
+-- through the new GET/POST /api/flight-records route (which uses
+-- supabaseAdmin, i.e. the service-role key) and the two other existing
+-- server-side readers of this table (app/api/reports/daily-flying/
+-- route.ts, also supabaseAdmin).
+--
+-- BEFORE RUNNING — IMPORTANT:
+-- Confirmed via grep (2026-09-11) that after the server-route patch,
+-- EVERY remaining `.from('flight_records')` call in the codebase already
+-- uses supabaseAdmin — there is no other direct-anon-key reader left to
+-- break. Only run this AFTER that patch is deployed to production and
+-- you've confirmed (the same way enable-rls-users-students.sql's own
+-- instructions describe) that SUPABASE_SERVICE_KEY is set correctly on
+-- Vercel — if it's missing, lib/supabase-admin.ts silently falls back to
+-- the anon key, and enabling RLS here would break the logbook, the
+-- Dashboard's Student Progress widget, and Daily Flying Reports for
+-- everyone until the env var is fixed. Double-check it's set first.
+--
+-- HOW TO RUN:
+-- Supabase dashboard → SQL Editor → paste this → Run.
+-- ============================================================
+
+alter table public.flight_records enable row level security;
+
+-- No policies are created — this intentionally makes the table
+-- unreadable/unwritable via the anon key. Service-role requests (the
+-- app's API routes) bypass RLS entirely and are unaffected.
+
+-- To verify afterwards, run this with your anon key (should return an
+-- empty array / permission error, NOT any student's flight data):
+--   curl "https://<project>.supabase.co/rest/v1/flight_records?select=*" \
+--     -H "apikey: <anon key>" -H "Authorization: Bearer <anon key>"

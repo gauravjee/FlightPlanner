@@ -1,10 +1,28 @@
 // app/api/flight-records/route.ts
-// Server-side, role-scoped create for the `flight_records` table (the
-// digital logbook). Flight records are add-only from the UI today (no
-// edit/delete anywhere in lib/store.ts or FlightRecordForm.tsx) — this
-// route only needs POST. Per the 2026-08-17 role/tab matrix, operations
-// isn't on this tab at all; maintenance can view the logbook but not log a
-// flight.
+// Server-side, role-scoped read/create for the `flight_records` table (the
+// digital logbook).
+//
+// GET added 2026-09-11: lib/hooks/useFlightRecords.ts used to query
+// `flight_records` straight from the browser with the public anon key —
+// every field of every student's logbook (instructor notes, performance
+// ratings, PICUS hours), unfiltered, shipped to any signed-in session
+// including a student's own. This route closes that: a `student` session
+// always gets only their own records (any `?studentId` is ignored — same
+// IDOR-safe pattern as GET /api/students), and requires being signed in at
+// all, which the anon key alone never did. Every other role keeps exactly
+// the "all records" access it already had via the app's UI (the staff
+// logbook page and the Dashboard's Student Progress widget together cover
+// every non-student role) — nothing tightened there, just moved
+// server-side. See enable-rls-flight-records.sql: once this is the only
+// path to the table (it now is — the other three `.from('flight_records')`
+// call sites already use supabaseAdmin), RLS can close the table to the
+// anon key entirely, the same two-step sequence enable-rls-users-
+// students.sql used for `users`/`students`.
+//
+// POST: flight records are add-only from the UI today (no edit/delete
+// anywhere in lib/store.ts or FlightRecordForm.tsx). Per the 2026-08-17
+// role/tab matrix, operations isn't on this tab at all; maintenance can
+// view the logbook but not log a flight.
 //
 // Also performs the side effects lib/store.ts's addFlightRecord used to do
 // as extra client-side calls: crediting the student's total hours (and
@@ -16,8 +34,37 @@
 // ROLES is already the right authority to allow them.
 
 import { NextResponse } from 'next/server';
-import { requireModuleAccess } from '@/lib/api-auth';
+import { requireSession, requireModuleAccess } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+
+export async function GET(request: Request) {
+  const { session, error } = await requireSession();
+  if (error) return error;
+
+  const role = session.user.role;
+  const { searchParams } = new URL(request.url);
+  // A student can only ever see their own records — any ?studentId is
+  // ignored for this role. Every other role may pass one to scope the
+  // query (e.g. a future "this student's logbook" view for staff); with
+  // none, staff get the same "most recent 100 across everyone" the direct
+  // client used to return unconditionally.
+  const studentId = role === 'student' ? session.user.studentId : searchParams.get('studentId');
+
+  if (role === 'student' && !studentId) {
+    return NextResponse.json({ records: [] });
+  }
+
+  let query = supabaseAdmin.from('flight_records').select('*').order('flight_date', { ascending: false });
+  query = studentId ? query.eq('student_id', studentId) : query.limit(100);
+
+  const { data, error: dbError } = await query;
+  if (dbError) {
+    console.error('Error loading flight records:', dbError);
+    return NextResponse.json({ error: 'Failed to load flight records.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ records: data || [] });
+}
 
 export async function POST(request: Request) {
   const { error } = await requireModuleAccess('flightRecords', 'full');

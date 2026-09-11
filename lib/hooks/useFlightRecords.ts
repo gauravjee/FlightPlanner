@@ -26,7 +26,6 @@
 
 import useSWR, { mutate } from 'swr';
 import type { FlightRecord } from '@/types';
-import { supabase } from '@/lib/supabase';
 import { flightHoursFromTimes } from '@/lib/flight-classification';
 import { fetchAircraft, aircraftKey } from './useAircraft';
 import { fetchInstructors } from './useInstructors';
@@ -81,19 +80,19 @@ async function mapFlightRecordRows(data: Record<string, unknown>[]): Promise<Fli
 // Top 100 most recent flight records, across all students — what the
 // Flights (logbook) page, Progress page, Instructor Dashboard, and Student
 // Dashboard all read via useFlightRecords() below.
+//
+// Goes through GET /api/flight-records (2026-09-11) rather than a direct
+// Supabase client call — see that route's header for why: it's the only
+// way a signed-in `student` session gets scoped to their own records
+// instead of everyone's.
 export async function fetchFlightRecords(): Promise<FlightRecord[]> {
-  const { data, error } = await supabase
-    .from('flight_records')
-    .select('*')
-    .order('flight_date', { ascending: false })
-    .limit(100);
-
-  if (error) {
-    console.error('Error loading flight records:', error);
-    throw error;
+  const res = await fetch('/api/flight-records');
+  if (!res.ok) {
+    console.error('Error loading flight records:', res.status);
+    throw new Error('Failed to load flight records.');
   }
-
-  return mapFlightRecordRows(data || []);
+  const { records } = await res.json();
+  return mapFlightRecordRows(records || []);
 }
 
 // Every flight record for one student, unfiltered by the 100-row cap above.
@@ -104,18 +103,13 @@ export async function fetchFlightRecords(): Promise<FlightRecord[]> {
 // useFlightRecords() client-side instead. Flagged here so it isn't mistaken
 // for missed work.
 export async function fetchStudentFlightRecords(studentId: string): Promise<FlightRecord[]> {
-  const { data, error } = await supabase
-    .from('flight_records')
-    .select('*')
-    .eq('student_id', studentId)
-    .order('flight_date', { ascending: false });
-
-  if (error) {
-    console.error('Error loading student flight records:', error);
-    throw error;
+  const res = await fetch(`/api/flight-records?studentId=${encodeURIComponent(studentId)}`);
+  if (!res.ok) {
+    console.error('Error loading student flight records:', res.status);
+    throw new Error('Failed to load student flight records.');
   }
-
-  return mapFlightRecordRows(data || []);
+  const { records } = await res.json();
+  return mapFlightRecordRows(records || []);
 }
 
 export function useFlightRecords() {
