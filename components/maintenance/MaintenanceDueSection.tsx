@@ -24,6 +24,7 @@ import {
   addMaintenanceRecord, useMaintenanceRecords, useMaintenanceScheduleTemplates, getMaintenanceDueItems,
 } from '@/lib/hooks/useMaintenanceRecords';
 import { MaintenanceDueItem } from '@/types';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { TriangleAlert, Clock, CircleAlert, Wrench, X } from 'lucide-react';
 
 interface LogModalProps {
@@ -35,6 +36,14 @@ interface LogModalProps {
 }
 
 function LogMaintenanceItemModal({ item, aircraftReg, currentHobbs, mode, onClose }: LogModalProps) {
+  // 2026-09-11: this is the modal the accessibility round never counted.
+  // useEscapeToClose's own header warned the shared hook existed so the
+  // pattern would not "drift the next time a 16th modal is added" — and
+  // then this one was added without it. It had click-outside and a labelled
+  // Close button, so it looked complete; only Escape was missing, and only
+  // a keyboard user would ever notice.
+  useEscapeToClose(onClose);
+
   const todayLocal = new Date().toLocaleDateString('en-CA');
   const [completedDate, setCompletedDate] = useState(todayLocal);
   const [hobbs, setHobbs] = useState(String(currentHobbs));

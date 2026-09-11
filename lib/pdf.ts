@@ -239,7 +239,13 @@ export function generateDailyFlyingReport(report: {
   autoTable(doc, {
     startY: 38,
     head: [['Aircraft', 'Student', 'Instructor', 'Sortie', 'Start', 'End', 'Hours', 'Dual/Solo', 'Exercise', 'Remarks']],
-    body: tableData,
+    // 2026-09-11: a day with no flights is a real, reportable state — two
+    // cancellations and nothing flown is a normal winter day. Rendering the
+    // header bar over an empty body made that look like the table had
+    // failed to draw, which matters most inside the audit pack where the
+    // reader did not choose this page. Same treatment the Maintenance Log
+    // already gives the equivalent case below.
+    body: tableData.length ? tableData : [['—', '—', '—', 'No flights recorded for this day.', '—', '—', '—', '—', '—', '—']],
     theme: 'grid',
     headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 7, fontStyle: 'bold' },
     bodyStyles: { fontSize: 7, textColor: [0, 0, 0] },
