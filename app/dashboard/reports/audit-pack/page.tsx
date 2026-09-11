@@ -58,9 +58,18 @@ export default function AuditPackPage() {
     subtitle: 'One PDF covering a date range — flying, breath analysis and maintenance',
   });
 
-  const { aircraft } = useAircraft();
-  const { maintenanceRecords } = useMaintenanceRecords();
+  const { aircraft, isLoading: aircraftLoading } = useAircraft();
+  const { maintenanceRecords, isLoading: maintenanceLoading } = useMaintenanceRecords();
   const { ftoSettings } = useFtoSettings();
+  // 2026-09-11: on a cold mount, aircraft/maintenanceRecords start as SWR's
+  // empty-array default before the fetch resolves — maintenanceByAircraft
+  // below has no way to tell "genuinely 0 in range" from "haven't loaded
+  // yet". Harmless for the on-screen count (self-corrects in well under a
+  // second), but Export reads the same memo: a click during that window
+  // would silently ship a compliance PDF with the maintenance section
+  // missing, or reject a valid export as "nothing to export". Block Export
+  // until both are loaded rather than racing them.
+  const dataLoading = aircraftLoading || maintenanceLoading;
 
   const [from, setFrom] = useState(() => daysFromTodayIST(-30));
   const [to, setTo] = useState(() => todayIST());
@@ -98,7 +107,7 @@ export default function AuditPackPage() {
   }, [aircraft, maintenanceRecords, from, to, rangeInvalid]);
 
   const handleExport = async () => {
-    if (rangeInvalid || rangeTooLong) return;
+    if (rangeInvalid || rangeTooLong || dataLoading) return;
     setBuilding(true);
     setErrorMsg('');
     setMissingDates(null);
@@ -206,8 +215,8 @@ export default function AuditPackPage() {
                 <li>The Breath Analyser Test Register for the range, as one rollup</li>
                 <li>
                   The Aircraft Maintenance Log for each aircraft with completed work in the
-                  range — {maintenanceByAircraft.length} aircraft
-                  {maintenanceByAircraft.length > 0 && ` (${maintenanceByAircraft.map(g => g.a.registration).join(', ')})`}
+                  range — {dataLoading ? 'loading…' : `${maintenanceByAircraft.length} aircraft`}
+                  {!dataLoading && maintenanceByAircraft.length > 0 && ` (${maintenanceByAircraft.map(g => g.a.registration).join(', ')})`}
                 </li>
               </ul>
               <p className="mt-3 text-xs text-tertiary">
@@ -240,11 +249,11 @@ export default function AuditPackPage() {
 
             <button
               onClick={handleExport}
-              disabled={building || rangeInvalid || rangeTooLong}
+              disabled={building || rangeInvalid || rangeTooLong || dataLoading}
               className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
             >
-              <FileDown className="w-4 h-4" /> {building ? 'Building pack…' : 'Export Audit Pack (PDF)'}
+              <FileDown className="w-4 h-4" /> {building ? 'Building pack…' : dataLoading ? 'Loading data…' : 'Export Audit Pack (PDF)'}
             </button>
 
           </div>
