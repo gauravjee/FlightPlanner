@@ -13,9 +13,16 @@ import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { REPORTS_VIEW_ROLES } from '@/lib/permissions';
-import { ClipboardList, Wrench, Wind, TriangleAlert, ArrowRight, BookOpen } from 'lucide-react';
+import { ClipboardList, Wrench, Wind, TriangleAlert, ArrowRight, BookOpen, FolderDown } from 'lucide-react';
 
 const REPORT_CARDS = [
+  {
+    href: '/dashboard/reports/audit-pack',
+    icon: FolderDown,
+    title: 'DGCA Audit Pack',
+    description: 'One PDF for a date range, bundling every saved Daily Flying Report, the Breath Analyser register rollup and the Maintenance Log for each aircraft with work completed. Days with no generated flying report are listed on the cover rather than left out silently.',
+    status: 'live' as const,
+  },
   {
     href: '/dashboard/reports/daily-flying',
     icon: ClipboardList,

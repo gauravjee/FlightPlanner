@@ -175,10 +175,19 @@ export async function updateMaintenanceRecord(id: string, updates: Partial<Maint
     body: JSON.stringify(updates),
   });
   if (res.ok) {
+    // The splice is optimistic only — it must revalidate (item 66).
+    // isOverdue and daysUntilDue are DERIVED in fetchMaintenanceRecords from
+    // maintenanceEnd/scheduledDate/status; a partial merge copies the new
+    // field but leaves the derived ones at their old values. That is why
+    // "+4h"/"+1d" appeared to do nothing: the end time moved, but the red row
+    // and the OVERDUE badge — the only parts anyone actually looks at — were
+    // computed at fetch time and stayed put. Completing an overdue record had
+    // the same tell. Recomputing them here would mean a second copy of that
+    // derivation to keep in sync, so let the server round-trip own it.
     mutate<MaintenanceRecord[]>(
       maintenanceRecordsKey,
       (current = []) => current.map(m => (m.id === id ? { ...m, ...updates } : m)),
-      { revalidate: false }
+      { revalidate: true }
     );
     // The aircraft-status side effect happened server-side above (if
     // applicable) — revalidate the SWR aircraft cache so any mounted
