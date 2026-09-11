@@ -19,6 +19,7 @@ import { ChartColumn, TrendingUp, School, ArrowRight, Plane } from 'lucide-react
 import { isCrossCountrySortie, isInstrumentSortie, isNightSortie, isMultiEngineFlight, isSimulatorFlight } from '@/lib/flight-classification';
 import { matchTrainingProgram, requirementPercent } from '@/lib/training-programs';
 import { totalPicHours, totalSoloHours } from '@/lib/flight-hours';
+import { paceFor, paceLabel } from '@/lib/training-pace';
 
 // ============================================================
 // TRAINING STAGE REQUIREMENTS — built-in fallback defaults (DGCA/CAA
@@ -266,6 +267,13 @@ export default function ProgressPage() {
       landingsPercent: requirementPercent(totalLandings, requirements.landings),
       multiEnginePercent: requirementPercent(multiEngineHours, requirements.multiEngine),
       simulatorPercent: requirementPercent(simulatorHours, requirements.simulator),
+      // 2026-09-11: projected finish from the rate actually flown. null when
+      // the program sets no total-hours target — same convention as the
+      // percentages above. This is NOT pace-against-a-plan: there is no
+      // course duration in training_programs and joinedDate is optional, so
+      // there is no required pace to compare against yet. See
+      // lib/training-pace.ts.
+      pace: paceFor(flights, totalHours, requirements.totalHours),
       overallPercent: 0,
     };
   }, [studentFlights, selectedStudent, matchedProgram, aircraft]);
@@ -509,6 +517,37 @@ export default function ProgressPage() {
                   </div>
                 ))}
               </div>
+
+              {/* Projected finish — deliberately one line under the cards
+                  rather than a card of its own: it is an estimate, not a
+                  measured figure, and giving it equal visual weight to the
+                  hour totals would overstate it. The sample size travels
+                  with the number for the same reason. A stalled student is
+                  the case actually worth acting on, so it gets the warning
+                  colour; a healthy projection stays quiet. */}
+              {stats.pace && (
+                <div
+                  className="surface-card px-4 py-3 mb-6 flex items-start gap-2"
+                  style={stats.pace.status === 'stalled' ? { borderColor: 'var(--warning-text)' } : undefined}
+                >
+                  <TrendingUp
+                    className="w-4 h-4 shrink-0 mt-0.5"
+                    style={{ color: stats.pace.status === 'stalled' ? 'var(--warning-text)' : 'var(--accent)' }}
+                  />
+                  <div>
+                    <p className="text-sm">
+                      <span className="text-tertiary">Projected finish: </span>
+                      {paceLabel(stats.pace)}
+                      {stats.pace.projectedDate && (
+                        <span className="text-tertiary"> — around {new Date(stats.pace.projectedDate + 'T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</span>
+                      )}
+                    </p>
+                    <p className="text-[11px] text-tertiary mt-0.5">
+                      Estimated from recent flying rate against the Total Hours target. Not a scheduled completion date.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               {/* Hours Trend Chart (Simple Bar) */}
               <div className="surface-card p-6 mb-6">
