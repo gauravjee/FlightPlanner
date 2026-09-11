@@ -8,7 +8,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 import { Plane } from 'lucide-react';
 import { canViewModule, type ModuleKey } from '@/lib/permissions';
-import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
+import { useMyPermissionOverridesState } from '@/lib/useMyPermissionOverrides';
 
 interface Props {
   children: React.ReactNode;
@@ -28,21 +28,25 @@ interface Props {
 export default function RoleGate({ children, allowedRoles, fallback = '/unauthorized', moduleKey }: Props) {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const overrides = useMyPermissionOverrides();
+  const { overrides, isLoading: overridesLoading } = useMyPermissionOverridesState();
 
   const userRole = (session?.user as { role?: string } | undefined)?.role;
   const allowed = moduleKey ? canViewModule(userRole, overrides, moduleKey) : allowedRoles.includes(userRole || '');
+  // Only a moduleKey check depends on overrides — don't hold the plain
+  // allowedRoles check up on an override fetch it never uses.
+  const decisionPending = Boolean(moduleKey) && overridesLoading;
 
   useEffect(() => {
-    if (status === 'authenticated' && session?.user) {
+    if (status === 'authenticated' && session?.user && !decisionPending) {
       if (!allowed) {
         router.push(fallback);
       }
     }
-  }, [status, session, allowed, fallback, router]);
+  }, [status, session, allowed, decisionPending, fallback, router]);
 
-  // Show loading indicator while session is being fetched
-  if (status === 'loading') {
+  // Show loading indicator while session — or, for a moduleKey-gated page,
+  // the override that might grant access — is still being fetched.
+  if (status === 'loading' || decisionPending) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--bg)' }}>
         <div className="text-center">

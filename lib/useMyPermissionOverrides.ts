@@ -19,3 +19,18 @@ export function useMyPermissionOverrides(): PermissionOverrides {
   const { permissionOverrides } = usePermissionOverrides(email);
   return permissionOverrides;
 }
+
+// Same data as above, plus whether the fetch is still in flight. RoleGate
+// needs this: on a cold/direct page load it otherwise reads SWR's empty
+// `{}` default before /api/me/permissions resolves, and redirects away a
+// user whose (not-yet-loaded) override would actually have let them in
+// (found 2026-09-11). Kept as a separate export rather than changing
+// useMyPermissionOverrides' return shape, so Sidebar/StudentCard/
+// InstructorCard/AircraftCard and the dashboard pages that already call it
+// for its plain PermissionOverrides value are untouched.
+export function useMyPermissionOverridesState(): { overrides: PermissionOverrides; isLoading: boolean } {
+  const { data: session, status } = useSession();
+  const email = status === 'authenticated' ? session?.user?.email : undefined;
+  const { permissionOverrides, isLoading } = usePermissionOverrides(email);
+  return { overrides: permissionOverrides, isLoading: status === 'loading' || isLoading };
+}
