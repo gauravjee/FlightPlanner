@@ -267,13 +267,20 @@ export async function cancelFlight(id: string, reason?: 'WEATHER' | 'MAINTENANCE
   }
 }
 
-export async function updateScheduledFlight(id: string, updates: Partial<ScheduledFlight>): Promise<void> {
+// 2026-09-12: return type changed from Promise<void> to Promise<{success,
+// error?}> — same shape as addFlightRecord()/bookFlight() elsewhere in this
+// file. Previously a rejected write here (DB error of any kind) was
+// completely silent: no throw, no console.error, nothing — the caller had
+// no way to know the flight's status was never actually persisted, and a
+// hard reload would keep showing the stale pre-update status forever with
+// no clue why. DebriefForm.tsx is the first caller to actually check this;
+// existing fire-and-forget callers (ScheduleBoard's drag-and-drop
+// reschedule) are unaffected since they never used the old void return.
+export async function updateScheduledFlight(id: string, updates: Partial<ScheduledFlight>): Promise<{ success: boolean; error?: string }> {
   // Secondary safety net — BookingForm's validateDate() is the primary
   // client-side gate for the edit-submit path, but this guards the write
   // path too in case a new startTime ever reaches it another way (e.g.
-  // ScheduleBoard's drag-and-drop reschedule). Silently refuses (no partial
-  // update) rather than throwing, matching the original store action's
-  // return type (void).
+  // ScheduleBoard's drag-and-drop reschedule).
   if (updates.startTime !== undefined) {
     const newDateStr = new Date(updates.startTime).toLocaleDateString('en-CA');
     const [holidays, ftoSettings] = await Promise.all([fetchHolidays(), fetchFtoSettings()]);
@@ -283,8 +290,9 @@ export async function updateScheduledFlight(id: string, updates: Partial<Schedul
       parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days'])
     );
     if (blockReason) {
-      console.error(`❌ Cannot reschedule flight ${id} to ${newDateStr} — FTO is closed (${blockReason.label}).`);
-      return;
+      const message = `Cannot reschedule to ${newDateStr} — FTO is closed (${blockReason.label}).`;
+      console.error(`❌ Flight ${id}: ${message}`);
+      return { success: false, error: message };
     }
   }
   const dbUpdates: Record<string, unknown> = {};
@@ -302,11 +310,14 @@ export async function updateScheduledFlight(id: string, updates: Partial<Schedul
   if (updates.logbookPending !== undefined) dbUpdates.logbook_pending = updates.logbookPending;
   if (updates.pendingDebrief !== undefined) dbUpdates.pending_debrief = updates.pendingDebrief;
   const { error } = await supabase.from('scheduled_flights').update(dbUpdates).eq('id', id);
-  if (!error) {
-    mutate<ScheduledFlight[]>(
-      scheduledFlightsKey,
-      (current = []) => current.map(f => (f.id === id ? { ...f, ...updates } : f)),
-      { revalidate: false }
-    );
+  if (error) {
+    console.error(`Error updating scheduled flight ${id}:`, error);
+    return { success: false, error: error.message || 'Failed to update the flight.' };
   }
+  mutate<ScheduledFlight[]>(
+    scheduledFlightsKey,
+    (current = []) => current.map(f => (f.id === id ? { ...f, ...updates } : f)),
+    { revalidate: false }
+  );
+  return { success: true };
 }

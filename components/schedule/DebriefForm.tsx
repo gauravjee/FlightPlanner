@@ -3,9 +3,11 @@
 'use client';
 
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { useAircraft, aircraftKey } from '@/lib/hooks/useAircraft';
 import { updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { addFlightRecord } from '@/lib/hooks/useFlightRecords';
+import { FLIGHT_RECORDS_WRITE_ROLES } from '@/lib/permissions';
 import { mutate } from 'swr';
 import { ScheduledFlight } from '@/types';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -14,11 +16,16 @@ interface Props {
   flight: ScheduledFlight;
   onClose: () => void;
   onComplete: (message: string) => void;
+  // 2026-09-12: added alongside the false-success fix below — previously
+  // this form had no way to report a failed save at all, so handleSubmit
+  // fell through to onComplete's "success" toast regardless.
+  onError: (message: string) => void;
 }
 
-export default function DebriefForm({ flight, onClose, onComplete }: Props) {
+export default function DebriefForm({ flight, onClose, onComplete, onError }: Props) {
   useEscapeToClose(onClose);
   const { aircraft } = useAircraft();
+  const { data: session } = useSession();
 
   const ac = aircraft.find(a => String(a.id) === String(flight.aircraftId));
   
@@ -65,6 +72,21 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 2026-09-12: added after a `student` session reached this form,
+    // submitted it, and got a false "success" toast while the actual
+    // logbook write 403'd server-side (see the handoff addendum). Neither
+    // FlightDetailModal's Check-Out button nor this form previously checked
+    // the signed-in user's role at all. Mirrors FLIGHT_RECORDS_WRITE_ROLES —
+    // the same role set already enforced server-side on the addFlightRecord
+    // POST below — so this is UX (fail fast, clear message) backed by a
+    // real server-side gate, not the only line of defense.
+    const role = session?.user?.role;
+    if (!role || !FLIGHT_RECORDS_WRITE_ROLES.includes(role)) {
+      onError('🔒 You don’t have permission to complete a flight debrief.');
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -78,8 +100,16 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
       // alongside it, so it shows up as a "Logbook Pending" item to finish
       // later from the Flights page (see FlightRecordForm's
       // scheduledFlightId/prefill props) instead of just disappearing.
+      //
+      // 2026-09-12: both writes below now have their {success, error}
+      // result checked — previously neither was, so a failed logbook save
+      // (e.g. a 403) still fell through to marking the flight COMPLETED and
+      // writing to `aircraft` unconditionally, then reported success
+      // regardless. A failure now stops here: no status flip, no aircraft
+      // write, and a real error surfaces via onError instead of the
+      // "✅ ..." toast.
       if (form.createLogbook) {
-        await addFlightRecord({
+        const recordResult = await addFlightRecord({
           studentId: flight.studentId || '',
           aircraftId: flight.aircraftId,
           instructorId: flight.instructorId,
@@ -100,9 +130,17 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
             ? Math.min(parseFloat(form.picusHours) || 0, flightHours)
             : undefined,
         });
-        await updateScheduledFlight(flight.id, { status: 'COMPLETED', logbookPending: false, pendingDebrief: null });
+        if (!recordResult.success) {
+          onError(`❌ ${recordResult.error || 'Failed to save the logbook entry.'} The flight was NOT marked complete — please try again.`);
+          return;
+        }
+        const statusResult = await updateScheduledFlight(flight.id, { status: 'COMPLETED', logbookPending: false, pendingDebrief: null });
+        if (!statusResult.success) {
+          onError(`❌ Logbook entry saved, but the flight status could not be updated: ${statusResult.error || 'unknown error'}.`);
+          return;
+        }
       } else {
-        await updateScheduledFlight(flight.id, {
+        const statusResult = await updateScheduledFlight(flight.id, {
           status: 'COMPLETED',
           logbookPending: true,
           pendingDebrief: {
@@ -118,6 +156,10 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
             weatherConditions: form.weatherConditions,
           },
         });
+        if (!statusResult.success) {
+          onError(`❌ Failed to check out this flight: ${statusResult.error || 'unknown error'}.`);
+          return;
+        }
       }
 
       // 2. Update aircraft fuel if changed — this reflects the physical
@@ -128,21 +170,33 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
       // route is gated to AIRCRAFT_WRITE_ROLES (admin/super_admin only),
       // but any instructor can debrief a flight, so this deliberately stays
       // a separate write path rather than routing through it (pre-existing
-      // design, unchanged by the 2026-08-28 SWR migration).
+      // design, unchanged by the 2026-08-28 SWR migration). Only reached
+      // once the step(s) above have actually succeeded (see 2026-09-12
+      // note above) — an unauthorized or rejected save can no longer reach
+      // this write at all.
       if (form.fuelAfter !== form.fuelBefore) {
         const { supabase } = await import('@/lib/supabase');
-        await supabase
+        const { error: fuelError } = await supabase
           .from('aircraft')
           .update({ current_fuel: form.fuelAfter, hobbs_time: form.hobbsEnd })
           .eq('id', flight.aircraftId);
-        // 2026-08-28: this write used to leave the shared aircraft state
-        // stale until something else happened to reload it (the old store
-        // action was called unconditionally on nearly every page mount, so
-        // it usually self-corrected soon after). Now that aircraft is
-        // cached with a dedupingInterval, revalidate explicitly so every
-        // mounted useAircraft() consumer picks up the new fuel/hobbs values
-        // right away instead of possibly showing a stale reading.
-        await mutate(aircraftKey);
+        if (fuelError) {
+          // Doesn't block the overall debrief — the flight is already
+          // correctly marked complete above — but this used to be
+          // completely unchecked, so a failure here was invisible even in
+          // the console.
+          console.error('Error updating aircraft fuel/Hobbs:', fuelError);
+        } else {
+          // 2026-08-28: this write used to leave the shared aircraft state
+          // stale until something else happened to reload it (the old
+          // store action was called unconditionally on nearly every page
+          // mount, so it usually self-corrected soon after). Now that
+          // aircraft is cached with a dedupingInterval, revalidate
+          // explicitly so every mounted useAircraft() consumer picks up
+          // the new fuel/hobbs values right away instead of possibly
+          // showing a stale reading.
+          await mutate(aircraftKey);
+        }
       }
 
       // Cache already fresh — updateScheduledFlight local-splices.
@@ -153,6 +207,7 @@ export default function DebriefForm({ flight, onClose, onComplete }: Props) {
       );
     } catch (err) {
       console.error('Debrief error:', err);
+      onError('❌ Something went wrong saving this debrief. Please try again.');
     } finally {
       setLoading(false);
     }

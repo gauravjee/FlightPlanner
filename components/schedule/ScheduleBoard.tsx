@@ -1521,6 +1521,13 @@ export default function ScheduleBoard() {
             // Cache already fresh — updateScheduledFlight local-splices.
             setTimeout(() => setSuccessMessage(''), 3000);
           }}
+          onError={(message) => {
+            // Deliberately does NOT close the form or clear debriefFlight —
+            // unlike onComplete, a failed save should leave the instructor's
+            // entered debrief data in place to fix and retry, not discard it.
+            setErrorMessage(message);
+            setTimeout(() => setErrorMessage(''), 5000);
+          }}
         />
       )}
 
