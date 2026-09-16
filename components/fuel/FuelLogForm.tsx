@@ -132,7 +132,7 @@ export default function FuelLogForm({ onClose }: Props) {
     >
       {/* Modal content - stop click propagation to prevent closing when clicking inside */}
       <div
-        className="surface-card w-full max-w-lg shadow-2xl"
+        className="surface-card w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         {/* ===== HEADER ===== */}

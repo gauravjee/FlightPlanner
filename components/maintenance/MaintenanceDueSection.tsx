@@ -86,7 +86,7 @@ function LogMaintenanceItemModal({ item, aircraftReg, currentHobbs, mode, onClos
 
   return (
     <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
-      <div className="surface-card w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="surface-card w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
           <h3 className="text-base font-semibold flex items-center gap-2">
             <Wrench className="w-4 h-4" />

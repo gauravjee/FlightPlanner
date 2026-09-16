@@ -34,7 +34,7 @@ export default function ConfirmDialog({ title, message, confirmLabel = 'Confirm'
       style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
       onClick={onCancel}
     >
-      <div className="surface-card w-full max-w-sm shadow-2xl" onClick={e => e.stopPropagation()}>
+      <div className="surface-card w-full max-w-sm shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="p-5 space-y-2">
           <h3 className="text-base font-semibold flex items-center gap-2">
             {danger && <TriangleAlert className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--danger)' }} />}
