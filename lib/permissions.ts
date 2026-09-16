@@ -176,6 +176,16 @@ export const PROGRESS_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'stude
 // accidentally move together if one changes for reasons specific to it.
 export const REQUIREMENTS_WRITE_ROLES = ['admin', 'instructor', 'super_admin'];
 
+// 2026-09-16: ground school attendance + exam recording. These are exactly
+// the roles app/dashboard/ground-school/attendance/page.tsx's RoleGate
+// already listed INLINE — lifted into a named constant so the page and
+// app/api/ground-school/enrollment/route.ts read from one source and cannot
+// drift apart, the same reasoning MODULE_ACCESS documents for itself. Wider
+// than REQUIREMENTS_WRITE_ROLES by one role (`operations`) because marking
+// attendance is an operations task; that difference is the existing
+// behaviour, preserved deliberately rather than tidied away.
+export const GROUND_SCHOOL_WRITE_ROLES = ['admin', 'instructor', 'super_admin', 'operations'];
+
 // 2026-08-21 (security hardening round): the Admin Setup wizard's config
 // tabs (Exercises, Training Programs, Instructor Roles, Sortie Types,
 // Ground School Subjects, Requirement Templates, Holiday Calendar) used to

@@ -7,6 +7,7 @@ import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { Trash2, Plus, CircleCheck, X } from 'lucide-react';
+import { GROUND_SCHOOL_WRITE_ROLES } from '@/lib/permissions';
 import { syncRequirementsFromGroundSchoolPass } from '@/lib/ground-school-sync';
 
 interface Student {
@@ -141,9 +142,31 @@ export default function AttendancePage() {
     }
   }, [selectedClassId, fetchAvailableStudents]);
 
+  // 2026-09-16: these four writes used to go straight to Supabase with the
+  // public anon key — the RoleGate above decided what rendered, nothing
+  // decided what the database accepted. They now go through
+  // app/api/ground-school/enrollment/route.ts, which re-checks the same role
+  // list server-side. See that route's header for the full background.
+  const patchEnrollment = async (enrollmentId: number, field: string, value: string | number | null) => {
+    const res = await fetch('/api/ground-school/enrollment', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enrollmentId, field, value }),
+    });
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: '' }));
+      // Surfaced, not swallowed: a rejected write that silently does nothing
+      // is the exact failure mode the DebriefForm false-success bug was.
+      setToastMessage(`❌ ${error || 'Could not save that change.'}`);
+      setTimeout(() => setToastMessage(''), 5000);
+      return false;
+    }
+    return true;
+  };
+
   const updateAttendance = async (enrollmentId: number, status: string) => {
-    await supabase.from('ground_school_enrollment').update({ attendance_status: status }).eq('id', enrollmentId);
-    if (selectedClassId) loadEnrollments(selectedClassId);
+    const ok = await patchEnrollment(enrollmentId, 'attendance_status', status);
+    if (ok && selectedClassId) loadEnrollments(selectedClassId);
   };
 
   const updateExam = async (enrollmentId: number, field: string, value: string | number | null) => {
@@ -159,7 +182,8 @@ export default function AttendancePage() {
       }
     }
 
-    await supabase.from('ground_school_enrollment').update({ [field]: value }).eq('id', enrollmentId);
+    const ok = await patchEnrollment(enrollmentId, field, value);
+    if (!ok) return;
 
     // A passing exam result here should also complete the matching
     // Requirements Checklist item(s) for that subject — previously only
@@ -187,11 +211,17 @@ export default function AttendancePage() {
 
   const addStudentToClass = async () => {
     if (!selectedClassId || !selectedStudentId) return;
-    await supabase.from('ground_school_enrollment').insert({
-      class_id: selectedClassId,
-      student_id: selectedStudentId,
-      attendance_status: 'PENDING',
+    const res = await fetch('/api/ground-school/enrollment', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ classId: selectedClassId, studentId: selectedStudentId }),
     });
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: '' }));
+      setToastMessage(`❌ ${error || 'Could not add that student.'}`);
+      setTimeout(() => setToastMessage(''), 5000);
+      return;
+    }
     setSelectedStudentId('');
     loadEnrollments(selectedClassId);
     loadAvailableStudents(selectedClassId);
@@ -199,7 +229,13 @@ export default function AttendancePage() {
 
   const removeStudent = async (enrollmentId: number) => {
     if (confirm('Remove student from this class?')) {
-      await supabase.from('ground_school_enrollment').delete().eq('id', enrollmentId);
+      const res = await fetch(`/api/ground-school/enrollment?enrollmentId=${enrollmentId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const { error } = await res.json().catch(() => ({ error: '' }));
+        setToastMessage(`❌ ${error || 'Could not remove that student.'}`);
+        setTimeout(() => setToastMessage(''), 5000);
+        return;
+      }
       loadEnrollments(selectedClassId!);
       loadAvailableStudents(selectedClassId!);
     }
@@ -213,7 +249,7 @@ export default function AttendancePage() {
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={['admin', 'instructor', 'super_admin', 'operations']}>
+      <RoleGate allowedRoles={GROUND_SCHOOL_WRITE_ROLES}>
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
           <div className="max-w-7xl mx-auto px-4 py-6">
             {/* Class Selector */}

@@ -15,7 +15,6 @@
 
 import { supabase } from '@/lib/supabase-client';
 import { fetchTrainingRequirements, toggleRequirement } from '@/lib/hooks/useTrainingRequirements';
-import { todayIST } from '@/lib/ist';
 
 /**
  * Extract the ground school subject name from a requirement name.
@@ -86,55 +85,37 @@ export async function syncGroundSchoolFromChecklist(
 
   console.log(`🔄 Syncing "${requirementName}" → "${subjectName}", completed: ${completed}`);
 
-  if (completed) {
-    // Check if an EXEMPTED record already exists
-    const { data: existing } = await supabase
-      .from('ground_school_enrollment')
-      .select('id')
-      .eq('student_id', studentId)
-      .eq('attendance_status', 'EXEMPTED')
-      .eq('notes', `Requirements Checklist: ${subjectName}`);
+  // 2026-09-16: this used to insert/delete `ground_school_enrollment` rows
+  // straight from the browser with the public anon key and no role check of
+  // any kind — the last of the 2026-08-24 review's item-39 direct-write
+  // findings. Now goes through app/api/ground-school/checklist-sync/route.ts,
+  // which enforces REQUIREMENTS_WRITE_ROLES server-side and keeps the
+  // create-if-absent / delete-by-provenance behaviour byte-identical, so rows
+  // written before this change are still matched by the same key.
+  const res = await fetch('/api/ground-school/checklist-sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      studentId,
+      subjectName,
+      completed,
+      examScore: examData?.score,
+      rollNumber: examData?.rollNumber,
+    }),
+  });
 
-    if (!existing || existing.length === 0) {
-      const { error } = await supabase
-        .from('ground_school_enrollment')
-        .insert([
-          {
-            class_id: null,
-            student_id: studentId,
-            attendance_status: 'EXEMPTED',
-            exam_score: examData?.score ?? 100,
-            exam_result: 'PASS',
-            exam_date: todayIST(),
-            attempts: 1,
-            examiner: 'Requirements Checklist',
-            dgca_roll_number: examData?.rollNumber ?? null,
-            notes: `Requirements Checklist: ${subjectName}`,
-          },
-        ]);
-
-      if (error) {
-        console.error('Error creating EXEMPTED record:', error.message);
-      } else {
-        console.log(`✅ Created EXEMPTED record for "${subjectName}"`);
-      }
-    } else {
-      console.log(`  Record already exists for "${subjectName}"`);
-    }
-  } else {
-    const { error } = await supabase
-      .from('ground_school_enrollment')
-      .delete()
-      .eq('student_id', studentId)
-      .eq('attendance_status', 'EXEMPTED')
-      .eq('notes', `Requirements Checklist: ${subjectName}`);
-
-    if (error) {
-      console.error('Error removing EXEMPTED record:', error.message);
-    } else {
-      console.log(`✅ Removed EXEMPTED record for "${subjectName}"`);
-    }
+  if (!res.ok) {
+    // Logged rather than thrown, matching what this function did before: its
+    // callers treat the checklist toggle itself as the operation that
+    // mattered and this as a follow-on sync. A failure here now leaves a real
+    // error in the console instead of vanishing entirely.
+    const { error } = await res.json().catch(() => ({ error: '' }));
+    console.error(`Error syncing ground school record for "${subjectName}":`, error || res.status);
+    return;
   }
+
+  const { action } = await res.json().catch(() => ({ action: 'unknown' }));
+  console.log(`✅ Ground school record for "${subjectName}": ${action}`);
 }
 
 /**
