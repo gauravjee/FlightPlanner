@@ -32,6 +32,12 @@
 // route cannot drift apart, the same reasoning MODULE_ACCESS documents for
 // itself. Widening or narrowing who may mark attendance is a separate
 // decision and is not made here.
+//
+// 2026-09-16 (follow-up): every mutation asks for the affected rows back with
+// .select('id') and 404s when nothing matched. Supabase does NOT error on an
+// update/delete that matches zero rows — it returns success. Without this the
+// page would show a saved change that never happened: the same false-success
+// shape as the DebriefForm bug (5dc2b43).
 // ---------------------------------------------------------------------------
 
 import { NextResponse } from 'next/server';
@@ -79,13 +85,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'classId and studentId are required.' }, { status: 400 });
   }
 
-  const { error: dbError } = await supabaseAdmin.from('ground_school_enrollment').insert({
-    class_id: classId,
-    student_id: studentId,
-    attendance_status: 'PENDING',
-  });
+  const { data: inserted, error: dbError } = await supabaseAdmin
+    .from('ground_school_enrollment')
+    .insert({
+      class_id: classId,
+      student_id: studentId,
+      attendance_status: 'PENDING',
+    })
+    .select('id');
 
-  if (dbError) {
+  if (dbError || !inserted || inserted.length === 0) {
     console.error('Error enrolling student in ground school class:', dbError);
     return NextResponse.json({ error: 'Failed to add student to this class.' }, { status: 500 });
   }
@@ -152,14 +161,18 @@ export async function PATCH(request: Request) {
     }
   }
 
-  const { error: dbError } = await supabaseAdmin
+  const { data: updated, error: dbError } = await supabaseAdmin
     .from('ground_school_enrollment')
     .update({ [field]: value })
-    .eq('id', enrollmentId);
+    .eq('id', enrollmentId)
+    .select('id');
 
   if (dbError) {
     console.error('Error updating ground school enrollment:', dbError);
     return NextResponse.json({ error: 'Failed to save that change.' }, { status: 500 });
+  }
+  if (!updated || updated.length === 0) {
+    return NextResponse.json({ error: 'Enrollment record not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });
@@ -178,14 +191,18 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'enrollmentId is required.' }, { status: 400 });
   }
 
-  const { error: dbError } = await supabaseAdmin
+  const { data: deleted, error: dbError } = await supabaseAdmin
     .from('ground_school_enrollment')
     .delete()
-    .eq('id', enrollmentId);
+    .eq('id', enrollmentId)
+    .select('id');
 
   if (dbError) {
     console.error('Error removing ground school enrollment:', dbError);
     return NextResponse.json({ error: 'Failed to remove that student.' }, { status: 500 });
+  }
+  if (!deleted || deleted.length === 0) {
+    return NextResponse.json({ error: 'Enrollment record not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });

@@ -63,18 +63,26 @@ export async function POST(request: Request) {
   const provenance = `Requirements Checklist: ${subjectName}`;
 
   if (!completed) {
-    const { error: deleteError } = await supabaseAdmin
+    // .select('id') so the caller can tell "removed a row" from "there was
+    // nothing to remove" — Supabase returns success either way. A session on
+    // 2026-09-16 deleted a real pre-existing marker because the response gave
+    // it no way to see that distinction.
+    const { data: deleted, error: deleteError } = await supabaseAdmin
       .from('ground_school_enrollment')
       .delete()
       .eq('student_id', studentId)
       .eq('attendance_status', 'EXEMPTED')
-      .eq('notes', provenance);
+      .eq('notes', provenance)
+      .select('id');
 
     if (deleteError) {
       console.error('Error removing EXEMPTED ground school record:', deleteError);
       return NextResponse.json({ error: 'Failed to remove the ground school record.' }, { status: 500 });
     }
-    return NextResponse.json({ success: true, action: 'deleted' });
+    return NextResponse.json({
+      success: true,
+      action: deleted && deleted.length > 0 ? 'deleted' : 'absent',
+    });
   }
 
   // Idempotent by design: the checklist can be re-ticked, and a second

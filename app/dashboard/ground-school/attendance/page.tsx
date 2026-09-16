@@ -1,4 +1,12 @@
 // app/dashboard/ground-school/attendance/page.tsx
+//
+// 2026-09-16: the four free-text/number exam fields are UNCONTROLLED
+// (defaultValue + onBlur). They used to be controlled with onBlur-less
+// onChange, which fired a PATCH per keystroke — "ABC123" was six writes, six
+// re-fetches, and six chances to interleave out of order. The two selects
+// stay on onChange: one discrete choice, one write. The onBlur handlers
+// compare against the current row first so tabbing through without editing
+// writes nothing.
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -6,6 +14,7 @@ import { supabase } from '@/lib/supabase-client';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { Trash2, Plus, CircleCheck, X } from 'lucide-react';
 import { GROUND_SCHOOL_WRITE_ROLES } from '@/lib/permissions';
 import { syncRequirementsFromGroundSchoolPass } from '@/lib/ground-school-sync';
@@ -53,6 +62,8 @@ export default function AttendancePage() {
   const [students, setStudents] = useState<Student[]>([]);
   const [loading, setLoading] = useState(true);
   const [toastMessage, setToastMessage] = useState('');
+  // Replaces native confirm() on remove — see removeStudent below.
+  const [removeTarget, setRemoveTarget] = useState<Enrollment | null>(null);
 
   // For adding students to class
   const [availableStudents, setAvailableStudents] = useState<Student[]>([]);
@@ -177,7 +188,11 @@ export default function AttendancePage() {
     if (field === 'exam_result' && value === 'PASS') {
       const enr = enrollments.find(e => e.id === enrollmentId);
       if (!enr?.dgca_roll_number?.trim()) {
-        alert('Enter the DGCA roll number for this student before recording a pass — this exam is conducted by DGCA, not the FTO.');
+        // Toast, not alert(): native dialogs block the tab, ignore the theme,
+        // and get auto-suppressed by remote browser tooling. Same reasoning as
+        // components/ui/ConfirmDialog.tsx.
+        setToastMessage('❌ Enter the DGCA roll number for this student before recording a pass — this exam is conducted by DGCA, not the FTO.');
+        setTimeout(() => setToastMessage(''), 6000);
         return;
       }
     }
@@ -228,17 +243,16 @@ export default function AttendancePage() {
   };
 
   const removeStudent = async (enrollmentId: number) => {
-    if (confirm('Remove student from this class?')) {
-      const res = await fetch(`/api/ground-school/enrollment?enrollmentId=${enrollmentId}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const { error } = await res.json().catch(() => ({ error: '' }));
-        setToastMessage(`❌ ${error || 'Could not remove that student.'}`);
-        setTimeout(() => setToastMessage(''), 5000);
-        return;
-      }
-      loadEnrollments(selectedClassId!);
-      loadAvailableStudents(selectedClassId!);
+    setRemoveTarget(null);
+    const res = await fetch(`/api/ground-school/enrollment?enrollmentId=${enrollmentId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: '' }));
+      setToastMessage(`❌ ${error || 'Could not remove that student.'}`);
+      setTimeout(() => setToastMessage(''), 5000);
+      return;
     }
+    loadEnrollments(selectedClassId!);
+    loadAvailableStudents(selectedClassId!);
   };
 
   const selectedClass = classes.find(c => c.id === selectedClassId);
@@ -319,8 +333,11 @@ export default function AttendancePage() {
                                     type="number"
                                     min="0"
                                     max="100"
-                                    value={enr.exam_score ?? ''}
-                                    onChange={e => updateExam(enr.id, 'exam_score', e.target.value ? parseFloat(e.target.value) : null)}
+                                    defaultValue={enr.exam_score ?? ''}
+                                    onBlur={e => {
+                                      const next = e.target.value ? parseFloat(e.target.value) : null;
+                                      if (next !== (enr.exam_score ?? null)) updateExam(enr.id, 'exam_score', next);
+                                    }}
                                     className={`w-16 ${inputClass}`}
                                   />
                                 </td>
@@ -339,8 +356,8 @@ export default function AttendancePage() {
                                 <td className="py-3">
                                   <input
                                     type="text"
-                                    value={enr.examiner}
-                                    onChange={e => updateExam(enr.id, 'examiner', e.target.value)}
+                                    defaultValue={enr.examiner}
+                                    onBlur={e => { if (e.target.value !== enr.examiner) updateExam(enr.id, 'examiner', e.target.value); }}
                                     className={`w-20 ${inputClass}`}
                                     placeholder="e.g., DGCA"
                                   />
@@ -348,8 +365,8 @@ export default function AttendancePage() {
                                 <td className="py-3">
                                   <input
                                     type="text"
-                                    value={enr.dgca_roll_number ?? ''}
-                                    onChange={e => updateExam(enr.id, 'dgca_roll_number', e.target.value)}
+                                    defaultValue={enr.dgca_roll_number ?? ''}
+                                    onBlur={e => { if (e.target.value !== (enr.dgca_roll_number ?? '')) updateExam(enr.id, 'dgca_roll_number', e.target.value); }}
                                     className={`w-24 ${inputClass}`}
                                     placeholder="Required for PASS"
                                   />
@@ -357,13 +374,13 @@ export default function AttendancePage() {
                                 <td className="py-3">
                                   <input
                                     type="text"
-                                    value={enr.notes}
-                                    onChange={e => updateExam(enr.id, 'notes', e.target.value)}
+                                    defaultValue={enr.notes}
+                                    onBlur={e => { if (e.target.value !== enr.notes) updateExam(enr.id, 'notes', e.target.value); }}
                                     className={`w-32 ${inputClass}`}
                                   />
                                 </td>
                                 <td className="py-3">
-                                  <button onClick={() => removeStudent(enr.id)} className="px-2 py-1 rounded transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }} aria-label={`Remove ${student?.name || enr.student_id}`}>
+                                  <button onClick={() => setRemoveTarget(enr)} className="px-2 py-1 rounded transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }} aria-label={`Remove ${student?.name || enr.student_id}`}>
                                     <Trash2 className="w-3.5 h-3.5" />
                                   </button>
                                 </td>
@@ -408,6 +425,16 @@ export default function AttendancePage() {
               </>
             )}
           </div>
+
+          {removeTarget && (
+            <ConfirmDialog
+              title="Remove student"
+              message={`Remove ${students.find(s => s.id === removeTarget.student_id)?.name || removeTarget.student_id} from this class? Their attendance and exam record for it will be deleted.`}
+              confirmLabel="Remove"
+              onConfirm={() => removeStudent(removeTarget.id)}
+              onCancel={() => setRemoveTarget(null)}
+            />
+          )}
 
           {/* Toast — confirms a passing exam result also completed the
               matching Requirements Checklist item(s), so this isn't silent. */}
