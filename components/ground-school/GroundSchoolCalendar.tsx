@@ -1,5 +1,13 @@
 // components/ground-school/GroundSchoolCalendar.tsx
 // ---------------------------------------------------------------------------
+// 2026-09-17: class create/update/delete now go through
+// app/api/ground-school/classes/route.ts, which re-checks the role server-side.
+// They used to be direct anon-key writes with no role check in this component
+// at all — the page's RoleGate decides what renders, not what the database
+// accepts. The delete also used to remove every enrollment row for the class,
+// destroying exam scores and DGCA roll numbers as a side effect; the route now
+// refuses that when exam data exists. See the route header.
+// ---------------------------------------------------------------------------
 // Ground School Calendar – Weekly & Monthly views (like Outlook)
 // ---------------------------------------------------------------------------
 // Purpose:
@@ -58,6 +66,7 @@ import { useHolidays } from '@/lib/hooks/useHolidays';
 import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Save, CircleCheck, X } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { toDateStr } from '@/lib/ist';
 
 // ============================================================
@@ -213,6 +222,11 @@ export default function GroundSchoolCalendar() {
 
   // When editing an existing class, this stores that class data.
   const [editingClass, setEditingClass] = useState<GroundClass | null>(null);
+
+  // Replaces the native confirm() that used to guard the delete. Native
+  // dialogs block the tab, ignore the theme, and are auto-suppressed by remote
+  // browser tooling — which also made this destructive path untestable.
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Form data (used for both creating and editing)
   const [form, setForm] = useState({
@@ -480,23 +494,23 @@ export default function GroundSchoolCalendar() {
       return;
     }
 
-    const payload = { ...form };
-    let error;
-    if (editingClass) {
-      // Update existing record
-      ({ error } = await supabase
-        .from('ground_school_classes')
-        .update(payload)
-        .eq('id', editingClass.id));
-    } else {
-      // Insert new record
-      ({ error } = await supabase
-        .from('ground_school_classes')
-        .insert([payload]));
-    }
+    const res = editingClass
+      ? await fetch('/api/ground-school/classes', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...form, classId: editingClass.id }),
+        })
+      : await fetch('/api/ground-school/classes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...form }),
+        });
+
+    const error = res.ok ? null : (await res.json().catch(() => ({ error: '' }))).error || 'Could not save the class.';
 
     if (error) {
-      alert('Error: ' + error.message);
+      setToastMessage(`❌ ${error}`);
+      setTimeout(() => setToastMessage(''), 6000);
     } else {
       // Success: close modal, show toast, reset filters so new class is visible
       setShowModal(false);
@@ -513,19 +527,23 @@ export default function GroundSchoolCalendar() {
   // ============================================================
   const handleDelete = async () => {
     if (!editingClass) return;
-    if (!confirm('Delete this class and all enrollments?')) return;
-    // Delete enrollments first (foreign key)
-    await supabase.from('ground_school_enrollment').delete().eq('class_id', editingClass.id);
-    const { error } = await supabase
-      .from('ground_school_classes')
-      .delete()
-      .eq('id', editingClass.id);
-    if (error) {
-      alert('Error: ' + error.message);
-    } else {
-      setShowModal(false);
-      loadData();
+    setConfirmDelete(false);
+
+    // The route removes the class's attendance rows too, and refuses outright
+    // if any of them carry an exam score or DGCA roll number.
+    const res = await fetch(`/api/ground-school/classes?classId=${editingClass.id}`, { method: 'DELETE' });
+
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: '' }));
+      setToastMessage(`❌ ${error || 'Could not delete the class.'}`);
+      // Longer than the usual toast: the exam-records refusal is a sentence
+      // the user actually has to read and act on.
+      setTimeout(() => setToastMessage(''), 10000);
+      return;
     }
+
+    setShowModal(false);
+    loadData();
   };
 
   // ============================================================
@@ -1017,7 +1035,7 @@ export default function GroundSchoolCalendar() {
             <div className="mt-4 flex justify-end space-x-2">
               {editingClass && (
                 <button
-                  onClick={handleDelete}
+                  onClick={() => setConfirmDelete(true)}
                   className="px-4 py-2 rounded text-sm transition flex items-center gap-1.5"
                   style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}
                 >
@@ -1040,6 +1058,21 @@ export default function GroundSchoolCalendar() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Rendered AFTER the edit modal on purpose. Both this and the modal use
+          z-50, so the later element in the DOM wins the stacking order. When
+          this sat before the modal it rendered behind it and its buttons could
+          not be clicked at all — caught live on 2026-09-17, not by tsc or lint,
+          which cannot see a dialog that is painted over. */}
+      {confirmDelete && editingClass && (
+        <ConfirmDialog
+          title="Delete class"
+          message="Delete this class and its attendance records? If any student has an exam score recorded against it, the deletion will be refused so the DGCA records are not lost."
+          confirmLabel="Delete"
+          onConfirm={handleDelete}
+          onCancel={() => setConfirmDelete(false)}
+        />
       )}
     </div>
   );
