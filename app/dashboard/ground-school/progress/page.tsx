@@ -40,6 +40,7 @@ import RoleGate from '@/components/ui/RoleGate';
 import { REQUIREMENTS_WRITE_ROLES } from '@/lib/permissions';
 import { ArrowLeft, GraduationCap, ClipboardList, CircleCheck, X } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
+import { useInstructors } from '@/lib/hooks/useInstructors';
 
 // ============================================================
 // Type definitions
@@ -62,7 +63,7 @@ interface ClassInfo {
   start_time: string;
   end_time: string;
   subject_name: string;
-  instructor_initials: string;
+  instructor_id: string;
 }
 
 interface EnrollmentRecord {
@@ -86,7 +87,7 @@ interface EnrollmentRecord {
   start_time?: string;
   end_time?: string;
   subject_name?: string;
-  instructor_initials?: string;
+  instructor_id?: string;
 }
 
 // ============================================================
@@ -104,8 +105,18 @@ export default function StudentProgressPage() {
   const searchParams = useSearchParams();
   const studentParam = searchParams.get('student');
 
+  // Instructor initials for the exam history table. Read from the shared hook
+  // rather than joined onto the class query — ground_school_classes has no
+  // foreign key to instructors, so the embed that used to be in that query
+  // failed it outright. Same approach as GroundSchoolCalendar.
+  const { instructors } = useInstructors();
+
   // ----- State -----
   const [subjects, setSubjects] = useState<Subject[]>([]);
+
+  // Set when the class lookup fails, so the page says so instead of rendering
+  // a confident, empty, wrong picture of a student's ground school record.
+  const [loadError, setLoadError] = useState('');
   const [students, setStudents] = useState<Student[]>([]);
   const [classes, setClasses] = useState<ClassInfo[]>([]);
   const [enrollments, setEnrollments] = useState<EnrollmentRecord[]>([]);
@@ -151,11 +162,29 @@ export default function StudentProgressPage() {
       ),
       supabase
         .from('ground_school_classes')
+        // ⚠️ NO `instructors(initials)` EMBED. There is no foreign key between
+        // ground_school_classes and instructors, so PostgREST rejects that
+        // embed with PGRST200 and FAILS THE WHOLE QUERY — including the
+        // subject join that does work. Initials are resolved from
+        // useInstructors() at render instead, which is what
+        // components/ground-school/GroundSchoolCalendar.tsx has always done.
         .select(
-          'id, class_date, start_time, end_time, subject_id, instructor_id, ground_school_subjects(subject_name), instructors(initials)'
+          'id, class_date, start_time, end_time, subject_id, instructor_id, ground_school_subjects(subject_name)'
         )
         .order('class_date', { ascending: false }),
     ]);
+
+    // Surfaced, not swallowed. `clsRes.data || []` used to turn a failed
+    // class query into "this student has no classes at all": every subject
+    // showed 0/0 attendance and "No exam recorded yet", and the exam history
+    // showed a blank Subject column, with nothing logged anywhere. Found
+    // 2026-09-17 — the query had been returning 400 the whole time.
+    if (clsRes.error) {
+      console.error('Error loading ground school classes:', clsRes.error);
+      setLoadError('Could not load ground school classes, so attendance and exam history may be incomplete. Please reload.');
+    } else {
+      setLoadError('');
+    }
 
     setSubjects(subRes.data || []);
     setStudents((stuRes.students || []).filter((s) => s.status === 'ACTIVE'));
@@ -173,8 +202,8 @@ export default function StudentProgressPage() {
       class_date: string;
       start_time: string;
       end_time: string;
+      instructor_id: string;
       ground_school_subjects?: { subject_name?: string };
-      instructors?: { initials?: string };
     }[];
     const flatClasses: ClassInfo[] = rawClasses.map((c) => ({
       id: c.id,
@@ -182,7 +211,7 @@ export default function StudentProgressPage() {
       start_time: c.start_time,
       end_time: c.end_time,
       subject_name: c.ground_school_subjects?.subject_name || 'Unknown',
-      instructor_initials: c.instructors?.initials || '—',
+      instructor_id: c.instructor_id,
     }));
     setClasses(flatClasses);
   }, []);
@@ -214,7 +243,7 @@ export default function StudentProgressPage() {
           start_time: cls?.start_time,
           end_time: cls?.end_time,
           subject_name: cls?.subject_name,
-          instructor_initials: cls?.instructor_initials,
+          instructor_id: cls?.instructor_id,
         };
       });
     },
@@ -449,6 +478,16 @@ export default function StudentProgressPage() {
       >
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
           <div className="max-w-7xl mx-auto px-4 py-6">
+            {loadError && (
+              <div
+                className="mb-4 px-4 py-3 rounded-lg text-sm"
+                style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }}
+                role="alert"
+              >
+                {loadError}
+              </div>
+            )}
+
             {/* ----- Back to Flight Progress link ----- */}
             {/* Shows when a student is selected — allows quick navigation back */}
             {selectedStudent && (
@@ -680,7 +719,7 @@ export default function StudentProgressPage() {
 
                               {/* Instructor initials */}
                               <td className="py-3">
-                                {enr.instructor_initials || '—'}
+                                {instructors.find((i) => i.id === enr.instructor_id)?.initials || '—'}
                               </td>
 
                               {/* Attendance status with colour coding */}
