@@ -38,11 +38,24 @@
 // update/delete that matches zero rows — it returns success. Without this the
 // page would show a saved change that never happened: the same false-success
 // shape as the DebriefForm bug (5dc2b43).
+//
+// 2026-09-18: the DGCA 70% pass mark is applied here. `exam_result` is derived
+// from `exam_score` and written with it; it is no longer independently
+// settable. See lib/dgca.ts and the UPDATABLE_FIELDS note below.
+//
+// ⚠️ A DGCA roll number is issued PER SITTING and is mandatory for every
+// recorded score, pass or fail. This route enforces both directions: a score
+// cannot be written without one, and one cannot be cleared off a row that has
+// a score. NOTE: `attempts` is a counter on a single row, so re-sitting
+// overwrites the previous attempt's roll number — only the latest sitting
+// stays traceable. Keeping every sitting's number needs one row per attempt;
+// see the ponytail comment on the attempts increment below.
 // ---------------------------------------------------------------------------
 
 import { NextResponse } from 'next/server';
 import { requireRole, GROUND_SCHOOL_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { deriveExamResult, isValidExamScore } from '@/lib/dgca';
 
 /**
  * The only columns a client may set through this route, matching exactly what
@@ -54,11 +67,18 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 const UPDATABLE_FIELDS = [
   'attendance_status',
   'exam_score',
-  'exam_result',
   'examiner',
   'dgca_roll_number',
   'notes',
 ] as const;
+
+// 2026-09-18: `exam_result` is NOT in that list any more, and its absence is
+// deliberate. A DGCA pass is 70% (lib/dgca.ts); the result is therefore a
+// function of the score, and the only way to guarantee the two never
+// contradict each other is to make the result unsettable on its own. Writing
+// `exam_score` derives and stores `exam_result` in the same update — see the
+// exam-score branch in PATCH. The Pass/Fail dropdown is gone from the UI for
+// the same reason.
 
 type UpdatableField = (typeof UPDATABLE_FIELDS)[number];
 
@@ -134,36 +154,86 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Invalid value for this field.' }, { status: 400 });
   }
 
-  // 2026-08-19 rule, preserved server-side: this subject's exam is conducted
-  // by DGCA, not the FTO, so a PASS must be traceable to a real DGCA roll
-  // number. The page already blocks this in the UI; enforcing it here too
-  // means an untraceable pass cannot be written by any caller, not just by
-  // one that happens to run the client-side check first.
-  if (field === 'exam_result' && value === 'PASS') {
+  // Everything a plain field write stores. The exam-score branch below adds
+  // the derived result and the attempt count to it.
+  const patch: Record<string, unknown> = { [field]: value };
+  let derivedResult: string | null = null;
+
+  // Found live on 2026-09-18: the roll-number rule was only ever checked when
+  // writing a score, so a pass could be made untraceable afterwards simply by
+  // clearing the roll number on the saved row. Guarding the score write alone
+  // secures the moment of the pass, not the pass itself.
+  if (field === 'dgca_roll_number' && !String(value ?? '').trim()) {
     const { data: row, error: lookupError } = await supabaseAdmin
       .from('ground_school_enrollment')
-      .select('dgca_roll_number')
+      .select('exam_score')
       .eq('id', enrollmentId)
       .maybeSingle();
 
     if (lookupError) {
-      console.error('Error checking DGCA roll number before recording a pass:', lookupError);
-      return NextResponse.json({ error: 'Could not verify the DGCA roll number.' }, { status: 500 });
+      console.error('Error reading enrollment before clearing a roll number:', lookupError);
+      return NextResponse.json({ error: 'Could not verify the enrollment record.' }, { status: 500 });
     }
     if (!row) {
       return NextResponse.json({ error: 'Enrollment record not found.' }, { status: 404 });
     }
-    if (!String(row.dgca_roll_number ?? '').trim()) {
+    if (row.exam_score !== null && row.exam_score !== undefined) {
       return NextResponse.json(
-        { error: 'Enter the DGCA roll number for this student before recording a pass — this exam is conducted by DGCA, not the FTO.' },
+        { error: 'This student has a recorded exam score, which cannot exist without a DGCA roll number. Clear the score first if it was entered in error.' },
         { status: 400 },
       );
     }
   }
 
+  if (field === 'exam_score') {
+    if (value !== null && !isValidExamScore(value)) {
+      return NextResponse.json({ error: 'Enter a valid exam score (0-100).' }, { status: 400 });
+    }
+
+    const { data: row, error: lookupError } = await supabaseAdmin
+      .from('ground_school_enrollment')
+      .select('dgca_roll_number, attempts')
+      .eq('id', enrollmentId)
+      .maybeSingle();
+
+    if (lookupError) {
+      console.error('Error reading enrollment before recording a score:', lookupError);
+      return NextResponse.json({ error: 'Could not verify the enrollment record.' }, { status: 500 });
+    }
+    if (!row) {
+      return NextResponse.json({ error: 'Enrollment record not found.' }, { status: 404 });
+    }
+
+    derivedResult = deriveExamResult(value as number | null);
+    patch.exam_result = derivedResult;
+
+    // 2026-09-18 (stated by the operator, correcting an earlier reading of
+    // this rule): DGCA issues a roll number for EVERY sitting, pass or fail.
+    // So a roll number is required for any score at all, not only a passing
+    // one. An earlier version of this route exempted fails on the reasoning
+    // that a failed sitting must still be storable — that reasoning was
+    // wrong, because a failed sitting has a roll number too.
+    if (value !== null && !String(row.dgca_roll_number ?? '').trim()) {
+      return NextResponse.json(
+        { error: 'Enter the DGCA roll number for this attempt before recording a score — this exam is conducted by DGCA, not the FTO, and every sitting has its own roll number.' },
+        { status: 400 },
+      );
+    }
+
+    // Each recorded score is one sitting. Clearing a score is a correction,
+    // not a sitting, so it does not count.
+    // ponytail: increments on every score write, so re-saving a corrected
+    // score counts twice. The page only sends on a real change, which covers
+    // the common case; move to one row per sitting if re-sits ever need
+    // individual dates and scores kept.
+    if (value !== null) {
+      patch.attempts = (typeof row.attempts === 'number' ? row.attempts : 0) + 1;
+    }
+  }
+
   const { data: updated, error: dbError } = await supabaseAdmin
     .from('ground_school_enrollment')
-    .update({ [field]: value })
+    .update(patch)
     .eq('id', enrollmentId)
     .select('id');
 
@@ -175,7 +245,9 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: 'Enrollment record not found.' }, { status: 404 });
   }
 
-  return NextResponse.json({ success: true });
+  // The page needs the derived result back: it decides from this whether the
+  // pass also completes the matching Requirements Checklist item.
+  return NextResponse.json({ success: true, examResult: derivedResult });
 }
 
 /** Remove a student from a ground school class. */

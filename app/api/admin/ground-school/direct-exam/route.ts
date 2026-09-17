@@ -25,6 +25,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, REQUIREMENTS_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { todayIST } from '@/lib/ist';
+import { DGCA_PASS_MARK, deriveExamResult, isValidExamScore } from '@/lib/dgca';
 
 export async function POST(request: Request) {
   const { session, error } = await requireRole(REQUIREMENTS_WRITE_ROLES);
@@ -48,8 +49,22 @@ export async function POST(request: Request) {
   if (!rollNumber) {
     return NextResponse.json({ error: 'DGCA roll number is required to record a pass.' }, { status: 400 });
   }
-  if (Number.isNaN(score) || score < 0 || score > 100) {
+  if (!isValidExamScore(score)) {
     return NextResponse.json({ error: 'Enter a valid exam score (0–100).' }, { status: 400 });
+  }
+
+  // 2026-09-18: this route records an ALREADY-PASSED DGCA exam, and a DGCA
+  // pass is 70% (lib/dgca.ts). Before this check it inserted
+  // `exam_result: 'PASS'` unconditionally — a score of 40 typed into the
+  // Direct Exam Entry form was stored as an EXEMPTED PASS and completed the
+  // student's Requirements Checklist item. There is no failing-entry flow on
+  // this screen (it exists for pre-existing qualifications), so a sub-pass
+  // score is rejected rather than silently recorded as something else.
+  if (deriveExamResult(score) !== 'PASS') {
+    return NextResponse.json(
+      { error: `A DGCA pass requires at least ${DGCA_PASS_MARK}%. Record a re-sit through the class attendance screen instead.` },
+      { status: 400 },
+    );
   }
 
   // 1. Create the EXEMPTED enrollment record — same shape the client used

@@ -7,6 +7,11 @@
 // stay on onChange: one discrete choice, one write. The onBlur handlers
 // compare against the current row first so tabbing through without editing
 // writes nothing.
+//
+// 2026-09-18: the Result column is now READ-ONLY. A DGCA pass is 70%
+// (lib/dgca.ts), so the result follows from the score and is derived and
+// stored server-side by the enrollment route. There is no Pass/Fail dropdown
+// to disagree with the score any more.
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -18,6 +23,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { Trash2, Plus, CircleCheck, X } from 'lucide-react';
 import { GROUND_SCHOOL_WRITE_ROLES } from '@/lib/permissions';
 import { syncRequirementsFromGroundSchoolPass } from '@/lib/ground-school-sync';
+import { DGCA_PASS_MARK } from '@/lib/dgca';
 
 interface Student {
   id: string; // UUID
@@ -158,21 +164,27 @@ export default function AttendancePage() {
   // decided what the database accepted. They now go through
   // app/api/ground-school/enrollment/route.ts, which re-checks the same role
   // list server-side. See that route's header for the full background.
-  const patchEnrollment = async (enrollmentId: number, field: string, value: string | number | null) => {
+  // Returns the route's response body on success, or null on failure — the
+  // caller needs `examResult` from it, which only the server can decide.
+  const patchEnrollment = async (
+    enrollmentId: number,
+    field: string,
+    value: string | number | null,
+  ): Promise<{ examResult?: string | null } | null> => {
     const res = await fetch('/api/ground-school/enrollment', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enrollmentId, field, value }),
     });
+    const body = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const { error } = await res.json().catch(() => ({ error: '' }));
       // Surfaced, not swallowed: a rejected write that silently does nothing
       // is the exact failure mode the DebriefForm false-success bug was.
-      setToastMessage(`❌ ${error || 'Could not save that change.'}`);
-      setTimeout(() => setToastMessage(''), 5000);
-      return false;
+      setToastMessage(`❌ ${body.error || 'Could not save that change.'}`);
+      setTimeout(() => setToastMessage(''), 6000);
+      return null;
     }
-    return true;
+    return body;
   };
 
   const updateAttendance = async (enrollmentId: number, status: string) => {
@@ -180,34 +192,36 @@ export default function AttendancePage() {
     if (ok && selectedClassId) loadEnrollments(selectedClassId);
   };
 
-  const updateExam = async (enrollmentId: number, field: string, value: string | number | null) => {
-    // 2026-08-19: this subject's exam is conducted by DGCA, not the FTO —
-    // a PASS recorded here needs to be traceable to the student's actual
-    // DGCA roll number. Block (don't write) rather than silently save an
-    // untraceable pass if the roll number hasn't been entered yet.
-    if (field === 'exam_result' && value === 'PASS') {
+  // Returns true only if the value was actually stored. An uncontrolled input
+  // does NOT reset itself when the write is refused — React re-rendering with
+  // unchanged data leaves the DOM node holding what was typed — so the caller
+  // has to put the field back by hand. Found live on 2026-09-18: a blocked
+  // score of 85 stayed on screen while the database still held 70.
+  const updateExam = async (enrollmentId: number, field: string, value: string | number | null): Promise<boolean> => {
+    // DGCA issues a roll number per sitting, so EVERY recorded score needs
+    // one — not just a passing score. Checked here only to give an immediate,
+    // specific message; the route enforces it regardless of whether this ran.
+    if (field === 'exam_score' && value !== null) {
       const enr = enrollments.find(e => e.id === enrollmentId);
       if (!enr?.dgca_roll_number?.trim()) {
         // Toast, not alert(): native dialogs block the tab, ignore the theme,
         // and get auto-suppressed by remote browser tooling. Same reasoning as
         // components/ui/ConfirmDialog.tsx.
-        setToastMessage('❌ Enter the DGCA roll number for this student before recording a pass — this exam is conducted by DGCA, not the FTO.');
+        setToastMessage('❌ Enter the DGCA roll number for this attempt before recording a score — this exam is conducted by DGCA, not the FTO, and every sitting has its own roll number.');
         setTimeout(() => setToastMessage(''), 6000);
-        return;
+        return false;
       }
     }
 
-    const ok = await patchEnrollment(enrollmentId, field, value);
-    if (!ok) return;
+    const result = await patchEnrollment(enrollmentId, field, value);
+    if (!result) return false;
 
     // A passing exam result here should also complete the matching
-    // Requirements Checklist item(s) for that subject — previously only
-    // "Direct Exam Entry" (Ground School Progress page) did this; the
-    // everyday attendance-page exam-recording flow silently never touched
-    // the checklist at all. See lib/ground-school-sync.ts. One-directional
-    // by design (a later FAIL doesn't un-complete a checklist item) — same
-    // as the Direct Exam Entry flow this mirrors.
-    if (field === 'exam_result' && value === 'PASS') {
+    // Requirements Checklist item(s) for that subject. One-directional by
+    // design: a later FAIL does not un-complete a checklist item, and a FAIL
+    // never completes one — so the requirement stays open across as many
+    // attempts as it takes until one of them clears 70%.
+    if (result.examResult === 'PASS') {
       const enr = enrollments.find(e => e.id === enrollmentId);
       const subjectName = selectedClass?.ground_school_subjects?.subject_name;
       if (enr && subjectName) {
@@ -222,6 +236,7 @@ export default function AttendancePage() {
     }
 
     if (selectedClassId) loadEnrollments(selectedClassId);
+    return true;
   };
 
   const addStudentToClass = async () => {
@@ -302,7 +317,7 @@ export default function AttendancePage() {
                             <th className="pb-3">Student</th>
                             <th className="pb-3">Attendance</th>
                             <th className="pb-3">Exam Score</th>
-                            <th className="pb-3">Result</th>
+                            <th className="pb-3">Result ({DGCA_PASS_MARK}% to pass)</th>
                             <th className="pb-3">Attempts</th>
                             <th className="pb-3">Examiner</th>
                             <th className="pb-3">DGCA Roll No.</th>
@@ -334,23 +349,30 @@ export default function AttendancePage() {
                                     min="0"
                                     max="100"
                                     defaultValue={enr.exam_score ?? ''}
-                                    onBlur={e => {
-                                      const next = e.target.value ? parseFloat(e.target.value) : null;
-                                      if (next !== (enr.exam_score ?? null)) updateExam(enr.id, 'exam_score', next);
+                                    onBlur={async e => {
+                                      const el = e.currentTarget;   // captured: gone after the await
+                                      const raw = el.value.trim();
+                                      const next = raw === '' ? null : Number(raw);
+                                      // Number('') is 0 and parseFloat('abc') is NaN — both would
+                                      // store a score the examiner never entered.
+                                      if (next !== null && !Number.isFinite(next)) { el.value = String(enr.exam_score ?? ''); return; }
+                                      if (next === (enr.exam_score ?? null)) return;
+                                      const stored = await updateExam(enr.id, 'exam_score', next);
+                                      // Refused: show what the database actually holds, not what
+                                      // was typed. This input is uncontrolled, so nothing else does it.
+                                      if (!stored) el.value = String(enr.exam_score ?? '');
                                     }}
                                     className={`w-16 ${inputClass}`}
                                   />
                                 </td>
                                 <td className="py-3">
-                                  <select
-                                    value={enr.exam_result || ''}
-                                    onChange={e => updateExam(enr.id, 'exam_result', e.target.value || null)}
-                                    className={inputClass}
+                                  {/* Read-only: derived from the score by the route. */}
+                                  <span
+                                    className="text-xs font-semibold"
+                                    style={{ color: enr.exam_result === 'PASS' ? 'var(--success)' : enr.exam_result === 'FAIL' ? 'var(--danger)' : 'var(--text-tertiary)' }}
                                   >
-                                    <option value="">—</option>
-                                    <option value="PASS">Pass</option>
-                                    <option value="FAIL">Fail</option>
-                                  </select>
+                                    {enr.exam_result || '—'}
+                                  </span>
                                 </td>
                                 <td className="py-3 text-center">{enr.attempts}</td>
                                 <td className="py-3">
@@ -366,9 +388,14 @@ export default function AttendancePage() {
                                   <input
                                     type="text"
                                     defaultValue={enr.dgca_roll_number ?? ''}
-                                    onBlur={e => { if (e.target.value !== (enr.dgca_roll_number ?? '')) updateExam(enr.id, 'dgca_roll_number', e.target.value); }}
+                                    onBlur={async e => {
+                                      const el = e.currentTarget;
+                                      if (el.value === (enr.dgca_roll_number ?? '')) return;
+                                      const stored = await updateExam(enr.id, 'dgca_roll_number', el.value);
+                                      if (!stored) el.value = enr.dgca_roll_number ?? '';
+                                    }}
                                     className={`w-24 ${inputClass}`}
-                                    placeholder="Required for PASS"
+                                    placeholder="Required"
                                   />
                                 </td>
                                 <td className="py-3">

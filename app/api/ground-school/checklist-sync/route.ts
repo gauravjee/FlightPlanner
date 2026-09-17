@@ -35,6 +35,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, REQUIREMENTS_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { todayIST } from '@/lib/ist';
+import { DGCA_PASS_MARK, deriveExamResult } from '@/lib/dgca';
 
 export async function POST(request: Request) {
   const { error } = await requireRole(REQUIREMENTS_WRITE_ROLES);
@@ -83,6 +84,16 @@ export async function POST(request: Request) {
       success: true,
       action: deleted && deleted.length > 0 ? 'deleted' : 'absent',
     });
+  }
+
+  // 2026-09-18: this row is written as a PASS, so the score that comes with it
+  // has to be one. The default below is 100; an explicit score under the DGCA
+  // pass mark would produce a row whose result contradicts its own score.
+  if (examScore !== undefined && deriveExamResult(examScore) !== 'PASS') {
+    return NextResponse.json(
+      { error: `A DGCA pass requires at least ${DGCA_PASS_MARK}%.` },
+      { status: 400 },
+    );
   }
 
   // Idempotent by design: the checklist can be re-ticked, and a second
