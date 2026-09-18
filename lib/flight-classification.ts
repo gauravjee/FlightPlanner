@@ -48,13 +48,25 @@ export function isSimulatorFlight(aircraft: { isSimulator?: boolean | null } | n
   return !!aircraft?.isSimulator;
 }
 
-// Same fallback the client store's loadFlightRecords() already used when a
-// flight_record row's own total_hours column is empty (which is every
-// row today — see app/api/flight-records/route.ts's POST, which never
-// actually writes total_hours on insert): derive duration from the
-// departure/arrival clock-time strings (HH:MM) rather than the hobbs
-// readings, so this and the client agree on the same number for the same
-// flight instead of two different formulas.
+// Fallback for a flight_record row whose own total_hours column is empty
+// (old rows inserted before 2026-09-18 — see app/api/flight-records/route.ts's
+// POST, which now computes and persists total_hours with this same function
+// going forward): derive duration from the departure/arrival clock-time
+// strings (HH:MM) rather than the hobbs readings, so every caller agrees on
+// the same number for the same flight instead of each keeping its own copy
+// of this arithmetic (FlightRecordForm.tsx used to; now imports this).
+//
+// 2026-09-18 (P0 #1, flight-hours integrity): midnight-crossing guard added.
+// A sortie that departs before midnight and arrives after (e.g. 22:30 ->
+// 00:15) used to produce a large NEGATIVE duration (ah*60+am is smaller than
+// dh*60+dm once arrival has wrapped past 00:00), which flowed uncorrected
+// into the logbook, Progress totals, PIC/solo sums, and the DGCA PDF — see
+// claude/full-codebase-audit-2026-09-17.md's C1/C6. Any negative raw diff is
+// now treated as a same-flight midnight crossing and wrapped by 24h, which
+// covers the real case this app has (a training sortie never spans more
+// than a few hours); it does not attempt to distinguish that from a garbled
+// arrival-before-departure data-entry error, which the app has no way to
+// detect from time-of-day alone anyway.
 export function flightHoursFromTimes(
   departureTime: string | null | undefined,
   arrivalTime: string | null | undefined
@@ -63,5 +75,7 @@ export function flightHoursFromTimes(
   const [dh, dm] = departureTime.split(':').map(Number);
   const [ah, am] = arrivalTime.split(':').map(Number);
   if ([dh, dm, ah, am].some(n => Number.isNaN(n))) return 0;
-  return Math.round(((ah * 60 + am) - (dh * 60 + dm)) / 6) / 10;
+  let diffMinutes = (ah * 60 + am) - (dh * 60 + dm);
+  if (diffMinutes < 0) diffMinutes += 24 * 60;
+  return Math.round(diffMinutes / 6) / 10;
 }

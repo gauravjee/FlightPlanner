@@ -12,6 +12,7 @@ import { updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { addFlightRecord } from '@/lib/hooks/useFlightRecords';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { todayIST } from '@/lib/ist';
+import { flightHoursFromTimes } from '@/lib/flight-classification';
 
 interface Props {
   onClose: () => void;
@@ -81,15 +82,16 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
     picusHours: '',
   });
 
-  // Calculate total hours from departure/arrival times
-  const calcHours = (dep: string, arr: string): number => {
-    const [dh, dm] = dep.split(':').map(Number);
-    const [ah, am] = arr.split(':').map(Number);
-    const mins = (ah * 60 + am) - (dh * 60 + dm);
-    return Math.max(0, Math.round((mins / 60) * 10) / 10);
-  };
-
-  const totalHours = calcHours(form.departureTime, form.arrivalTime);
+  // 2026-09-18 (P0 #1, flight-hours integrity): this used to be a local
+  // copy of the same arithmetic lib/flight-classification.ts's
+  // flightHoursFromTimes already does — a second implementation that had
+  // drifted to also clamp a negative (midnight-crossing) duration to 0
+  // instead of wrapping it, which both showed the instructor a wrong "0.0
+  // hrs" for a real overnight sortie and capped the PICUS input's max at 0
+  // for the same flight. Now imports the shared, guarded function instead —
+  // one implementation, and the display now matches what the server
+  // persists on save.
+  const totalHours = flightHoursFromTimes(form.departureTime, form.arrivalTime);
 
   // 2026-09-10: lifted out of handleSubmit, where it used to live, because
   // the PICUS block below has to know whether this is a DUAL sortie while

@@ -36,6 +36,7 @@
 import { NextResponse } from 'next/server';
 import { requireSession, requireModuleAccess } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { flightHoursFromTimes } from '@/lib/flight-classification';
 
 export async function GET(request: Request) {
   const { session, error } = await requireSession();
@@ -80,13 +81,27 @@ export async function POST(request: Request) {
   const {
     studentId, aircraftId, instructorId, flightDate, departureTime, arrivalTime,
     hobbsStart, hobbsEnd, landings, flightType, sortieType, exercise, maneuvers,
-    instructorNotes, studentPerformance, weatherConditions, totalHours,
+    instructorNotes, studentPerformance, weatherConditions,
     picusHours,
   } = body as Record<string, unknown>;
 
   if (!studentId || !aircraftId) {
     return NextResponse.json({ error: 'studentId and aircraftId are required.' }, { status: 400 });
   }
+
+  // 2026-09-18 (P0 #1, flight-hours integrity): computed here, server-side,
+  // from the submitted departure/arrival times — not trusted from the
+  // client's own `totalHours`, which FlightRecordForm.tsx used to compute
+  // with a second, independently-drifted copy of this arithmetic (one that
+  // clamped a midnight-crossing sortie to 0 instead of wrapping it). This is
+  // now the single source of truth for this flight's duration: it's what
+  // gets persisted on the row (previously never written on insert at all —
+  // every reader fell back to recomputing it from these same two time
+  // strings, with no midnight guard, which is how a −22.3h sortie reached
+  // the logbook, Progress totals, PIC/solo sums and the DGCA PDF) and what
+  // credits the student's cumulative hours below, instead of whatever
+  // number the client happened to send.
+  const totalHours = flightHoursFromTimes(departureTime as string, arrivalTime as string);
 
   const { error: dbError } = await supabaseAdmin.from('flight_records').insert({
     student_id: studentId,
@@ -105,12 +120,19 @@ export async function POST(request: Request) {
     instructor_notes: instructorNotes,
     student_performance: studentPerformance,
     weather_conditions: weatherConditions,
+    total_hours: totalHours,
     // 2026-09-10: DGCA PICUS on a dual sortie. `?? null` rather than
     // `|| null` so a deliberate 0 is stored as 0 — see add-picus-hours.sql
     // for why NULL and 0 are different facts here. Only ever set on DUAL;
     // the forms don't offer it on a solo sortie, where the student is
     // commander for the whole flight by definition.
-    picus_hours: flightType === 'SOLO' ? null : (picusHours ?? null),
+    //
+    // 2026-09-18: clamped here against the server-computed totalHours
+    // (Math.min, floored at 0 for a garbled negative input) — previously
+    // only the form clamped this client-side, so a request built by hand
+    // (or a form with a stale totalHours) could store a PICUS figure
+    // exceeding the flight's own duration with nothing to catch it.
+    picus_hours: flightType === 'SOLO' ? null : (picusHours != null ? Math.max(0, Math.min(Number(picusHours), totalHours)) : null),
   });
 
   if (dbError) {
@@ -127,7 +149,7 @@ export async function POST(request: Request) {
     .single();
 
   const studentUpdates: Record<string, unknown> = {
-    total_hours: (student?.total_hours || 0) + (Number(totalHours) || 0),
+    total_hours: (student?.total_hours || 0) + totalHours,
   };
   const isSolo = flightType === 'SOLO' || sortieType === 'SOLO';
   if (isSolo && student && !student.first_solo_date) {
