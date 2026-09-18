@@ -7,17 +7,23 @@
 // every field of every student's logbook (instructor notes, performance
 // ratings, PICUS hours), unfiltered, shipped to any signed-in session
 // including a student's own. This route closes that: a `student` session
-// always gets only their own records (any `?studentId` is ignored — same
-// IDOR-safe pattern as GET /api/students), and requires being signed in at
-// all, which the anon key alone never did. Every other role keeps exactly
-// the "all records" access it already had via the app's UI (the staff
-// logbook page and the Dashboard's Student Progress widget together cover
-// every non-student role) — nothing tightened there, just moved
-// server-side. See enable-rls-flight-records.sql: once this is the only
-// path to the table (it now is — the other three `.from('flight_records')`
-// call sites already use supabaseAdmin), RLS can close the table to the
-// anon key entirely, the same two-step sequence enable-rls-users-
-// students.sql used for `users`/`students`.
+// always gets only their own records (any `?studentId`/`?studentIds` is
+// ignored — same IDOR-safe pattern as GET /api/students), and requires
+// being signed in at all, which the anon key alone never did. Every other
+// role keeps exactly the "all records" access it already had via the app's
+// UI (the staff logbook page and the Dashboard's Student Progress widget
+// together cover every non-student role) — nothing tightened there, just
+// moved server-side. See enable-rls-flight-records.sql: once this is the
+// only path to the table (it now is — the other three
+// `.from('flight_records')` call sites already use supabaseAdmin), RLS can
+// close the table to the anon key entirely, the same two-step sequence
+// enable-rls-users-students.sql used for `users`/`students`.
+//
+// `?studentIds` (comma-separated) added 2026-09-18 (P0 #6 follow-up, same
+// audit finding C3 pattern) — same `.in()` shape GET /api/training-
+// requirements already established for "this instructor's several assigned
+// students at once," now used by the Instructor Dashboard's "My Students"
+// progress table instead of filtering the capped `?studentId`-less list.
 //
 // POST: flight records are add-only from the UI today (no edit/delete
 // anywhere in lib/store.ts or FlightRecordForm.tsx). Per the 2026-08-17
@@ -44,19 +50,26 @@ export async function GET(request: Request) {
 
   const role = session.user.role;
   const { searchParams } = new URL(request.url);
-  // A student can only ever see their own records — any ?studentId is
-  // ignored for this role. Every other role may pass one to scope the
-  // query (e.g. a future "this student's logbook" view for staff); with
-  // none, staff get the same "most recent 100 across everyone" the direct
-  // client used to return unconditionally.
+  // A student can only ever see their own records — any ?studentId/
+  // ?studentIds is ignored for this role. Every other role may pass one or
+  // the other to scope the query; with neither, staff get the same "most
+  // recent 100 across everyone" the direct client used to return
+  // unconditionally.
   const studentId = role === 'student' ? session.user.studentId : searchParams.get('studentId');
+  const studentIds = role === 'student' ? null : searchParams.get('studentIds');
 
   if (role === 'student' && !studentId) {
     return NextResponse.json({ records: [] });
   }
 
   let query = supabaseAdmin.from('flight_records').select('*').order('flight_date', { ascending: false });
-  query = studentId ? query.eq('student_id', studentId) : query.limit(100);
+  if (studentId) {
+    query = query.eq('student_id', studentId);
+  } else if (studentIds) {
+    query = query.in('student_id', studentIds.split(',').filter(Boolean));
+  } else {
+    query = query.limit(100);
+  }
 
   const { data, error: dbError } = await query;
   if (dbError) {

@@ -36,6 +36,13 @@ export const flightRecordsKey = ['flightRecords'] as const;
 // but kept array-shaped and parameterized the same way for consistency, and
 // so a future consumer doesn't collide with the all-records cache entry.
 export const studentFlightRecordsKey = (studentId: string) => ['flightRecords', 'student', studentId] as const;
+// 2026-09-18 (P0 #6 follow-up — Instructor Dashboard "My Students" table
+// had the same truncated-cache bug as the Progress page, but for several
+// students at once). Sorted + joined the same way
+// trainingRequirementsForStudentsKey does, so the same set of student ids
+// in a different order still hits the same cache entry.
+export const flightRecordsForStudentsKey = (studentIds: string[]) =>
+  ['flightRecords', 'multi', [...studentIds].sort().join(',')] as const;
 
 // ---------------------------------------------------------------------------
 // Row mapping — shared by both fetchers below, same logic
@@ -112,6 +119,26 @@ export async function fetchStudentFlightRecords(studentId: string): Promise<Flig
   return mapFlightRecordRows(records || []);
 }
 
+// 2026-09-18 (P0 #6 follow-up, audit finding C3's exact pattern, second
+// occurrence): app/dashboard/instructor/page.tsx's "My Students" progress
+// table filtered useFlightRecords()'s fleet-wide 100-row cache down to
+// each assigned student in turn — same bug the Progress page had, just
+// computing several students' totals in one pass instead of one selected
+// student's. Same `.in()` shape GET /api/training-requirements already
+// uses for exactly this "an instructor's several assigned students at
+// once" need (see useTrainingRequirementsForStudents below in the sibling
+// file) — GET /api/flight-records now accepts the equivalent `?studentIds`.
+export async function fetchFlightRecordsForStudents(studentIds: string[]): Promise<FlightRecord[]> {
+  if (studentIds.length === 0) return [];
+  const res = await fetch(`/api/flight-records?studentIds=${encodeURIComponent(studentIds.join(','))}`);
+  if (!res.ok) {
+    console.error('Error loading flight records for students:', res.status);
+    throw new Error('Failed to load flight records.');
+  }
+  const { records } = await res.json();
+  return mapFlightRecordRows(records || []);
+}
+
 export function useFlightRecords() {
   const { data, error, isLoading, mutate: boundMutate } = useSWR<FlightRecord[]>(
     flightRecordsKey,
@@ -145,6 +172,20 @@ export function useStudentFlightRecords(studentId: string | null | undefined) {
   const { data, error, isLoading, mutate: boundMutate } = useSWR<FlightRecord[]>(
     studentId ? studentFlightRecordsKey(studentId) : null,
     () => fetchStudentFlightRecords(studentId as string)
+  );
+
+  return {
+    flightRecords: data ?? [],
+    isLoading,
+    error,
+    mutate: boundMutate,
+  };
+}
+
+export function useFlightRecordsForStudents(studentIds: string[]) {
+  const { data, error, isLoading, mutate: boundMutate } = useSWR<FlightRecord[]>(
+    studentIds.length > 0 ? flightRecordsForStudentsKey(studentIds) : null,
+    () => fetchFlightRecordsForStudents(studentIds)
   );
 
   return {

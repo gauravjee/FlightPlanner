@@ -17,7 +17,7 @@ import { useSession } from 'next-auth/react';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
-import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
+import { useFlightRecords, useFlightRecordsForStudents } from '@/lib/hooks/useFlightRecords';
 import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
 import { useTrainingRequirementsForStudents } from '@/lib/hooks/useTrainingRequirements';
 import { matchTrainingProgram, requirementPercent } from '@/lib/training-programs';
@@ -129,6 +129,16 @@ export default function InstructorDashboardPage() {
   const myStudentIds = useMemo(() => myStudents.map(s => s.id), [myStudents]);
   const { trainingRequirements } = useTrainingRequirementsForStudents(myStudentIds);
 
+  // 2026-09-18 (P0 #6 follow-up, audit finding C3's exact pattern):
+  // studentProgressList below used to compute each assigned student's hours
+  // from useFlightRecords()'s fleet-wide 100-row cache, filtered per
+  // student — same truncated-total bug the Progress page had (see that
+  // page's own 2026-09-18 fix), just computing several students at once
+  // instead of one selected student. Same fix shape: an uncapped fetch
+  // scoped to exactly these students, same short-circuit-while-empty
+  // pattern as useTrainingRequirementsForStudents just above.
+  const { flightRecords: myStudentsFlightRecords } = useFlightRecordsForStudents(myStudentIds);
+
   // Recent debriefs (completed flights with instructor notes)
   const recentDebriefs = useMemo(() => {
     return flightRecords
@@ -156,7 +166,7 @@ export default function InstructorDashboardPage() {
   // Student progress data
   const studentProgressList = useMemo(() => {
     return myStudents.map(student => {
-      const studentFlights = flightRecords.filter(f => f.studentId === student.id);
+      const studentFlights = myStudentsFlightRecords.filter(f => f.studentId === student.id);
       const totalHours = studentFlights.reduce((sum, f) => sum + (f.totalHours || 0), 0);
       // Admin-configured per-program required hours (Admin Setup -> Training
       // Programs), matched via lib/training-programs.ts — same helper and
@@ -189,7 +199,7 @@ export default function InstructorDashboardPage() {
         reqPercent: Math.round((completedReqs / totalReqs) * 100),
       };
     }).sort((a, b) => b.progressPercent - a.progressPercent);
-  }, [myStudents, flightRecords, trainingRequirements, trainingPrograms]);
+  }, [myStudents, myStudentsFlightRecords, trainingRequirements, trainingPrograms]);
 
   // ============================================================
   // HELPER: Progress bar color
