@@ -26,16 +26,24 @@
 // point-in-time query). Both now hit this one GET, unfiltered — checkAvailability
 // filters the same result client-side instead of a separate server query;
 // this table is small (leave records), so there's no real cost to that.
-// `requireSession()` only, matching every other read moved this pass — no
-// role restriction beyond "logged in," since that's what the anon key
-// effectively gave everyone already.
+//
+// Self-review fix, same day: initially gated to `requireSession()` only
+// (matching the other reads moved this pass), but that's broader than the
+// existing access model — AVAILABILITY_VIEW_ROLES already excludes student
+// from the Availability *page*, and checkAvailability() is only ever
+// exercised by a booking flow staff/instructors can reach (students can't
+// create bookings — POST /api/scheduled-flights is 403 for them). No
+// legitimate caller needs a broader grant than the page itself has, so this
+// now matches AVAILABILITY_VIEW_ROLES exactly instead of "any logged-in
+// user" — closes an unnecessary leak of every instructor/student leave
+// reason to a session that can't even see the Availability page.
 
 import { NextResponse } from 'next/server';
-import { requireRole, requireSession, AVAILABILITY_VIEW_ROLES } from '@/lib/api-auth';
+import { requireRole, AVAILABILITY_VIEW_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function GET() {
-  const { error } = await requireSession();
+  const { error } = await requireRole(AVAILABILITY_VIEW_ROLES);
   if (error) return error;
 
   const { data, error: dbError } = await supabaseAdmin
