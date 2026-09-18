@@ -1,25 +1,27 @@
 // lib/auth-client.ts
-// Browser-safe login helpers. This is intentionally split from lib/auth.ts,
-// which is server-only (it uses supabaseAdmin / the service-role key).
+// Browser-safe login helper. This is intentionally split from lib/auth.ts,
+// which is server-only (it uses supabaseAdmin / the service-role key) —
+// the login page is a client component, and that module hard-crashes if
+// ever evaluated in a browser bundle, precisely to catch that class of
+// mistake loudly instead of silently.
 //
-// This file must only ever import the anon-key client (lib/supabase.ts) —
-// never lib/supabase-admin.ts, and never anything (like lib/auth.ts) that
-// itself imports supabase-admin.ts. That module hard-crashes if evaluated
-// in a browser bundle, precisely to catch this class of mistake loudly
-// instead of silently — which is exactly what happened when
-// logLoginAttempt/checkForcePasswordReset briefly lived in lib/auth.ts
-// after it switched to supabaseAdmin: the login page (a client component)
-// imported them and the whole page crashed on load.
-//
-// `login_audit` isn't behind Row Level Security (out of scope for the
-// users/students access-control pass), so writing to it via the anon key
-// from the browser is unchanged from how this app has always worked.
-
-import { supabase } from './supabase';
+// 2026-09-18 (RLS remediation, Batch 5): this used to insert into
+// `login_audit` directly from the browser with the anon key — that table
+// had no RLS at all, so the same key could also read the whole audit trail
+// (timestamps, emails, statuses), not just write to it. Now goes through
+// POST /api/auth/login-audit, service-role only. No import from either
+// supabase client remains in this file.
 
 export async function logLoginAttempt(email: string, status: 'SUCCESS' | 'FAILED') {
-  await supabase.from('login_audit').insert({
-    user_email: email,
-    login_status: status,
-  });
+  try {
+    await fetch('/api/auth/login-audit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, status }),
+    });
+  } catch {
+    // Best-effort audit log — a network hiccup here must never block the
+    // login flow itself (matches the old direct insert, whose error was
+    // likewise never surfaced to the caller).
+  }
 }

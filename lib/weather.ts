@@ -3,14 +3,15 @@
 // Uses Next.js API route to avoid CORS issues
 
 import { WeatherData, GeneralWeatherData } from '@/types';
-import { supabase } from './supabase';
 
 // No in-tab cache here. SWR (lib/hooks/useWeather.ts) already dedupes and
 // caches per tab, and the module-level Maps that used to sit here silently
 // swallowed the Dashboard's "Refresh Weather" press: mutate() re-ran the
 // fetcher, the fetcher returned the same cached object, and the user saw a
 // spinner with nothing changing. Quota protection that actually matters is
-// the shared `general_weather_cache` DB table below.
+// the shared `general_weather_cache` DB table, now behind
+// GET /api/weather/general (see fetchGeneralWeather below — RLS
+// remediation, Batch 5, 2026-09-18).
 
 export async function fetchWeather(station: string = 'VOBL'): Promise<WeatherData> {
   try {
@@ -180,11 +181,11 @@ const WMO_WEATHER_CODES: Record<number, string> = {
   99: 'Thunderstorm with heavy hail',
 };
 
-function describeWeatherCode(code: number): string {
+export function describeWeatherCode(code: number): string {
   return WMO_WEATHER_CODES[code] || 'Conditions unavailable';
 }
 
-function getMockGeneralWeather(error: string): GeneralWeatherData {
+export function getMockGeneralWeather(error: string): GeneralWeatherData {
   return {
     temperature: 0,
     dewpoint: 0,
@@ -203,16 +204,16 @@ function getMockGeneralWeather(error: string): GeneralWeatherData {
 // be before we'll reuse it instead of calling Open-Meteo again. Open-Meteo's free tier has a daily call limit;
 // sharing one DB-cached reading across every tab/session/user (instead of
 // each firing its own request) is what actually keeps usage under it.
-const GENERAL_WEATHER_FRESHNESS_MS = 15 * 60 * 1000; // 15 minutes
+export const GENERAL_WEATHER_FRESHNESS_MS = 15 * 60 * 1000; // 15 minutes
 
 // Coordinates are rounded to 4 decimal places (~11m) for the cache key so
 // trivial float differences (e.g. re-parsing the same Settings value) don't
 // fragment the cache into near-duplicate rows.
-function generalWeatherCacheKey(lat: number, lon: number): string {
+export function generalWeatherCacheKey(lat: number, lon: number): string {
   return `${lat.toFixed(4)},${lon.toFixed(4)}`;
 }
 
-function rowToGeneralWeather(row: Record<string, unknown>): GeneralWeatherData {
+export function rowToGeneralWeather(row: Record<string, unknown>): GeneralWeatherData {
   return {
     temperature: row.temperature as number,
     dewpoint: row.dewpoint as number,
@@ -231,107 +232,25 @@ function rowToGeneralWeather(row: Record<string, unknown>): GeneralWeatherData {
  * Fetch general (non-aviation) weather for a lat/long, for schools whose
  * field has no ICAO code and no nearby reference station configured.
  *
- * Two layers, cheapest first:
- *   1. Shared `general_weather_cache` DB table — avoids calling Open-Meteo
- *      again if ANY tab/session/user already fetched this location within
- *      the last 15 minutes. This is what actually protects Open-Meteo's
- *      rate limit, since aviation weather traffic isn't confined to one
- *      browser.
- *   2. Open-Meteo itself, only on a genuine cache miss/staleness — result is
- *      written back to the DB cache for the next reader.
+ * 2026-09-18 (RLS remediation, Batch 5): this used to read/write
+ * `general_weather_cache` directly from the browser with the anon key —
+ * that table had RLS disabled entirely, so the same key could read or
+ * write any row, for any location, from anywhere. The two-layer
+ * cache-then-Open-Meteo logic (see the old git history for the exact
+ * shape) now lives server-side in GET /api/weather/general, which does the
+ * identical thing with the service-role key. This is now a thin wrapper
+ * around that route, same pattern as fetchWeather above.
  */
 export async function fetchGeneralWeather(lat: number, lon: number): Promise<GeneralWeatherData> {
-  const cacheKey = generalWeatherCacheKey(lat, lon);
-
-  // Shared DB cache — read before hitting Open-Meteo. A read failure (e.g.
-  // the migration hasn't been run yet) is not fatal: fall through and fetch
-  // live rather than blocking the weather widget on the cache table existing.
   try {
-    const { data: row, error: readError } = await supabase
-      .from('general_weather_cache')
-      .select('*')
-      .eq('cache_key', cacheKey)
-      .maybeSingle();
-
-    if (!readError && row) {
-      const fetchedAt = new Date(row.fetched_at as string).getTime();
-      if (Date.now() - fetchedAt < GENERAL_WEATHER_FRESHNESS_MS) {
-        const weather = rowToGeneralWeather(row as Record<string, unknown>);
-        console.log('📡 Using DB-cached general weather for', cacheKey);
-        return weather;
-      }
-    }
-  } catch (err) {
-    console.warn('⚠️ general_weather_cache read failed, fetching live instead:', err);
-  }
-
-  try {
-    console.log('🌤️ Fetching general weather for', cacheKey);
-    const params = new URLSearchParams({
-      latitude: String(lat),
-      longitude: String(lon),
-      current: 'temperature_2m,dew_point_2m,wind_speed_10m,wind_direction_10m,surface_pressure,cloud_cover,weather_code',
-      wind_speed_unit: 'kn',
-      timezone: 'UTC',
-    });
-    const res = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`);
+    const res = await fetch(`/api/weather/general?lat=${lat}&lon=${lon}`);
     if (!res.ok) {
-      console.warn('⚠️ Open-Meteo request failed:', res.status);
+      console.warn('⚠️ /api/weather/general request failed:', res.status);
       return getMockGeneralWeather('Failed to fetch');
     }
-    const json = await res.json();
-    const current = json?.current;
-    if (!current) {
-      console.warn('⚠️ No current weather in Open-Meteo response. Using mock.');
-      return getMockGeneralWeather('Failed to fetch');
-    }
-
-    const observedAt = current.time ? `${current.time}Z` : new Date().toISOString();
-    const weather: GeneralWeatherData = {
-      temperature: current.temperature_2m ?? 0,
-      dewpoint: current.dew_point_2m ?? 0,
-      windDirection: current.wind_direction_10m ?? 0,
-      windSpeed: current.wind_speed_10m ?? 0,
-      pressure: current.surface_pressure ?? 1013,
-      cloudCover: current.cloud_cover ?? 0,
-      conditionText: describeWeatherCode(current.weather_code),
-      time: observedAt,
-      isLoading: false,
-      error: null,
-    };
-
-    console.log('✅ Live general weather received!');
-
-    // Best-effort write-back to the shared cache so the next reader (this
-    // tab or any other) can skip Open-Meteo entirely. Fire-and-forget: a
-    // failed cache write shouldn't fail the weather fetch that's already
-    // succeeded.
-    supabase
-      .from('general_weather_cache')
-      .upsert(
-        {
-          cache_key: cacheKey,
-          temperature: weather.temperature,
-          dewpoint: weather.dewpoint,
-          wind_direction: weather.windDirection,
-          wind_speed: weather.windSpeed,
-          pressure: weather.pressure,
-          cloud_cover: weather.cloudCover,
-          condition_text: weather.conditionText,
-          observed_at: weather.time,
-          fetched_at: new Date().toISOString(),
-        },
-        { onConflict: 'cache_key' }
-      )
-      .then(({ error: writeError }) => {
-        if (writeError) {
-          console.warn('⚠️ Failed to write general_weather_cache:', writeError.message);
-        }
-      });
-
-    return weather;
+    return (await res.json()) as GeneralWeatherData;
   } catch (error) {
-    console.error('❌ General weather API error:', error);
+    console.error('❌ General weather fetch error:', error);
     return getMockGeneralWeather('Failed to fetch');
   }
 }
