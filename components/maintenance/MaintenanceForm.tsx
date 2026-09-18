@@ -25,6 +25,29 @@ interface Props {
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
+// 2026-09-19: fixed set of types offered when logging/editing maintenance
+// through this form. A record's stored `maintenanceType` can fall outside
+// this list — e.g. "Squawk / Pilot Report" (created via the pilot-facing
+// Report a Defect flow, which isn't one of these categories at all), or a
+// legacy casing variant like "Annual inspection" vs "Annual Inspection"
+// (seed/baseline data has both). Since the <select> below is `value`-bound
+// to `form.maintenanceType`, a value with no matching <option> renders as
+// nothing selected and fails the `required` check on submit — blocking the
+// save with a confusing "select an item" error even though the record's
+// real type was there all along and would otherwise save unchanged.
+const BASE_MAINTENANCE_TYPES = [
+  '50-Hour Inspection',
+  '100-Hour Inspection',
+  'Annual Inspection',
+  'AD Compliance',
+  'Oil Change',
+  'Engine Overhaul',
+  'Avionics Check',
+  'Propeller Service',
+  'Emergency / AOG',
+  'Other',
+];
+
 // Split a stored maintenanceStart/End ISO (UTC) timestamp back into the IST
 // date/hour/minute pieces the form's dropdowns use. Minutes are rounded to
 // the nearest quarter-hour so they always match one of the dropdown options,
@@ -109,6 +132,15 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
   const selectedAircraft = aircraft.find(a => String(a.id) === String(form.aircraftId));
 
   const [error, setError] = useState('');
+
+  // Keep the record's actual type selectable even when it's off the fixed
+  // list (see BASE_MAINTENANCE_TYPES above), so editing/completing it
+  // doesn't force reclassifying it just to satisfy the dropdown.
+  const maintenanceTypeOptions = useMemo(() => (
+    form.maintenanceType && !BASE_MAINTENANCE_TYPES.includes(form.maintenanceType)
+      ? [form.maintenanceType, ...BASE_MAINTENANCE_TYPES]
+      : BASE_MAINTENANCE_TYPES
+  ), [form.maintenanceType]);
 
   // Which roster AME (if any) the form's current ameName/ameLicenseNo match
   // — drives the dropdown below. A legacy record whose free-text name isn't
@@ -248,16 +280,7 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
               <select value={form.maintenanceType} onChange={e => setForm(p => ({ ...p, maintenanceType: e.target.value }))} required
                 className={inputClass}>
                 <option value="">Select Type</option>
-                <option value="50-Hour Inspection">50-Hour Inspection</option>
-                <option value="100-Hour Inspection">100-Hour Inspection</option>
-                <option value="Annual Inspection">Annual Inspection</option>
-                <option value="AD Compliance">AD Compliance</option>
-                <option value="Oil Change">Oil Change</option>
-                <option value="Engine Overhaul">Engine Overhaul</option>
-                <option value="Avionics Check">Avionics Check</option>
-                <option value="Propeller Service">Propeller Service</option>
-                <option value="Emergency / AOG">Emergency / AOG</option>
-                <option value="Other">Other</option>
+                {maintenanceTypeOptions.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
             <div>
