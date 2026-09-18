@@ -26,16 +26,48 @@
 // request — exactly the class of leak the 2026-08-19 fix (see the comment
 // in useTrainingRequirements.ts) closed at the UI layer, just reopened one
 // layer down. Now 400s instead of silently dumping everything.
+//
+// Second self-review fix, same day: that first pass still let a student
+// pass *any* studentId and read a different student's completion status,
+// notes and instructor comments — not caught the first time because the
+// guard only checked "is a param present," not "whose id is it." Closed
+// using the same IDOR-safe pattern GET /api/flight-records already
+// established: a `student` session's own session.user.studentId overrides
+// whatever `studentId`/`studentIds` they passed (both ignored), so they can
+// only ever be themselves. Every other role is unaffected — still free to
+// query any student or set of students, exactly as before.
 
 import { NextResponse } from 'next/server';
 import { requireSession } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function GET(request: Request) {
-  const { error } = await requireSession();
+  const { session, error } = await requireSession();
   if (error) return error;
 
+  const role = session.user.role;
   const url = new URL(request.url);
+
+  // A student can only ever see their own requirements — same IDOR-safe
+  // pattern as GET /api/flight-records. Any studentId/studentIds they pass
+  // is ignored.
+  if (role === 'student') {
+    const ownId = session.user.studentId;
+    if (!ownId) return NextResponse.json({ requirements: [] });
+
+    const { data, error: dbError } = await supabaseAdmin
+      .from('training_requirements')
+      .select('*')
+      .eq('student_id', ownId)
+      .order('sort_order', { ascending: true });
+
+    if (dbError) {
+      console.error('Error loading training requirements:', dbError);
+      return NextResponse.json({ error: 'Failed to load training requirements.' }, { status: 500 });
+    }
+    return NextResponse.json({ requirements: data });
+  }
+
   const studentId = url.searchParams.get('studentId');
   const studentIds = url.searchParams.get('studentIds');
 
