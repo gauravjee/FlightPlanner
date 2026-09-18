@@ -80,13 +80,17 @@ export default function AttendancePage() {
   // function that sets state anywhere in its body, even safely after an
   // await, when called from an effect — so the state-setting has to live
   // at each call site instead).
+  // 2026-09-18 (RLS remediation, Batch 3 — see
+  // claude/data-access-security-mapping.md): was a direct client-side
+  // `supabase.from('ground_school_classes')` call (anon key) — now goes
+  // through GET /api/ground-school/classes (service-role, session-gated).
   const fetchClasses = async (): Promise<GroundSchoolClassRow[]> => {
-    const { data } = await supabase
-      .from('ground_school_classes')
-      .select('id, class_date, start_time, end_time, subject_id, ground_school_subjects(subject_name)')
-      .order('class_date', { ascending: false })
-      .limit(30);
-    return (data || []) as unknown as GroundSchoolClassRow[];
+    const res = await fetch(
+      '/api/ground-school/classes?columns=id,class_date,start_time,end_time,subject_id&embedSubject=true&orderBy=class_date&ascending=false&limit=30'
+    );
+    if (!res.ok) return [];
+    const { classes } = await res.json();
+    return (classes || []) as GroundSchoolClassRow[];
   };
 
   const fetchEnrollments = async (classId: number): Promise<Enrollment[]> => {

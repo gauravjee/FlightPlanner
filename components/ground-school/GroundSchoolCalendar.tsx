@@ -59,7 +59,6 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { supabase } from '@/lib/supabase-client';
 import { getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useHolidays } from '@/lib/hooks/useHolidays';
@@ -308,29 +307,37 @@ export default function GroundSchoolCalendar() {
       endDate = formatDateStr(monthEnd);
     }
 
-    // Build Supabase query for classes in the date range
-    let query = supabase
-      .from('ground_school_classes')
-      .select('*')
-      .gte('class_date', startDate)
-      .lte('class_date', endDate)
-      .order('class_date', { ascending: true })
-      .order('start_time', { ascending: true });
-
-    // Apply filters if any
-    if (filterSubject) query = query.eq('subject_id', parseInt(filterSubject));
-    if (filterInstructor) query = query.eq('instructor_id', filterInstructor);
-
-    const { data: classData, error } = await query;
-    if (error) {
+    // 2026-09-18 (RLS remediation, Batch 3 — see
+    // claude/data-access-security-mapping.md): was a direct client-side
+    // `supabase.from('ground_school_classes')` call (anon key) — now goes
+    // through GET /api/ground-school/classes (service-role, session-gated).
+    // That route has no subject_id/instructor_id filter params, so the
+    // subject/instructor dropdown filters (still in this callback's own
+    // deps, so changing them still re-fetches) are applied client-side
+    // below instead — the date range is what actually bounds the fetch.
+    let classData;
+    try {
+      const res = await fetch(
+        `/api/ground-school/classes?dateGte=${startDate}&dateLte=${endDate}&orderBy=class_date,start_time&ascending=true`
+      );
+      if (!res.ok) throw await res.json().catch(() => ({}));
+      ({ classes: classData } = await res.json());
+    } catch (error) {
+      // Same graceful-degradation branch for a non-2xx response AND a
+      // network-level failure (fetch() throws on that; the Supabase client
+      // this replaced returned both as the same `{error}` shape instead).
       console.error('Error loading classes:', error);
       setClasses([]);
       setLoading(false);
       return;
     }
+    const filtered = (classData || []).filter((c: Omit<GroundClass, 'subject_name' | 'instructor_initials'>) =>
+      (!filterSubject || c.subject_id === parseInt(filterSubject)) &&
+      (!filterInstructor || c.instructor_id === filterInstructor)
+    );
 
     // Enrich each class with human‑readable subject name and instructor initials.
-    const enriched: GroundClass[] = (classData || []).map((c: Omit<GroundClass, 'subject_name' | 'instructor_initials'>) => {
+    const enriched: GroundClass[] = filtered.map((c: Omit<GroundClass, 'subject_name' | 'instructor_initials'>) => {
       const sub = subjects.find((s) => s.id === c.subject_id);
       const inst = instructors.find((i) => i.id === c.instructor_id);
       return {

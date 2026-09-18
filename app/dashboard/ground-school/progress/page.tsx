@@ -154,7 +154,12 @@ export default function StudentProgressPage() {
     // claude/data-access-security-mapping.md): the subjects read was a
     // direct client-side `supabase.from('ground_school_subjects')` call
     // (anon key) — now goes through GET /api/admin/config/ground-school-
-    // subjects (service-role, session-gated).
+    // subjects (service-role, session-gated). The classes read below is now
+    // also migrated, to GET /api/ground-school/classes (service-role,
+    // session-gated) — same no-instructors-embed reasoning as before
+    // (PGRST200: no FK between ground_school_classes and instructors, so
+    // that embed would fail the whole query; initials still come from
+    // useInstructors() at render).
     const [subRes, stuRes, clsRes] = await Promise.all([
       fetch('/api/admin/config/ground-school-subjects?orderBy=sort_order&filterColumn=is_active&filterValue=true').then(
         (r): Promise<{ rows: { id: number; subject_name: string; subject_code: string }[] }> =>
@@ -164,27 +169,18 @@ export default function StudentProgressPage() {
         (r): Promise<{ students: { id: string; name: string; initials: string; status: string }[] }> =>
           r.ok ? r.json() : Promise.resolve({ students: [] })
       ),
-      supabase
-        .from('ground_school_classes')
-        // ⚠️ NO `instructors(initials)` EMBED. There is no foreign key between
-        // ground_school_classes and instructors, so PostgREST rejects that
-        // embed with PGRST200 and FAILS THE WHOLE QUERY — including the
-        // subject join that does work. Initials are resolved from
-        // useInstructors() at render instead, which is what
-        // components/ground-school/GroundSchoolCalendar.tsx has always done.
-        .select(
-          'id, class_date, start_time, end_time, subject_id, instructor_id, ground_school_subjects(subject_name)'
-        )
-        .order('class_date', { ascending: false }),
+      fetch(
+        '/api/ground-school/classes?columns=id,class_date,start_time,end_time,subject_id,instructor_id&embedSubject=true&orderBy=class_date&ascending=false'
+      ).then(async (r) => ({ ok: r.ok, body: await r.json().catch(() => ({})) })),
     ]);
 
-    // Surfaced, not swallowed. `clsRes.data || []` used to turn a failed
-    // class query into "this student has no classes at all": every subject
-    // showed 0/0 attendance and "No exam recorded yet", and the exam history
-    // showed a blank Subject column, with nothing logged anywhere. Found
-    // 2026-09-17 — the query had been returning 400 the whole time.
-    if (clsRes.error) {
-      console.error('Error loading ground school classes:', clsRes.error);
+    // Surfaced, not swallowed. Treating a failed class fetch as "this
+    // student has no classes at all" used to mean every subject showed 0/0
+    // attendance and "No exam recorded yet", and the exam history showed a
+    // blank Subject column, with nothing logged anywhere. Found 2026-09-17 —
+    // the query had been returning 400 the whole time.
+    if (!clsRes.ok) {
+      console.error('Error loading ground school classes:', clsRes.body?.error);
       setLoadError('Could not load ground school classes, so attendance and exam history may be incomplete. Please reload.');
     } else {
       setLoadError('');
@@ -201,7 +197,7 @@ export default function StudentProgressPage() {
     // cardinality, since no generated DB types are configured for this
     // client) — matches the object-access pattern (`.subject_name`, not
     // `[0].subject_name`) this code has always used at runtime.
-    const rawClasses = (clsRes.data || []) as unknown as {
+    const rawClasses = (clsRes.body?.classes || []) as unknown as {
       id: number;
       class_date: string;
       start_time: string;

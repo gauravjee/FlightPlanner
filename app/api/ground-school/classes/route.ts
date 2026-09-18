@@ -34,9 +34,80 @@
 // This moves WHERE the check happens, not WHO passes it.
 // ---------------------------------------------------------------------------
 
+// GET added 2026-09-18 (RLS remediation, Batch 3 — see
+// claude/data-access-security-mapping.md): reads used to be direct
+// client-side `supabase.from('ground_school_classes')` calls (anon key)
+// from 5 call sites (the overview dashboard, the Progress page's static
+// data load, the Attendance page, GroundSchoolCalendar.tsx's date-range
+// load, and useHolidays.ts's schedule-conflict count check) — each with a
+// different column list, filter, order and limit. `requireSession()` only,
+// same reasoning as every other non-per-person read moved in this
+// remediation: this table was already readable by anyone with the anon
+// key, whether logged in or not, so this only closes that hole.
+//
+// One flexible GET rather than five near-identical routes, mirroring the
+// shared `/api/admin/config/[table]` route's own reasoning: `columns` (a
+// column list, default '*'), `embedSubject=true` to append the
+// `ground_school_subjects(subject_name)` join every read-with-join call
+// site wants, `dateEq`/`dateGte`/`dateLte` against class_date,
+// `statusNeq`, `orderBy` (comma-separated, default 'class_date') +
+// `ascending`, `limit`, and `countOnly=true` (head-only count, for the
+// scheduling-conflict check) cover every existing call site's exact query
+// shape without a bespoke route per page.
 import { NextResponse } from 'next/server';
-import { requireRole, GROUND_SCHOOL_WRITE_ROLES } from '@/lib/api-auth';
+import { requireRole, requireSession, GROUND_SCHOOL_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+
+export async function GET(request: Request) {
+  const { error } = await requireSession();
+  if (error) return error;
+
+  const url = new URL(request.url);
+  const columns = url.searchParams.get('columns') || '*';
+  const embedSubject = url.searchParams.get('embedSubject') === 'true';
+  const selectClause = embedSubject ? `${columns}, ground_school_subjects(subject_name)` : columns;
+  const dateEq = url.searchParams.get('dateEq');
+  const dateGte = url.searchParams.get('dateGte');
+  const dateLte = url.searchParams.get('dateLte');
+  const statusNeq = url.searchParams.get('statusNeq');
+  const orderBy = (url.searchParams.get('orderBy') || 'class_date').split(',').filter(Boolean);
+  const ascending = url.searchParams.get('ascending') !== 'false';
+  const limit = url.searchParams.get('limit');
+  const countOnly = url.searchParams.get('countOnly') === 'true';
+
+  if (countOnly) {
+    let countQuery = supabaseAdmin.from('ground_school_classes').select('id', { count: 'exact', head: true });
+    if (dateEq) countQuery = countQuery.eq('class_date', dateEq);
+    if (dateGte) countQuery = countQuery.gte('class_date', dateGte);
+    if (dateLte) countQuery = countQuery.lte('class_date', dateLte);
+    if (statusNeq) countQuery = countQuery.neq('status', statusNeq);
+
+    const { count, error: dbError } = await countQuery;
+    if (dbError) {
+      console.error('Error counting ground school classes:', dbError);
+      return NextResponse.json({ error: 'Failed to count classes.' }, { status: 500 });
+    }
+    return NextResponse.json({ count: count || 0 });
+  }
+
+  let query = supabaseAdmin.from('ground_school_classes').select(selectClause);
+  if (dateEq) query = query.eq('class_date', dateEq);
+  if (dateGte) query = query.gte('class_date', dateGte);
+  if (dateLte) query = query.lte('class_date', dateLte);
+  if (statusNeq) query = query.neq('status', statusNeq);
+  for (const col of orderBy) {
+    query = query.order(col, { ascending });
+  }
+  if (limit) query = query.limit(parseInt(limit, 10));
+
+  const { data, error: dbError } = await query;
+  if (dbError) {
+    console.error('Error loading ground school classes:', dbError);
+    return NextResponse.json({ error: 'Failed to load classes.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ classes: data });
+}
 
 /**
  * The only columns a client may set, matching exactly what the calendar's

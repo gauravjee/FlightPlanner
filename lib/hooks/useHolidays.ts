@@ -24,7 +24,6 @@
 'use client';
 
 import useSWR, { mutate } from 'swr';
-import { supabase } from '@/lib/supabase';
 import type { Holiday } from '@/types';
 
 export const holidaysKey = ['holidays'] as const;
@@ -82,16 +81,21 @@ export function useHolidays() {
 // with the day-range as query params (that route doesn't have a
 // count-only mode, so this takes the row array's length instead — this
 // only runs when adding a holiday, an infrequent admin action, so there's
-// no real cost to that). ground_school_classes is a separate table outside
-// this session's 5-table scope — left exactly as it was.
+// no real cost to that).
+//
+// 2026-09-18 (RLS remediation, Batch 3 — see
+// claude/data-access-security-mapping.md): the ground_school_classes half
+// was a direct client-side `supabase.from('ground_school_classes')` COUNT
+// query (anon key) — now goes through GET /api/ground-school/classes's
+// `countOnly` mode.
 async function countScheduleConflictsOnDate(dateStr: string): Promise<{ conflictingFlights: number; conflictingClasses: number }> {
   const dayStart = `${dateStr}T00:00:00+05:30`;
   const dayEnd = `${dateStr}T23:59:59.999+05:30`;
   const [flightsRes, classesRes] = await Promise.all([
     fetch(`/api/scheduled-flights?startTimeGte=${encodeURIComponent(dayStart)}&startTimeLte=${encodeURIComponent(dayEnd)}&excludeCancelled=true`)
       .then(res => res.ok ? res.json() : { flights: [] }).catch(() => ({ flights: [] })),
-    supabase.from('ground_school_classes').select('id', { count: 'exact', head: true })
-      .eq('class_date', dateStr).neq('status', 'CANCELLED'),
+    fetch(`/api/ground-school/classes?countOnly=true&dateEq=${encodeURIComponent(dateStr)}&statusNeq=CANCELLED`)
+      .then(res => res.ok ? res.json() : { count: 0 }).catch(() => ({ count: 0 })),
   ]);
   return { conflictingFlights: (flightsRes.flights || []).length, conflictingClasses: classesRes.count || 0 };
 }
