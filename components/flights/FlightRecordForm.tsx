@@ -116,6 +116,18 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
     e.preventDefault();
     if (!form.studentId || !form.aircraftId || !form.instructorId || !form.sortieType) return;
 
+    // 2026-09-18 (P0 #3, hobbs integrity — audit finding C2): Hobbs End
+    // used to default to 0, wasn't required, and nothing here checked it —
+    // a submission left at the default silently reset the aircraft's real
+    // hobbs reading to 0 on save, corrupting every hour-based maintenance
+    // interval from then on. The server (app/api/flight-records/route.ts)
+    // now rejects this too and is the real gate; this is a courtesy so the
+    // instructor sees it before submitting rather than as a failed-save alert.
+    if (!form.hobbsEnd || form.hobbsEnd <= form.hobbsStart) {
+      alert('❌ Hobbs End must be greater than Hobbs Start.');
+      return;
+    }
+
     // Flight Type used to be a separate hardcoded dropdown (Dual / Solo /
     // Check Ride / Night) that duplicated Sortie Type — which is now driven
     // by the same admin-configured sortie_types list, so asking for both
@@ -285,9 +297,9 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
               <p className="text-[10px] text-tertiary mt-0.5">Auto-filled from the aircraft&apos;s current Hobbs — edit if needed.</p>
             </div>
             <div>
-              <label className="block text-xs text-tertiary mb-1">Hobbs End</label>
+              <label className="block text-xs text-tertiary mb-1">Hobbs End *</label>
               <input type="number" value={form.hobbsEnd || ''} onChange={e => setForm(p => ({ ...p, hobbsEnd: parseFloat(e.target.value) || 0 }))}
-                step="0.1" className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
+                required min={form.hobbsStart || 0} step="0.1" className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
             </div>
             <div>
               <label className="block text-xs text-tertiary mb-1">Landings</label>

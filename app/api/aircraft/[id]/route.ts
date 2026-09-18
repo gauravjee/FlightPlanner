@@ -63,6 +63,54 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (debriefAccess.error) return debriefAccess.error;
   }
 
+  // 2026-09-18 (P0 #3, hobbs integrity — audit findings C2/F2): this is the
+  // actual writer of aircraft.hobbs_time — both the full Aircraft edit form
+  // and DebriefForm's narrower fuel/Hobbs update go through here — and it
+  // never validated it; any value in the body, including 0, a non-numeric
+  // string, or a negative number, was written as-is. The client-side fixes
+  // (AircraftFormModal no longer turns a cleared field into 0; the
+  // flight-records route validates its own Hobbs End) don't cover a request
+  // built directly against this route. Only rejects an outright invalid
+  // value here — doesn't forbid a deliberate, correctly-typed 0, since a
+  // brand-new aircraft legitimately starts at hobbsTime 0.
+  if (body.hobbsTime !== undefined) {
+    const n = Number(body.hobbsTime);
+    if (!Number.isFinite(n) || n < 0) {
+      return NextResponse.json({ error: 'Hobbs Time must be a valid, non-negative number.' }, { status: 400 });
+    }
+    // The narrow debrief path (DebriefForm.tsx) can only ever advance the
+    // meter — a flight burns Hobbs time, it doesn't reduce it. DebriefForm's
+    // own Hobbs End field has the exact same "clear it, save without
+    // retyping" failure mode FlightRecordForm's did (parseFloat('') || 0),
+    // and unlike a logged flight, an unchecked "auto-create logbook entry"
+    // debrief reaches this write directly with nothing else validating it —
+    // the flight-records POST route's own Hobbs End check never runs for
+    // that case. So this path specifically also requires the new reading to
+    // be strictly greater than what's already on file. A full aircraft edit
+    // (AIRCRAFT_WRITE_ROLES) is unaffected and may still correct the value
+    // downward — that's a deliberate admin action, not a cleared field.
+    if (isDebriefFuelUpdate) {
+      const { data: current } = await supabaseAdmin.from('aircraft').select('hobbs_time').eq('id', id).single();
+      if (current && n <= Number(current.hobbs_time)) {
+        return NextResponse.json({ error: 'Hobbs Time must be greater than the aircraft\'s current reading.' }, { status: 400 });
+      }
+    }
+    body.hobbsTime = n;
+  }
+  if (body.fuelCapacity !== undefined) {
+    const n = Number(body.fuelCapacity);
+    // 2026-09-18: 50L, matching AircraftFormModal's min={50} — not an
+    // arbitrary "must be positive" floor. Per the operator: this is the
+    // minimum dispatch fuel policy (a sortie can't be released if the
+    // post-flight fuel position would be at or under this), so a real
+    // fuelCapacity has to sit above it or the policy has nothing to check
+    // against. Kept in sync with the client rather than left looser.
+    if (!Number.isFinite(n) || n < 50) {
+      return NextResponse.json({ error: 'Fuel Capacity must be a valid number of at least 50L.' }, { status: 400 });
+    }
+    body.fuelCapacity = n;
+  }
+
   const dbUpdates: Record<string, unknown> = {};
   for (const [clientKey, dbKey] of Object.entries(FIELD_MAP)) {
     if (body[clientKey] !== undefined) {

@@ -142,12 +142,28 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
   };
 
 const handleChange = (field: keyof Aircraft, value: string | number) => {
-  if (field === 'hobbsTime' || field === 'year') {
+  // 2026-09-18 (P0 #3, hobbs integrity — audit finding F2): clearing the
+  // Hobbs Time or Fuel Capacity field used to fall back to 0, and HTML's
+  // min={0}/min={50} on those inputs can never catch it — an empty input
+  // satisfies any min. Select the field, delete, save without retyping,
+  // and the airframe's real hours reading (or tank capacity) silently
+  // became 0. These two now keep their last known value when cleared,
+  // same as leaving the field untouched — a deliberate 0 still requires
+  // actually typing 0. `year` and `currentFuel` are unaffected (0 is not a
+  // corrupting value for either — a fresh aircraft legitimately starts at
+  // hobbsTime 0, which is a real typed value, not a cleared field).
+  if (field === 'hobbsTime') {
     const num = parseFloat(value as string);
-    setForm(prev => ({ ...prev, [field]: isNaN(num) ? 0 : num }));
-  } else if (field === 'fuelCapacity' || field === 'currentFuel') {
+    setForm(prev => ({ ...prev, hobbsTime: isNaN(num) ? prev.hobbsTime : num }));
+  } else if (field === 'year') {
+    const num = parseFloat(value as string);
+    setForm(prev => ({ ...prev, year: isNaN(num) ? 0 : num }));
+  } else if (field === 'fuelCapacity') {
     const num = parseInt(value as string);
-    setForm(prev => ({ ...prev, [field]: isNaN(num) ? 0 : num }));
+    setForm(prev => ({ ...prev, fuelCapacity: isNaN(num) ? prev.fuelCapacity : num }));
+  } else if (field === 'currentFuel') {
+    const num = parseInt(value as string);
+    setForm(prev => ({ ...prev, currentFuel: isNaN(num) ? 0 : num }));
   } else if (field === 'fuelBurnRateLph') {
     // A manual edit here (including clearing it back to empty) is a
     // deliberate per-aircraft override — stop auto-following Type from now on.

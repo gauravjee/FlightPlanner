@@ -89,6 +89,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'studentId and aircraftId are required.' }, { status: 400 });
   }
 
+  // 2026-09-18 (P0 #3, hobbs integrity — audit finding C2): hobbs_time used
+  // to be overwritten below with whatever the client sent, completely
+  // unvalidated — FlightRecordForm initialised Hobbs End at 0, the field
+  // wasn't required, and nothing server-side checked it either. A submitted
+  // flight with Hobbs End left at 0 silently reset the airframe's real hobbs
+  // reading to 0, and every hour-based maintenance interval then computed
+  // from that zero anchor. This is the one place that writes aircraft.
+  // hobbs_time for a flight, so it's the authoritative check — the form's
+  // own (also newly-added) client-side guard is a courtesy, not the gate.
+  const hobbsStartNum = Number(hobbsStart);
+  const hobbsEndNum = Number(hobbsEnd);
+  if (!Number.isFinite(hobbsStartNum) || hobbsStartNum < 0 || !Number.isFinite(hobbsEndNum) || hobbsEndNum <= hobbsStartNum) {
+    return NextResponse.json({ error: 'Hobbs Start and Hobbs End must be valid numbers, with Hobbs End greater than Hobbs Start.' }, { status: 400 });
+  }
+
   // 2026-09-18 (P0 #1, flight-hours integrity): computed here, server-side,
   // from the submitted departure/arrival times — not trusted from the
   // client's own `totalHours`, which FlightRecordForm.tsx used to compute
@@ -110,8 +125,8 @@ export async function POST(request: Request) {
     flight_date: flightDate,
     departure_time: departureTime,
     arrival_time: arrivalTime,
-    hobbs_start: hobbsStart,
-    hobbs_end: hobbsEnd,
+    hobbs_start: hobbsStartNum,
+    hobbs_end: hobbsEndNum,
     landings,
     flight_type: flightType,
     sortie_type: sortieType,
@@ -164,10 +179,11 @@ export async function POST(request: Request) {
     console.error('Error crediting student after flight record:', studentError);
   }
 
-  // Advance the aircraft's hobbs time.
+  // Advance the aircraft's hobbs time. hobbsEndNum, not the raw hobbsEnd —
+  // validated above to be a positive number greater than Hobbs Start.
   const { error: aircraftError } = await supabaseAdmin
     .from('aircraft')
-    .update({ hobbs_time: hobbsEnd })
+    .update({ hobbs_time: hobbsEndNum })
     .eq('id', aircraftId);
   if (aircraftError) {
     console.error('Error advancing aircraft hobbs time after flight record:', aircraftError);

@@ -87,6 +87,19 @@ export default function DebriefForm({ flight, onClose, onComplete, onError }: Pr
       return;
     }
 
+    // 2026-09-18 (P0 #3, hobbs integrity): this field has the same "clear
+    // it, save without retyping" failure mode FlightRecordForm's Hobbs End
+    // used to (parseFloat('') || 0) — and when "auto-create logbook entry"
+    // is unchecked below, this form's own PATCH /api/aircraft/[id] call is
+    // the only write that ever sees this value; the flight-records route's
+    // own Hobbs End check never runs for that path. Both routes now reject
+    // this server-side too — see app/api/aircraft/[id]/route.ts and
+    // app/api/flight-records/route.ts — this is the same fail-fast courtesy.
+    if (!form.hobbsEnd || form.hobbsEnd <= form.hobbsStart) {
+      onError('❌ Hobbs End must be greater than Hobbs Start.');
+      return;
+    }
+
     setLoading(true);
 
     try {
