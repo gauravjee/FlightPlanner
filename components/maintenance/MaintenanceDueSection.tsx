@@ -23,6 +23,7 @@ import { useAircraft } from '@/lib/hooks/useAircraft';
 import {
   addMaintenanceRecord, useMaintenanceRecords, useMaintenanceScheduleTemplates, getMaintenanceDueItems,
 } from '@/lib/hooks/useMaintenanceRecords';
+import { useAMEs } from '@/lib/hooks/useAMEs';
 import { MaintenanceDueItem } from '@/types';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { TriangleAlert, Clock, CircleAlert, Wrench, X } from 'lucide-react';
@@ -51,12 +52,27 @@ function LogMaintenanceItemModal({ item, aircraftReg, currentHobbs, mode, onClos
   const [cost, setCost] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  // 2026-09-18 (P0 #4): 'complete' rows are COMPLETED + not baseline, so
+  // the server now hard-requires AME name/licence + CRS reference for them
+  // (see POST /api/maintenance-records). 'baseline' rows stay exempt —
+  // isBaseline below is still what actually decides that server-side.
+  const { ames } = useAMEs();
+  const [ameId, setAmeId] = useState('');
+  const [crsReference, setCrsReference] = useState('');
 
   const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
 
+  const selectedAme = ames.find(a => String(a.id) === ameId);
+
   const handleSave = async () => {
+    setError('');
+    if (mode === 'complete' && (!selectedAme || !crsReference.trim())) {
+      setError('Certifying Engineer and CRS Reference are required to log completion.');
+      return;
+    }
     setSaving(true);
-    await addMaintenanceRecord({
+    const result = await addMaintenanceRecord({
       aircraftId: item.aircraftId,
       maintenanceType: item.template.itemName,
       description: mode === 'baseline'
@@ -79,9 +95,16 @@ function LogMaintenanceItemModal({ item, aircraftReg, currentHobbs, mode, onClos
       // the text above cannot quietly put these rows back into a
       // regulatory register. See add-dgca-maintenance-log-fields.sql.
       isBaseline: mode === 'baseline',
+      ameName: mode === 'complete' ? selectedAme?.name || null : null,
+      ameLicenseNo: mode === 'complete' ? selectedAme?.license_no || null : null,
+      crsReference: mode === 'complete' ? crsReference.trim() || null : null,
     });
     setSaving(false);
-    onClose();
+    if (result.success) {
+      onClose();
+    } else {
+      setError(result.error || 'Failed to save.');
+    }
   };
 
   return (
@@ -134,6 +157,23 @@ function LogMaintenanceItemModal({ item, aircraftReg, currentHobbs, mode, onClos
             <label className="block text-xs text-secondary mb-1">Notes</label>
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} className={inputClass} />
           </div>
+          {mode === 'complete' && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-secondary mb-1">Certifying Engineer (AME)</label>
+                <select value={ameId} onChange={e => setAmeId(e.target.value)} className={inputClass}>
+                  <option value="">Select Certifying Engineer</option>
+                  {ames.map(a => <option key={a.id} value={a.id}>{a.name} — {a.license_no}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-secondary mb-1">CRS Reference</label>
+                <input type="text" value={crsReference} onChange={e => setCrsReference(e.target.value)}
+                  placeholder="Certificate of Release to Service ref." className={inputClass} />
+              </div>
+            </div>
+          )}
+          {error && <p className="text-xs" style={{ color: 'var(--danger)' }}>{error}</p>}
         </div>
         <div className="flex gap-3 p-4 border-t" style={{ borderColor: 'var(--border)' }}>
           <button onClick={onClose} className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer surface-inner">Cancel</button>

@@ -139,6 +139,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'aircraftId and maintenanceType are required.' }, { status: 400 });
   }
 
+  // 2026-09-18 (P0 #4, maintenance certification — audit finding F1):
+  // AME name, AME licence number and CRS reference used to be optional
+  // even when status was COMPLETED, after which the PATCH route (and, for
+  // a record created COMPLETED outright, this one) would return the
+  // aircraft straight to ACTIVE — the aircraft could fly on a maintenance
+  // record that certified nothing. This was a deliberate 2026-09-05
+  // decision at the time (MaintenanceForm's own copy called these fields
+  // "optional", with a "Not certified" badge on the DGCA Maintenance Log
+  // report as the surfaced control instead of a hard block) — revisited
+  // and changed to a hard block per the operator, 2026-09-18.
+  // `is_baseline` stays exempt: a "Set Baseline" row is a due-clock anchor
+  // with no work performed and nothing to certify, by design (see the
+  // is_baseline field's own comment in types/index.ts) — this table's
+  // squawk path already forces both `status` to SCHEDULED and `isBaseline`
+  // to false above, so it never reaches this branch either way.
+  if (status === 'COMPLETED' && !isBaseline) {
+    const missing = ![ameName, ameLicenseNo, crsReference].every(v => typeof v === 'string' && v.trim());
+    if (missing) {
+      return NextResponse.json({ error: 'AME name, AME licence number, and CRS reference are required to mark maintenance COMPLETED.' }, { status: 400 });
+    }
+  }
+
   const insertRow = {
     aircraft_id: aircraftId,
     maintenance_type: maintenanceType,

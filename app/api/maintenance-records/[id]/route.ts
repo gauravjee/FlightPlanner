@@ -62,16 +62,37 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   // Need the aircraft_id up front (for the status side effect below),
-  // regardless of whether this particular update touches status.
+  // regardless of whether this particular update touches status — and,
+  // 2026-09-18 (P0 #4), the current certification fields too: this route
+  // gets partial bodies from three different callers (the full form sends
+  // everything, the "Log Completion" modal and the one-click "Complete"
+  // button send only a few keys each), so whether a record is EFFECTIVELY
+  // certified after this update has to be computed by merging this body
+  // over the existing row, not by looking at the body alone.
   const { data: record, error: recordError } = await supabaseAdmin
     .from('maintenance_records')
-    .select('aircraft_id')
+    .select('aircraft_id, status, is_baseline, ame_name, ame_license_no, crs_reference')
     .eq('id', id)
     .single();
 
   if (recordError || !record) {
     console.error('Error loading maintenance record before update:', recordError);
     return NextResponse.json({ error: 'Maintenance record not found.' }, { status: 404 });
+  }
+
+  // is_baseline isn't in FIELD_MAP (it's set once, at creation, never via
+  // PATCH), so it always comes from the existing row here.
+  const effectiveStatus = dbUpdates.status ?? record.status;
+  const effectiveIsBaseline = record.is_baseline;
+  if (effectiveStatus === 'COMPLETED' && !effectiveIsBaseline) {
+    const effectiveAmeName = dbUpdates.ame_name !== undefined ? dbUpdates.ame_name : record.ame_name;
+    const effectiveAmeLicenseNo = dbUpdates.ame_license_no !== undefined ? dbUpdates.ame_license_no : record.ame_license_no;
+    const effectiveCrsReference = dbUpdates.crs_reference !== undefined ? dbUpdates.crs_reference : record.crs_reference;
+    const missing = ![effectiveAmeName, effectiveAmeLicenseNo, effectiveCrsReference]
+      .every(v => typeof v === 'string' && v.trim());
+    if (missing) {
+      return NextResponse.json({ error: 'AME name, AME licence number, and CRS reference are required to mark maintenance COMPLETED.' }, { status: 400 });
+    }
   }
 
   const { error: dbError } = await supabaseAdmin

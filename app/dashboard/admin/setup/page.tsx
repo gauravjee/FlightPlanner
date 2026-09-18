@@ -25,10 +25,11 @@ import UserManagementTab from './UserManagementTab';
 import GroundSchoolTab from './GroundSchoolTab';
 import HolidaysTab from './HolidaysTab';
 import AircraftMaintenanceScheduleTab from './AircraftMaintenanceScheduleTab';
+import AMEsTab from './AMEsTab';
 import {
   BookOpen, Plane, Target, ClipboardList, CircleCheck,
   GraduationCap, Users, Settings, School, CalendarDays,
-  ChevronLeft, ChevronRight, BarChart3, Wrench,
+  ChevronLeft, ChevronRight, BarChart3, Wrench, UserCheck,
 } from 'lucide-react';
 
 // ============================================================
@@ -50,6 +51,9 @@ const TABS = [
   // 2026-08-26, Phase 1: recurring maintenance schedule per aircraft model
   // (engine TBO, inspections). See AircraftMaintenanceScheduleTab.tsx.
   { id: 'maintenance-schedule', label: 'Aircraft Maintenance Schedule', shortLabel: 'Maint. Schedule', icon: Wrench, component: AircraftMaintenanceScheduleTab },
+  // 2026-09-18, P0 #4: roster of AMEs selectable from Maintenance's
+  // completion forms — see AMEsTab.tsx / lib/hooks/useAMEs.ts.
+  { id: 'ames', label: 'Certifying Engineers', shortLabel: 'AMEs', icon: UserCheck, component: AMEsTab },
   { id: 'sorties', label: 'Sortie Types', shortLabel: 'Sortie', icon: Target, component: SortieTypesTab },
   { id: 'exercises', label: 'Exercises', shortLabel: 'Exercises', icon: ClipboardList, component: ExercisesTab },
   // Label expanded 2026-08-19 (was just "Requirements") — this tab is where

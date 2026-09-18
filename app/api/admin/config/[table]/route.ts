@@ -125,6 +125,14 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
     dbTable: 'fto_settings',
     columns: ['setting_key', 'setting_value'],
   },
+  // Certifying Engineers (AME) roster (2026-09-18, P0 #4 — maintenance
+  // certification) — see add-ames-table.sql. Read by useAMEs.ts for the
+  // dropdown in MaintenanceForm.tsx / MaintenanceDueSection.tsx; managed via
+  // Admin Setup -> Certifying Engineers (AMEsTab.tsx).
+  ames: {
+    dbTable: 'ames',
+    columns: ['name', 'license_no', 'is_active'],
+  },
 };
 
 function pickAllowed(body: Record<string, unknown>, columns: string[]): Record<string, unknown> {

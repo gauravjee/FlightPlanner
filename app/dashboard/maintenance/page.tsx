@@ -66,18 +66,19 @@ export default function MaintenancePage() {
     setShowForm(true);
   };
 
-  const handleSave = (data: Partial<MaintenanceRecord>) => {
-    if (editingRecord) {
-      updateMaintenanceRecord(editingRecord.id, data);
-    } else {
-      addMaintenanceRecord(data as MaintenanceRecord);
-    }
-    setShowForm(false);
-    setEditingRecord(null);
+  // 2026-09-18 (P0 #4): returns the {success, error} result so
+  // MaintenanceForm can await it and only close on an actual save — it
+  // already handles resetting showForm/editingRecord via its own onClose
+  // once this resolves successfully, so there's nothing left to do here on
+  // the happy path.
+  const handleSave = async (data: Partial<MaintenanceRecord>) => {
+    return editingRecord
+      ? await updateMaintenanceRecord(editingRecord.id, data)
+      : await addMaintenanceRecord(data as MaintenanceRecord);
   };
 
-  const handleComplete = (record: MaintenanceRecord) => {
-    updateMaintenanceRecord(record.id, {
+  const handleComplete = async (record: MaintenanceRecord) => {
+    const result = await updateMaintenanceRecord(record.id, {
       status: 'COMPLETED',
       completedDate: todayIST(),
       // Snap the window's end to the real completion time if it wrapped
@@ -85,6 +86,13 @@ export default function MaintenancePage() {
       // blocks), just keeps the record's history honest for reporting.
       ...(record.maintenanceStart ? { maintenanceEnd: new Date().toISOString() } : {}),
     });
+    // 2026-09-18 (P0 #4): this one-click button sends no certification
+    // fields of its own — it now fails server-side (and surfaces here)
+    // when the record has no AME/CRS on file yet. Edit the record instead
+    // to add them.
+    if (!result.success) {
+      alert(`❌ ${result.error || 'Failed to complete maintenance record.'}`);
+    }
   };
 
   // Themed confirm dialog instead of window.confirm() — see ConfirmDialog.tsx.
@@ -98,10 +106,13 @@ export default function MaintenancePage() {
   // reopening the full edit form. Only applies to records that already have
   // an end time; an open-ended (no end set yet) record has nothing to
   // extend from — use Edit to set one instead.
-  const handleExtend = (record: MaintenanceRecord, addMs: number) => {
+  const handleExtend = async (record: MaintenanceRecord, addMs: number) => {
     if (!record.maintenanceEnd) return;
     const newEnd = new Date(new Date(record.maintenanceEnd).getTime() + addMs);
-    updateMaintenanceRecord(record.id, { maintenanceEnd: newEnd.toISOString() });
+    const result = await updateMaintenanceRecord(record.id, { maintenanceEnd: newEnd.toISOString() });
+    if (!result.success) {
+      alert(`❌ ${result.error || 'Failed to extend maintenance window.'}`);
+    }
   };
 
   const formatISTDateTime = (iso: string): string =>

@@ -56,10 +56,17 @@ export default function ReportDefectPage() {
     }
     setSaving(true);
     try {
-      await addMaintenanceRecord({ aircraftId, description: description.trim() } as never);
-      setAircraftId('');
-      setDescription('');
-      setSuccessMsg('Defect reported — maintenance has been notified.');
+      // 2026-09-18: was unconditional — addMaintenanceRecord used to return
+      // void and only console.error on failure, so this always showed
+      // successMsg even when the write failed. Now checks the result.
+      const result = await addMaintenanceRecord({ aircraftId, description: description.trim() } as never);
+      if (result.success) {
+        setAircraftId('');
+        setDescription('');
+        setSuccessMsg('Defect reported — maintenance has been notified.');
+      } else {
+        setErrorMsg(result.error || 'Failed to report defect.');
+      }
     } finally {
       setSaving(false);
     }

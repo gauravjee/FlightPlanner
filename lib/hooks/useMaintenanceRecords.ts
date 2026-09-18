@@ -144,19 +144,27 @@ export function getMaintenanceForAircraft(records: MaintenanceRecord[], aircraft
 // app/api/maintenance-records/route.ts — but the revalidate-on-success
 // below already picks it up from the refetched list, so there's no need
 // to thread it through the return value here too.)
+// Return type carries the outcome (2026-09-18, P0 #4): used to be
+// Promise<void> with failures only console.error'd, so every caller's UI
+// (form close, success message) proceeded regardless of whether the save
+// actually happened — a live bug the moment the server started rejecting
+// COMPLETED records missing AME/CRS certification. Callers now await this
+// and check `success` before closing/reporting success.
 export async function addMaintenanceRecord(
   record: Omit<MaintenanceRecord, 'id' | 'aircraftReg' | 'aircraftType' | 'isOverdue' | 'daysUntilDue' | 'ticketNumber'>
-): Promise<void> {
+): Promise<{ success: boolean; error?: string }> {
   const res = await fetch('/api/maintenance-records', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(record),
   });
-  if (res.ok) {
-    await mutate(maintenanceRecordsKey);
-  } else {
-    console.error('Error adding maintenance record:', await res.text());
+  const result = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    console.error('Error adding maintenance record:', result.error);
+    return { success: false, error: result.error || 'Failed to add maintenance record.' };
   }
+  await mutate(maintenanceRecordsKey);
+  return { success: true };
 }
 
 // The "auto-clear the aircraft's status back to ACTIVE once its last active
@@ -173,12 +181,13 @@ export async function addMaintenanceRecord(
 // fixed by this migration — out of scope here, same as Stage 5's own
 // "reapplied cleanly, whatever else changed in that file wasn't
 // investigated further" scoping call.
-export async function updateMaintenanceRecord(id: string, updates: Partial<MaintenanceRecord>): Promise<void> {
+export async function updateMaintenanceRecord(id: string, updates: Partial<MaintenanceRecord>): Promise<{ success: boolean; error?: string }> {
   const res = await fetch(`/api/maintenance-records/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(updates),
   });
+  const result = await res.json().catch(() => ({}));
   if (res.ok) {
     // The splice is optimistic only — it must revalidate (item 66).
     // isOverdue and daysUntilDue are DERIVED in fetchMaintenanceRecords from
@@ -201,9 +210,10 @@ export async function updateMaintenanceRecord(id: string, updates: Partial<Maint
     if (updates.status === 'COMPLETED' || updates.status === 'CANCELLED') {
       await mutate(aircraftKey);
     }
-  } else {
-    console.error('Error updating maintenance record:', await res.text());
+    return { success: true };
   }
+  console.error('Error updating maintenance record:', result.error);
+  return { success: false, error: result.error || 'Failed to update maintenance record.' };
 }
 
 export async function removeMaintenanceRecord(id: string): Promise<void> {

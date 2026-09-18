@@ -7,13 +7,18 @@ import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useScheduledFlights } from '@/lib/hooks/useScheduledFlights';
+import { useAMEs } from '@/lib/hooks/useAMEs';
 import { MaintenanceRecord } from '@/types';
 import { Pencil, Wrench, X, Hourglass, TriangleAlert, FileCheck } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 interface Props {
   record: MaintenanceRecord | null;
-  onSave: (record: Partial<MaintenanceRecord>) => void;
+  // 2026-09-18 (P0 #4): awaited so the form only closes on an actual save —
+  // used to be fire-and-forget (onSave then onClose unconditionally), which
+  // meant a server-side rejection (e.g. the new certification check) closed
+  // the form as if it had saved.
+  onSave: (record: Partial<MaintenanceRecord>) => Promise<{ success: boolean; error?: string }>;
   onClose: () => void;
 }
 
@@ -49,6 +54,7 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
   // Instructors, Students, and now Scheduled Flights are all SWR-migrated
   // (Stages 2, 3, 5) and fetch themselves on mount — no manual load needed.
   const { scheduledFlights } = useScheduledFlights();
+  const { ames } = useAMEs();
   const isEditing = !!record;
 
 
@@ -104,6 +110,15 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
 
   const [error, setError] = useState('');
 
+  // Which roster AME (if any) the form's current ameName/ameLicenseNo match
+  // — drives the dropdown below. A legacy record whose free-text name isn't
+  // in the roster just shows the placeholder; the fallback note under the
+  // dropdown keeps the on-file value visible instead of silently hiding it.
+  const selectedAmeId = useMemo(() => {
+    const match = ames.find(a => a.name === form.ameName && a.license_no === form.ameLicenseNo);
+    return match ? String(match.id) : '';
+  }, [ames, form.ameName, form.ameLicenseNo]);
+
   // Live-computed duration shown under the End pickers — never entered
   // directly, always derived from Start/End so it can't drift out of sync.
   const duration = useMemo(() => {
@@ -144,7 +159,7 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
     });
   }, [form.usePreciseWindow, form.aircraftId, form.startDate, form.startHour, form.startMinute, form.openEnded, form.endDate, form.endHour, form.endMinute, scheduledFlights]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     if (!form.aircraftId || !form.maintenanceType) return;
@@ -162,8 +177,15 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
         return;
       }
     }
+    // 2026-09-18 (P0 #4): mirrors the server-side hard block in
+    // POST/PATCH /api/maintenance-records — checked here too so the user
+    // gets an inline error instead of a round-trip to find out.
+    if (form.status === 'COMPLETED' && (!form.ameName.trim() || !form.ameLicenseNo.trim() || !form.crsReference.trim())) {
+      setError('AME name, licence number, and CRS reference are required to mark maintenance Completed.');
+      return;
+    }
 
-    onSave({
+    const result = await onSave({
       aircraftId: form.aircraftId,
       maintenanceType: form.maintenanceType,
       description: form.description,
@@ -181,7 +203,11 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
       ameLicenseNo: form.ameLicenseNo.trim() || null,
       crsReference: form.crsReference.trim() || null,
     });
-    onClose();
+    if (result.success) {
+      onClose();
+    } else {
+      setError(result.error || 'Failed to save maintenance record.');
+    }
   };
 
   const HOURS_24 = Array.from({ length: 24 }, (_, h) => pad2(h));
@@ -302,8 +328,7 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
                 <FileCheck className="w-3.5 h-3.5" /> DGCA Maintenance Log — Release to Service
               </p>
               <p className="text-xs text-tertiary">
-                Optional, but required for this record to appear complete on the DGCA Maintenance Log report.
-                The signed CRS itself stays on paper; this records its reference.
+                Required to mark this record Completed. The signed CRS itself stays on paper; this records its reference.
               </p>
 
               <div>
@@ -312,17 +337,20 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
                   rows={2} placeholder="e.g., 1x oil filter CH48110-1, 6 qt Aeroshell W100" className={inputClass} />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-secondary mb-1">AME Name</label>
-                  <input type="text" value={form.ameName} onChange={e => setForm(p => ({ ...p, ameName: e.target.value }))}
-                    placeholder="Certifying engineer" className={inputClass} />
-                </div>
-                <div>
-                  <label className="block text-xs text-secondary mb-1">AME Licence No. &amp; Category</label>
-                  <input type="text" value={form.ameLicenseNo} onChange={e => setForm(p => ({ ...p, ameLicenseNo: e.target.value }))}
-                    placeholder="e.g., AME-1234 / Cat A" className={inputClass} />
-                </div>
+              <div>
+                <label className="block text-xs text-secondary mb-1">Certifying Engineer (AME)</label>
+                <select value={selectedAmeId} onChange={e => {
+                    const ame = ames.find(a => String(a.id) === e.target.value);
+                    setForm(p => ({ ...p, ameName: ame?.name || '', ameLicenseNo: ame?.license_no || '' }));
+                  }} className={inputClass}>
+                  <option value="">Select Certifying Engineer</option>
+                  {ames.map(a => <option key={a.id} value={a.id}>{a.name} — {a.license_no}</option>)}
+                </select>
+                {form.ameName && !selectedAmeId && (
+                  <p className="text-xs text-tertiary mt-1">
+                    Currently on file: {form.ameName} ({form.ameLicenseNo || 'no licence on file'}) — not in the roster; reselect above to update.
+                  </p>
+                )}
               </div>
 
               <div>
