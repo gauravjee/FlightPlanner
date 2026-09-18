@@ -20,7 +20,6 @@ import { useStudents } from '@/lib/hooks/useStudents';
 import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
 import { useTrainingRequirementsForStudents } from '@/lib/hooks/useTrainingRequirements';
-import { supabase } from '@/lib/supabase-client';
 import { matchTrainingProgram, requirementPercent } from '@/lib/training-programs';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
@@ -66,15 +65,19 @@ export default function InstructorDashboardPage() {
   // Load all data on mount. Instructors, Students, Flight Records, and now
   // Scheduled Flights are all SWR-migrated (Stages 2, 3, 4, 5) and fetch
   // themselves — no manual load needed.
+  // 2026-09-18 (RLS remediation, Batch 3 — see
+  // claude/data-access-security-mapping.md): was a direct client-side
+  // `supabase.from('training_programs')` call (anon key) — now goes
+  // through GET /api/admin/config/training-programs (service-role,
+  // session-gated).
   useEffect(() => {
     (async () => {
-      const { data, error } = await supabase
-        .from('training_programs')
-        .select('program_code, program_name, required_hours');
-      if (error) {
-        console.error('Error loading training programs:', error.message);
+      const res = await fetch('/api/admin/config/training-programs');
+      if (!res.ok) {
+        console.error('Error loading training programs:', res.statusText);
       } else {
-        setTrainingPrograms(data || []);
+        const { rows } = await res.json();
+        setTrainingPrograms(rows || []);
       }
     })();
   }, []);

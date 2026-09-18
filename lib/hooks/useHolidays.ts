@@ -29,16 +29,21 @@ import type { Holiday } from '@/types';
 
 export const holidaysKey = ['holidays'] as const;
 
+// 2026-09-18 (RLS remediation, Batch 2/3 — see
+// claude/data-access-security-mapping.md): was a direct client-side
+// `supabase.from('holidays')` call (anon key) — now goes through
+// GET /api/admin/config/holidays (service-role, session-gated). `holidays`
+// has RLS off entirely today (not even an empty-policy deny-all), so this
+// is what makes it safe to finally enable RLS there with zero policies —
+// same treatment every other table in this remediation got.
 export async function fetchHolidays(): Promise<Holiday[]> {
-  const { data, error } = await supabase
-    .from('holidays')
-    .select('*')
-    .order('holiday_date', { ascending: true });
-
-  if (error) {
-    console.error('Error loading holidays:', error);
-    throw error;
+  const res = await fetch('/api/admin/config/holidays?orderBy=holiday_date');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('Error loading holidays:', err.error || res.statusText);
+    throw new Error(err.error || 'Failed to load holidays.');
   }
+  const { rows: data } = await res.json();
 
   return (data || []).map((row: Record<string, unknown>) => ({
     id: String(row.id),

@@ -19,23 +19,24 @@
 
 import useSWR, { mutate } from 'swr';
 import type { FuelRecord } from '@/types';
-import { supabase } from '@/lib/supabase';
 import { fetchAircraft, aircraftKey } from './useAircraft';
 
 export const fuelRecordsKey = ['fuelRecords'] as const;
 
 // Most recent 50 refueling records, same limit loadFuelRecords() used.
+//
+// 2026-09-18 (RLS remediation, Batch 2 — see
+// claude/data-access-security-mapping.md): was a direct client-side
+// `supabase.from('fuel_records')` call (anon key) — now goes through
+// GET /api/fuel-records (service-role, session-gated).
 export async function fetchFuelRecords(): Promise<FuelRecord[]> {
-  const { data, error } = await supabase
-    .from('fuel_records')
-    .select('*')
-    .order('refueling_date', { ascending: false })
-    .limit(50);
-
-  if (error) {
-    console.error('Error loading fuel records:', error);
-    throw error;
+  const res = await fetch('/api/fuel-records');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('Error loading fuel records:', err.error || res.statusText);
+    throw new Error(err.error || 'Failed to load fuel records.');
   }
+  const { records: data } = await res.json();
 
   const aircraftList = await fetchAircraft();
 

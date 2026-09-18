@@ -12,10 +12,37 @@
 // check isn't real protection in this app (same lesson as the Requirements
 // Checklist toggle route and the SPL number check below). Enforced here too
 // now, matching name/initials.
+//
+// GET added 2026-09-18 (RLS remediation, Batch 2 — see
+// claude/data-access-security-mapping.md): reads used to be a direct
+// client-side `supabase.from('instructors')` call (anon key) from
+// useInstructors.ts's fetchInstructors() — the full roster, including CPL
+// license numbers and contact info. `requireSession()` only, matching
+// aircraft/fto-settings/fuel-records: every logged-in role could already
+// read this via the anon key with zero gating (BookingForm, ScheduleBoard,
+// and other non-admin surfaces all need the roster), so this closes the
+// anon-key hole without narrowing who among logged-in users can see it.
 
 import { NextResponse } from 'next/server';
-import { requireModuleAccess } from '@/lib/api-auth';
+import { requireModuleAccess, requireSession } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+
+export async function GET() {
+  const { error } = await requireSession();
+  if (error) return error;
+
+  const { data, error: dbError } = await supabaseAdmin
+    .from('instructors')
+    .select('*')
+    .order('name', { ascending: true });
+
+  if (dbError) {
+    console.error('Error loading instructors:', dbError);
+    return NextResponse.json({ error: 'Failed to load instructors.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ instructors: data });
+}
 
 export async function POST(request: Request) {
   const { error } = await requireModuleAccess('instructors', 'full');

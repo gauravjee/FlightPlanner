@@ -30,7 +30,6 @@
 'use client';
 
 import useSWR, { mutate } from 'swr';
-import { supabase } from '@/lib/supabase';
 import { aircraftKey } from './useAircraft';
 import type { Aircraft, MaintenanceDueItem, MaintenanceRecord, MaintenanceScheduleTemplate } from '@/types';
 import { toDateStr } from '@/lib/ist';
@@ -42,12 +41,18 @@ export const maintenanceScheduleTemplatesKey = ['maintenanceScheduleTemplates'] 
 // Maintenance Records
 // ---------------------------------------------------------------------------
 
+// 2026-09-18 (RLS remediation, Batch 2 — see
+// claude/data-access-security-mapping.md): was a direct client-side
+// `supabase.from('maintenance_records')` call (anon key) — now goes through
+// GET /api/maintenance-records (service-role, session-gated).
 export async function fetchMaintenanceRecords(): Promise<MaintenanceRecord[]> {
-  const { data, error } = await supabase.from('maintenance_records').select('*').order('scheduled_date', { ascending: true });
-  if (error) {
-    console.error('Error loading maintenance records:', error);
-    throw error;
+  const res = await fetch('/api/maintenance-records');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('Error loading maintenance records:', err.error || res.statusText);
+    throw new Error(err.error || 'Failed to load maintenance records.');
   }
+  const { records: data } = await res.json();
 
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const now = new Date();
@@ -215,12 +220,21 @@ export async function removeMaintenanceRecord(id: string): Promise<void> {
 // see the file header above.
 // ---------------------------------------------------------------------------
 
+// 2026-09-18 (RLS remediation, Batch 2/3 — see
+// claude/data-access-security-mapping.md): was a direct client-side
+// `supabase.from('aircraft_maintenance_schedule_templates')` call (anon
+// key) — now goes through the shared, already-role-gated-for-writes
+// GET /api/admin/config/aircraft-maintenance-schedule (service-role,
+// session-gated for reads). This table has RLS off entirely today, same as
+// `holidays` — this is what makes it safe to enable it with zero policies.
 export async function fetchMaintenanceScheduleTemplates(): Promise<MaintenanceScheduleTemplate[]> {
-  const { data, error } = await supabase.from('aircraft_maintenance_schedule_templates').select('*');
-  if (error) {
-    console.error('Error loading maintenance schedule templates:', error);
-    throw error;
+  const res = await fetch('/api/admin/config/aircraft-maintenance-schedule');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('Error loading maintenance schedule templates:', err.error || res.statusText);
+    throw new Error(err.error || 'Failed to load maintenance schedule templates.');
   }
+  const { rows: data } = await res.json();
   return (data || []).map((row: Record<string, unknown>) => ({
     id: row.id as number,
     aircraftModel: row.aircraft_model as string,

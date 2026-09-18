@@ -23,10 +23,35 @@
 // add-dgca-maintenance-log-fields.sql. Those are staff-only: the squawk
 // path forces them null.
 
+// GET added 2026-09-18 (RLS remediation, Batch 2 — see
+// claude/data-access-security-mapping.md): reads used to be a direct
+// client-side `supabase.from('maintenance_records')` call (anon key) from
+// useMaintenanceRecords.ts's fetchMaintenanceRecords(). `requireSession()`
+// only, same reasoning as every other non-per-person read moved this
+// pass — every logged-in role could already read this via the anon key
+// with zero gating.
+
 import { NextResponse } from 'next/server';
-import { requireModuleAccess, requireRole } from '@/lib/api-auth';
+import { requireModuleAccess, requireRole, requireSession } from '@/lib/api-auth';
 import { SQUAWK_REPORT_ROLES } from '@/lib/permissions';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+
+export async function GET() {
+  const { error } = await requireSession();
+  if (error) return error;
+
+  const { data, error: dbError } = await supabaseAdmin
+    .from('maintenance_records')
+    .select('*')
+    .order('scheduled_date', { ascending: true });
+
+  if (dbError) {
+    console.error('Error loading maintenance records:', dbError);
+    return NextResponse.json({ error: 'Failed to load maintenance records.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ records: data });
+}
 
 // Computed here rather than a DB sequence, matching this table's existing
 // app-owned-denormalized-column convention (is_squawk, reported_by) and the

@@ -150,12 +150,16 @@ export default function StudentProgressPage() {
     // active roster for the picker below, a 'student'-role caller only
     // ever gets their own record (which this page doesn't use — students
     // never see the picker, their ID comes from the session instead).
+    // 2026-09-18 (RLS remediation, Batch 3 — see
+    // claude/data-access-security-mapping.md): the subjects read was a
+    // direct client-side `supabase.from('ground_school_subjects')` call
+    // (anon key) — now goes through GET /api/admin/config/ground-school-
+    // subjects (service-role, session-gated).
     const [subRes, stuRes, clsRes] = await Promise.all([
-      supabase
-        .from('ground_school_subjects')
-        .select('*')
-        .eq('is_active', true)
-        .order('sort_order'),
+      fetch('/api/admin/config/ground-school-subjects?orderBy=sort_order&filterColumn=is_active&filterValue=true').then(
+        (r): Promise<{ rows: { id: number; subject_name: string; subject_code: string }[] }> =>
+          r.ok ? r.json() : Promise.resolve({ rows: [] })
+      ),
       fetch('/api/students').then(
         (r): Promise<{ students: { id: string; name: string; initials: string; status: string }[] }> =>
           r.ok ? r.json() : Promise.resolve({ students: [] })
@@ -186,7 +190,7 @@ export default function StudentProgressPage() {
       setLoadError('');
     }
 
-    setSubjects(subRes.data || []);
+    setSubjects(subRes.rows || []);
     setStudents((stuRes.students || []).filter((s) => s.status === 'ACTIVE'));
 
     // Flatten class joins into a simple array for easy client‑side look‑up

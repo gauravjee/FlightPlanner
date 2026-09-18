@@ -13,7 +13,6 @@
 //   matches against the core subject name using includes().
 // ---------------------------------------------------------------------------
 
-import { supabase } from '@/lib/supabase-client';
 import { fetchTrainingRequirements, toggleRequirement } from '@/lib/hooks/useTrainingRequirements';
 
 /**
@@ -32,15 +31,18 @@ import { fetchTrainingRequirements, toggleRequirement } from '@/lib/hooks/useTra
  * @param requirementName  Full requirement name from the database
  * @returns  Matching ground school subject name, or null if not a ground school subject
  */
+// 2026-09-18 (RLS remediation, Batch 3 — see
+// claude/data-access-security-mapping.md): was a direct client-side
+// `supabase.from('ground_school_subjects')` call (anon key) — now goes
+// through GET /api/admin/config/ground-school-subjects (service-role,
+// session-gated).
 export async function getGroundSchoolSubject(requirementName: string): Promise<string | null> {
-  const { data, error } = await supabase
-    .from('ground_school_subjects')
-    .select('subject_name');
-
-  if (error) {
-    console.error('Error loading ground school subjects:', error.message);
+  const res = await fetch('/api/admin/config/ground-school-subjects');
+  if (!res.ok) {
+    console.error('Error loading ground school subjects:', res.statusText);
     return null;
   }
+  const { rows: data } = await res.json();
 
   for (const row of data || []) {
     const subjectName = row.subject_name as string | null;

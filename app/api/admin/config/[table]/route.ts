@@ -26,13 +26,35 @@
 // pre-approved columns can ever be written, regardless of what a modified
 // or direct client sends in the body.
 //
-// Reads stay as direct client-side Supabase calls, unchanged — same scope
-// convention as every other route in this app (see app/api/aircraft/
-// route.ts's own header comment). This route only covers the write path.
+// GET added 2026-09-18 (RLS remediation, Batch 2 — see
+// claude/data-access-security-mapping.md): reads for these tables used to
+// be direct client-side `supabase.from(<table>)` calls (anon key) —
+// exercises/training_programs/instructor_roles/sortie_types/ground_school_
+// subjects/training_requirement_templates/holidays/aircraft_maintenance_
+// schedule_templates were all readable (and, before RLS was enabled at
+// all, writable) by anyone with the public anon key. `requireSession()`
+// only, no role restriction — same reasoning as every other non-per-person
+// reference-table read moved in this remediation (see app/api/aircraft/
+// route.ts and app/api/fto-settings/route.ts's own header comments): this
+// data was already readable by literally anyone with the anon key, whether
+// logged in or not, so this only closes that hole, it doesn't narrow who
+// among logged-in staff/students can see it. Several of these tables (
+// exercises, sortie_types, holidays, training_programs) are read far more
+// broadly than the super_admin-only Admin Setup wizard that writes them —
+// BookingForm, FlightRecordForm, ScheduleBoard, the Progress page, etc. —
+// so gating this to ADMIN_SETUP_WRITE_ROLES would break those pages for
+// every non-super_admin role.
+//
+// `orderBy` (comma-separated column list, default 'id') and an optional
+// single-column `filterColumn`/`filterValue` equality filter cover every
+// existing call site's query shape (ConfigTable.tsx's own `orderBy` prop,
+// the admin tabs' own direct queries, and the two SWR hooks — useExercises/
+// useSortieTypes — that filter to is_active=true) without one-off params
+// per table.
 // ---------------------------------------------------------------------------
 
 import { NextResponse } from 'next/server';
-import { requireRole, ADMIN_SETUP_WRITE_ROLES } from '@/lib/api-auth';
+import { requireRole, requireSession, ADMIN_SETUP_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 // Maps the URL's `table` segment to { the real Postgres table, the columns
@@ -114,6 +136,49 @@ function pickAllowed(body: Record<string, unknown>, columns: string[]): Record<s
 }
 
 type RouteContext = { params: Promise<{ table: string }> };
+
+// Truthy/falsy/number-ish coercion for filterValue — query params only ever
+// arrive as strings, but is_active/etc. are stored as real booleans, and
+// supabase's .eq() matches on type, so 'true' has to become the boolean
+// true, not the string 'true'.
+function coerceFilterValue(raw: string): string | number | boolean {
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  if (raw !== '' && !Number.isNaN(Number(raw))) return Number(raw);
+  return raw;
+}
+
+export async function GET(request: Request, context: RouteContext) {
+  const { error } = await requireSession();
+  if (error) return error;
+
+  const { table } = await context.params;
+  const config = TABLES[table];
+  if (!config) {
+    return NextResponse.json({ error: 'Unknown config resource.' }, { status: 404 });
+  }
+
+  const url = new URL(request.url);
+  const orderBy = (url.searchParams.get('orderBy') || 'id').split(',').filter(Boolean);
+  const filterColumn = url.searchParams.get('filterColumn');
+  const filterValue = url.searchParams.get('filterValue');
+
+  let query = supabaseAdmin.from(config.dbTable).select('*');
+  for (const col of orderBy) {
+    query = query.order(col, { ascending: true });
+  }
+  if (filterColumn && filterValue !== null) {
+    query = query.eq(filterColumn, coerceFilterValue(filterValue));
+  }
+
+  const { data, error: dbError } = await query;
+  if (dbError) {
+    console.error(`Error loading ${config.dbTable}:`, dbError);
+    return NextResponse.json({ error: 'Failed to load.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ rows: data });
+}
 
 export async function POST(request: Request, context: RouteContext) {
   const { error } = await requireRole(ADMIN_SETUP_WRITE_ROLES);

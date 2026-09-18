@@ -5,7 +5,6 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { supabase } from '@/lib/supabase-client';
 import { Plane, Pencil, Plus, Save, Trash2, CircleCheck, Fuel, Wrench } from 'lucide-react';
 import { deriveModelEngineTypeMap } from '@/lib/store';
 import {
@@ -121,16 +120,20 @@ export default function AircraftSetupTab() {
   // 2026-08-27: extracted so the "Refresh list" affordance below (shown
   // while blocked in Other/custom mode) can re-run this fetch on demand —
   // see AircraftFormModal.tsx's own copy of this same pattern.
+  // 2026-09-18 (RLS remediation, Batch 3 — see
+  // claude/data-access-security-mapping.md): was a direct client-side
+  // `supabase.from('aircraft_maintenance_schedule_templates')` call (anon
+  // key) — now goes through the shared
+  // GET /api/admin/config/aircraft-maintenance-schedule route.
   const loadModelOptions = useCallback(() => {
-    supabase
-      .from('aircraft_maintenance_schedule_templates')
-      .select('aircraft_model, engine_type')
-      .then(({ data, error }) => {
-        if (error) { console.error('Error loading aircraft models:', error.message); return; }
-        const rows = (data || []) as { aircraft_model: string; engine_type: string | null }[];
-        const distinct = Array.from(new Set(rows.map(r => r.aircraft_model))).sort();
+    fetch('/api/admin/config/aircraft-maintenance-schedule')
+      .then(res => res.json())
+      .then(({ rows, error }) => {
+        if (error) { console.error('Error loading aircraft models:', error); return; }
+        const models = (rows || []) as { aircraft_model: string; engine_type: string | null }[];
+        const distinct = Array.from(new Set(models.map(r => r.aircraft_model))).sort();
         setModelOptions(distinct);
-        setModelEngineType(deriveModelEngineTypeMap(rows));
+        setModelEngineType(deriveModelEngineTypeMap(models));
       });
   }, []);
 

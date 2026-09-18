@@ -43,14 +43,24 @@ export default function GroundSchoolPage() {
   // (react-hooks/set-state-in-effect flags any named function that sets
   // state anywhere in its body, even safely after an await, when called
   // from an effect).
+  // 2026-09-18 (RLS remediation, Batch 3 — see
+  // claude/data-access-security-mapping.md): the subjects read was a direct
+  // client-side `supabase.from('ground_school_subjects')` call (anon key) —
+  // now goes through GET /api/admin/config/ground-school-subjects
+  // (service-role, session-gated). The enrollment and classes reads below
+  // are UNCHANGED — still direct anon-key calls. ground_school_enrollment
+  // in particular has a live IDOR here (this fetch pulls every student's
+  // exam scores/roll numbers unfiltered; `selectedStudent` only filters
+  // client-side in subjectProgress below) — flagged in the mapping doc as
+  // Batch 4 work needing a self-scoped server route, not a mechanical move.
   const fetchGroundSchoolData = async () => {
     const [subjRes, enrollRes, classRes] = await Promise.all([
-      supabase.from('ground_school_subjects').select('*').eq('is_active', true).order('sort_order'),
+      fetch('/api/admin/config/ground-school-subjects?orderBy=sort_order&filterColumn=is_active&filterValue=true').then(r => r.json()),
       supabase.from('ground_school_enrollment').select('*'),
       supabase.from('ground_school_classes').select('*, ground_school_subjects(subject_name)').order('class_date', { ascending: false }).limit(10),
     ]);
     return {
-      subjects: subjRes.data || [],
+      subjects: subjRes.rows || [],
       enrollments: enrollRes.data || [],
       classes: classRes.data || [],
     };

@@ -14,27 +14,32 @@
 'use client';
 
 import useSWR, { mutate } from 'swr';
-import { supabase } from '@/lib/supabase';
 import type { Instructor } from '@/types';
 
 export const instructorsKey = ['instructors'] as const;
 
 // ---------------------------------------------------------------------------
-// Fetcher — same Supabase query and row-mapping loadInstructors() used, just
-// relocated. Exported (not just used internally) because a handful of
-// not-yet-migrated domains (loadStudents, loadFlightRecords,
-// loadStudentFlightRecords, loadScheduledFlights, loadAvailability — see
-// lib/store.ts) still need instructor data for their own client-side name-
-// joins and now call this directly instead of reading a store field that no
-// longer exists, exactly as fetchAircraft() was used in Stage 1.
+// Fetcher — same row-mapping loadInstructors() used, just relocated.
+// Exported (not just used internally) because a handful of not-yet-migrated
+// domains (loadStudents, loadFlightRecords, loadStudentFlightRecords,
+// loadScheduledFlights, loadAvailability — see lib/store.ts) still need
+// instructor data for their own client-side name-joins and now call this
+// directly instead of reading a store field that no longer exists, exactly
+// as fetchAircraft() was used in Stage 1.
+//
+// 2026-09-18 (RLS remediation, Batch 2 — see
+// claude/data-access-security-mapping.md): was a direct client-side
+// `supabase.from('instructors')` call (anon key) — now goes through
+// GET /api/instructors (service-role, session-gated).
 // ---------------------------------------------------------------------------
 export async function fetchInstructors(): Promise<Instructor[]> {
-  const { data, error } = await supabase.from('instructors').select('*').order('name', { ascending: true });
-
-  if (error) {
-    console.error('Error loading instructors:', error);
-    throw error;
+  const res = await fetch('/api/instructors');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('Error loading instructors:', err.error || res.statusText);
+    throw new Error(err.error || 'Failed to load instructors.');
   }
+  const { instructors: data } = await res.json();
 
   return (data || []).map((row: Record<string, unknown>) => ({
     id: String(row.id), name: row.name as string, initials: row.initials as string,

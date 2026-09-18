@@ -265,13 +265,18 @@ export default function GroundSchoolCalendar() {
   useEffect(() => {
     if (subjectsLoaded.current) return; // Already loaded — skip
 
+    // 2026-09-18 (RLS remediation, Batch 3 — see
+    // claude/data-access-security-mapping.md): was a direct client-side
+    // `supabase.from('ground_school_subjects')` call (anon key) — now goes
+    // through GET /api/admin/config/ground-school-subjects (service-role,
+    // session-gated), filtered to is_active=true server-side the same way
+    // the old query was.
     const loadSubjects = async () => {
-      const { data } = await supabase
-        .from('ground_school_subjects')
-        .select('id, subject_name, subject_code')
-        .eq('is_active', true)
-        .order('sort_order');
-      if (data) {
+      const res = await fetch(
+        '/api/admin/config/ground-school-subjects?orderBy=sort_order&filterColumn=is_active&filterValue=true'
+      );
+      if (res.ok) {
+        const { rows: data } = await res.json();
         setSubjects(data);
         subjectsLoaded.current = true;
       }

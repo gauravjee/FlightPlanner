@@ -5,7 +5,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { supabase } from '@/lib/supabase-client';
 import { mutate } from 'swr';
 import { exercisesKey } from '@/lib/hooks/useExercises';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
@@ -52,17 +51,21 @@ export default function ExercisesTab() {
   // (react-hooks/set-state-in-effect flags any named function that sets
   // state anywhere in its body, even safely after an await, when called
   // from an effect).
+  //
+  // 2026-09-18 (RLS remediation, Batch 2 — see
+  // claude/data-access-security-mapping.md): was a direct client-side
+  // `supabase.from('exercises')` call (anon key) — now goes through
+  // GET /api/admin/config/exercises (service-role, session-gated).
+  // Unfiltered (includes inactive rows, for management) — same as before.
   const fetchExercises = async (): Promise<Exercise[]> => {
     console.log('Fetching exercises...');
-    const { data, error } = await supabase
-      .from('exercises')
-      .select('*')
-      .order('sort_order', { ascending: true });
-
-    if (error) {
-      console.error('Error loading exercises:', error.message);
+    const res = await fetch('/api/admin/config/exercises?orderBy=sort_order');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error('Error loading exercises:', err.error || res.statusText);
       return [];
     }
+    const { rows: data } = await res.json();
     console.log('Loaded exercises:', data?.length, 'items');
     // 2026-09-02 (SWR migration, Stage 8): this tab's own list above is
     // unfiltered (includes inactive rows, for management) so it can't be

@@ -15,7 +15,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { mutate } from 'swr';
-import { supabase } from '@/lib/supabase-client';
 import Papa from 'papaparse';
 import { Wrench, Pencil, Plus, Save, Trash2, Upload, Download, LoaderCircle } from 'lucide-react';
 import { maintenanceScheduleTemplatesKey } from '@/lib/hooks/useMaintenanceRecords';
@@ -99,16 +98,20 @@ export default function AircraftMaintenanceScheduleTab() {
   // (react-hooks/set-state-in-effect flags any named function that sets
   // state anywhere in its body, even safely after an await, when called
   // from an effect).
+  //
+  // 2026-09-18 (RLS remediation, Batch 3 — see
+  // claude/data-access-security-mapping.md): was a direct client-side
+  // `supabase.from('aircraft_maintenance_schedule_templates')` call (anon
+  // key) — now goes through the shared, already-role-gated-for-writes
+  // GET /api/admin/config/aircraft-maintenance-schedule route.
   const fetchTemplates = useCallback(async (): Promise<ScheduleTemplateRow[]> => {
-    const { data, error } = await supabase
-      .from('aircraft_maintenance_schedule_templates')
-      .select('*')
-      .order('aircraft_model', { ascending: true })
-      .order('item_name', { ascending: true });
-    if (error) {
-      console.error('Error loading maintenance schedule templates:', error.message);
+    const res = await fetch('/api/admin/config/aircraft-maintenance-schedule?orderBy=aircraft_model,item_name');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error('Error loading maintenance schedule templates:', err.error || res.statusText);
       return [];
     }
+    const { rows: data } = await res.json();
     // 2026-09-01 (SWR migration, Stage 6): this tab keeps its own local
     // load/state, independent of useMaintenanceScheduleTemplates() — so
     // every write here (Add/Edit/Delete/Engine Type/CSV import, all of

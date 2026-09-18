@@ -5,7 +5,6 @@ import { StudentRecord } from '@/types';
 import { useState, useEffect, useMemo } from 'react';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
-import { supabase } from '@/lib/supabase-client';
 import { Pencil, GraduationCap, Save, Plus, X, CircleCheck } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { todayIST } from '@/lib/ist';
@@ -95,20 +94,25 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
   // only having PPL/CPL/IR/SPL rows). Now it only ever shows what's real.
   const [stageOptions, setStageOptions] = useState<string[]>([]);
 
+  // 2026-09-18 (RLS remediation, Batch 3 — see
+  // claude/data-access-security-mapping.md): was a direct client-side
+  // `supabase.from('training_programs')` call (anon key) — now goes
+  // through GET /api/admin/config/training-programs (service-role,
+  // session-gated), filtered to is_active=true server-side the same way
+  // the old query was.
   useEffect(() => {
     (async () => {
-      const { data, error } = await supabase
-        .from('training_programs')
-        .select('program_code, program_name, is_active, sort_order')
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true });
-      if (error) {
-        console.error('Error loading training programs for stage dropdown:', error.message);
+      const res = await fetch(
+        '/api/admin/config/training-programs?orderBy=sort_order&filterColumn=is_active&filterValue=true'
+      );
+      if (!res.ok) {
+        console.error('Error loading training programs for stage dropdown:', res.statusText);
         return;
       }
+      const { rows: data } = await res.json();
       const dbValues = (data || [])
-        .map(p => p.program_code || p.program_name)
-        .filter((v): v is string => !!v);
+        .map((p: { program_code?: string; program_name?: string }) => p.program_code || p.program_name)
+        .filter((v: string | undefined): v is string => !!v);
       setStageOptions(dbValues);
     })();
   }, []);

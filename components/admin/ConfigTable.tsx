@@ -17,7 +17,6 @@
 'use client';
 
 import { useState, useEffect, type ReactNode } from 'react';
-import { supabase } from '@/lib/supabase-client';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { Pencil, Plus, Save, Trash2 } from 'lucide-react';
 
@@ -106,14 +105,22 @@ export default function ConfigTable<T extends { id: number }>({
   // Pure fetch — sets no state — so it is safe to call from the mount
   // effect below (react-hooks/set-state-in-effect flags any named function
   // that sets state anywhere in its body when called from an effect).
+  //
+  // 2026-09-18 (RLS remediation, Batch 2 — see
+  // claude/data-access-security-mapping.md): was a direct client-side
+  // `supabase.from(table)` call (anon key) — now goes through
+  // GET /api/admin/config/<endpoint> (service-role, session-gated), which
+  // every one of these tabs' writes already used.
   const fetchRows = async (): Promise<T[]> => {
-    const { data, error } = await supabase.from(table).select('*').order(orderBy);
-    if (error) {
-      console.error(`Error loading ${table}:`, error.message);
+    const res = await fetch(`/api/admin/config/${endpoint}?orderBy=${encodeURIComponent(orderBy)}`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error(`Error loading ${table}:`, err.error || res.statusText);
       return [];
     }
     onChanged?.();
-    return (data ?? []) as T[];
+    const { rows } = await res.json();
+    return (rows ?? []) as T[];
   };
 
   const reload = async () => {

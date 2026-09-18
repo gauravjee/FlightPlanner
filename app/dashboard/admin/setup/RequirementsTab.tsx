@@ -5,7 +5,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { supabase } from '@/lib/supabase-client';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { CircleCheck, Pencil, Plus, Save, Trash2, Lock, RefreshCw } from 'lucide-react';
 
@@ -68,9 +67,16 @@ export default function RequirementsTab() {
   // that sets state anywhere in its body, even safely after an await, when
   // called from an effect — so the state-setting has to live at each call
   // site instead).
+  //
+  // 2026-09-18 (RLS remediation, Batch 2/3 — see
+  // claude/data-access-security-mapping.md): both were direct client-side
+  // `supabase.from(...)` calls (anon key) — now go through the shared
+  // GET /api/admin/config/<endpoint> route (service-role, session-gated).
   const fetchPrograms = async (): Promise<TrainingProgram[]> => {
-    const { data } = await supabase.from('training_programs').select('*').order('sort_order');
-    return data || [];
+    const res = await fetch('/api/admin/config/training-programs?orderBy=sort_order');
+    if (!res.ok) return [];
+    const { rows } = await res.json();
+    return rows || [];
   };
 
   const fetchRequirements = async (program: string): Promise<Requirement[]> => {
@@ -79,16 +85,15 @@ export default function RequirementsTab() {
     // Templates now live in their own table — see
     // split-training-requirement-templates.sql — instead of being the
     // student_id-IS-NULL rows of the shared training_requirements table.
-    const { data, error } = await supabase
-      .from('training_requirement_templates')
-      .select('*')
-      .eq('program_code', program)
-      .order('sort_order', { ascending: true });
-
-    if (error) {
-      console.error('Error loading requirements:', error.message);
+    const res = await fetch(
+      `/api/admin/config/requirement-templates?orderBy=sort_order&filterColumn=program_code&filterValue=${encodeURIComponent(program)}`
+    );
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error('Error loading requirements:', err.error || res.statusText);
       return [];
     }
+    const { rows: data } = await res.json();
     console.log('Loaded requirements:', data?.length, 'items');
     return data || [];
   };

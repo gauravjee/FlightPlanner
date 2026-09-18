@@ -6,7 +6,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { Pencil, Plus, Save, X } from 'lucide-react';
 import { FUEL_BURN_RATE_BY_TYPE_LPH, DEFAULT_FUEL_BURN_RATE_LPH, deriveModelEngineTypeMap } from '@/lib/store';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
-import { supabase } from '@/lib/supabase-client';
 import { daysFromTodayIST } from '@/lib/ist';
 
 // 2026-08-26: sentinel value for the "Other" option in the Model dropdown
@@ -98,16 +97,20 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
   // not just once on mount — lets someone add a model in Admin Setup →
   // Aircraft Maintenance Schedule (e.g. in another tab) and pick it up
   // here without having to close and reopen this whole form.
+  // 2026-09-18 (RLS remediation, Batch 3 — see
+  // claude/data-access-security-mapping.md): was a direct client-side
+  // `supabase.from('aircraft_maintenance_schedule_templates')` call (anon
+  // key) — now goes through the shared
+  // GET /api/admin/config/aircraft-maintenance-schedule route.
   const loadModelOptions = useCallback(() => {
-    supabase
-      .from('aircraft_maintenance_schedule_templates')
-      .select('aircraft_model, engine_type')
-      .then(({ data, error }) => {
-        if (error) { console.error('Error loading aircraft models:', error.message); return; }
-        const rows = (data || []) as { aircraft_model: string; engine_type: string | null }[];
-        const distinct = Array.from(new Set(rows.map(r => r.aircraft_model))).sort();
+    fetch('/api/admin/config/aircraft-maintenance-schedule')
+      .then(res => res.json())
+      .then(({ rows, error }) => {
+        if (error) { console.error('Error loading aircraft models:', error); return; }
+        const models = (rows || []) as { aircraft_model: string; engine_type: string | null }[];
+        const distinct = Array.from(new Set(models.map(r => r.aircraft_model))).sort();
         setModelOptions(distinct);
-        setModelEngineType(deriveModelEngineTypeMap(rows));
+        setModelEngineType(deriveModelEngineTypeMap(models));
       });
   }, []);
 
