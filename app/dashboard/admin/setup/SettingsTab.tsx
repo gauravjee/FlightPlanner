@@ -90,17 +90,20 @@ export default function SettingsTab() {
   // (react-hooks/set-state-in-effect flags any named function that sets
   // state anywhere in its body, even safely after an await, when called
   // from an effect).
+  // 2026-09-18 (RLS remediation Step 3): was a direct client-side
+  // `supabase.from('fto_settings')` call (anon key) — now goes through
+  // GET /api/fto-settings (service-role, session-gated), the same route
+  // useFtoSettings.ts's fetchFtoSettings() uses, so the table's RLS policy
+  // can be locked down. See claude/rls-remediation-progress-2026-09-18.md.
   const fetchSettings = async (): Promise<FTOSetting[]> => {
     console.log('📋 Fetching FTO settings...');
-    const { data, error } = await supabase
-      .from('fto_settings')
-      .select('*')
-      .order('id', { ascending: true });
-
-    if (error) {
-      console.error('❌ Error loading settings:', error.message);
+    const res = await fetch('/api/fto-settings');
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.error('❌ Error loading settings:', err.error || res.statusText);
       return [];
     }
+    const { settings: data } = await res.json();
     console.log('✅ Loaded settings:', data?.length, 'items');
     return data || [];
   };

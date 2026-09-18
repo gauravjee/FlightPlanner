@@ -22,7 +22,6 @@
 'use client';
 
 import useSWR, { mutate } from 'swr';
-import { supabase } from '@/lib/supabase';
 import type { TrainingRequirement } from '@/types';
 import { todayIST } from '@/lib/ist';
 
@@ -49,14 +48,20 @@ function mapTrainingRequirementRow(row: Record<string, unknown>): TrainingRequir
   };
 }
 
+// 2026-09-18 (RLS remediation Step 3): was a direct client-side
+// `supabase.from('training_requirements')` call (anon key) — now goes
+// through GET /api/training-requirements (service-role, session-gated) so
+// the table's RLS policy can be locked down. See
+// claude/rls-remediation-progress-2026-09-18.md.
 export async function fetchTrainingRequirements(studentId?: string): Promise<TrainingRequirement[]> {
-  let query = supabase.from('training_requirements').select('*').order('sort_order', { ascending: true });
-  if (studentId) query = query.eq('student_id', studentId);
-  const { data, error } = await query;
-  if (error) {
-    console.error('Error loading training requirements:', error);
-    throw error;
+  const params = studentId ? `?studentId=${encodeURIComponent(studentId)}` : '';
+  const res = await fetch(`/api/training-requirements${params}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('Error loading training requirements:', err.error || res.statusText);
+    throw new Error(err.error || 'Failed to load training requirements.');
   }
+  const { requirements: data } = await res.json();
   return (data || []).map(mapTrainingRequirementRow);
 }
 
@@ -71,15 +76,13 @@ export async function fetchTrainingRequirements(studentId?: string): Promise<Tra
 // "everything" or "exactly one."
 export async function fetchTrainingRequirementsForStudents(studentIds: string[]): Promise<TrainingRequirement[]> {
   if (studentIds.length === 0) return [];
-  const { data, error } = await supabase
-    .from('training_requirements')
-    .select('*')
-    .in('student_id', studentIds)
-    .order('sort_order', { ascending: true });
-  if (error) {
-    console.error('Error loading training requirements for students:', error);
-    throw error;
+  const res = await fetch(`/api/training-requirements?studentIds=${encodeURIComponent(studentIds.join(','))}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('Error loading training requirements for students:', err.error || res.statusText);
+    throw new Error(err.error || 'Failed to load training requirements.');
   }
+  const { requirements: data } = await res.json();
   return (data || []).map(mapTrainingRequirementRow);
 }
 

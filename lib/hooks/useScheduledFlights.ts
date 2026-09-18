@@ -35,7 +35,6 @@
 'use client';
 
 import useSWR, { mutate } from 'swr';
-import { supabase } from '@/lib/supabase';
 import {
   getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule,
   getAircraftBufferMinutes, parseTurnaroundBufferSetting, getProjectedFuelAfter,
@@ -49,20 +48,24 @@ import type { Aircraft, Instructor, ScheduledFlight, StudentRecord, TimeConflict
 export const scheduledFlightsKey = ['scheduledFlights'] as const;
 
 // ---------------------------------------------------------------------------
-// Fetcher — same Supabase query/row-mapping loadScheduledFlights() (lib/
-// store.ts) used, minus the aircraft/student/instructor name join — see the
-// file header above for why that moved to withScheduledFlightNames() below.
+// Fetcher — same row-mapping loadScheduledFlights() (lib/store.ts) used,
+// minus the aircraft/student/instructor name join — see the file header
+// above for why that moved to withScheduledFlightNames() below.
+//
+// 2026-09-18 (RLS remediation Step 3): was a direct client-side
+// `supabase.from('scheduled_flights')` call (anon key) — now goes through
+// GET /api/scheduled-flights (service-role, session-gated) so the table's
+// RLS policy can be locked down. See
+// claude/rls-remediation-progress-2026-09-18.md.
 // ---------------------------------------------------------------------------
 export async function fetchScheduledFlights(): Promise<ScheduledFlight[]> {
-  const { data, error } = await supabase
-    .from('scheduled_flights')
-    .select('*')
-    .order('start_time', { ascending: true });
-
-  if (error) {
-    console.error('Error loading scheduled flights:', error);
-    throw error;
+  const res = await fetch('/api/scheduled-flights');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('Error loading scheduled flights:', err.error || res.statusText);
+    throw new Error(err.error || 'Failed to load scheduled flights.');
   }
+  const { flights: data } = await res.json();
 
   return (data || []).map((row: Record<string, unknown>) => {
     const startTime = new Date(row.start_time as string);
@@ -166,21 +169,25 @@ export async function checkConflicts(
   const bufferAfterMin = getAircraftBufferMinutes(projectedFuelAfter, turnaroundMin);
   const bufferedStart = new Date(startTime); bufferedStart.setMinutes(bufferedStart.getMinutes() - bufferBeforeMin);
   const bufferedEnd = new Date(endTime); bufferedEnd.setMinutes(bufferedEnd.getMinutes() + bufferAfterMin);
-  let query = supabase.from('scheduled_flights').select('*')
-    .eq('aircraft_id', aircraftId)
-    .lt('start_time', bufferedEnd.toISOString())
-    .gt('end_time', bufferedStart.toISOString())
-    // A cancelled flight soft-cancels (see cancelFlight below) rather than
-    // being deleted, so a cancelled row stays in the table — it must not
-    // count as still occupying the aircraft.
-    .neq('status', 'CANCELLED');
-  if (excludeId) query = query.neq('id', excludeId);
-  const { data, error } = await query;
-  if (error) return { hasConflict: false, conflictingFlights: [] };
-  const conflicts = excludeId ? (data || []).filter(f => String(f.id) !== String(excludeId)) : (data || []);
+  // 2026-09-18 (RLS remediation Step 3): was a direct client-side
+  // `supabase.from('scheduled_flights')` query (anon key) — now goes
+  // through GET /api/scheduled-flights with the same filters as query
+  // params (aircraft + time window + excludeCancelled), so the table's RLS
+  // policy can be locked down. `excludeId` stays a client-side post-filter,
+  // same as the original code already did (it was never in the SQL query).
+  const params = new URLSearchParams({
+    aircraftId, startTimeLt: bufferedEnd.toISOString(), endTimeGt: bufferedStart.toISOString(),
+    excludeCancelled: 'true',
+  });
+  const res = await fetch(`/api/scheduled-flights?${params}`);
+  if (!res.ok) return { hasConflict: false, conflictingFlights: [] };
+  const { flights: data } = await res.json().catch(() => ({ flights: [] as Record<string, unknown>[] }));
+  const conflicts: Record<string, unknown>[] = excludeId
+    ? (data || []).filter((f: Record<string, unknown>) => String(f.id) !== String(excludeId))
+    : (data || []);
   return {
     hasConflict: conflicts.length > 0,
-    conflictingFlights: conflicts.map(row => ({
+    conflictingFlights: conflicts.map((row: Record<string, unknown>) => ({
       id: String(row.id), aircraftId: String(row.aircraft_id), instructorId: String(row.instructor_id),
       startTime: row.start_time as string, endTime: row.end_time as string,
       sortieType: row.sortie_type as string, status: row.status as string,

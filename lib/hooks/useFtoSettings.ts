@@ -28,17 +28,21 @@
 'use client';
 
 import useSWR from 'swr';
-import { supabase } from '@/lib/supabase';
 
 export const ftoSettingsKey = ['ftoSettings'] as const;
 
+// 2026-09-18 (RLS remediation Step 3): was a direct client-side
+// `supabase.from('fto_settings')` call (anon key) — now goes through
+// GET /api/fto-settings (service-role, session-gated) so the table's RLS
+// policy can be locked down. See claude/rls-remediation-progress-2026-09-18.md.
 export async function fetchFtoSettings(): Promise<Record<string, string>> {
-  const { data, error } = await supabase.from('fto_settings').select('*');
-
-  if (error) {
-    console.error('Error loading FTO settings:', error);
-    throw error;
+  const res = await fetch('/api/fto-settings');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('Error loading FTO settings:', err.error || res.statusText);
+    throw new Error(err.error || 'Failed to load settings.');
   }
+  const { settings: data } = await res.json();
 
   const settings: Record<string, string> = {};
   (data || []).forEach((row: Record<string, unknown>) => {

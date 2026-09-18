@@ -71,16 +71,24 @@ export function useHolidays() {
 // Ported from lib/store.ts as-is — counts flights/ground-school classes
 // already scheduled on a date so addHoliday/addHolidaysBulk can flag them
 // for manual review (nothing is auto-touched).
+// 2026-09-18 (RLS remediation Step 3): the scheduled_flights half of this
+// used to be a direct client-side `supabase.from('scheduled_flights')`
+// COUNT query (anon key) — now goes through GET /api/scheduled-flights
+// with the day-range as query params (that route doesn't have a
+// count-only mode, so this takes the row array's length instead — this
+// only runs when adding a holiday, an infrequent admin action, so there's
+// no real cost to that). ground_school_classes is a separate table outside
+// this session's 5-table scope — left exactly as it was.
 async function countScheduleConflictsOnDate(dateStr: string): Promise<{ conflictingFlights: number; conflictingClasses: number }> {
   const dayStart = `${dateStr}T00:00:00+05:30`;
   const dayEnd = `${dateStr}T23:59:59.999+05:30`;
   const [flightsRes, classesRes] = await Promise.all([
-    supabase.from('scheduled_flights').select('id', { count: 'exact', head: true })
-      .gte('start_time', dayStart).lte('start_time', dayEnd).neq('status', 'CANCELLED'),
+    fetch(`/api/scheduled-flights?startTimeGte=${encodeURIComponent(dayStart)}&startTimeLte=${encodeURIComponent(dayEnd)}&excludeCancelled=true`)
+      .then(res => res.ok ? res.json() : { flights: [] }).catch(() => ({ flights: [] })),
     supabase.from('ground_school_classes').select('id', { count: 'exact', head: true })
       .eq('class_date', dateStr).neq('status', 'CANCELLED'),
   ]);
-  return { conflictingFlights: flightsRes.count || 0, conflictingClasses: classesRes.count || 0 };
+  return { conflictingFlights: (flightsRes.flights || []).length, conflictingClasses: classesRes.count || 0 };
 }
 
 // 2026-08-21 (security hardening round): holiday-calendar writes go through

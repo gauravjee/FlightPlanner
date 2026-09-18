@@ -17,10 +17,39 @@
 // into (not derived from the session) — a pre-existing data-integrity quirk,
 // unchanged here; fixing that is a product decision, not part of this
 // remediation.
+//
+// GET added 2026-09-18 (RLS remediation Step 3 — see
+// claude/rls-remediation-progress-2026-09-18.md): reads used to be direct
+// client-side `supabase.from('availability')` calls (anon key) from two
+// places — useAvailability.ts's fetchAvailability() (full list, enrichment
+// stays client-side) and its checkAvailability() helper (a filtered
+// point-in-time query). Both now hit this one GET, unfiltered — checkAvailability
+// filters the same result client-side instead of a separate server query;
+// this table is small (leave records), so there's no real cost to that.
+// `requireSession()` only, matching every other read moved this pass — no
+// role restriction beyond "logged in," since that's what the anon key
+// effectively gave everyone already.
 
 import { NextResponse } from 'next/server';
-import { requireRole, AVAILABILITY_VIEW_ROLES } from '@/lib/api-auth';
+import { requireRole, requireSession, AVAILABILITY_VIEW_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+
+export async function GET() {
+  const { error } = await requireSession();
+  if (error) return error;
+
+  const { data, error: dbError } = await supabaseAdmin
+    .from('availability')
+    .select('*')
+    .order('start_date', { ascending: true });
+
+  if (dbError) {
+    console.error('Error loading availability:', dbError);
+    return NextResponse.json({ error: 'Failed to load availability.' }, { status: 500 });
+  }
+
+  return NextResponse.json({ records: data });
+}
 
 export async function POST(request: Request) {
   const { error } = await requireRole(AVAILABILITY_VIEW_ROLES);

@@ -20,30 +20,32 @@
 'use client';
 
 import useSWR, { mutate } from 'swr';
-import { supabase } from '@/lib/supabase';
 import type { Aircraft } from '@/types';
 
 export const aircraftKey = ['aircraft'] as const;
 
 // ---------------------------------------------------------------------------
-// Fetcher — same Supabase query and row-mapping loadAircraft() used, just
-// relocated. One deliberate behavior change from the old store action: this
-// throws on a Supabase error instead of only console.error-ing and leaving
-// the data silently empty. That's the correct SWR idiom — a thrown error
-// surfaces via the hook's own `error` return value so a page can actually
-// show "failed to load" instead of quietly rendering an empty fleet list.
+// Fetcher — same row-mapping loadAircraft() used, just relocated. One
+// deliberate behavior change from the old store action: this throws on a
+// fetch error instead of only console.error-ing and leaving the data
+// silently empty. That's the correct SWR idiom — a thrown error surfaces
+// via the hook's own `error` return value so a page can actually show
+// "failed to load" instead of quietly rendering an empty fleet list.
 // (Write-path failures below are a separate decision — see the note there.)
+//
+// 2026-09-18 (RLS remediation Step 3): was a direct client-side
+// `supabase.from('aircraft')` call (anon key) — now goes through
+// GET /api/aircraft (service-role, session-gated) so the table's RLS
+// policy can be locked down. See claude/rls-remediation-progress-2026-09-18.md.
 // ---------------------------------------------------------------------------
 export async function fetchAircraft(): Promise<Aircraft[]> {
-  const { data, error } = await supabase
-    .from('aircraft')
-    .select('*')
-    .order('created_at', { ascending: true });
-
-  if (error) {
-    console.error('Error loading aircraft:', error);
-    throw error;
+  const res = await fetch('/api/aircraft');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('Error loading aircraft:', err.error || res.statusText);
+    throw new Error(err.error || 'Failed to load aircraft.');
   }
+  const { aircraft: data } = await res.json();
 
   return (data || []).map((row: Record<string, unknown>) => ({
     id: String(row.id),

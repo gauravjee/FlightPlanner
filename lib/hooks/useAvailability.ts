@@ -19,20 +19,24 @@
 'use client';
 
 import useSWR, { mutate } from 'swr';
-import { supabase } from '@/lib/supabase';
 import { fetchInstructors } from './useInstructors';
 import { fetchStudents } from './useStudents';
 import type { AvailabilityRecord } from '@/types';
 
 export const availabilityKey = ['availability'] as const;
 
+// 2026-09-18 (RLS remediation Step 3): was a direct client-side
+// `supabase.from('availability')` call (anon key) — now goes through
+// GET /api/availability (service-role, session-gated) so the table's RLS
+// policy can be locked down. See claude/rls-remediation-progress-2026-09-18.md.
 export async function fetchAvailability(): Promise<AvailabilityRecord[]> {
-  const { data, error } = await supabase.from('availability').select('*').order('start_date', { ascending: true });
-
-  if (error) {
-    console.error('Error loading availability:', error);
-    throw error;
+  const res = await fetch('/api/availability');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error('Error loading availability:', err.error || res.statusText);
+    throw new Error(err.error || 'Failed to load availability.');
   }
+  const { records: data } = await res.json();
 
   const instructors = await fetchInstructors();
   const students = await fetchStudents();
@@ -130,9 +134,22 @@ export async function removeAvailability(id: string): Promise<void> {
 // Not tied to the cached list at all — a fresh point-in-time query, same as
 // the original store action. Colocated here as the availability domain's
 // own helper rather than left in lib/store.ts.
+//
+// 2026-09-18 (RLS remediation Step 3): the original query filtered
+// person_type/person_id/date-range/status server-side in Postgres via the
+// anon key. GET /api/availability doesn't take filter params (this table is
+// small — leave records — so there's no real cost to filtering the full
+// list here instead of adding query-param plumbing for one caller). Same
+// fail-open behavior on a fetch error as the original: an empty/failed
+// result reads as "no conflicting leave found," not "assume unavailable."
 export async function checkAvailability(personType: string, personId: string, date: string): Promise<boolean> {
-  const { data } = await supabase.from('availability').select('*')
-    .eq('person_type', personType).eq('person_id', personId)
-    .lte('start_date', date).gte('end_date', date).eq('status', 'APPROVED').limit(1);
-  return !data || data.length === 0;
+  const res = await fetch('/api/availability');
+  if (!res.ok) return true;
+  const { records: data } = await res.json().catch(() => ({ records: [] }));
+  const conflicts = (data || []).filter((row: Record<string, unknown>) =>
+    row.person_type === personType && String(row.person_id) === String(personId) &&
+    (row.start_date as string) <= date && (row.end_date as string) >= date &&
+    row.status === 'APPROVED'
+  );
+  return conflicts.length === 0;
 }
