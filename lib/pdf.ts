@@ -140,8 +140,24 @@ export function generateStudentLogbook(student: StudentRecord, flights: FlightRe
   const picHours = totalPicHours(flights);
   const dualHours = flights.filter(f => f.flightType === 'DUAL').reduce((sum, f) => sum + (f.totalHours || 0), 0);
   
-  const finalY = (doc as JsPDFWithAutoTable).lastAutoTable?.finalY || 150;
-  
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let finalY = (doc as JsPDFWithAutoTable).lastAutoTable?.finalY || 150;
+
+  // 2026-09-18 (P0 #7 — "three of four PDF generators have no page-break
+  // guard"): the summary + sign-off block below always needs ~77mm of room
+  // after the table (6 fixed summary lines + the sign-off line — fixed
+  // regardless of how many flights are in the table above), and jsPDF does
+  // not auto-paginate content drawn past the bottom of the page — it's
+  // just gone, or overlaps the fixed-position footer. A 26-flight logbook
+  // (a long table = a large finalY) was printing this block off the
+  // bottom of the sheet with no totals and no signature line visible.
+  // Same guard shape generateMaintenanceLogReport already has for its own
+  // CRS summary block, further down this file.
+  if (finalY + 87 > pageHeight) {
+    doc.addPage();
+    finalY = 20;
+  }
+
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.text('Flight Summary', 14, finalY + 15);
@@ -256,7 +272,8 @@ export function generateDailyFlyingReport(report: {
   // ============================================================
   // FOOTER SUMMARY
   // ============================================================
-  const finalY = (doc as JsPDFWithAutoTable).lastAutoTable?.finalY || 45;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let finalY = (doc as JsPDFWithAutoTable).lastAutoTable?.finalY || 45;
   const s = report.stats;
   const summaryLines = [
     `Total Aircraft Hours: ${s.totalAircraftHours.toFixed(1)}h`,
@@ -273,6 +290,22 @@ export function generateDailyFlyingReport(report: {
     `  Other Cancellations: ${s.otherCancellations}`,
     `Safety Incidents: ${s.safetyIncidents}`,
   ];
+  const colSplit = Math.ceil(summaryLines.length / 2);
+  // Computed here, ahead of the page-break check below, since its wrapped
+  // line count (report.remarks is free text of arbitrary length) is the
+  // one variable part of how much room this block needs — everything else
+  // about it (colSplit, the fixed summary/sign-off spacing) is known
+  // up front.
+  const remarksText = doc.splitTextToSize(report.remarks?.trim() || 'None', pageWidth - 28);
+
+  // 2026-09-18 (P0 #7 — same "no page-break guard" finding as
+  // generateStudentLogbook above): guard before drawing rather than after,
+  // same reasoning as that generator's own guard and
+  // generateMaintenanceLogReport's pre-existing one.
+  if (finalY + 99 + remarksText.length * 5 + 10 > pageHeight) {
+    doc.addPage();
+    finalY = 20;
+  }
 
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
@@ -281,7 +314,6 @@ export function generateDailyFlyingReport(report: {
 
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  const colSplit = Math.ceil(summaryLines.length / 2);
   summaryLines.slice(0, colSplit).forEach((line, i) => doc.text(line, 14, finalY + 20 + i * 6));
   summaryLines.slice(colSplit).forEach((line, i) => doc.text(line, 105, finalY + 20 + i * 6));
 
@@ -289,7 +321,6 @@ export function generateDailyFlyingReport(report: {
   doc.setFont('helvetica', 'bold');
   doc.text('Remarks:', 14, remarksY);
   doc.setFont('helvetica', 'normal');
-  const remarksText = doc.splitTextToSize(report.remarks?.trim() || 'None', pageWidth - 28);
   doc.text(remarksText, 14, remarksY + 7);
 
   // ============================================================
@@ -390,7 +421,16 @@ export function generateBreathAnalysisReport(report: {
   const studentCount = report.tests.filter(t => t.personType === 'STUDENT').length;
   const instructorCount = total - studentCount;
 
-  const finalY = (doc as JsPDFWithAutoTable).lastAutoTable?.finalY || 45;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  let finalY = (doc as JsPDFWithAutoTable).lastAutoTable?.finalY || 45;
+
+  // 2026-09-18 (P0 #7 — same "no page-break guard" finding as the two
+  // generators above): summary (5 fixed lines) + sign-off is always
+  // ~69mm of room after the table, so the same up-front check applies.
+  if (finalY + 69 + 10 > pageHeight) {
+    doc.addPage();
+    finalY = 20;
+  }
 
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
