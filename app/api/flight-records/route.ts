@@ -157,24 +157,25 @@ export async function POST(request: Request) {
 
   // Credit the student: total hours always, first-solo date only the first
   // time (never overwrite an existing one).
-  const { data: student } = await supabaseAdmin
-    .from('students')
-    .select('total_hours, first_solo_date')
-    .eq('id', studentId)
-    .single();
-
-  const studentUpdates: Record<string, unknown> = {
-    total_hours: (student?.total_hours || 0) + totalHours,
-  };
+  //
+  // 2026-09-18 (P0 #5, audit finding C4 — "concurrent flight logs silently
+  // lose hours"): used to be a plain read-modify-write (SELECT total_hours,
+  // add this flight's hours in JS, UPDATE) — two flights logged for the
+  // same student seconds apart both read the same starting value, and
+  // whichever UPDATE landed second overwrote the first's credit instead of
+  // compounding it. No error, just a silently wrong total. Replaced with a
+  // single atomic UPDATE done inside Postgres (add-atomic-student-hours-
+  // increment.sql) — Postgres's normal row lock serializes concurrent calls
+  // for the same student, so they now compound correctly. The first-solo-
+  // date "only if not already set" logic moved into the same statement for
+  // the same reason (COALESCE), rather than staying a separate
+  // read-then-conditionally-write step.
   const isSolo = flightType === 'SOLO' || sortieType === 'SOLO';
-  if (isSolo && student && !student.first_solo_date) {
-    studentUpdates.first_solo_date = flightDate;
-  }
-
-  const { error: studentError } = await supabaseAdmin
-    .from('students')
-    .update(studentUpdates)
-    .eq('id', studentId);
+  const { error: studentError } = await supabaseAdmin.rpc('increment_student_hours', {
+    p_student_id: studentId,
+    p_hours: totalHours,
+    p_first_solo_date: isSolo ? flightDate : null,
+  });
   if (studentError) {
     console.error('Error crediting student after flight record:', studentError);
   }
