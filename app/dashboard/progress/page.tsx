@@ -7,7 +7,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useStudents } from '@/lib/hooks/useStudents';
-import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
+import { useStudentFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { useTrainingRequirements } from '@/lib/hooks/useTrainingRequirements';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
@@ -101,7 +101,6 @@ export default function ProgressPage() {
 
   const { aircraft } = useAircraft();
   const { students } = useStudents();
-  const { flightRecords } = useFlightRecords();
 
   const [selectedStudentIdInput, setSelectedStudentId] = useState<string>('');
   // A student's own ID from the session always wins for that role (they
@@ -179,11 +178,19 @@ export default function ProgressPage() {
     [selectedStudent, trainingPrograms]
   );
 
-  // Get flights for selected student
-  const studentFlights = useMemo(() => {
-    if (!selectedStudentId) return [];
-    return flightRecords.filter(f => f.studentId === selectedStudentId);
-  }, [flightRecords, selectedStudentId]);
+  // Get flights for selected student.
+  //
+  // 2026-09-18 (P0 #6, audit finding C3 — "Progress page computes
+  // regulatory totals from a truncated list"): used to be `useFlightRecords()`
+  // (the fleet-wide, 100-most-recent-across-everyone cache) filtered down
+  // to this one student client-side — so a student with more than a
+  // handful of flights could see a smaller total here than their own
+  // logbook, depending on how much of that fleet-wide top-100 happened to
+  // be theirs. useStudentFlightRecords() below goes straight to this
+  // student's own uncapped records (same endpoint a student's own session
+  // already gets, per app/api/flight-records/route.ts), so staff and the
+  // student now compute this page's totals from the same data.
+  const { flightRecords: studentFlights } = useStudentFlightRecords(selectedStudentId || null);
 
   // Calculate statistics
   const stats = useMemo(() => {

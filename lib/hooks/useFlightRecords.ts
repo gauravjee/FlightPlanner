@@ -97,11 +97,11 @@ export async function fetchFlightRecords(): Promise<FlightRecord[]> {
 
 // Every flight record for one student, unfiltered by the 100-row cap above.
 // Ported from the store's loadStudentFlightRecords() for interface
-// completeness, but — like Stage 3's assignInstructor() — it has no callers
-// anywhere in the app today (confirmed via grep, before and after this
-// migration); every current consumer filters the all-records cache from
-// useFlightRecords() client-side instead. Flagged here so it isn't mistaken
-// for missed work.
+// completeness; sat unused for a while (every consumer filtered the
+// all-records cache from useFlightRecords() client-side instead) until the
+// 2026-09-18 audit named that exact gap twice — the Flights page's logbook
+// export (P0 #2, C5) and useStudentFlightRecords() above (P0 #6, C3) both
+// call this now.
 export async function fetchStudentFlightRecords(studentId: string): Promise<FlightRecord[]> {
   const res = await fetch(`/api/flight-records?studentId=${encodeURIComponent(studentId)}`);
   if (!res.ok) {
@@ -126,12 +126,25 @@ export function useFlightRecords() {
   };
 }
 
-// See fetchStudentFlightRecords' own comment — currently unused, ported for
-// interface completeness.
-export function useStudentFlightRecords(studentId: string) {
+// 2026-09-18 (P0 #6, audit finding C3 — "Progress page computes regulatory
+// totals from a truncated list"): this used to be unused, ported only "for
+// interface completeness" — every consumer instead filtered the fleet-wide
+// 100-row cache from useFlightRecords() down to one student client-side.
+// That's fine for staff whose own view of "recent" is fleet-wide, but wrong
+// for a specific student's totals: a student with 60 flights, 12 of which
+// fall in the last 100 school-wide rows, showed 12 flights' worth of hours
+// on the Progress page — a different, smaller number than that same
+// student's own session saw (GET /api/flight-records scopes a `student`
+// role to their own records with no cap; it only caps the "everyone"
+// query staff make). Now wired into the Progress page below. Skips the
+// fetch entirely when studentId is falsy — same `key ? realKey : null`
+// convention as useTrainingRequirements — so selecting "no student yet"
+// doesn't fire a request for the (differently-shaped, capped) all-students
+// list.
+export function useStudentFlightRecords(studentId: string | null | undefined) {
   const { data, error, isLoading, mutate: boundMutate } = useSWR<FlightRecord[]>(
-    studentFlightRecordsKey(studentId),
-    () => fetchStudentFlightRecords(studentId)
+    studentId ? studentFlightRecordsKey(studentId) : null,
+    () => fetchStudentFlightRecords(studentId as string)
   );
 
   return {
