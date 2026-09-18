@@ -10,7 +10,7 @@ import { useSession } from 'next-auth/react';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
-import { useFlightRecords } from '@/lib/hooks/useFlightRecords';
+import { useFlightRecords, fetchStudentFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
 import { useSortieTypes } from '@/lib/hooks/useSortieTypes';
 import { useExercises } from '@/lib/hooks/useExercises';
@@ -88,11 +88,24 @@ export default function FlightsPage() {
         </span>
       ) : (
         <button
-          onClick={() => {
+          onClick={async () => {
+            // 2026-09-18 (P0 #2, flight-hours integrity): this used to filter
+            // the already-loaded flightRecords list — for staff, that's the
+            // fleet-wide 100-most-recent cache (see GET /api/flight-records),
+            // not this student's full history. A student with 60 flights, 12
+            // of which happened to fall in the last 100 school-wide rows,
+            // exported a PDF showing 12 flights as their complete logbook —
+            // 48 vanished with nothing on the page saying so. Now fetches
+            // this one student's full, uncapped record set on click instead.
             const student = students.find(s => s.id === selectedStudent);
-            const studentFlights = flightRecords.filter(r => r.studentId === selectedStudent);
-            if (student && studentFlights.length > 0) {
-              generateStudentLogbook(student, studentFlights);
+            if (!student) return;
+            try {
+              const studentFlights = await fetchStudentFlightRecords(selectedStudent);
+              if (studentFlights.length > 0) {
+                generateStudentLogbook(student, studentFlights);
+              }
+            } catch {
+              alert('❌ Failed to load flight records for export.');
             }
           }}
           className="px-3 py-2 rounded-lg text-xs transition cursor-pointer flex items-center gap-1.5"
