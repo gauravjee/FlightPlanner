@@ -47,23 +47,25 @@ const TIMEZONE_OPTIONS = [
 export default function SettingsTab() {
   // ----- State -----
   // This tab manages its own local formValues/settings state (below) and
-  // writes straight to Supabase in handleSave — it does NOT use the shared
-  // `useFtoSettings()` SWR cache (read by BookingForm/ScheduleBoard/
-  // GroundSchoolCalendar for the weekly-off/partial-weekly-off/time-slot/
-  // etc. checks). Without an explicit `mutate(ftoSettingsKey)` here, a
-  // change saved on this tab would silently NOT take effect anywhere else
-  // in the app until that cache happened to revalidate on its own
-  // (2026-08-25 bugfix — found via a user report that a new Partial Weekly
-  // Off Day rule wasn't blocking the calendar right after saving; carried
-  // forward into the SWR migration, Stage 8, 2026-09-02, as
+  // writes through `/api/admin/config/fto-settings` in handleSave — it does
+  // NOT use the shared `useFtoSettings()` SWR cache (read by BookingForm/
+  // ScheduleBoard/GroundSchoolCalendar for the weekly-off/partial-weekly-off/
+  // time-slot/etc. checks). Without an explicit `mutate(ftoSettingsKey)`
+  // here, a change saved on this tab would silently NOT take effect
+  // anywhere else in the app until that cache happened to revalidate on its
+  // own (2026-08-25 bugfix — found via a user report that a new Partial
+  // Weekly Off Day rule wasn't blocking the calendar right after saving;
+  // carried forward into the SWR migration, Stage 8, 2026-09-02, as
   // `mutate(ftoSettingsKey)` — same cache-invalidation treatment
-  // Exercises/Sortie Types got in this same stage). Note this tab's own
-  // direct-to-Supabase write (see handleSave below) predates and is
-  // unrelated to this migration — flagged separately in the migration plan
-  // doc as a pre-existing gap (no server-side role check on this table,
-  // unlike Exercises/Sortie Types which route through
-  // `/api/admin/config/[table]`), not fixed here to keep this stage a pure
-  // refactor.
+  // Exercises/Sortie Types got in this same stage).
+  //
+  // 2026-09-18 (RLS exposure remediation, claude/rls-exposure-2026-09-18.md):
+  // this tab used to write straight to Supabase with the anon key and no
+  // server-side role check at all — flagged as a pre-existing gap when the
+  // SWR migration passed through this file. Now routed through the same
+  // `/api/admin/config/[table]` pattern Exercises/Sortie Types/etc. already
+  // use, gated to ADMIN_SETUP_WRITE_ROLES (super_admin) — see saveSetting()
+  // below and that route's `fto-settings` entry.
   const [settings, setSettings] = useState<FTOSetting[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -200,6 +202,27 @@ export default function SettingsTab() {
   // SAVE ALL SETTINGS
   // ============================================================
 
+  // Server-side, role-gated write for a single setting_key — see
+  // app/api/admin/config/[table]/route.ts's `fto-settings` entry. PATCHes
+  // by id when the row already exists (existingId passed), otherwise POSTs
+  // an insert. Throws on failure so every call site can decide how to
+  // report it (console.error vs. alert), same as before this migration.
+  const saveSetting = async (key: string, value: string, existingId?: number) => {
+    const res = await fetch('/api/admin/config/fto-settings', {
+      method: existingId !== undefined ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        existingId !== undefined
+          ? { id: existingId, setting_value: value }
+          : { setting_key: key, setting_value: value }
+      ),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || 'Failed to save setting.');
+    }
+  };
+
   /**
    * Save all changed settings to the database
    * Only updates settings whose values have actually changed
@@ -223,26 +246,19 @@ export default function SettingsTab() {
 
         if (existing) {
           if (newValue !== existing.setting_value) {
-            const { error } = await supabase
-              .from('fto_settings')
-              .update({ setting_value: newValue })
-              .eq('id', existing.id);
-
-            if (error) {
-              console.error(`❌ Error saving ${key}:`, error.message);
-            } else {
+            try {
+              await saveSetting(key, newValue, existing.id);
               updatedCount++;
+            } catch (err) {
+              console.error(`❌ Error saving ${key}:`, err);
             }
           }
         } else if (newValue !== '') {
-          const { error } = await supabase
-            .from('fto_settings')
-            .insert({ setting_key: key, setting_value: newValue });
-
-          if (error) {
-            console.error(`❌ Error creating ${key}:`, error.message);
-          } else {
+          try {
+            await saveSetting(key, newValue);
             updatedCount++;
+          } catch (err) {
+            console.error(`❌ Error creating ${key}:`, err);
           }
         }
       }
@@ -326,15 +342,8 @@ export default function SettingsTab() {
       setValue('show_logo', 'true');
 
       // Also save directly to database immediately
-      await supabase
-        .from('fto_settings')
-        .update({ setting_value: publicUrl })
-        .eq('setting_key', 'logo_url');
-
-      await supabase
-        .from('fto_settings')
-        .update({ setting_value: 'true' })
-        .eq('setting_key', 'show_logo');
+      await saveSetting('logo_url', publicUrl, settings.find(s => s.setting_key === 'logo_url')?.id);
+      await saveSetting('show_logo', 'true', settings.find(s => s.setting_key === 'show_logo')?.id);
 
       setSuccessMessage('✅ Logo uploaded successfully!');
       setTimeout(() => setSuccessMessage(''), 3000);
@@ -349,6 +358,11 @@ export default function SettingsTab() {
     } catch (err) {
       console.error('❌ Unexpected upload error:', err);
       alert('❌ An unexpected error occurred. Please try again.');
+      // Resync the form with whatever's actually saved — setValue('logo_url'/
+      // 'show_logo', ...) above already applied optimistically, so on a
+      // saveSetting() failure the form would otherwise keep showing the new
+      // logo even though the database write never landed.
+      loadSettings();
     } finally {
       setUploading(false);
       // Reset the file input so the same file can be re-uploaded if needed
@@ -370,15 +384,17 @@ export default function SettingsTab() {
     setValue('show_logo', 'false');
 
     // Save immediately to database
-    await supabase
-      .from('fto_settings')
-      .update({ setting_value: '' })
-      .eq('setting_key', 'logo_url');
-
-    await supabase
-      .from('fto_settings')
-      .update({ setting_value: 'false' })
-      .eq('setting_key', 'show_logo');
+    try {
+      await saveSetting('logo_url', '', settings.find(s => s.setting_key === 'logo_url')?.id);
+      await saveSetting('show_logo', 'false', settings.find(s => s.setting_key === 'show_logo')?.id);
+    } catch (err) {
+      console.error('❌ Error removing logo:', err);
+      alert('❌ Failed to remove logo. Please try again.');
+      // Same resync as handleLogoUpload's catch — the setValue calls above
+      // already cleared the form optimistically.
+      loadSettings();
+      return;
+    }
 
     setSuccessMessage('🗑️ Logo removed. Default logo will be used.');
     setTimeout(() => setSuccessMessage(''), 3000);

@@ -165,27 +165,32 @@ export default function DebriefForm({ flight, onClose, onComplete, onError }: Pr
       // 2. Update aircraft fuel if changed — this reflects the physical
       // state of the aircraft, so it happens regardless of the logbook
       // toggle (the plane really did burn that fuel and advance its Hobbs).
-      // This writes directly to Supabase rather than through
-      // lib/hooks/useAircraft.ts's updateAircraft() / /api/aircraft — that
-      // route is gated to AIRCRAFT_WRITE_ROLES (admin/super_admin only),
-      // but any instructor can debrief a flight, so this deliberately stays
-      // a separate write path rather than routing through it (pre-existing
-      // design, unchanged by the 2026-08-28 SWR migration). Only reached
+      //
+      // 2026-09-18 (RLS exposure remediation, see
+      // claude/rls-exposure-2026-09-18.md): this used to write straight to
+      // Supabase with the anon key and no server-side role check at all —
+      // any instructor can debrief a flight, but AIRCRAFT_WRITE_ROLES
+      // (admin/super_admin only) meant this couldn't just route through
+      // the existing PATCH /api/aircraft/[id]. That route now accepts a
+      // fuel/Hobbs-only update from any FLIGHT_RECORDS_WRITE_ROLES session
+      // (see its own header comment) — this call is scoped to exactly
+      // those two fields so it stays on that narrower path. Only reached
       // once the step(s) above have actually succeeded (see 2026-09-12
       // note above) — an unauthorized or rejected save can no longer reach
       // this write at all.
       if (form.fuelAfter !== form.fuelBefore) {
-        const { supabase } = await import('@/lib/supabase');
-        const { error: fuelError } = await supabase
-          .from('aircraft')
-          .update({ current_fuel: form.fuelAfter, hobbs_time: form.hobbsEnd })
-          .eq('id', flight.aircraftId);
-        if (fuelError) {
+        const fuelRes = await fetch(`/api/aircraft/${flight.aircraftId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentFuel: form.fuelAfter, hobbsTime: form.hobbsEnd }),
+        });
+        if (!fuelRes.ok) {
           // Doesn't block the overall debrief — the flight is already
           // correctly marked complete above — but this used to be
           // completely unchecked, so a failure here was invisible even in
           // the console.
-          console.error('Error updating aircraft fuel/Hobbs:', fuelError);
+          const fuelResult = await fuelRes.json().catch(() => ({}));
+          console.error('Error updating aircraft fuel/Hobbs:', fuelResult.error || fuelRes.status);
         } else {
           // 2026-08-28: this write used to leave the shared aircraft state
           // stale until something else happened to reload it (the old

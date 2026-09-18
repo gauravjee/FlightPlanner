@@ -140,6 +140,29 @@ export const SCHEDULE_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'opera
 export const SCHEDULE_CREATE_ROLES = ['admin', 'super_admin', 'operations'];
 
 // ============================================================
+// SCHEDULE — editing, cancelling, or debriefing an EXISTING flight
+// ============================================================
+// 2026-09-18 (RLS exposure remediation, see
+// claude/rls-exposure-2026-09-18.md): lib/hooks/useScheduledFlights.ts's
+// cancelFlight()/updateScheduledFlight() — the drag-and-drop reschedule,
+// status transitions (check-in/check-out/debrief), and cancel actions —
+// used to write straight to Supabase with the anon key and NO role check
+// at all, client or server. That's a wider gap than the anon-key issue by
+// itself: SCHEDULE_VIEW_ROLES (which governs whether the Schedule page
+// renders) includes `student`, and FlightDetailModal.tsx's Cancel/Edit
+// buttons have never had their own role check — so before this route
+// existed, any authenticated student could open any flight (not just
+// their own) and cancel or edit it via the UI itself, no crafted request
+// needed. This constant is deliberately the staff-only set (same roles
+// that can view+manage Availability), matching what the UI clearly
+// intends (SCHEDULE_CREATE_ROLES's own comment above already frames
+// "editing/debriefing/cancelling a flight already assigned to that
+// instructor" as staff behavior) rather than reusing SCHEDULE_VIEW_ROLES
+// and preserving the student gap. See app/api/scheduled-flights/[id]/
+// route.ts.
+export const SCHEDULE_MANAGE_ROLES = ['admin', 'instructor', 'super_admin', 'operations'];
+
+// ============================================================
 // AVAILABILITY & LEAVE
 // ============================================================
 // Per the 2026-08-17 role/tab matrix, operations gains access to this tab

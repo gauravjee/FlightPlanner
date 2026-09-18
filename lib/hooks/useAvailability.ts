@@ -70,6 +70,13 @@ export function useAvailability() {
 // Writes
 // ---------------------------------------------------------------------------
 
+// 2026-09-18 (RLS exposure remediation, see
+// claude/rls-exposure-2026-09-18.md): these three writes used to go
+// straight to Supabase with the anon key and no server-side role check at
+// all. Now routed through /api/availability (POST) and
+// /api/availability/[id] (PATCH/DELETE), both gated to
+// AVAILABILITY_VIEW_ROLES — see those routes' own header comments.
+//
 // The original store action inserted, then did a full get().loadAvailability()
 // reload rather than a local splice — the personName/personInitials join
 // isn't something this write function can cheaply reproduce itself. Revalidate
@@ -79,29 +86,28 @@ export function useAvailability() {
 export async function addAvailability(
   record: Omit<AvailabilityRecord, 'id' | 'personName' | 'personInitials'>
 ): Promise<void> {
-  const { error } = await supabase.from('availability').insert({
-    person_type: record.personType, person_id: record.personId, leave_type: record.leaveType,
-    start_date: record.startDate, end_date: record.endDate,
-    start_time: record.startTime || null, end_time: record.endTime || null,
-    reason: record.reason, status: record.status || 'APPROVED', created_by: record.createdBy,
+  const res = await fetch('/api/availability', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(record),
   });
-  if (error) {
-    console.error('Error adding availability:', error);
+  if (!res.ok) {
+    const result = await res.json().catch(() => ({}));
+    console.error('Error adding availability:', result.error || res.statusText);
     return;
   }
   await mutate(availabilityKey);
 }
 
 export async function updateAvailability(id: string, updates: Partial<AvailabilityRecord>): Promise<void> {
-  const dbUpdates: Record<string, unknown> = {};
-  if (updates.leaveType !== undefined) dbUpdates.leave_type = updates.leaveType;
-  if (updates.startDate !== undefined) dbUpdates.start_date = updates.startDate;
-  if (updates.endDate !== undefined) dbUpdates.end_date = updates.endDate;
-  if (updates.reason !== undefined) dbUpdates.reason = updates.reason;
-  if (updates.status !== undefined) dbUpdates.status = updates.status;
-  const { error } = await supabase.from('availability').update(dbUpdates).eq('id', id);
-  if (error) {
-    console.error('Error updating availability:', error);
+  const res = await fetch(`/api/availability/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const result = await res.json().catch(() => ({}));
+    console.error('Error updating availability:', result.error || res.statusText);
     return;
   }
   mutate<AvailabilityRecord[]>(
@@ -112,9 +118,10 @@ export async function updateAvailability(id: string, updates: Partial<Availabili
 }
 
 export async function removeAvailability(id: string): Promise<void> {
-  const { error } = await supabase.from('availability').delete().eq('id', id);
-  if (error) {
-    console.error('Error removing availability:', error);
+  const res = await fetch(`/api/availability/${id}`, { method: 'DELETE' });
+  if (!res.ok) {
+    const result = await res.json().catch(() => ({}));
+    console.error('Error removing availability:', result.error || res.statusText);
     return;
   }
   mutate<AvailabilityRecord[]>(availabilityKey, (current = []) => current.filter(a => a.id !== id), { revalidate: false });

@@ -171,43 +171,13 @@ export async function toggleRequirement(id: string, isCompleted: boolean): Promi
   );
 }
 
-// Dead code as of this migration (zero callers anywhere in the app,
-// confirmed by grep) — ported for interface completeness, same precedent as
-// Stage 3's assignInstructor and Stage 4's loadStudentFlightRecords.
-export async function addRequirement(requirement: Omit<TrainingRequirement, 'id'>): Promise<void> {
-  // student_id is required (2026-08-19: training_requirements now only ever
-  // holds real per-student assignments — see
-  // split-training-requirement-templates.sql). template_id is optional; no
-  // current caller sets it, so a row added this way just isn't linked back
-  // to a template, same as before the split.
-  const { data, error } = await supabase.from('training_requirements').insert({
-    student_id: requirement.studentId, template_id: requirement.templateId || null,
-    requirement_name: requirement.requirementName,
-    requirement_category: requirement.requirementCategory, is_completed: false,
-    sort_order: requirement.sortOrder || 99, notes: requirement.notes || '',
-    validity_years: requirement.validityYears, required_before_hours: requirement.requiredBeforeHours,
-    blocks_solo: requirement.blocksSolo || false, blocks_all_flights: requirement.blocksAllFlights || false,
-    program_code: requirement.programCode,
-  }).select().single();
-  if (error || !data) {
-    console.error('Error adding training requirement:', error);
-    return;
-  }
-  const newReq: TrainingRequirement = { ...requirement, id: String(data.id), isCompleted: false };
-  await mutate(
-    (key) => Array.isArray(key) && key[0] === 'trainingRequirements',
-    (current?: TrainingRequirement[]) => (current ? [...current, newReq] : current),
-    { revalidate: false }
-  );
-}
-
-// Dead code as of this migration (zero callers) — ported for interface
-// completeness, same precedent as addRequirement above.
-export async function removeRequirement(id: string): Promise<void> {
-  await supabase.from('training_requirements').delete().eq('id', id);
-  await mutate(
-    (key) => Array.isArray(key) && key[0] === 'trainingRequirements',
-    (current?: TrainingRequirement[]) => current?.filter((r) => r.id !== id),
-    { revalidate: false }
-  );
-}
+// addRequirement()/removeRequirement() were dead code (zero callers
+// anywhere in the app, confirmed by grep both when ported in the SWR
+// migration and again during the 2026-09-18 RLS exposure remediation — see
+// claude/rls-exposure-2026-09-18.md) that wrote straight to Supabase with
+// the anon key and no server-side role check. Removed rather than routed
+// through a server endpoint, since nothing calls them — the one live write
+// path on this table is toggleRequirement() above, which already goes
+// through /api/admin/requirements/toggle. If a real "add/remove a one-off
+// requirement" UI is ever built, give it a role-gated API route the same
+// way, not a direct Supabase write.

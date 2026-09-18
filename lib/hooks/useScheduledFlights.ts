@@ -254,16 +254,27 @@ export async function bookFlight(
 // Other cancellations), rather than a hard DELETE. The write payload here
 // IS the new state (client knows exactly what changed), so this splices
 // locally rather than revalidating — the plan's other cache-update case.
+//
+// 2026-09-18 (RLS exposure remediation, see
+// claude/rls-exposure-2026-09-18.md): routed through
+// /api/scheduled-flights/[id] (PATCH), gated to SCHEDULE_MANAGE_ROLES —
+// see that route and lib/permissions.ts for why (this used to have no role
+// check at all, client or server).
 export async function cancelFlight(id: string, reason?: 'WEATHER' | 'MAINTENANCE' | 'OTHER'): Promise<void> {
-  const { error } = await supabase.from('scheduled_flights')
-    .update({ status: 'CANCELLED', cancellation_reason: reason ?? null })
-    .eq('id', id);
-  if (!error) {
+  const res = await fetch(`/api/scheduled-flights/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'CANCELLED', cancellationReason: reason ?? null }),
+  });
+  if (res.ok) {
     mutate<ScheduledFlight[]>(
       scheduledFlightsKey,
       (current = []) => current.map(f => (f.id === id ? { ...f, status: 'CANCELLED' } : f)),
       { revalidate: false }
     );
+  } else {
+    const result = await res.json().catch(() => ({}));
+    console.error('Error cancelling flight:', result.error || res.statusText);
   }
 }
 
@@ -295,24 +306,21 @@ export async function updateScheduledFlight(id: string, updates: Partial<Schedul
       return { success: false, error: message };
     }
   }
-  const dbUpdates: Record<string, unknown> = {};
-  if (updates.status !== undefined) dbUpdates.status = updates.status;
-  if (updates.aircraftId !== undefined) dbUpdates.aircraft_id = updates.aircraftId;
-  if (updates.instructorId !== undefined) dbUpdates.instructor_id = updates.instructorId;
-  if (updates.studentId !== undefined) dbUpdates.student_id = updates.studentId;
-  if (updates.startTime !== undefined) dbUpdates.start_time = updates.startTime;
-  if (updates.endTime !== undefined) dbUpdates.end_time = updates.endTime;
-  if (updates.sortieType !== undefined) dbUpdates.sortie_type = updates.sortieType;
-  if (updates.exercise !== undefined) dbUpdates.exercise = updates.exercise;
-  if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
-  if (updates.weatherBriefed !== undefined) dbUpdates.weather_briefed = updates.weatherBriefed;
-  if (updates.notamBriefed !== undefined) dbUpdates.notam_briefed = updates.notamBriefed;
-  if (updates.logbookPending !== undefined) dbUpdates.logbook_pending = updates.logbookPending;
-  if (updates.pendingDebrief !== undefined) dbUpdates.pending_debrief = updates.pendingDebrief;
-  const { error } = await supabase.from('scheduled_flights').update(dbUpdates).eq('id', id);
-  if (error) {
-    console.error(`Error updating scheduled flight ${id}:`, error);
-    return { success: false, error: error.message || 'Failed to update the flight.' };
+  // 2026-09-18 (RLS exposure remediation, see
+  // claude/rls-exposure-2026-09-18.md): routed through
+  // /api/scheduled-flights/[id] (PATCH), gated to SCHEDULE_MANAGE_ROLES —
+  // that route's FIELD_MAP whitelists exactly the fields this function
+  // used to write directly (see its own header comment), so `updates` can
+  // be sent as-is instead of building a separate dbUpdates object here.
+  const res = await fetch(`/api/scheduled-flights/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  if (!res.ok) {
+    const result = await res.json().catch(() => ({}));
+    console.error(`Error updating scheduled flight ${id}:`, result.error || res.statusText);
+    return { success: false, error: result.error || 'Failed to update the flight.' };
   }
   mutate<ScheduledFlight[]>(
     scheduledFlightsKey,

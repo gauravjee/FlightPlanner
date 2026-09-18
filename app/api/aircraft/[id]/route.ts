@@ -11,7 +11,7 @@
 // would 403 for exactly the role that triggers it most often.
 
 import { NextResponse } from 'next/server';
-import { requireModuleAccess } from '@/lib/api-auth';
+import { requireModuleAccess, requireRole, FLIGHT_RECORDS_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -32,9 +32,6 @@ const FIELD_MAP: Record<string, string> = {
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const { error } = await requireModuleAccess('aircraft', 'full');
-  if (error) return error;
-
   const { id } = await context.params;
 
   let body: Record<string, unknown>;
@@ -42,6 +39,28 @@ export async function PATCH(request: Request, context: RouteContext) {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
+  }
+
+  // Debrief fuel/Hobbs update (DebriefForm.tsx, 2026-09-18 RLS exposure
+  // remediation — see claude/rls-exposure-2026-09-18.md) is a narrower
+  // write than full aircraft management: any instructor can debrief a
+  // flight and must be able to record the fuel burned + Hobbs advanced,
+  // but instructors are view-only on the Aircraft module otherwise
+  // (AIRCRAFT_WRITE_ROLES is admin/super_admin only — see
+  // lib/permissions.ts). So this route accepts EITHER full aircraft access
+  // (any field in FIELD_MAP) OR flight-records-write access
+  // (FLIGHT_RECORDS_WRITE_ROLES), the latter scoped to ONLY
+  // currentFuel/hobbsTime — checked against the raw body keys, before
+  // FIELD_MAP filtering, so a request smuggling any other field never
+  // reaches the narrower path.
+  const bodyKeys = Object.keys(body);
+  const isDebriefFuelUpdate = bodyKeys.length > 0 && bodyKeys.every(k => k === 'currentFuel' || k === 'hobbsTime');
+
+  const fullAccess = await requireModuleAccess('aircraft', 'full');
+  if (fullAccess.error) {
+    if (!isDebriefFuelUpdate) return fullAccess.error;
+    const debriefAccess = await requireRole(FLIGHT_RECORDS_WRITE_ROLES);
+    if (debriefAccess.error) return debriefAccess.error;
   }
 
   const dbUpdates: Record<string, unknown> = {};

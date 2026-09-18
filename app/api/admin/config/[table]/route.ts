@@ -90,6 +90,19 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
     // engine_type added 2026-08-27 — see add-schedule-template-engine-type.sql.
     columns: ['aircraft_model', 'item_name', 'interval_type', 'interval_value', 'notes', 'is_active', 'engine_type'],
   },
+  // FTO Settings (2026-09-18, RLS exposure remediation — see
+  // claude/rls-exposure-2026-09-18.md) — a flat key-value table
+  // (setting_key/setting_value). SettingsTab.tsx used to write straight to
+  // Supabase from the browser with no server-side role check at all (the
+  // pre-existing gap flagged in useFtoSettings.ts's header comment); this
+  // closes it the same way as every other Admin Setup tab. `description` is
+  // deliberately NOT in the whitelist — it's read-only in the UI, never
+  // written by any call site, and every row's description is authored by
+  // migrations, not through this route.
+  'fto-settings': {
+    dbTable: 'fto_settings',
+    columns: ['setting_key', 'setting_value'],
+  },
 };
 
 function pickAllowed(body: Record<string, unknown>, columns: string[]): Record<string, unknown> {

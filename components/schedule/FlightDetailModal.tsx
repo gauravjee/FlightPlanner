@@ -14,6 +14,7 @@
 
 'use client';
 
+import { useSession } from 'next-auth/react';
 import { cancelFlight, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { useWeather, useNotams } from '@/lib/hooks/useWeather';
@@ -21,6 +22,7 @@ import { useAircraft, getAircraftById } from '@/lib/hooks/useAircraft';
 import { useInstructors, getInstructorById } from '@/lib/hooks/useInstructors';
 import { useStudents, getStudentById } from '@/lib/hooks/useStudents';
 import { getLocationDisplay } from '@/lib/location';
+import { SCHEDULE_MANAGE_ROLES } from '@/lib/permissions';
 import { FlightSlot } from '@/types';
 import { useState } from 'react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -42,6 +44,19 @@ type SlotWithExtras = FlightSlot & { logbookPending?: boolean; exercise?: string
 
 export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   useEscapeToClose(onClose);
+
+  // 2026-09-18 (RLS exposure remediation, see
+  // claude/rls-exposure-2026-09-18.md): Check-In/Check-Out/Edit/Cancel all
+  // now call server routes gated to SCHEDULE_MANAGE_ROLES (staff only) —
+  // this modal had no role check of its own before, so SCHEDULE_VIEW_ROLES
+  // including `student` meant any student could see these buttons on any
+  // flight. Gating the server closed the write, but left the buttons
+  // visibly clickable for a role that will now always get rejected — this
+  // hides them instead, so a student sees a clean view-only flight detail
+  // rather than buttons that silently fail.
+  const { data: session } = useSession();
+  const canManage = !!session?.user?.role && SCHEDULE_MANAGE_ROLES.includes(session.user.role);
+
   // ============================================================
   // STORE DATA
   // ============================================================
@@ -556,8 +571,9 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
 
           {/* ----- CHECK-IN BUTTON ----- */}
           {/* Only for SCHEDULED flights → Changes status to IN_PROGRESS.
-              Disabled until 1 hour before the scheduled start time. */}
-          {slot.status === 'SCHEDULED' && (
+              Disabled until 1 hour before the scheduled start time.
+              Staff only — see canManage above. */}
+          {canManage && slot.status === 'SCHEDULED' && (
             <div className="flex flex-col items-end">
               <button
                 onClick={async () => {
@@ -583,8 +599,9 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
 
           {/* ----- CHECK-OUT / DEBRIEF BUTTON ----- */}
           {/* Only for IN_PROGRESS flights → Opens DebriefForm.
-              Disabled until the scheduled end time has passed. */}
-          {slot.status === 'IN_PROGRESS' && (
+              Disabled until the scheduled end time has passed.
+              Staff only — see canManage above. */}
+          {canManage && slot.status === 'IN_PROGRESS' && (
             <div className="flex flex-col items-end">
               <button
                 onClick={() => {
@@ -609,21 +626,23 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
           )}
 
           {/* ----- EDIT BUTTON ----- */}
-          {/* Only for SCHEDULED flights → Opens BookingForm for editing */}
-          {onEdit && slot.status === 'SCHEDULED' && (
+          {/* Only for SCHEDULED flights → Opens BookingForm for editing.
+              Staff only — see canManage above. */}
+          {canManage && onEdit && slot.status === 'SCHEDULED' && (
             <button onClick={handleEdit} className="px-4 py-2 text-sm bg-yellow-500/20 text-yellow-400 rounded-lg hover:bg-yellow-500/30 transition cursor-pointer">
               ✏️ Edit
             </button>
           )}
 
          {/* ----- CANCEL FLIGHT BUTTON / REASON PICKER ----- */}
-          {/* Hidden for COMPLETED and CANCELLED flights */}
-          {slot.status !== 'COMPLETED' && slot.status !== 'CANCELLED' && !showCancelReason && (
+          {/* Hidden for COMPLETED and CANCELLED flights. Staff only — see
+              canManage above. */}
+          {canManage && slot.status !== 'COMPLETED' && slot.status !== 'CANCELLED' && !showCancelReason && (
             <button onClick={() => setShowCancelReason(true)} className="px-4 py-2 text-sm bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
               Cancel Flight
             </button>
           )}
-          {showCancelReason && (
+          {canManage && showCancelReason && (
             <div className="flex flex-wrap items-center gap-2 surface-inner rounded-lg px-3 py-2">
               <span className="text-xs text-tertiary">Cancel — reason?</span>
               <button onClick={() => handleCancel('WEATHER')} className="px-3 py-1.5 text-xs bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
