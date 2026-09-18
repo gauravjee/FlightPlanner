@@ -50,12 +50,79 @@
 // overwrites the previous attempt's roll number — only the latest sitting
 // stays traceable. Keeping every sitting's number needs one row per attempt;
 // see the ponytail comment on the attempts increment below.
-// ---------------------------------------------------------------------------
-
+//
+// GET added 2026-09-18 (RLS remediation, Batch 4 — see
+// claude/data-access-security-mapping.md): the 3 read call sites
+// (`ground-school/page.tsx`'s school-wide progress widget,
+// `ground-school/progress/page.tsx`'s per-student exam history,
+// `attendance/page.tsx`'s per-class roster) were direct client-side
+// `supabase.from('ground_school_enrollment')` calls (anon key) — a live
+// IDOR, not just an anon-key exposure: this table holds individual DGCA
+// roll numbers and exam scores, and every one of those reads pulled every
+// student's rows unfiltered, with `selectedStudent`/`studentId` filtering
+// applied only in the browser. `requireSession()` alone is NOT enough
+// here, unlike the institution-wide config tables elsewhere in this
+// remediation (aircraft, holidays, etc.) — those were already readable by
+// literally anyone, logged in or not, so moving them behind a session
+// check alone was a real narrowing. This table is per-person data, so it
+// gets the `flight_records`/`training_requirements` treatment instead: a
+// `student` session is hard-pinned to their own `studentId` no matter what
+// `studentId`/`classId` is in the URL, and every other role must be one of
+// GROUND_SCHOOL_WRITE_ROLES (the same staff list already gating writes on
+// this table, and the same non-student roles both reading pages' own
+// RoleGates allow) — not merely "any signed-in session" — before it can
+// see another student's exam record, a whole class roster, or the
+// school-wide aggregate.
 import { NextResponse } from 'next/server';
-import { requireRole, GROUND_SCHOOL_WRITE_ROLES } from '@/lib/api-auth';
+import { requireRole, requireSession, GROUND_SCHOOL_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { deriveExamResult, isValidExamScore } from '@/lib/dgca';
+
+export async function GET(request: Request) {
+  const { session, error } = await requireSession();
+  if (error) return error;
+  const role = session.user.role;
+
+  // A student can only ever see their own enrollment rows — never another
+  // student's, and never the whole table. Forced regardless of any
+  // `studentId`/`classId` in the URL, same IDOR-safe pattern as
+  // GET /api/flight-records.
+  if (role === 'student') {
+    if (!session.user.studentId) return NextResponse.json({ enrollments: [] });
+    const { data, error: dbError } = await supabaseAdmin
+      .from('ground_school_enrollment')
+      .select('*')
+      .eq('student_id', session.user.studentId)
+      .order('class_id', { ascending: false });
+    if (dbError) {
+      console.error('Error loading ground school enrollment:', dbError);
+      return NextResponse.json({ error: 'Failed to load enrollment records.' }, { status: 500 });
+    }
+    return NextResponse.json({ enrollments: data || [] });
+  }
+
+  if (!role || !GROUND_SCHOOL_WRITE_ROLES.includes(role)) {
+    return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const studentId = searchParams.get('studentId');
+  const classId = searchParams.get('classId');
+
+  let query = supabaseAdmin.from('ground_school_enrollment').select('*');
+  if (studentId) query = query.eq('student_id', studentId).order('class_id', { ascending: false });
+  else if (classId) query = query.eq('class_id', Number(classId));
+  // else: no filter — the school-wide progress dashboard's aggregate view,
+  // the same "everything" shape the direct anon-key query always returned
+  // for this branch's roles.
+
+  const { data, error: dbError } = await query;
+  if (dbError) {
+    console.error('Error loading ground school enrollment:', dbError);
+    return NextResponse.json({ error: 'Failed to load enrollment records.' }, { status: 500 });
+  }
+  return NextResponse.json({ enrollments: data || [] });
+}
 
 /**
  * The only columns a client may set through this route, matching exactly what

@@ -15,7 +15,6 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '@/lib/supabase-client';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
@@ -93,12 +92,18 @@ export default function AttendancePage() {
     return (classes || []) as GroundSchoolClassRow[];
   };
 
+  // 2026-09-18 (RLS remediation, Batch 4 — see
+  // claude/data-access-security-mapping.md): was a direct client-side
+  // `supabase.from('ground_school_enrollment')` call (anon key) — now goes
+  // through GET /api/ground-school/enrollment, which requires a
+  // GROUND_SCHOOL_WRITE_ROLES staff role for a by-class roster like this
+  // one (it returns every enrolled student's exam data, not just one
+  // person's).
   const fetchEnrollments = async (classId: number): Promise<Enrollment[]> => {
-    const { data } = await supabase
-      .from('ground_school_enrollment')
-      .select('*')
-      .eq('class_id', classId);
-    return data || [];
+    const res = await fetch(`/api/ground-school/enrollment?classId=${classId}`);
+    if (!res.ok) return [];
+    const { enrollments } = await res.json();
+    return enrollments || [];
   };
 
   // Fetches active students via the role-scoped /api/students route
@@ -122,12 +127,11 @@ export default function AttendancePage() {
   // closure over that reference is stable, so it flags the effect below
   // that calls this. Memoizing both settles it.
   const fetchAvailableStudents = useCallback(async (classId: number): Promise<Student[]> => {
-    // Students not already enrolled
-    const { data: enrolled } = await supabase
-      .from('ground_school_enrollment')
-      .select('student_id')
-      .eq('class_id', classId);
-    const enrolledIds = new Set((enrolled || []).map(e => e.student_id));
+    // Students not already enrolled. Same migrated route as fetchEnrollments
+    // above — full rows come back, but only student_id is used here.
+    const res = await fetch(`/api/ground-school/enrollment?classId=${classId}`);
+    const enrolled = res.ok ? (await res.json()).enrollments : [];
+    const enrolledIds = new Set((enrolled || []).map((e: Enrollment) => e.student_id));
     const all = await fetchActiveStudents();
     return all.filter(s => !enrolledIds.has(s.id));
   }, [fetchActiveStudents]);

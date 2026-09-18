@@ -33,7 +33,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation'; // ← For reading ?student= param
-import { supabase } from '@/lib/supabase-client';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
@@ -224,14 +223,23 @@ export default function StudentProgressPage() {
   // (react-hooks/set-state-in-effect flags any named function that sets
   // state anywhere in its body, even safely after an await, when called
   // from an effect).
+  // 2026-09-18 (RLS remediation, Batch 4 — see
+  // claude/data-access-security-mapping.md): was a direct client-side
+  // `supabase.from('ground_school_enrollment')` call (anon key) — a live
+  // IDOR (any signed-in session could request any `studentId` here and get
+  // that student's exam scores/DGCA roll numbers). Now goes through
+  // GET /api/ground-school/enrollment, which forces a `student` session to
+  // their own rows server-side regardless of what `studentId` is passed —
+  // this page's own IDOR guard (the effect above that waits for
+  // `sessionStatus` before honoring `?student=`) still matters for which
+  // student the UI *asks for*, but the route no longer trusts it either way.
   const fetchEnrollments = useCallback(
     async (studentId: string): Promise<EnrollmentRecord[]> => {
       if (!studentId) return [];
-      const { data } = await supabase
-        .from('ground_school_enrollment')
-        .select('*')
-        .eq('student_id', studentId)
-        .order('class_id', { ascending: false });
+      const res = await fetch(`/api/ground-school/enrollment?studentId=${encodeURIComponent(studentId)}`);
+      const { enrollments: data } = (res.ok ? await res.json() : { enrollments: [] }) as {
+        enrollments: EnrollmentRecord[];
+      };
 
       // For each enrollment, look up the corresponding class info
       // (class_id may be null for exempted entries)

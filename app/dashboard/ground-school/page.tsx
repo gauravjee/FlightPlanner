@@ -4,7 +4,6 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
-import { supabase } from '@/lib/supabase-client';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
@@ -47,23 +46,27 @@ export default function GroundSchoolPage() {
   // claude/data-access-security-mapping.md): the subjects read was a direct
   // client-side `supabase.from('ground_school_subjects')` call (anon key) —
   // now goes through GET /api/admin/config/ground-school-subjects
-  // (service-role, session-gated). The classes read below is now also
-  // migrated, to GET /api/ground-school/classes (service-role,
-  // session-gated). The enrollment read is UNCHANGED — still a direct
-  // anon-key call. ground_school_enrollment has a live IDOR here (this
-  // fetch pulls every student's exam scores/roll numbers unfiltered;
-  // `selectedStudent` only filters client-side in subjectProgress below) —
-  // flagged in the mapping doc as Batch 4 work needing a self-scoped server
-  // route, not a mechanical move.
+  // (service-role, session-gated). The classes read is migrated the same
+  // way, to GET /api/ground-school/classes.
+  //
+  // 2026-09-18 (RLS remediation, Batch 4): the enrollment read was a direct
+  // client-side `supabase.from('ground_school_enrollment')` call (anon
+  // key) — a live IDOR, not just an anon-key exposure: it pulled every
+  // student's exam scores/DGCA roll numbers unfiltered, with
+  // `selectedStudent` only filtering client-side in subjectProgress below.
+  // Now goes through GET /api/ground-school/enrollment, which self-scopes
+  // a `student` session to their own rows server-side and requires a
+  // GROUND_SCHOOL_WRITE_ROLES staff role for the unfiltered "everyone"
+  // shape this page's own aggregate needs for non-student roles.
   const fetchGroundSchoolData = async () => {
     const [subjRes, enrollRes, classRes] = await Promise.all([
       fetch('/api/admin/config/ground-school-subjects?orderBy=sort_order&filterColumn=is_active&filterValue=true').then(r => r.json()),
-      supabase.from('ground_school_enrollment').select('*'),
+      fetch('/api/ground-school/enrollment').then(r => r.ok ? r.json() : { enrollments: [] }),
       fetch('/api/ground-school/classes?embedSubject=true&orderBy=class_date&ascending=false&limit=10').then(r => r.ok ? r.json() : { classes: [] }),
     ]);
     return {
       subjects: subjRes.rows || [],
-      enrollments: enrollRes.data || [],
+      enrollments: enrollRes.enrollments || [],
       classes: classRes.classes || [],
     };
   };
