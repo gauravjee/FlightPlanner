@@ -99,16 +99,33 @@ export async function POST(request: Request) {
 
     const newHash = await bcrypt.hash(newPassword, 10);
 
-    const { error: updateError } = await supabaseAdmin
+    // 2026-09-18 (P0 #8, audit finding H5 — "password change can report
+    // success while the old password still works"): `.update()` alone
+    // reports success even when the `.eq('id', ...)` matches zero rows —
+    // Postgres has nothing to update, so there's no error, just a no-op.
+    // `.select()` forces the matched-and-updated rows back so that case is
+    // detectable instead of silently reported as success. Same convention
+    // already applied to every other Supabase update/delete in this
+    // engagement that matters (see handoff doc §8).
+    const { data: updated, error: updateError } = await supabaseAdmin
       .from('users')
       .update({
         password_hash: newHash,
         force_password_reset: false,
       })
-      .eq('id', userId);
+      .eq('id', userId)
+      .select('id');
 
     if (updateError) {
       console.error('Error updating password:', updateError);
+      return NextResponse.json(
+        { error: 'Error updating password. Please try again.' },
+        { status: 500 }
+      );
+    }
+
+    if (!updated || updated.length === 0) {
+      console.error('Password update matched no rows for user id:', userId);
       return NextResponse.json(
         { error: 'Error updating password. Please try again.' },
         { status: 500 }
