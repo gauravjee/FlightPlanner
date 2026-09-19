@@ -192,10 +192,25 @@ export default function DebriefForm({ flight, onClose, onComplete, onError }: Pr
       // note above) — an unauthorized or rejected save can no longer reach
       // this write at all.
       if (form.fuelAfter !== form.fuelBefore) {
+        // 2026-09-19: when createLogbook is true, step 1 above
+        // (addFlightRecord) already advanced aircraft.hobbs_time to this
+        // exact same form.hobbsEnd — flight-records/route.ts is the
+        // authoritative Hobbs writer for that path (see its own comment).
+        // Resending hobbsTime here then trips this route's own strict
+        // "> current reading" guard (aircraft/[id]/route.ts, added the same
+        // day for the OTHER branch) and 400s — silently dropping the fuel
+        // update too, since it shares this one PATCH body. Found live on
+        // production 2026-09-19 completing a real stuck flight (id 46):
+        // the debrief reported success, but currentFuel never moved.
+        // Only the logbookPending branch still needs hobbsTime sent here —
+        // for that branch flight-records/route.ts never runs, so this
+        // route is the only place that ever writes it.
+        const fuelBody: Record<string, unknown> = { currentFuel: form.fuelAfter };
+        if (!form.createLogbook) fuelBody.hobbsTime = form.hobbsEnd;
         const fuelRes = await fetch(`/api/aircraft/${flight.aircraftId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ currentFuel: form.fuelAfter, hobbsTime: form.hobbsEnd }),
+          body: JSON.stringify(fuelBody),
         });
         if (!fuelRes.ok) {
           // Doesn't block the overall debrief — the flight is already
