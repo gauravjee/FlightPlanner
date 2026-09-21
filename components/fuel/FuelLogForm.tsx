@@ -14,6 +14,7 @@ import { useAircraft } from '@/lib/hooks/useAircraft';
 import { addFuelRecord } from '@/lib/hooks/useFuelRecords';
 import { Fuel, TriangleAlert, X } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 // ============================================================
 // PROPS
@@ -30,6 +31,8 @@ export default function FuelLogForm({ onClose }: Props) {
   // ----- Form state -----
   // Blocks a second click/Enter while the first save is still in flight.
   const [submitting, setSubmitting] = useState(false);
+  // Themed replacement for window.alert(): one-button notice, see ConfirmDialog.
+  const [notice, setNotice] = useState<{ title: string; message: string; danger?: boolean } | null>(null);
   const [form, setForm] = useState({
     aircraftId: '',          // Selected aircraft ID
     fuelAddedLiters: 0,      // How many liters added
@@ -85,21 +88,22 @@ export default function FuelLogForm({ onClose }: Props) {
 
     // Validate required fields
     if (!form.aircraftId || form.fuelAddedLiters <= 0) {
-      alert('Please select an aircraft and enter fuel amount.');
+      setNotice({ title: 'Missing details', message: 'Please select an aircraft and enter fuel amount.', danger: false });
       return;
     }
 
     // ===== OVER-REFUELING CHECK =====
     // Prevent adding more fuel than the tank can hold
     if (selectedAircraft && (form.fuelLevelBefore + form.fuelAddedLiters) > selectedAircraft.fuelCapacity) {
-      alert(
-        `Cannot refuel!\n\n` +
-        `Current: ${form.fuelLevelBefore}L\n` +
-        `Adding: ${form.fuelAddedLiters}L\n` +
-        `Total would be: ${form.fuelLevelBefore + form.fuelAddedLiters}L\n` +
-        `Capacity: ${selectedAircraft.fuelCapacity}L\n\n` +
-        `Maximum you can add: ${selectedAircraft.fuelCapacity - form.fuelLevelBefore}L`
-      );
+      setNotice({
+        title: 'Cannot refuel',
+        message:
+          `Current: ${form.fuelLevelBefore}L\n` +
+          `Adding: ${form.fuelAddedLiters}L\n` +
+          `Total would be: ${form.fuelLevelBefore + form.fuelAddedLiters}L\n` +
+          `Capacity: ${selectedAircraft.fuelCapacity}L\n\n` +
+          `Maximum you can add: ${selectedAircraft.fuelCapacity - form.fuelLevelBefore}L`,
+      });
       return;  // Stop submission
     }
 
@@ -126,7 +130,8 @@ export default function FuelLogForm({ onClose }: Props) {
   // RENDER
   // ============================================================
   return (
-    // Modal overlay - click background to close
+    <>
+    {/* Modal overlay - click background to close */}
     <div
       className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4"
       style={{ backgroundColor: 'rgba(0,0,0,0.6)' }}
@@ -312,5 +317,17 @@ export default function FuelLogForm({ onClose }: Props) {
         </form>
       </div>
     </div>
+    {notice && (
+      <ConfirmDialog
+        title={notice.title}
+        message={notice.message}
+        confirmLabel="OK"
+        danger={notice.danger ?? true}
+        hideCancel
+        onConfirm={() => setNotice(null)}
+        onCancel={() => setNotice(null)}
+      />
+    )}
+    </>
   );
 }

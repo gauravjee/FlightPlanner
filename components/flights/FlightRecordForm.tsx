@@ -11,6 +11,7 @@ import { useExercises } from '@/lib/hooks/useExercises';
 import { updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { addFlightRecord } from '@/lib/hooks/useFlightRecords';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { todayIST } from '@/lib/ist';
 import { flightHoursFromTimes } from '@/lib/flight-classification';
 
@@ -59,6 +60,8 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
 
   // Blocks a second click/Enter while the first save is still in flight.
   const [submitting, setSubmitting] = useState(false);
+  // Themed replacement for window.alert(): one-button notice, see ConfirmDialog.
+  const [notice, setNotice] = useState<{ title: string; message: string; danger?: boolean } | null>(null);
   const [form, setForm] = useState({
     studentId: studentId || '',
     aircraftId: prefill?.aircraftId || '',
@@ -126,7 +129,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
     // now rejects this too and is the real gate; this is a courtesy so the
     // instructor sees it before submitting rather than as a failed-save alert.
     if (!form.hobbsEnd || form.hobbsEnd <= form.hobbsStart) {
-      alert('❌ Hobbs End must be greater than Hobbs Start.');
+      setNotice({ title: 'Check the Hobbs reading', message: 'Hobbs End must be greater than Hobbs Start.' });
       return;
     }
 
@@ -181,13 +184,14 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
       // Keep the form open with everything the user entered still intact —
       // previously a failed save closed the form exactly like a successful
       // one, so nothing looked wrong even though nothing was saved.
-      alert(`❌ Failed to save flight record: ${result.error || 'Unknown error'}`);
+      setNotice({ title: 'Failed to save flight record', message: result.error || 'Unknown error' });
     }
   };
 
   const performanceStars = ['⭐', '⭐⭐', '⭐⭐⭐', '⭐⭐⭐⭐', '⭐⭐⭐⭐⭐'];
 
   return (
+    <>
     <div className="fixed inset-0 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ backgroundColor: 'rgba(0,0,0,0.6)' }} onClick={onClose}>
       <div className="surface-card w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b sticky top-0 z-10 bg-[var(--surface)]" style={{ borderColor: 'var(--border)' }}>
@@ -428,5 +432,17 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
         </form>
       </div>
     </div>
+    {notice && (
+      <ConfirmDialog
+        title={notice.title}
+        message={notice.message}
+        confirmLabel="OK"
+        danger={notice.danger ?? true}
+        hideCancel
+        onConfirm={() => setNotice(null)}
+        onCancel={() => setNotice(null)}
+      />
+    )}
+    </>
   );
 }

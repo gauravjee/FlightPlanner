@@ -41,7 +41,7 @@ export default function ConfirmDialog({ title, message, confirmLabel = 'Confirm'
             {danger && <TriangleAlert className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--danger)' }} />}
             {title}
           </h3>
-          <p className="text-sm text-secondary">{message}</p>
+          <p className="text-sm text-secondary whitespace-pre-line">{message}</p>
         </div>
         <div className="flex gap-3 p-4 border-t" style={{ borderColor: 'var(--border)' }}>
           {!hideCancel && (
