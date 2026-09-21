@@ -8,6 +8,7 @@ import { useAircraft, aircraftKey } from '@/lib/hooks/useAircraft';
 import { updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { addFlightRecord } from '@/lib/hooks/useFlightRecords';
 import { FLIGHT_RECORDS_WRITE_ROLES } from '@/lib/permissions';
+import { flightHoursFromTimes } from '@/lib/flight-classification';
 import { mutate } from 'swr';
 import { ScheduledFlight } from '@/types';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -54,16 +55,12 @@ export default function DebriefForm({ flight, onClose, onComplete, onError }: Pr
 
   const [loading, setLoading] = useState(false);
 
-  // Calculate flight time
-  const calcHours = () => {
-    const [sh, sm] = form.actualStartTime.split(':').map(Number);
-    const [eh, em] = form.actualEndTime.split(':').map(Number);
-    const mins = (eh * 60 + em) - (sh * 60 + sm);
-    if (mins <= 0) return 0;
-    return Math.round((mins / 60) * 10) / 10;
-  };
-
-  const flightHours = calcHours();
+  // Flight time — 2026-09-21 (P2): this form used to carry its own copy of
+  // the duration arithmetic with no midnight guard (22:30 -> 00:15 read as
+  // 0 h here while the logbook route computed 1.75 h from the same times).
+  // Now the one shared definition, so the on-screen figure, the PICUS cap
+  // and the server's stored total_hours can no longer disagree.
+  const flightHours = flightHoursFromTimes(form.actualStartTime, form.actualEndTime);
 
   // Same derivation the logbook write below uses. PICUS applies to a dual
   // sortie only — on a solo the student commands the whole flight and the
@@ -97,6 +94,14 @@ export default function DebriefForm({ flight, onClose, onComplete, onError }: Pr
     // app/api/flight-records/route.ts — this is the same fail-fast courtesy.
     if (!form.hobbsEnd || form.hobbsEnd <= form.hobbsStart) {
       onError('❌ Hobbs End must be greater than Hobbs Start.');
+      return;
+    }
+
+    // 2026-09-21 (P2): both times default to "now", so leaving them alone
+    // used to save a 0.0 h logbook entry with no complaint (that is how real
+    // flight 46 got total_hours 0 on 09-19). A checked-out flight has flown.
+    if (flightHours <= 0) {
+      onError('❌ Flight time is 0.0 h — set the actual start and end times before checking out.');
       return;
     }
 

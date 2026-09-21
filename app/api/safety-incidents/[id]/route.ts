@@ -129,11 +129,15 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
   }
 
-  const { error: dbError } = await supabaseAdmin.from('safety_incidents').update(dbUpdates).eq('id', id);
+  const { data: rows, error: dbError } = await supabaseAdmin.from('safety_incidents').update(dbUpdates).eq('id', id).select('id');
 
   if (dbError) {
     console.error('Error updating safety incident:', dbError);
     return NextResponse.json({ error: 'Failed to update incident.' }, { status: 500 });
+  }
+
+  if (!rows?.length) {
+    return NextResponse.json({ error: 'Incident not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });

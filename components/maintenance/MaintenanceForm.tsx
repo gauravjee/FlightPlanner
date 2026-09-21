@@ -131,6 +131,8 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
   // able to disagree with it).
   const selectedAircraft = aircraft.find(a => String(a.id) === String(form.aircraftId));
 
+  // Blocks a second click/Enter while the first save is still in flight.
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
   // Keep the record's actual type selectable even when it's off the fixed
@@ -262,7 +264,7 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        <form onSubmit={async (e) => { e.preventDefault(); if (submitting) return; setSubmitting(true); try { await handleSubmit(e); } finally { setSubmitting(false); } }} className="p-4 space-y-4">
           <div>
             <label className="block text-xs text-secondary mb-1">Aircraft *</label>
             <select value={form.aircraftId} onChange={e => setForm(p => ({ ...p, aircraftId: e.target.value }))} required
@@ -505,8 +507,8 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
               className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer surface-inner">
               Cancel
             </button>
-            <button type="submit"
-              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5"
+            <button type="submit" disabled={submitting}
+              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5 disabled:opacity-60"
               style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>
               {isEditing ? <Pencil className="w-4 h-4" /> : <Wrench className="w-4 h-4" />}
               {isEditing ? 'Save Changes' : 'Log Maintenance'}

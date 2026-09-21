@@ -32,6 +32,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
+import { todayIST } from '@/lib/ist';
 
 // ============================================================
 // INITIALIZE SERVICES
@@ -104,9 +105,13 @@ export async function GET(request: Request) {
   // Array to collect all notification messages for the response
   const notifications: string[] = [];
 
-  // Get today's date at midnight for comparison
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // Today's date for comparison — the current IST calendar date, held as
+  // that date's UTC midnight so every `today.toISOString().split('T')[0]`
+  // and day-count below reads back exactly the IST date. 2026-09-21 (P2):
+  // this was `new Date().setHours(0,0,0,0)`, which on Vercel (UTC) is the
+  // UTC date — the PREVIOUS day whenever the job runs between 00:00 and
+  // 05:30 IST, shifting every expiry window by a day.
+  const today = new Date(`${todayIST()}T00:00:00Z`);
 
   // Get the request URL for building dynamic dashboard links
   const requestUrl = request.url;
@@ -136,7 +141,7 @@ export async function GET(request: Request) {
     // Find all active students whose medical expires within 30 days
     // ============================================================
     const thirtyDaysFromNow = new Date(today);
-    thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
+    thirtyDaysFromNow.setUTCDate(thirtyDaysFromNow.getUTCDate() + 30);
 
     const medicalResult = await supabase
       .from('students')
@@ -317,7 +322,7 @@ export async function GET(request: Request) {
     // Find all scheduled maintenance due within the next 7 days
     // ============================================================
     const sevenDaysFromNow = new Date(today);
-    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+    sevenDaysFromNow.setUTCDate(sevenDaysFromNow.getUTCDate() + 7);
 
     const dueMxResult = await supabase
       .from('maintenance_records')

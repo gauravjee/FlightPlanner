@@ -28,6 +28,8 @@ export default function FuelLogForm({ onClose }: Props) {
   const { aircraft } = useAircraft();
 
   // ----- Form state -----
+  // Blocks a second click/Enter while the first save is still in flight.
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     aircraftId: '',          // Selected aircraft ID
     fuelAddedLiters: 0,      // How many liters added
@@ -146,7 +148,7 @@ export default function FuelLogForm({ onClose }: Props) {
         </div>
 
         {/* ===== FORM ===== */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        <form onSubmit={async (e) => { e.preventDefault(); if (submitting) return; setSubmitting(true); try { await handleSubmit(e); } finally { setSubmitting(false); } }} className="p-4 space-y-4">
 
           {/* ----- AIRCRAFT SELECTION ----- */}
           <div>
@@ -300,7 +302,8 @@ export default function FuelLogForm({ onClose }: Props) {
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5"
+              disabled={submitting}
+              className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5 disabled:opacity-60"
               style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
             >
               <Fuel className="w-4 h-4" /> Log Refueling

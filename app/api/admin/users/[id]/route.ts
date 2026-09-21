@@ -136,10 +136,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
   }
 
-  const { error: dbError } = await supabaseAdmin
+  const { data: rows, error: dbError } = await supabaseAdmin
     .from('users')
     .update(dbUpdates)
-    .eq('id', id);
+    .eq('id', id).select('id');
 
   if (dbError) {
     console.error('Error updating user:', dbError);
@@ -151,6 +151,10 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'That email address is already in use by another account.' }, { status: 409 });
     }
     return NextResponse.json({ error: 'Failed to update user.' }, { status: 500 });
+  }
+
+  if (!rows?.length) {
+    return NextResponse.json({ error: 'User not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });

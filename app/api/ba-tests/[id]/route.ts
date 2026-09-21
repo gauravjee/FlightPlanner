@@ -68,14 +68,18 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   dbUpdates.updated_at = new Date().toISOString();
 
-  const { error: dbError } = await supabaseAdmin
+  const { data: rows, error: dbError } = await supabaseAdmin
     .from('ba_tests')
     .update(dbUpdates)
-    .eq('id', id);
+    .eq('id', id).select('id');
 
   if (dbError) {
     console.error('Error updating BA test:', dbError);
     return NextResponse.json({ error: 'Failed to update BA test.' }, { status: 500 });
+  }
+
+  if (!rows?.length) {
+    return NextResponse.json({ error: 'BA test not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });
@@ -87,14 +91,18 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   const { id } = await context.params;
 
-  const { error: dbError } = await supabaseAdmin
+  const { data: rows, error: dbError } = await supabaseAdmin
     .from('ba_tests')
     .delete()
-    .eq('id', id);
+    .eq('id', id).select('id');
 
   if (dbError) {
     console.error('Error deleting BA test:', dbError);
     return NextResponse.json({ error: 'Failed to delete BA test.' }, { status: 500 });
+  }
+
+  if (!rows?.length) {
+    return NextResponse.json({ error: 'BA test not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });

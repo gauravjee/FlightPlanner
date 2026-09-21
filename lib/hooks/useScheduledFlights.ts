@@ -313,6 +313,23 @@ export async function updateScheduledFlight(id: string, updates: Partial<Schedul
       return { success: false, error: message };
     }
   }
+  // 2026-09-21 (P2, audit H6): a move/edit that changes aircraft or time
+  // must clear the SAME fresh, uncached conflict check bookFlight() runs —
+  // BookingForm's edit path previously relied only on its render-time list
+  // built from the SWR cache, which misses a booking another user made
+  // after this tab loaded (double-booked aircraft). Only when the caller
+  // supplies all three (BookingForm edit and drag-and-drop always do);
+  // status-only writes (check-in, cancel, debrief) skip it. checkConflicts
+  // excludes this flight itself.
+  if (updates.aircraftId && updates.startTime && updates.endTime) {
+    const conflict = await checkConflicts(updates.aircraftId, updates.startTime, updates.endTime, id);
+    if (conflict.hasConflict) {
+      return {
+        success: false,
+        error: '⚠️ Time conflict — this aircraft is already booked around that time (turnaround buffer included).',
+      };
+    }
+  }
   // 2026-09-18 (RLS exposure remediation, see
   // claude/rls-exposure-2026-09-18.md): routed through
   // /api/scheduled-flights/[id] (PATCH), gated to SCHEDULE_MANAGE_ROLES —

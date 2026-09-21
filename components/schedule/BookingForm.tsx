@@ -665,7 +665,10 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     const endIST = new Date(`${form.date}T${form.endTime}:00+05:30`);
 
     if (existingFlight) {
-      await updateScheduledFlight(existingFlight.id, {
+      // 2026-09-21 (P2): the result was ignored — a rejected save (server
+      // error, FTO-closed date, or the new aircraft-conflict check) still
+      // showed "Flight updated!" and closed the form. Now surfaced inline.
+      const updateResult = await updateScheduledFlight(existingFlight.id, {
         aircraftId: form.aircraftId,
         instructorId: isSolo ? '' : form.instructorId,
         studentId: isMaintenance ? undefined : form.studentId,
@@ -675,6 +678,11 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
         exercise: isMaintenance ? '' : form.exercise,
         notes: form.notes,
       });
+      if (!updateResult.success) {
+        setLoading(false);
+        setError(updateResult.error || '❌ Failed to update the flight.');
+        return;
+      }
       onSuccess('✅ Flight updated!');
       onClose();
     } else {

@@ -98,6 +98,7 @@ export default function ConfigTable<T extends { id: number }>({
 }: ConfigTableProps<T>) {
   const [rows, setRows] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false); // blocks a double-click adding the row twice
   const [editing, setEditing] = useState<T | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<number | null>(null);
   const [form, setForm] = useState<FormState>(() => defaultsOf(fields));
@@ -256,8 +257,9 @@ export default function ConfigTable<T extends { id: number }>({
 
         <div className="flex space-x-2">
           <button
-            onClick={handleSave}
-            className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold"
+            onClick={async () => { if (saving) return; setSaving(true); try { await handleSave(); } finally { setSaving(false); } }}
+            disabled={saving}
+            className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold disabled:opacity-60"
             style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
           >
             {editing

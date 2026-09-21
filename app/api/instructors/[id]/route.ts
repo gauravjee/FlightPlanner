@@ -77,11 +77,15 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
   }
 
-  const { error: dbError } = await supabaseAdmin.from('instructors').update(dbUpdates).eq('id', id);
+  const { data: rows, error: dbError } = await supabaseAdmin.from('instructors').update(dbUpdates).eq('id', id).select('id');
 
   if (dbError) {
     console.error('Error updating instructor:', dbError);
     return NextResponse.json({ error: 'Failed to update instructor.' }, { status: 500 });
+  }
+
+  if (!rows?.length) {
+    return NextResponse.json({ error: 'Instructor not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });
@@ -93,11 +97,15 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   const { id } = await context.params;
 
-  const { error: dbError } = await supabaseAdmin.from('instructors').delete().eq('id', id);
+  const { data: rows, error: dbError } = await supabaseAdmin.from('instructors').delete().eq('id', id).select('id');
 
   if (dbError) {
     console.error('Error deleting instructor:', dbError);
     return NextResponse.json({ error: 'Failed to delete instructor.' }, { status: 500 });
+  }
+
+  if (!rows?.length) {
+    return NextResponse.json({ error: 'Instructor not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });

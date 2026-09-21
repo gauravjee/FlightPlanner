@@ -147,11 +147,15 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   const { id } = await context.params;
 
-  const { error: dbError } = await supabaseAdmin.from('maintenance_records').delete().eq('id', id);
+  const { data: rows, error: dbError } = await supabaseAdmin.from('maintenance_records').delete().eq('id', id).select('id');
 
   if (dbError) {
     console.error('Error deleting maintenance record:', dbError);
     return NextResponse.json({ error: 'Failed to delete maintenance record.' }, { status: 500 });
+  }
+
+  if (!rows?.length) {
+    return NextResponse.json({ error: 'Maintenance record not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });

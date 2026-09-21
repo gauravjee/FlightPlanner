@@ -271,6 +271,10 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'Failed to save.' }, { status: 500 });
   }
 
+  if (!data) {
+    return NextResponse.json({ error: 'Record not found.' }, { status: 404 });
+  }
+
   return NextResponse.json({ row: data });
 }
 
@@ -290,11 +294,15 @@ export async function DELETE(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'id is required.' }, { status: 400 });
   }
 
-  const { error: dbError } = await supabaseAdmin.from(config.dbTable).delete().eq('id', id);
+  const { data: rows, error: dbError } = await supabaseAdmin.from(config.dbTable).delete().eq('id', id).select('id');
 
   if (dbError) {
     console.error(`Error deleting from ${config.dbTable}:`, dbError);
     return NextResponse.json({ error: 'Failed to delete.' }, { status: 500 });
+  }
+
+  if (!rows?.length) {
+    return NextResponse.json({ error: 'Record not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });

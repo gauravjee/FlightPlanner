@@ -57,6 +57,8 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
 
   const today = todayIST();
 
+  // Blocks a second click/Enter while the first save is still in flight.
+  const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
     studentId: studentId || '',
     aircraftId: prefill?.aircraftId || '',
@@ -197,7 +199,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+        <form onSubmit={async (e) => { e.preventDefault(); if (submitting) return; setSubmitting(true); try { await handleSubmit(e); } finally { setSubmitting(false); } }} className="p-4 space-y-4">
           {/* Student, Aircraft, Instructor */}
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -418,8 +420,8 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
               className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer surface-inner">
               Cancel
             </button>
-            <button type="submit"
-              className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition cursor-pointer font-bold">
+            <button type="submit" disabled={submitting}
+              className="flex-1 px-4 py-2 bg-green-500 disabled:opacity-60 text-white rounded-lg hover:bg-green-600 transition cursor-pointer font-bold">
               📝 Save Flight Record
             </button>
           </div>

@@ -860,11 +860,18 @@ export default function ScheduleBoard() {
       return;
     }
 
-    await updateScheduledFlight(flight.id, {
+    const moveResult = await updateScheduledFlight(flight.id, {
       aircraftId,
       startTime: newStart.toISOString(),
       endTime: newEnd.toISOString(),
     });
+    // 2026-09-21 (P2): the result was ignored, so a rejected reschedule
+    // still toasted "Rescheduled". Report the failure instead.
+    if (!moveResult.success) {
+      setErrorMessage(moveResult.error || '❌ Could not reschedule this flight.');
+      setTimeout(() => setErrorMessage(''), 4000);
+      return;
+    }
     setSuccessMessage(`✅ Rescheduled to ${startTime} IST${String(aircraftId) !== String(flight.aircraftId) ? ` on ${aircraft.find(a => String(a.id) === String(aircraftId))?.registration || 'the new aircraft'}` : ''}.`);
     setTimeout(() => setSuccessMessage(''), 3000);
     // Cache already fresh — updateScheduledFlight local-splices.

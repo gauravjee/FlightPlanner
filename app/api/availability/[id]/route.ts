@@ -48,11 +48,15 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
   }
 
-  const { error: dbError } = await supabaseAdmin.from('availability').update(dbUpdates).eq('id', id);
+  const { data: rows, error: dbError } = await supabaseAdmin.from('availability').update(dbUpdates).eq('id', id).select('id');
 
   if (dbError) {
     console.error('Error updating availability record:', dbError);
     return NextResponse.json({ error: 'Failed to update leave record.' }, { status: 500 });
+  }
+
+  if (!rows?.length) {
+    return NextResponse.json({ error: 'Leave record not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });
@@ -64,11 +68,15 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   const { id } = await context.params;
 
-  const { error: dbError } = await supabaseAdmin.from('availability').delete().eq('id', id);
+  const { data: rows, error: dbError } = await supabaseAdmin.from('availability').delete().eq('id', id).select('id');
 
   if (dbError) {
     console.error('Error deleting availability record:', dbError);
     return NextResponse.json({ error: 'Failed to delete leave record.' }, { status: 500 });
+  }
+
+  if (!rows?.length) {
+    return NextResponse.json({ error: 'Leave record not found.' }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });
