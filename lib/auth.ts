@@ -46,3 +46,53 @@ export async function verifyCredentials(email: string, password: string) {
     forcePasswordReset: data.force_password_reset === true,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Login rate limiting (2026-09-21, P1).
+//
+// Counts recent FAILED rows in `login_audit` per email — no new table,
+// dependency or infrastructure. Both helpers run only inside authorize()
+// (lib/auth-options.ts), so the audit trail is now written by the server
+// alone; the old browser-side writer (POST /api/auth/login-audit) was
+// retired because anyone could call it to forge FAILED rows for an email
+// and thereby lock that account out.
+//
+// ponytail: per-email, one count query per login. Add per-IP limiting or an
+// edge/Redis limiter if distributed guessing across many emails shows up.
+// ---------------------------------------------------------------------------
+const MAX_FAILED_LOGINS = 5;
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+
+/** True when `email` has MAX_FAILED_LOGINS failures in the last 15 minutes. Fails open on a DB error. */
+export async function isLockedOut(email: string): Promise<boolean> {
+  const since = new Date(Date.now() - LOCKOUT_WINDOW_MS).toISOString();
+  const { count, error } = await supabaseAdmin
+    .from('login_audit')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_email', email)
+    .eq('login_status', 'FAILED')
+    .gte('attempted_at', since);
+
+  if (error) {
+    // Availability over strictness: a broken audit table must not lock
+    // everybody out of the app. Logged so it is visible in Vercel Logs.
+    console.error('login_audit lockout check failed (failing open):', error);
+    return false;
+  }
+  return (count ?? 0) >= MAX_FAILED_LOGINS;
+}
+
+export async function recordLoginAttempt(
+  email: string,
+  status: 'SUCCESS' | 'FAILED',
+  ip: string,
+  userAgent: string
+) {
+  const { error } = await supabaseAdmin.from('login_audit').insert({
+    user_email: email,
+    login_status: status,
+    ip_address: ip,
+    user_agent: userAgent,
+  });
+  if (error) console.error('Error writing login_audit:', error);
+}

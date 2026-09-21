@@ -16,7 +16,6 @@ import { useState } from 'react';
 import { signIn, getSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { Plane, Mail, Lock, Eye, EyeOff, ArrowRight, Send } from 'lucide-react';
-import { logLoginAttempt } from '@/lib/auth-client';
 import ThemeToggle from '@/components/ui/ThemeToggle';
 
 export default function LoginPage() {
@@ -68,11 +67,13 @@ export default function LoginPage() {
 
     if (result?.error) {
       // Login failed
-      setError('Invalid email or password. Please try again.');
-      await logLoginAttempt(email, 'FAILED');  // Record failed attempt in audit log
+      setError(
+        result.error === 'TOO_MANY_ATTEMPTS'
+          ? 'Too many failed login attempts. Please wait 15 minutes and try again.'
+          : 'Invalid email or password. Please try again.'
+      );
     } else {
-      // Login successful
-      await logLoginAttempt(email, 'SUCCESS');  // Record successful login
+      // Login successful (both outcomes are audit-logged server-side, in authorize())
 
       // Fetch the session once — it already carries role, studentId, and
       // forcePasswordReset (populated server-side, with the service-role

@@ -93,10 +93,15 @@ export async function POST(request: Request) {
     const resend = new Resend(process.env.RESEND_API_KEY || '');
     
     // Build the reset URL with the token
-    // Get the base URL from the request headers (works for both localhost and production)
+    // 2026-09-21 (P1, Host header): the emailed link's origin must not come
+    // from a request header an attacker can set — a forged `Host` would
+    // put THEIR domain in the victim's real reset email and hand them the
+    // token when it's clicked. NEXTAUTH_URL (set per environment) is the
+    // trusted origin; the header fallback keeps localhost dev working when
+    // it's unset.
     const protocol = request.headers.get('x-forwarded-proto') || 'http';
     const host = request.headers.get('host') || 'localhost:3000';
-    const baseUrl = `${protocol}://${host}`;
+    const baseUrl = (process.env.NEXTAUTH_URL || `${protocol}://${host}`).replace(/\/+$/, '');
 
     // Build the reset URL with the dynamic base URL
     const resetUrl = `${baseUrl}/reset-password?token=${resetToken}`;

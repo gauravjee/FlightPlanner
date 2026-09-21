@@ -48,7 +48,10 @@ export async function requireSession(): Promise<
 > {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
+  // Email, not just `user`: defence in depth — a session with no identity
+  // must never count as authenticated. (A deactivated account already gets
+  // no session at all; see the session callback in lib/auth-options.ts.)
+  if (!session?.user?.email) {
     return {
       session: null,
       error: NextResponse.json({ error: 'Not authenticated.' }, { status: 401 }),

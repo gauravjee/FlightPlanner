@@ -4,8 +4,10 @@
 //
 //   1. TOKEN RESET — body: { token, newPassword }
 //      The token proves identity (it came from an emailed link), so no
-//      session is required. Looked up in password_reset_tokens; marked
-//      used only after the password update succeeds.
+//      session is required. Claimed in password_reset_tokens with ONE
+//      atomic conditional update (used=false -> true), so two concurrent
+//      requests can't both redeem it. If the password update then fails,
+//      the claim is released so the user can retry with the same link.
 //
 //   2. FORCED RESET — body: { oldPassword, newPassword }
 //      Used right after a first-time login when force_password_reset is
@@ -44,28 +46,50 @@ export async function POST(request: Request) {
   let userId: string;
   let tokenRowId: string | null = null;
 
+  // Undo the token claim after a failed password update, so a transient
+  // error doesn't burn the user's reset link. Best-effort by design.
+  const releaseToken = async () => {
+    if (!tokenRowId) return;
+    const { error } = await supabaseAdmin
+      .from('password_reset_tokens')
+      .update({ used: false })
+      .eq('id', tokenRowId);
+    if (error) console.error('Could not release reset token:', tokenRowId, error);
+  };
+
   try {
     if (token) {
       // ============================================================
       // TOKEN-BASED RESET
       // ============================================================
-      const { data, error } = await supabaseAdmin
+      // 2026-09-21 (P1): claim-then-change instead of check-then-change-
+      // then-invalidate. The old flow read the token, changed the password,
+      // and only then marked the token used with an unchecked write — a
+      // failed write left the link reusable, and two simultaneous requests
+      // could both pass the read. The conditional update below succeeds for
+      // exactly one caller; `.select()` proves a row was really claimed.
+      const { data: claimed, error: claimError } = await supabaseAdmin
         .from('password_reset_tokens')
-        .select('id, user_id, expires_at, used')
+        .update({ used: true })
         .eq('token', token)
         .eq('used', false)
         .gt('expires_at', new Date().toISOString())
-        .single();
+        .select('id, user_id');
 
-      if (error || !data) {
+      if (claimError) {
+        console.error('Error claiming reset token:', claimError);
+        return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
+      }
+
+      if (!claimed || claimed.length !== 1) {
         return NextResponse.json(
           { error: 'Invalid or expired reset link. Please request a new one from the login page.' },
           { status: 400 }
         );
       }
 
-      userId = data.user_id;
-      tokenRowId = data.id;
+      userId = claimed[0].user_id;
+      tokenRowId = claimed[0].id;
     } else {
       // ============================================================
       // FORCED RESET (authenticated session required)
@@ -118,6 +142,7 @@ export async function POST(request: Request) {
 
     if (updateError) {
       console.error('Error updating password:', updateError);
+      await releaseToken();
       return NextResponse.json(
         { error: 'Error updating password. Please try again.' },
         { status: 500 }
@@ -126,23 +151,17 @@ export async function POST(request: Request) {
 
     if (!updated || updated.length === 0) {
       console.error('Password update matched no rows for user id:', userId);
+      await releaseToken();
       return NextResponse.json(
         { error: 'Error updating password. Please try again.' },
         { status: 500 }
       );
     }
 
-    // Only invalidate the reset token once the password has actually changed.
-    if (tokenRowId) {
-      await supabaseAdmin
-        .from('password_reset_tokens')
-        .update({ used: true })
-        .eq('id', tokenRowId);
-    }
-
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Reset password error:', error);
+    await releaseToken();
     return NextResponse.json({ error: 'An unexpected error occurred.' }, { status: 500 });
   }
 }

@@ -26,5 +26,7 @@ declare module 'next-auth/jwt' {
     role?: string;
     studentId?: string | null;
     forcePasswordReset?: boolean;
+    checkedAt?: number;      // ms timestamp of the last users-row re-read (see lib/auth-options.ts)
+    deactivated?: boolean;   // set once the account is found inactive/deleted
   }
 }
