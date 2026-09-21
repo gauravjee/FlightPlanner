@@ -50,7 +50,7 @@ export async function verifyCredentials(email: string, password: string) {
 // ---------------------------------------------------------------------------
 // Login rate limiting (2026-09-21, P1).
 //
-// Counts recent FAILED rows in `login_audit` per email — no new table,
+// Looks at the latest attempts in `login_audit` per email — no new table,
 // dependency or infrastructure. Both helpers run only inside authorize()
 // (lib/auth-options.ts), so the audit trail is now written by the server
 // alone; the old browser-side writer (POST /api/auth/login-audit) was
@@ -63,15 +63,22 @@ export async function verifyCredentials(email: string, password: string) {
 const MAX_FAILED_LOGINS = 5;
 const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
 
-/** True when `email` has MAX_FAILED_LOGINS failures in the last 15 minutes. Fails open on a DB error. */
+/**
+ * True when `email`'s last MAX_FAILED_LOGINS attempts inside the 15-minute
+ * window were all failures. A SUCCESS in between breaks the streak, so a real
+ * user who mistypes now and then is never locked out; only 5 failures in a
+ * row are. Attempts made while locked write no row, so the lock lifts on its
+ * own once the oldest of the 5 leaves the window. Fails open on a DB error.
+ */
 export async function isLockedOut(email: string): Promise<boolean> {
   const since = new Date(Date.now() - LOCKOUT_WINDOW_MS).toISOString();
-  const { count, error } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from('login_audit')
-    .select('id', { count: 'exact', head: true })
+    .select('login_status')
     .eq('user_email', email)
-    .eq('login_status', 'FAILED')
-    .gte('attempted_at', since);
+    .gte('attempted_at', since)
+    .order('attempted_at', { ascending: false })
+    .limit(MAX_FAILED_LOGINS);
 
   if (error) {
     // Availability over strictness: a broken audit table must not lock
@@ -79,7 +86,7 @@ export async function isLockedOut(email: string): Promise<boolean> {
     console.error('login_audit lockout check failed (failing open):', error);
     return false;
   }
-  return (count ?? 0) >= MAX_FAILED_LOGINS;
+  return (data?.length ?? 0) >= MAX_FAILED_LOGINS && data!.every(r => r.login_status === 'FAILED');
 }
 
 export async function recordLoginAttempt(
