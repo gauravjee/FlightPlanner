@@ -16,11 +16,12 @@ interface Props {
   message: string;
   confirmLabel?: string;
   danger?: boolean;       // red confirm button + warning icon; false for a neutral confirmation
+  hideCancel?: boolean;   // one-button notice (e.g. "Password changed"); Escape/backdrop still call onCancel
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-export default function ConfirmDialog({ title, message, confirmLabel = 'Confirm', danger = true, onConfirm, onCancel }: Props) {
+export default function ConfirmDialog({ title, message, confirmLabel = 'Confirm', danger = true, hideCancel = false, onConfirm, onCancel }: Props) {
   // 2026-09-10: this was the one modal in the app missing Escape handling —
   // the shared hook's own comment claimed all 15 were covered, and this is
   // the destructive-confirmation dialog, i.e. the single dialog a keyboard
@@ -43,9 +44,11 @@ export default function ConfirmDialog({ title, message, confirmLabel = 'Confirm'
           <p className="text-sm text-secondary">{message}</p>
         </div>
         <div className="flex gap-3 p-4 border-t" style={{ borderColor: 'var(--border)' }}>
-          <button onClick={onCancel} className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer surface-inner">
-            Cancel
-          </button>
+          {!hideCancel && (
+            <button onClick={onCancel} className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer surface-inner">
+              Cancel
+            </button>
+          )}
           <button
             onClick={onConfirm}
             className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold"

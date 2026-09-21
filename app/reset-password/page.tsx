@@ -28,6 +28,7 @@
 // ----- React & Next.js imports -----
 import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import ConfirmDialog from '@/components/ui/ConfirmDialog';
 
 // Token verification and the actual password reset both happen server-side
 // (see app/api/auth/reset-password/) — the browser never sees a password
@@ -89,6 +90,7 @@ function ResetPasswordForm() {
   const [confirmPassword, setConfirmPassword] = useState(''); // Confirmation of new password (must match)
   const [error, setError] = useState('');                    // Error message to display to user
   const [loading, setLoading] = useState(false);             // Loading state for submit button
+  const [done, setDone] = useState(false);                    // Password changed: show the success dialog
 
   // ----- Token verification state -----
   const [tokenVerified, setTokenVerified] = useState(false);  // Whether the reset token is valid
@@ -230,8 +232,7 @@ function ResetPasswordForm() {
       // ============================================================
       // SUCCESS - Password changed!
       // ============================================================
-      alert('✅ Password changed successfully! You can now login with your new password.');
-      router.push('/login');  // Redirect to login page
+      setDone(true);  // the dialog below sends them to /login
 
     } catch (err) {
       // Handle any unexpected errors
@@ -398,6 +399,18 @@ function ResetPasswordForm() {
           </a>
         </p>
       </div>
+
+      {done && (
+        <ConfirmDialog
+          title="Password changed"
+          message="Your password was changed successfully. You can now log in with your new password."
+          confirmLabel="Go to login"
+          danger={false}
+          hideCancel
+          onConfirm={() => router.push('/login')}
+          onCancel={() => router.push('/login')}
+        />
+      )}
     </main>
   );
 }
