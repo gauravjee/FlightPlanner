@@ -668,12 +668,16 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
       // 2026-09-21 (P2): the result was ignored — a rejected save (server
       // error, FTO-closed date, or the new aircraft-conflict check) still
       // showed "Flight updated!" and closed the form. Now surfaced inline.
+      // Aircraft/times are only sent when they changed: the hook re-runs the
+      // fresh conflict check on them, and a notes-only edit of a flight that
+      // already sits inside a neighbour's turnaround buffer must not be blocked.
+      const moved = String(form.aircraftId) !== String(existingFlight.aircraftId)
+        || startIST.getTime() !== new Date(existingFlight.startTime).getTime()
+        || endIST.getTime() !== new Date(existingFlight.endTime).getTime();
       const updateResult = await updateScheduledFlight(existingFlight.id, {
-        aircraftId: form.aircraftId,
+        ...(moved ? { aircraftId: form.aircraftId, startTime: startIST.toISOString(), endTime: endIST.toISOString() } : {}),
         instructorId: isSolo ? '' : form.instructorId,
         studentId: isMaintenance ? undefined : form.studentId,
-        startTime: startIST.toISOString(),
-        endTime: endIST.toISOString(),
         sortieType: form.sortieType,
         exercise: isMaintenance ? '' : form.exercise,
         notes: form.notes,

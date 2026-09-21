@@ -100,6 +100,12 @@ export default function DebriefForm({ flight, onClose, onComplete, onError }: Pr
     // 2026-09-21 (P2): both times default to "now", so leaving them alone
     // used to save a 0.0 h logbook entry with no complaint (that is how real
     // flight 46 got total_hours 0 on 09-19). A checked-out flight has flown.
+    // flightHoursFromTimes wraps past midnight, so an end time before the
+    // start (a typo) would log ~23 h. Flying is 06:00-20:00 IST; no overnight.
+    if (form.actualEndTime < form.actualStartTime) {
+      onError('❌ Actual end time is before the start time — check the times.');
+      return;
+    }
     if (flightHours <= 0) {
       onError('❌ Flight time is 0.0 h — set the actual start and end times before checking out.');
       return;
