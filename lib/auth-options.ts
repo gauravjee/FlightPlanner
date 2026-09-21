@@ -26,6 +26,10 @@ export const authOptions: AuthOptions = {
       async authorize(credentials, req) {
         if (!credentials?.email || !credentials?.password) return null;
 
+        // 254 = longest valid email address (RFC 5321). Anything longer is
+        // junk; reject before it reaches the DB or gets stored in login_audit.
+        if (credentials.email.length > 254) return null;
+
         // Brute-force guard: 5 failures per email per 15 minutes. Thrown
         // (not `return null`) so the login page can show a distinct message
         // — NextAuth surfaces the message as signIn()'s `error`.
