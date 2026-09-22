@@ -55,16 +55,20 @@ export async function cancelFlightsDuringLeave(
   });
   if (!covered.length) return { cancelled: [] };
 
-  const { error } = await supabaseAdmin
+  // .select() returns only the rows the update actually changed — a flight
+  // checked in or cancelled between the load above and this update isn't
+  // touched (status filter) and so isn't reported to the approver either.
+  const { data: changed, error } = await supabaseAdmin
     .from('scheduled_flights')
     .update({ status: 'CANCELLED', cancellation_reason: 'ON_LEAVE' })
     .in('id', covered.map(f => f.id))
-    .in('status', ['SCHEDULED', 'PENDING_APPROVAL']);
+    .in('status', ['SCHEDULED', 'PENDING_APPROVAL'])
+    .select('id, start_time');
   if (error) {
     console.warn('⚠️ Could not auto-cancel bookings for approved leave:', error);
     return { cancelled: [], error: error.message };
   }
-  return { cancelled: covered.map(f => ({ id: String(f.id), startTime: f.start_time as string })) };
+  return { cancelled: (changed ?? []).map(f => ({ id: String(f.id), startTime: f.start_time as string })) };
 }
 
 /** True when the person has APPROVED leave covering any part of this flight (IST). */

@@ -830,16 +830,17 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
         {/* ===== FORM ===== */}
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
 
-          {/* Error message */}
+          {/* Error message — role="alert" (2026-09-23) so screen readers
+              announce it when it appears, like the warning below. */}
           {error && (
-            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+            <div role="alert" className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
               <p className="text-sm text-red-400">{error}</p>
             </div>
           )}
 
-          {/* Conflict warning */}
+          {/* Conflict warning — also the self-booking student's live leave block */}
           {conflictWarning && (
-            <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
+            <div role="alert" className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
               <p className="text-sm text-yellow-400">{conflictWarning}</p>
             </div>
           )}
