@@ -14,9 +14,14 @@
 // including the Add/Edit/Delete controls, in one RoleGate).
 //
 // createdBy is a free-text field the form lets the user type their own name
-// into (not derived from the session) — a pre-existing data-integrity quirk,
-// unchanged here; fixing that is a product decision, not part of this
-// remediation.
+// into (not derived from the session) — a pre-existing data-integrity quirk.
+// 2026-09-21: still true for admin/super_admin, but an instructor's record now
+// always takes their session name.
+//
+// 2026-09-21 (leave ownership + approval): admin/super_admin create records
+// for anyone (default APPROVED, as before). An instructor may only create
+// leave for themselves and it always starts PENDING until an approver
+// approves it. Operations is view-only here now.
 //
 // GET added 2026-09-18 (RLS remediation Step 3 — see
 // claude/rls-remediation-progress-2026-09-18.md): reads used to be direct
@@ -39,7 +44,7 @@
 // reason to a session that can't even see the Availability page.
 
 import { NextResponse } from 'next/server';
-import { requireRole, AVAILABILITY_VIEW_ROLES } from '@/lib/api-auth';
+import { requireRole, getOwnInstructorId, AVAILABILITY_VIEW_ROLES, AVAILABILITY_APPROVER_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 export async function GET() {
@@ -60,7 +65,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { error } = await requireRole(AVAILABILITY_VIEW_ROLES);
+  const { session, error } = await requireRole(AVAILABILITY_VIEW_ROLES);
   if (error) return error;
 
   let body: Record<string, unknown>;
@@ -80,13 +85,24 @@ export async function POST(request: Request) {
     );
   }
 
+  let newStatus = status || 'APPROVED';
+  let newCreatedBy = createdBy || null;
+  if (!AVAILABILITY_APPROVER_ROLES.includes(session.user.role ?? '')) {
+    const ownId = session.user.role === 'instructor' ? await getOwnInstructorId(session.user.email) : null;
+    if (!ownId || personType !== 'instructor' || String(personId) !== ownId) {
+      return NextResponse.json({ error: 'You can only add leave for yourself.' }, { status: 403 });
+    }
+    newStatus = 'PENDING';
+    newCreatedBy = session.user.name || session.user.email || null;
+  }
+
   const { data, error: dbError } = await supabaseAdmin
     .from('availability')
     .insert({
       person_type: personType, person_id: personId, leave_type: leaveType,
       start_date: startDate, end_date: endDate,
       start_time: startTime || null, end_time: endTime || null,
-      reason: reason || null, status: status || 'APPROVED', created_by: createdBy || null,
+      reason: reason || null, status: newStatus, created_by: newCreatedBy,
     })
     .select()
     .single();

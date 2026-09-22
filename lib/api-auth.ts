@@ -126,6 +126,17 @@ export async function requireScheduleCreateAccess(): Promise<
 }
 
 /**
+ * The instructors.id (as a string) for a session email, or null when there
+ * is no match (or more than one — fails closed). Same email match as
+ * requireScheduleCreateAccess() above.
+ */
+export async function getOwnInstructorId(email?: string | null): Promise<string | null> {
+  if (!email) return null;
+  const { data } = await supabaseAdmin.from('instructors').select('id').eq('email', email).maybeSingle();
+  return data?.id != null ? String(data.id) : null;
+}
+
+/**
  * Require a session with at least `level` ('view' or 'full', default
  * 'full') access to `moduleKey`, per lib/permissions.ts's MODULE_ACCESS —
  * combining the session's role default with any per-user override a

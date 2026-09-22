@@ -4,15 +4,17 @@
 'use client';
 
 import { useState } from 'react';
-import { useAvailability, addAvailability, updateAvailability, removeAvailability } from '@/lib/hooks/useAvailability';
+import { useSession } from 'next-auth/react';
+import { useAvailability, addAvailability, updateAvailability, removeAvailability, resolveAvailability, type WriteResult } from '@/lib/hooks/useAvailability';
+import { useInstructors } from '@/lib/hooks/useInstructors';
 import { AvailabilityRecord } from '@/types';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import AvailabilityForm from '@/components/availability/AvailabilityForm';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RoleGate from '@/components/ui/RoleGate';
-import { AVAILABILITY_VIEW_ROLES } from '@/lib/permissions';
-import { Palmtree, GraduationCap, Plane, ClipboardList, Pencil, Trash2 } from 'lucide-react';
+import { AVAILABILITY_VIEW_ROLES, AVAILABILITY_APPROVER_ROLES } from '@/lib/permissions';
+import { Palmtree, GraduationCap, Plane, ClipboardList, Pencil, Trash2, Check, X } from 'lucide-react';
 
 // ============================================================
 // COLOR MAPS for leave types — mapped onto design tokens so the
@@ -34,8 +36,42 @@ const leaveLabels: Record<string, string> = {
   PERSONAL: 'Personal',
 };
 
+const changeLabels: Record<string, string> = { leaveType: 'type', startDate: 'from', endDate: 'to', reason: 'reason' };
+
+// e.g. "Edit requested: from 2026-10-12, to 2026-10-14" / "Delete requested"
+function describePending(pc: NonNullable<AvailabilityRecord['pendingChange']>): string {
+  if (pc.action === 'DELETE') return 'Delete requested';
+  const parts = Object.entries(pc.changes ?? {})
+    .filter(([k]) => changeLabels[k])
+    .map(([k, v]) => `${changeLabels[k]} ${String(v) || '—'}`);
+  return `Edit requested: ${parts.join(', ')}`;
+}
+
 export default function AvailabilityPage() {
   const { availabilityRecords, isLoading: loadingAvailability } = useAvailability();
+  const { data: session } = useSession();
+  const { instructors } = useInstructors();
+  const role = session?.user?.role ?? '';
+  const isApprover = AVAILABILITY_APPROVER_ROLES.includes(role);
+  // Same email match the server uses to decide which records are "mine".
+  const ownInstructorId = role === 'instructor' ? instructors.find(i => i.email === session?.user?.email)?.id : undefined;
+  const canAdd = isApprover || !!ownInstructorId;
+  const canManage = (r: AvailabilityRecord) =>
+    isApprover || (!!ownInstructorId && r.personType === 'instructor' && r.personId === ownInstructorId);
+  const [notice, setNotice] = useState<{ title: string; message: string; danger: boolean } | null>(null);
+  const showResult = (r: WriteResult, what: 'add' | 'edit' | 'delete') => {
+    if (!r.ok) setNotice({ title: 'Could not save', message: r.error || 'Something went wrong.', danger: true });
+    else if (r.pendingApproval) setNotice({
+      title: 'Sent for approval',
+      message: `This leave is already approved, so your ${what === 'delete' ? 'delete' : 'change'} has been sent to an admin. The approved leave stays in force until they approve it.`,
+      danger: false,
+    });
+    else if (what === 'add' && !isApprover) setNotice({
+      title: 'Leave submitted',
+      message: 'Your leave request is waiting for admin approval.',
+      danger: false,
+    });
+  };
 
   const [showForm, setShowForm] = useState(false);
   const [editingRecord, setEditingRecord] = useState<AvailabilityRecord | null>(null);
@@ -67,6 +103,9 @@ export default function AvailabilityPage() {
     const today = new Date().toLocaleDateString('en-CA');
     return r.startDate <= today && r.endDate >= today && r.status === 'APPROVED';
   }).length;
+  // New requests waiting to be approved, plus edit/delete requests on
+  // already-approved records — everything an approver needs to act on.
+  const pendingApprovalCount = availabilityRecords.filter(r => r.status === 'PENDING' || !!r.pendingChange).length;
 
   const handleAdd = () => {
     setEditingRecord(null);
@@ -78,14 +117,19 @@ export default function AvailabilityPage() {
     setShowForm(true);
   };
 
-  const handleSave = (data: Partial<AvailabilityRecord>) => {
-    if (editingRecord) {
-      updateAvailability(editingRecord.id, data);
-    } else {
-      addAvailability(data as Omit<AvailabilityRecord, 'id' | 'personName' | 'personInitials'>);
-    }
+  const handleSave = async (data: Partial<AvailabilityRecord>) => {
+    const editing = editingRecord;
     setShowForm(false);
     setEditingRecord(null);
+    const r = editing
+      ? await updateAvailability(editing.id, data)
+      : await addAvailability(data as Omit<AvailabilityRecord, 'id' | 'personName' | 'personInitials'>);
+    showResult(r, editing ? 'edit' : 'add');
+  };
+
+  const handleResolve = async (id: string, resolve: 'approve' | 'reject') => {
+    const r = await resolveAvailability(id, resolve);
+    if (!r.ok) setNotice({ title: 'Could not save', message: r.error || 'Something went wrong.', danger: true });
   };
 
   const handleDelete = (id: string) => {
@@ -95,7 +139,7 @@ export default function AvailabilityPage() {
   useSetHeader({
     title: 'Availability & Leave',
     subtitle: 'Manage instructor and student leave records',
-    action: (
+    action: canAdd ? (
       <button
         onClick={handleAdd}
         className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
@@ -103,7 +147,7 @@ export default function AvailabilityPage() {
       >
         <Palmtree className="w-4 h-4" /> Add Leave
       </button>
-    ),
+    ) : undefined,
   });
 
   return (
@@ -117,6 +161,7 @@ export default function AvailabilityPage() {
               { label: 'Instructor Leaves', value: instructorLeaves, color: 'var(--accent)' },
               { label: 'Student Leaves', value: studentLeaves, color: 'var(--success)' },
               { label: 'Active Today', value: activeLeaves, color: 'var(--warning-text)' },
+              ...(isApprover ? [{ label: 'Pending Approval', value: pendingApprovalCount, color: 'var(--danger)' }] : []),
             ].map((stat, i) => (
               <div key={i} className="surface-inner p-4">
                 <p className="text-xs text-tertiary">{stat.label}</p>
@@ -214,18 +259,44 @@ export default function AvailabilityPage() {
                         </td>
                         <td className="py-3 text-xs max-w-[150px] truncate">{record.reason || '—'}</td>
                         <td className="py-3">
-                          <span className={`badge ${statusBadgeClass}`}>
-                            {record.status}
+                          <span className={`badge ${record.pendingChange ? 'badge-warning' : statusBadgeClass}`}>
+                            {record.pendingChange ? 'WAITING APPROVAL' : record.status}
                           </span>
+                          {record.pendingChange && (
+                            <span className="block text-xs text-tertiary mt-1">
+                              {describePending(record.pendingChange)}
+                              {record.pendingChange.requestedBy ? ` (${record.pendingChange.requestedBy})` : ''}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3">
                           <div className="flex space-x-1">
-                            <button onClick={() => handleEdit(record)} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }} aria-label={`Edit ${record.personName}'s leave record`}>
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                            <button onClick={() => handleDelete(record.id)} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }} aria-label={`Delete ${record.personName}'s leave record`}>
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                            {record.pendingChange ? (
+                              isApprover && (
+                                <>
+                                  <button onClick={() => handleResolve(record.id, 'approve')} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }} aria-label={`Approve ${record.personName}'s requested change`}>
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                  <button onClick={() => handleResolve(record.id, 'reject')} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }} aria-label={`Reject ${record.personName}'s requested change`}>
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </>
+                              )
+                            ) : canManage(record) && (
+                              <>
+                                {isApprover && record.status === 'PENDING' && (
+                                  <button onClick={async () => { const r = await updateAvailability(record.id, { status: 'APPROVED' }); showResult(r, 'edit'); }} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }} aria-label={`Approve ${record.personName}'s leave record`}>
+                                    <Check className="w-3 h-3" />
+                                  </button>
+                                )}
+                                <button onClick={() => handleEdit(record)} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }} aria-label={`Edit ${record.personName}'s leave record`}>
+                                  <Pencil className="w-3 h-3" />
+                                </button>
+                                <button onClick={() => handleDelete(record.id)} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--danger-soft)', color: 'var(--danger)' }} aria-label={`Delete ${record.personName}'s leave record`}>
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -255,6 +326,7 @@ export default function AvailabilityPage() {
         {showForm && (
           <AvailabilityForm
             record={editingRecord}
+            lockedInstructorId={isApprover ? undefined : ownInstructorId}
             onSave={handleSave}
             onClose={() => { setShowForm(false); setEditingRecord(null); }}
           />
@@ -265,8 +337,20 @@ export default function AvailabilityPage() {
             title="Delete leave record?"
             message="Delete this leave record?"
             confirmLabel="Delete"
-            onConfirm={() => { removeAvailability(deleteTarget); setDeleteTarget(null); }}
+            onConfirm={async () => { const id = deleteTarget; setDeleteTarget(null); showResult(await removeAvailability(id), 'delete'); }}
             onCancel={() => setDeleteTarget(null)}
+          />
+        )}
+
+        {notice && (
+          <ConfirmDialog
+            title={notice.title}
+            message={notice.message}
+            confirmLabel="OK"
+            danger={notice.danger}
+            hideCancel
+            onConfirm={() => setNotice(null)}
+            onCancel={() => setNotice(null)}
           />
         )}
       </main>

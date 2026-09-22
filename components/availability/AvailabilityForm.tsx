@@ -13,9 +13,13 @@ interface Props {
   record: AvailabilityRecord | null;
   onSave: (record: Partial<AvailabilityRecord>) => void;
   onClose: () => void;
+  // Set for an instructor managing their own leave: person is fixed, and
+  // status/created-by are decided server-side (new = PENDING; an edit of an
+  // APPROVED record goes to an admin for approval first).
+  lockedInstructorId?: string;
 }
 
-export default function AvailabilityForm({ record, onSave, onClose }: Props) {
+export default function AvailabilityForm({ record, onSave, onClose, lockedInstructorId }: Props) {
   useEscapeToClose(onClose);
   const { instructors } = useInstructors();
   const { students } = useStudents();
@@ -45,14 +49,14 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
         }
       : {
           personType: 'instructor' as 'instructor' | 'student',
-          personId: '',
+          personId: lockedInstructorId || '',
           leaveType: 'UNAVAILABLE',
           startDate: today,
           endDate: today,
           startTime: '',
           endTime: '',
           reason: '',
-          status: 'APPROVED',
+          status: lockedInstructorId ? 'PENDING' : 'APPROVED',
           createdBy: '',
         }
   );
@@ -87,7 +91,19 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          {/* Person Type */}
+          {lockedInstructorId && (
+            <p className="text-sm text-secondary">
+              Instructor: <span style={{ color: 'var(--text-primary)' }}>{instructors.find(i => i.id === lockedInstructorId)?.name || 'You'}</span>
+            </p>
+          )}
+          {lockedInstructorId && record?.status === 'APPROVED' && (
+            <p className="text-xs rounded-lg px-3 py-2 surface-inner">
+              This leave is already approved. Your changes are sent to an admin for approval; the approved leave stays in force until then.
+            </p>
+          )}
+          {!lockedInstructorId && (
+<>
+{/* Person Type */}
           <div>
             <label className="block text-sm text-secondary mb-1">Person Type</label>
             <select
@@ -122,6 +138,9 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
               ))}
             </select>
           </div>
+
+          </>
+)}
 
           {/* Leave Type */}
           <div>
@@ -187,7 +206,9 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
           </div>
           <p className="text-xs text-tertiary -mt-2">Leave blank for full-day absence</p>
 
-          {/* Status */}
+          {!lockedInstructorId && (
+<>
+{/* Status */}
           <div>
             <label className="block text-sm text-secondary mb-1">Status</label>
             <select
@@ -201,6 +222,9 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
             </select>
           </div>
 
+          </>
+)}
+
           {/* Reason */}
           <div>
             <label className="block text-sm text-secondary mb-1">Reason / Notes</label>
@@ -213,7 +237,9 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
             />
           </div>
 
-          {/* Created By */}
+          {!lockedInstructorId && (
+<>
+{/* Created By */}
           <div>
             <label className="block text-sm text-secondary mb-1">Created By</label>
             <input
@@ -224,6 +250,9 @@ export default function AvailabilityForm({ record, onSave, onClose }: Props) {
               className={inputClass}
             />
           </div>
+
+          </>
+)}
 
           {/* Buttons */}
           <div className="flex space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>

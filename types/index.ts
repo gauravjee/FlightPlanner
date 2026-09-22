@@ -568,6 +568,14 @@ export interface AvailabilityRecord {
   reason: string;
   status: string;
   createdBy: string;
+  // A change/delete an instructor asked for on an APPROVED record. The row
+  // itself is unchanged (still in force) until an admin approves it.
+  pendingChange?: {
+    action: 'UPDATE' | 'DELETE';
+    changes?: Record<string, unknown>;
+    requestedBy?: string;
+    requestedAt?: string;
+  };
   personName?: string;      // For display
   personInitials?: string;  // For display
 }

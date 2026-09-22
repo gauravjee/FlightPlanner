@@ -171,6 +171,13 @@ export const SCHEDULE_MANAGE_ROLES = ['admin', 'instructor', 'super_admin', 'ope
 // Aircraft/Fuel/Maintenance/Flight Records/Students).
 export const AVAILABILITY_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'operations'];
 
+// 2026-09-21: only these roles approve leave, resolve change/delete requests
+// and edit or delete any record directly. Everyone else in
+// AVAILABILITY_VIEW_ROLES can view; an instructor additionally manages their
+// OWN records (edits/deletes of an already-approved one go to an approver
+// first) — see app/api/availability/[id]/route.ts.
+export const AVAILABILITY_APPROVER_ROLES = ['admin', 'super_admin'];
+
 // ============================================================
 // STUDENT PROGRESS
 // ============================================================

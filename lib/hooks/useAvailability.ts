@@ -51,6 +51,7 @@ export async function fetchAvailability(): Promise<AvailabilityRecord[]> {
       startDate: row.start_date as string, endDate: row.end_date as string,
       startTime: (row.start_time as string) || undefined, endTime: (row.end_time as string) || undefined,
       reason: row.reason as string, status: row.status as string, createdBy: row.created_by as string,
+      pendingChange: (row.pending_change as AvailabilityRecord['pendingChange']) || undefined,
       personName: person?.name || 'Unknown', personInitials: person?.initials || '??',
     };
   });
@@ -87,48 +88,61 @@ export function useAvailability() {
 // from the server (matches the migration plan's cache-update rule: the
 // enrichment is derived beyond what the client sent, so re-fetch rather than
 // locally splice) — this preserves the exact prior behavior.
-export async function addAvailability(
-  record: Omit<AvailabilityRecord, 'id' | 'personName' | 'personInitials'>
-): Promise<void> {
-  const res = await fetch('/api/availability', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(record),
+//
+// 2026-09-21 (leave ownership + approval): all four writes now return a
+// WriteResult so the page can tell the user about a rejection (403/409) or
+// that an instructor's edit/delete of an APPROVED record was only sent for
+// approval. In that case the server left the row unchanged, so the cache is
+// revalidated instead of optimistically patched.
+export type WriteResult = { ok: boolean; pendingApproval?: boolean; error?: string };
+
+async function send(url: string, method: string, body?: unknown): Promise<WriteResult> {
+  const res = await fetch(url, {
+    method,
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
   });
+  const result = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const result = await res.json().catch(() => ({}));
-    console.error('Error adding availability:', result.error || res.statusText);
-    return;
+    console.error(`Error (${method} ${url}):`, result.error || res.statusText);
+    return { ok: false, error: result.error || 'Request failed.' };
   }
-  await mutate(availabilityKey);
+  return { ok: true, pendingApproval: !!result.pendingApproval };
 }
 
-export async function updateAvailability(id: string, updates: Partial<AvailabilityRecord>): Promise<void> {
-  const res = await fetch(`/api/availability/${id}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updates),
-  });
-  if (!res.ok) {
-    const result = await res.json().catch(() => ({}));
-    console.error('Error updating availability:', result.error || res.statusText);
-    return;
-  }
-  mutate<AvailabilityRecord[]>(
+export async function addAvailability(
+  record: Omit<AvailabilityRecord, 'id' | 'personName' | 'personInitials'>
+): Promise<WriteResult> {
+  const r = await send('/api/availability', 'POST', record);
+  if (r.ok) await mutate(availabilityKey);
+  return r;
+}
+
+export async function updateAvailability(id: string, updates: Partial<AvailabilityRecord>): Promise<WriteResult> {
+  const r = await send(`/api/availability/${id}`, 'PATCH', updates);
+  if (!r.ok) return r;
+  if (r.pendingApproval) await mutate(availabilityKey);
+  else mutate<AvailabilityRecord[]>(
     availabilityKey,
     (current = []) => current.map(a => (a.id === id ? { ...a, ...updates } : a)),
     { revalidate: false }
   );
+  return r;
 }
 
-export async function removeAvailability(id: string): Promise<void> {
-  const res = await fetch(`/api/availability/${id}`, { method: 'DELETE' });
-  if (!res.ok) {
-    const result = await res.json().catch(() => ({}));
-    console.error('Error removing availability:', result.error || res.statusText);
-    return;
-  }
-  mutate<AvailabilityRecord[]>(availabilityKey, (current = []) => current.filter(a => a.id !== id), { revalidate: false });
+export async function removeAvailability(id: string): Promise<WriteResult> {
+  const r = await send(`/api/availability/${id}`, 'DELETE');
+  if (!r.ok) return r;
+  if (r.pendingApproval) await mutate(availabilityKey);
+  else mutate<AvailabilityRecord[]>(availabilityKey, (current = []) => current.filter(a => a.id !== id), { revalidate: false });
+  return r;
+}
+
+// Admin/super_admin only: approve or reject an instructor's waiting edit/delete.
+export async function resolveAvailability(id: string, resolve: 'approve' | 'reject'): Promise<WriteResult> {
+  const r = await send(`/api/availability/${id}`, 'PATCH', { resolve });
+  await mutate(availabilityKey); // approve may have changed or removed the row
+  return r;
 }
 
 // Not tied to the cached list at all — a fresh point-in-time query, same as
