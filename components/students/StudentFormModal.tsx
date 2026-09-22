@@ -375,9 +375,13 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
               className={`${inputClass} text-sm`}
             >
               <option value="">None (Unassigned)</option>
-              {instructors.map(i => (
-                <option key={i.id} value={i.id}>{i.name} ({i.initials})</option>
-              ))}
+              {/* 2026-09-23: Inactive instructors can't be newly assigned; a
+                  student still assigned to one keeps showing it (marked). */}
+              {instructors
+                .filter(i => i.employmentStatus !== 'INACTIVE' || i.id === form.assignedInstructorId)
+                .map(i => (
+                  <option key={i.id} value={i.id}>{i.name} ({i.initials}){i.employmentStatus === 'INACTIVE' ? ' — inactive' : ''}</option>
+                ))}
             </select>
           </div>
 

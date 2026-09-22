@@ -46,6 +46,8 @@ export async function fetchInstructors(): Promise<Instructor[]> {
     licenseNumber: row.license_number as string, ratings: row.ratings as string,
     maxDailyHours: row.max_daily_hours as number, email: (row.email as string) || '',
     phone: (row.phone as string) || '', status: row.status as Instructor['status'],
+    // 2026-09-23: missing/unknown reads as ACTIVE — never hides anyone by accident.
+    employmentStatus: row.employment_status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
     // Defaults to false if the migration hasn't been run yet in Supabase
     // (add-instructor-self-booking-permission.sql) — column missing/null
     // both read as "can't self-book," the safe side.

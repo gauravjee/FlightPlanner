@@ -483,6 +483,11 @@ export interface Instructor {
   email: string;
   phone: string;
   status: 'AVAILABLE' | 'FLYING' | 'OFF_DUTY';
+  // 2026-09-23: whether they still work here (add-instructor-employment-
+  // status.sql). INACTIVE = left/retired: hidden from the roster by
+  // default, not bookable, not assignable to students. Separate from
+  // `status` (operational) and from login access (users.is_active).
+  employmentStatus?: 'ACTIVE' | 'INACTIVE';
   // Whether this instructor can create their own new Schedule bookings —
   // false by default, granted per instructor by a super_admin (Instructors
   // tab). See add-instructor-self-booking-permission.sql and

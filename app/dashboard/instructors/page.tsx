@@ -29,21 +29,25 @@ export default function InstructorsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  // 2026-09-23: Inactive (left/retired) instructors are hidden unless asked for.
+  const [showInactive, setShowInactive] = useState(false);
+  const activeInstructors = instructors.filter(i => i.employmentStatus !== 'INACTIVE');
+  const inactiveCount = instructors.length - activeInstructors.length;
 
   // Filter instructors based on search and status
-  const filteredInstructors = instructors.filter(i => {
+  const filteredInstructors = (showInactive ? instructors : activeInstructors).filter(i => {
     const matchesSearch = i.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           i.licenseNumber.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'ALL' || i.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
-  // Calculate stats
+  // Calculate stats — current (Active) instructors only.
   const stats = {
-    total: instructors.length,
-    available: instructors.filter(i => i.status === 'AVAILABLE').length,
-    flying: instructors.filter(i => i.status === 'FLYING').length,
-    offDuty: instructors.filter(i => i.status === 'OFF_DUTY').length,
+    total: activeInstructors.length,
+    available: activeInstructors.filter(i => i.status === 'AVAILABLE').length,
+    flying: activeInstructors.filter(i => i.status === 'FLYING').length,
+    offDuty: activeInstructors.filter(i => i.status === 'OFF_DUTY').length,
   };
 
   const handleAdd = () => {
@@ -119,6 +123,12 @@ export default function InstructorsPage() {
             <option value="FLYING">Flying</option>
             <option value="OFF_DUTY">Off Duty</option>
           </select>
+          {inactiveCount > 0 && (
+            <label className="flex items-center gap-2 text-sm text-secondary whitespace-nowrap cursor-pointer">
+              <input type="checkbox" checked={showInactive} onChange={e => setShowInactive(e.target.checked)} />
+              Show inactive ({inactiveCount})
+            </label>
+          )}
         </div>
 
         {/* Instructor Cards */}

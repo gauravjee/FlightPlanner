@@ -23,6 +23,7 @@ const FIELD_MAP: Record<string, string> = {
   phone: 'phone',
   status: 'status',
   canSelfBook: 'can_self_book',
+  employmentStatus: 'employment_status', // 2026-09-23, add-instructor-employment-status.sql
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -71,6 +72,17 @@ export async function PATCH(request: Request, context: RouteContext) {
   // the whole request, same as the field just wasn't sent.
   if (session.user.role !== 'super_admin') {
     delete dbUpdates.can_self_book;
+  }
+
+  // 2026-09-23: employment status (Active/Inactive) — admin/super_admin only,
+  // even for someone granted Full Access to Instructors by override: marking
+  // an instructor Inactive pulls them out of booking and student assignment,
+  // which is a management decision, not roster upkeep. Dropped silently like
+  // can_self_book above; an unknown value is rejected.
+  if (!['admin', 'super_admin'].includes(session.user.role ?? '')) {
+    delete dbUpdates.employment_status;
+  } else if (dbUpdates.employment_status !== undefined && !['ACTIVE', 'INACTIVE'].includes(String(dbUpdates.employment_status))) {
+    return NextResponse.json({ error: 'Employment status must be ACTIVE or INACTIVE.' }, { status: 400 });
   }
 
   if (Object.keys(dbUpdates).length === 0) {

@@ -23,6 +23,9 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
   // manage instructors, but this one field is more sensitive since it
   // controls who can create new Schedule bookings unsupervised.
   const isSuperAdmin = session?.user?.role === 'super_admin';
+  // 2026-09-23: Active/Inactive is admin/super_admin only (server enforces
+  // the same — see app/api/instructors/[id]/route.ts).
+  const canSetEmployment = isSuperAdmin || session?.user?.role === 'admin';
 
   // The parent only ever renders this modal conditionally ({showForm &&
   // <InstructorFormModal .../>}), so `instructor` is fixed for this
@@ -44,6 +47,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
           phone: instructor.phone || '',
           status: instructor.status,
           canSelfBook: !!instructor.canSelfBook,
+          employmentStatus: instructor.employmentStatus ?? 'ACTIVE',
         }
       : {
           name: '',
@@ -58,6 +62,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
           phone: '',
           status: 'AVAILABLE' as Instructor['status'],
           canSelfBook: false,
+          employmentStatus: 'ACTIVE' as NonNullable<Instructor['employmentStatus']>,
         }
   );
 
@@ -207,6 +212,28 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
                 className={inputClass} />
             </div>
           </div>
+
+          {/* 2026-09-23: employment status — only for an existing instructor
+              (new ones start ACTIVE via the DB default). */}
+          {isEditing && canSetEmployment && (
+            <div>
+              <label className="block text-xs text-secondary mb-1">Employment</label>
+              <select
+                value={form.employmentStatus}
+                onChange={e => setForm(p => ({ ...p, employmentStatus: e.target.value as NonNullable<Instructor['employmentStatus']> }))}
+                className={inputClass}
+              >
+                <option value="ACTIVE">Active — current instructor</option>
+                <option value="INACTIVE">Inactive — left / retired</option>
+              </select>
+              {form.employmentStatus === 'INACTIVE' && (
+                <p className="text-xs text-tertiary mt-1">
+                  Hidden from the roster by default, can&apos;t be booked or assigned to students. Their login isn&apos;t
+                  affected — disable that separately in User Management if needed.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Self-booking permission — only meaningful once the instructor
               already exists (a brand-new instructor's can_self_book always

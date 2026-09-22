@@ -158,6 +158,20 @@ export async function POST(request: Request) {
     }
   }
 
+  // 2026-09-23: an Inactive (left/retired) instructor can't be booked, by
+  // anyone — the booking form hides them, this stops a direct request or a
+  // student whose assigned instructor has since left.
+  if (instructorId) {
+    const { data: instr } = await supabaseAdmin.from('instructors').select('employment_status').eq('id', String(instructorId)).maybeSingle();
+    if (instr?.employment_status === 'INACTIVE') {
+      return NextResponse.json({
+        error: session.user.role === 'student'
+          ? 'Your assigned instructor is no longer active — ask the office to reassign you.'
+          : 'This instructor is no longer active and can\'t be booked.',
+      }, { status: 403 });
+    }
+  }
+
   const { error: dbError } = await supabaseAdmin.from('scheduled_flights').insert({
     aircraft_id: aircraftId,
     instructor_id: instructorId,

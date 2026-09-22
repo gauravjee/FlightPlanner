@@ -40,7 +40,8 @@ export default function DutyHoursPage() {
     const today = now.toLocaleDateString('en-CA');
     const sevenDaysAgo = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA');
     const active = scheduledFlights.filter(f => f.status !== 'CANCELLED');
-    return instructors.map(instr => {
+    // 2026-09-23: current (Active) instructors only.
+    return instructors.filter(i => i.employmentStatus !== 'INACTIVE').map(instr => {
       const flights = active.filter(f => String(f.instructorId) === String(instr.id));
       const todayHours = flights
         .filter(f => localDateStr(f.startTime) === today)

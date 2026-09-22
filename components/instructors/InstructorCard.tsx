@@ -80,9 +80,15 @@ export default function InstructorCard({ instructor, onEdit, onDelete }: Props) 
             <p className="text-xs text-tertiary">{instructor.licenseNumber}</p>
           </div>
         </div>
-        <span className={`badge ${statusBadgeClass}`}>
-          {instructor.status.replace('_', ' ')}
-        </span>
+        {/* 2026-09-23: an Inactive (left/retired) instructor shows that
+            instead of an operational status that no longer means anything. */}
+        {instructor.employmentStatus === 'INACTIVE' ? (
+          <span className="badge badge-neutral">INACTIVE</span>
+        ) : (
+          <span className={`badge ${statusBadgeClass}`}>
+            {instructor.status.replace('_', ' ')}
+          </span>
+        )}
       </div>
 
       {/* Details grid */}

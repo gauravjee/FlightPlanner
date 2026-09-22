@@ -1050,7 +1050,11 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
               <option value="">
                 {isSolo ? 'N/A – Solo Flight' : 'Select Instructor'}
               </option>
-              {!isSolo && instructors.map(i => <option key={i.id} value={i.id}>{i.name} ({i.initials})</option>)}
+              {/* 2026-09-23: Inactive instructors aren't offered — except the one
+                  already on the booking being edited, so it doesn't render blank. */}
+              {!isSolo && instructors
+                .filter(i => i.employmentStatus !== 'INACTIVE' || i.id === form.instructorId)
+                .map(i => <option key={i.id} value={i.id}>{i.name} ({i.initials}){i.employmentStatus === 'INACTIVE' ? ' — inactive' : ''}</option>)}
             </select>
             {/* Self-booking students can't pick a different instructor —
                 always their own assigned one (server enforces this too). */}

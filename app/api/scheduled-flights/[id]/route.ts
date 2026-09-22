@@ -91,6 +91,21 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
   }
 
+  // 2026-09-23: moving a booking onto an Inactive instructor is refused, same
+  // as creating one (app/api/scheduled-flights/route.ts). Only when the
+  // instructor actually CHANGES: BookingForm's edit always re-sends the
+  // current instructorId, and a notes-only edit of an old booking whose
+  // instructor has since left must still save.
+  if (dbUpdates.instructor_id) {
+    const { data: current } = await supabaseAdmin.from('scheduled_flights').select('instructor_id').eq('id', id).maybeSingle();
+    if (current && String(current.instructor_id) !== String(dbUpdates.instructor_id)) {
+      const { data: instr } = await supabaseAdmin.from('instructors').select('employment_status').eq('id', String(dbUpdates.instructor_id)).maybeSingle();
+      if (instr?.employment_status === 'INACTIVE') {
+        return NextResponse.json({ error: 'This instructor is no longer active and can\'t be booked.' }, { status: 403 });
+      }
+    }
+  }
+
   const { data: rows, error: dbError } = await supabaseAdmin.from('scheduled_flights').update(dbUpdates).eq('id', id).select('id');
 
   if (dbError) {
