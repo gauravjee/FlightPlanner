@@ -16,7 +16,7 @@
 // boundary.
 
 import { NextResponse } from 'next/server';
-import { requireRole, SCHEDULE_MANAGE_ROLES } from '@/lib/api-auth';
+import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -39,9 +39,6 @@ const FIELD_MAP: Record<string, string> = {
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
-  const { error } = await requireRole(SCHEDULE_MANAGE_ROLES);
-  if (error) return error;
-
   const { id } = await context.params;
 
   let body: Record<string, unknown>;
@@ -50,6 +47,37 @@ export async function PATCH(request: Request, context: RouteContext) {
   } catch {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
+
+  // 2026-09-22: approve/reject a student's self-booked PENDING_APPROVAL
+  // request — narrower role set (SCHEDULE_APPROVER_ROLES, no instructor)
+  // than every other write on this route, so checked and returned before
+  // the general requireRole(SCHEDULE_MANAGE_ROLES) below.
+  if (body.resolve !== undefined) {
+    const { error: approverError } = await requireRole(SCHEDULE_APPROVER_ROLES);
+    if (approverError) return approverError;
+
+    if (body.resolve !== 'approve' && body.resolve !== 'reject') {
+      return NextResponse.json({ error: "resolve must be 'approve' or 'reject'." }, { status: 400 });
+    }
+    const resolved = body.resolve === 'approve'
+      ? { status: 'SCHEDULED' }
+      : { status: 'CANCELLED', cancellation_reason: 'REJECTED' };
+
+    const { data: rows, error: dbError } = await supabaseAdmin
+      .from('scheduled_flights').update(resolved)
+      .eq('id', id).eq('status', 'PENDING_APPROVAL').select('id');
+    if (dbError) {
+      console.error('Error resolving booking request:', dbError);
+      return NextResponse.json({ error: 'Failed to resolve the request.' }, { status: 500 });
+    }
+    if (!rows?.length) {
+      return NextResponse.json({ error: 'No booking request waiting for approval at this id.' }, { status: 409 });
+    }
+    return NextResponse.json({ success: true });
+  }
+
+  const { error } = await requireRole(SCHEDULE_MANAGE_ROLES);
+  if (error) return error;
 
   const dbUpdates: Record<string, unknown> = {};
   for (const [clientKey, dbKey] of Object.entries(FIELD_MAP)) {

@@ -68,7 +68,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { error } = await requireScheduleCreateAccess();
+  const { session, error } = await requireScheduleCreateAccess();
   if (error) return error;
 
   let body: Record<string, unknown>;
@@ -78,13 +78,71 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
 
+  let {
+    instructorId, studentId, status,
+  } = body as Record<string, unknown>;
   const {
-    aircraftId, instructorId, studentId, startTime, endTime, sortieType,
-    exercise, status, weatherBriefed, notamBriefed, notes,
+    aircraftId, startTime, endTime, sortieType, exercise, weatherBriefed, notamBriefed, notes,
   } = body as Record<string, unknown>;
 
   if (!aircraftId || !startTime || !endTime) {
     return NextResponse.json({ error: 'aircraftId, startTime, and endTime are required.' }, { status: 400 });
+  }
+
+  // 2026-09-22 (student self-booking): everything the client sent for
+  // studentId/instructorId/status is untrusted here specifically because
+  // requireScheduleCreateAccess() just let a STUDENT through — every other
+  // role that passes that gate (admin/super_admin/operations always;
+  // instructor only with can_self_book) is staff booking on someone else's
+  // behalf, which is the existing, unrestricted behavior. A self-booking
+  // student can only ever create a PENDING_APPROVAL request for themselves.
+  let pendingApproval = false;
+  if (session.user.role === 'student') {
+    if (!session.user.studentId) {
+      return NextResponse.json({ error: 'No student profile is linked to this account.' }, { status: 403 });
+    }
+    studentId = session.user.studentId;
+    pendingApproval = true;
+    status = 'PENDING_APPROVAL';
+
+    if (sortieType === 'MAINTENANCE') {
+      return NextResponse.json({ error: 'Students cannot book a maintenance flight.' }, { status: 403 });
+    }
+
+    if (sortieType === 'SOLO') {
+      // Same rule BookingForm.tsx's handleSubmit already enforces
+      // client-side (any incomplete requirement flagged blocks_solo) —
+      // duplicated here because this is now a self-serve path a student
+      // reaches without a staff member in the loop until the approval step.
+      const { data: blockingReqs } = await supabaseAdmin
+        .from('training_requirements')
+        .select('requirement_name')
+        .eq('student_id', studentId)
+        .eq('blocks_solo', true)
+        .eq('is_completed', false)
+        .limit(1);
+      if (blockingReqs?.length) {
+        return NextResponse.json(
+          { error: `Not released for solo — missing: ${blockingReqs[0].requirement_name}.` },
+          { status: 403 }
+        );
+      }
+    } else {
+      // Dual: a student cannot pick who instructs them — always their own
+      // assigned instructor.
+      const { data: student } = await supabaseAdmin
+        .from('students')
+        .select('assigned_instructor_id')
+        .eq('id', studentId)
+        .maybeSingle();
+      if (!student?.assigned_instructor_id) {
+        return NextResponse.json(
+          { error: 'You have no assigned instructor yet — ask the office to book a dual flight for you.' },
+          { status: 403 }
+        );
+      }
+      instructorId = student.assigned_instructor_id;
+    }
   }
 
   const { error: dbError } = await supabaseAdmin.from('scheduled_flights').insert({
@@ -106,5 +164,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to book flight.' }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, pendingApproval });
 }

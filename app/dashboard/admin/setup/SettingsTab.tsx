@@ -730,6 +730,23 @@ export default function SettingsTab() {
                 </div>
             </div>
 
+            {/* ===== Student Self-Booking (2026-09-22) ===== */}
+            <div className="border-t pt-4 mt-2" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="students_can_self_book"
+                  checked={getValue('students_can_self_book') === 'true'}
+                  onChange={e => setValue('students_can_self_book', e.target.checked ? 'true' : 'false')}
+                  className="w-4 h-4"
+                />
+                <label htmlFor="students_can_self_book" className="text-sm text-secondary">Allow students to book their own flights</label>
+              </div>
+              <p className="text-xs text-tertiary mt-1">
+                Off by default — most FTOs book on the student&apos;s behalf. When on, a student can request a Dual flight (always with their own assigned instructor — they cannot pick a different one) or a Solo flight (only once released for solo). Every self-booked request holds the slot but needs an admin or operations approval before it&apos;s confirmed.
+              </p>
+            </div>
+
             {/* ===== Time Slots ===== */}
             <div className="border-t pt-4 mt-2" style={{ borderColor: 'var(--border)' }}>
                 <h4 className="text-xs font-medium text-tertiary mb-3 flex items-center gap-1.5">

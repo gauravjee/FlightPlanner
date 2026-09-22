@@ -114,6 +114,24 @@ export async function requireScheduleCreateAccess(): Promise<
     }
   }
 
+  // 2026-09-22: student self-booking, FTO-wide toggle (Admin Setup ->
+  // Settings -> super_admin only writes fto_settings, see
+  // app/api/admin/config/[table]/route.ts). Off by default (no row = not
+  // 'true'). This only decides whether a student may create A booking at
+  // all — studentId/instructorId overrides, the solo-release check, and
+  // forcing status to PENDING_APPROVAL all happen in the route itself
+  // (POST /api/scheduled-flights), which has the request body.
+  if (role === 'student' && session.user.studentId) {
+    const { data } = await supabaseAdmin
+      .from('fto_settings')
+      .select('setting_value')
+      .eq('setting_key', 'students_can_self_book')
+      .maybeSingle();
+    if (data?.setting_value === 'true') {
+      return { session, error: null };
+    }
+  }
+
   return {
     session: null,
     error: NextResponse.json(

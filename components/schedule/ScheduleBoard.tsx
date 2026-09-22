@@ -127,9 +127,16 @@ export default function ScheduleBoard() {
   const { data: session } = useSession();
   const sessionRole = session?.user?.role;
   const currentInstructor = instructors.find(i => i.email === session?.user?.email);
+  const { ftoSettings } = useFtoSettings();                 // School name / airport code for the printed schedule header; also students_can_self_book below
+  // 2026-09-22: student self-booking, gated on the FTO-wide
+  // students_can_self_book toggle (Admin Setup -> Settings, super_admin
+  // only) — mirrors the instructor can_self_book check above, purely for
+  // UX; the real gate is server-side in requireScheduleCreateAccess().
+  const studentsCanSelfBook = getFtoSetting(ftoSettings, 'students_can_self_book') === 'true';
   const canCreateBooking =
     (!!sessionRole && SCHEDULE_CREATE_ROLES.includes(sessionRole)) ||
-    (sessionRole === 'instructor' && !!currentInstructor?.canSelfBook);
+    (sessionRole === 'instructor' && !!currentInstructor?.canSelfBook) ||
+    (sessionRole === 'student' && studentsCanSelfBook);
 
   // ----- UI state -----
   // Both were global Zustand state until 2026-09-03; this board is the only
@@ -157,7 +164,6 @@ export default function ScheduleBoard() {
   // Holidays, FTO Settings, and Exercises are all SWR-migrated now (Stages
   // 7-8, 2026-09-02) — fetch-on-mount, no manual load calls needed.
   const { holidays } = useHolidays();                       // FTO-wide blackout dates
-  const { ftoSettings } = useFtoSettings();                 // School name / airport code for the printed schedule header
   const { exercises } = useExercises();                     // Exercise codes (Admin Setup -> Exercises), for the legend below
 
   // Same "CODE - Name" / short-code tuple shape the legend table and print
@@ -1288,19 +1294,23 @@ export default function ScheduleBoard() {
                                 ${isDraggable ? 'active:cursor-grabbing' : ''}
                                 ${isHovered ? 'ring-2 ring-white/50 z-20 scale-[1.03] shadow-xl' : 'z-10'}
                                 ${flight.status === 'IN_PROGRESS' ? 'ring-1' : ''}
+                                ${flight.status === 'PENDING_APPROVAL' ? 'border-dashed' : ''}
                                 ${hasMaintenanceConflict ? 'ring-2 animate-pulse' : ''}
                                 ${draggingFlight?.id === flight.id ? 'opacity-40' : ''}`}
                               style={{
                                 ...style,
-                                backgroundColor: `color-mix(in srgb, ${blockColor} 80%, transparent)`,
+                                backgroundColor: `color-mix(in srgb, ${blockColor} ${flight.status === 'PENDING_APPROVAL' ? 50 : 80}%, transparent)`,
                                 borderColor: blockColor,
                                 ...(flight.status === 'IN_PROGRESS' ? { boxShadow: `0 0 0 1px color-mix(in srgb, var(--success) 50%, transparent)` } : {}),
                                 ...(hasMaintenanceConflict ? { boxShadow: '0 0 0 2px var(--danger)' } : {}),
                               }}
-                              title={`${student?.name || flight.studentName || 'No Student'} - ${exerciseName || flight.sortieType}\n${flightStartIST} IST${hasMaintenanceConflict ? '\nConflicts with scheduled maintenance on this aircraft — reassign or cancel' : ''}${isDraggable ? '\nDrag to reschedule' : ''}`}
+                              title={`${student?.name || flight.studentName || 'No Student'} - ${exerciseName || flight.sortieType}\n${flightStartIST} IST${flight.status === 'PENDING_APPROVAL' ? '\n📨 Awaiting admin/ops approval' : ''}${hasMaintenanceConflict ? '\nConflicts with scheduled maintenance on this aircraft — reassign or cancel' : ''}${isDraggable ? '\nDrag to reschedule' : ''}`}
                             >
                               {flight.status === 'IN_PROGRESS' && (
                                 <span className="absolute top-1 right-1 w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--success)' }} />
+                              )}
+                              {flight.status === 'PENDING_APPROVAL' && (
+                                <span className="absolute top-1 right-1 w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: 'var(--warning)' }} title="Awaiting approval" />
                               )}
                               {hasMaintenanceConflict && (
                                 <span
@@ -1507,6 +1517,7 @@ export default function ScheduleBoard() {
           onSuccess={handleBookingSuccess}
           existingFlight={editingFlight}
           prefill={gridClickPrefill}
+          selfBookingStudentId={sessionRole === 'student' ? session?.user?.studentId ?? undefined : undefined}
         />
       )}
 

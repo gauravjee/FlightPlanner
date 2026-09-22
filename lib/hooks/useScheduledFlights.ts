@@ -202,7 +202,7 @@ export async function checkConflicts(
 // allowed to create a new booking at all, goes through that route.
 export async function bookFlight(
   booking: Omit<ScheduledFlight, 'id' | 'aircraftReg' | 'studentName' | 'instructorName' | 'duration'>
-): Promise<{ success: boolean; message: string }> {
+): Promise<{ success: boolean; message: string; pendingApproval?: boolean }> {
   const bookingDateStr = new Date(booking.startTime).toLocaleDateString('en-CA');
   const [holidays, ftoSettings] = await Promise.all([fetchHolidays(), fetchFtoSettings()]);
   const blockReason = getSchedulingBlockReason(
@@ -242,12 +242,20 @@ export async function bookFlight(
     }),
   });
   if (res.ok) {
-    // The route's response is just {success:true} — no id/row back to
-    // splice locally with, so revalidate from the server instead (the
-    // plan's "server derived it, don't locally splice" case — same
-    // treatment addFlightRecord() gave this in Stage 4).
+    // The route's response is just {success:true[,pendingApproval]} — no
+    // id/row back to splice locally with, so revalidate from the server
+    // instead (the plan's "server derived it, don't locally splice" case —
+    // same treatment addFlightRecord() gave this in Stage 4).
+    const result = await res.json().catch(() => ({}));
     await mutate(scheduledFlightsKey);
-    return { success: true, message: '✅ Flight booked!' };
+    // 2026-09-22: a self-booking student's request lands as
+    // PENDING_APPROVAL regardless of what status this call sent (the server
+    // overrides it — see POST /api/scheduled-flights) — surfaced here so
+    // the caller isn't told "Flight booked!" for a request that isn't
+    // confirmed yet.
+    return result.pendingApproval
+      ? { success: true, message: '📨 Booking request sent — waiting for admin/ops approval.', pendingApproval: true }
+      : { success: true, message: '✅ Flight booked!' };
   }
   const result = await res.json().catch(() => ({}));
   if (res.status === 403) {
@@ -267,6 +275,25 @@ export async function bookFlight(
 // /api/scheduled-flights/[id] (PATCH), gated to SCHEDULE_MANAGE_ROLES —
 // see that route and lib/permissions.ts for why (this used to have no role
 // check at all, client or server).
+// Admin/super_admin/operations only (SCHEDULE_APPROVER_ROLES) — approve or
+// reject a student's self-booked PENDING_APPROVAL request. Approve sets
+// status SCHEDULED (holds its existing aircraft/time slot); reject
+// soft-cancels it (cancellation_reason 'REJECTED') the same way any other
+// cancelled flight is kept for the record rather than deleted.
+export async function resolveScheduledFlight(id: string, resolve: 'approve' | 'reject'): Promise<{ success: boolean; error?: string }> {
+  const res = await fetch(`/api/scheduled-flights/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ resolve }),
+  });
+  const result = await res.json().catch(() => ({}));
+  if (res.ok) {
+    await mutate(scheduledFlightsKey);
+    return { success: true };
+  }
+  return { success: false, error: result.error || 'Failed to resolve the request.' };
+}
+
 export async function cancelFlight(id: string, reason?: 'WEATHER' | 'MAINTENANCE' | 'OTHER'): Promise<void> {
   const res = await fetch(`/api/scheduled-flights/${id}`, {
     method: 'PATCH',

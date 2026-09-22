@@ -15,14 +15,14 @@
 'use client';
 
 import { useSession } from 'next-auth/react';
-import { cancelFlight, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
+import { cancelFlight, updateScheduledFlight, resolveScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { useWeather, useNotams } from '@/lib/hooks/useWeather';
 import { useAircraft, getAircraftById } from '@/lib/hooks/useAircraft';
 import { useInstructors, getInstructorById } from '@/lib/hooks/useInstructors';
 import { useStudents, getStudentById } from '@/lib/hooks/useStudents';
 import { getLocationDisplay } from '@/lib/location';
-import { SCHEDULE_MANAGE_ROLES } from '@/lib/permissions';
+import { SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES } from '@/lib/permissions';
 import { FlightSlot } from '@/types';
 import { useState } from 'react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -56,6 +56,20 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   // rather than buttons that silently fail.
   const { data: session } = useSession();
   const canManage = !!session?.user?.role && SCHEDULE_MANAGE_ROLES.includes(session.user.role);
+  // 2026-09-22: narrower than canManage — admin/super_admin/operations only,
+  // no instructor — decides a student's self-booked PENDING_APPROVAL
+  // request (see lib/permissions.ts's SCHEDULE_APPROVER_ROLES comment).
+  const canApprove = !!session?.user?.role && SCHEDULE_APPROVER_ROLES.includes(session.user.role);
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState('');
+  const handleResolve = async (resolve: 'approve' | 'reject') => {
+    setResolving(true);
+    setResolveError('');
+    const result = await resolveScheduledFlight(slot.id, resolve);
+    setResolving(false);
+    if (result.success) onClose();
+    else setResolveError(result.error || 'Failed to resolve the request.');
+  };
 
   // ============================================================
   // STORE DATA
@@ -569,6 +583,29 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
             Close
           </button>
 
+          {/* ----- APPROVE / REJECT (student self-booked request) ----- */}
+          {canApprove && slot.status === 'PENDING_APPROVAL' && (
+            <div className="flex flex-col items-end gap-1">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleResolve('approve')}
+                  disabled={resolving}
+                  className="px-4 py-2 text-sm bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ✅ Approve
+                </button>
+                <button
+                  onClick={() => handleResolve('reject')}
+                  disabled={resolving}
+                  className="px-4 py-2 text-sm bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  ❌ Reject
+                </button>
+              </div>
+              {resolveError && <p className="text-[10px] text-red-400">{resolveError}</p>}
+            </div>
+          )}
+
           {/* ----- CHECK-IN BUTTON ----- */}
           {/* Only for SCHEDULED flights → Changes status to IN_PROGRESS.
               Disabled until 1 hour before the scheduled start time.
@@ -637,7 +674,7 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
          {/* ----- CANCEL FLIGHT BUTTON / REASON PICKER ----- */}
           {/* Hidden for COMPLETED and CANCELLED flights. Staff only — see
               canManage above. */}
-          {canManage && slot.status !== 'COMPLETED' && slot.status !== 'CANCELLED' && !showCancelReason && (
+          {canManage && slot.status !== 'COMPLETED' && slot.status !== 'CANCELLED' && slot.status !== 'PENDING_APPROVAL' && !showCancelReason && (
             <button onClick={() => setShowCancelReason(true)} className="px-4 py-2 text-sm bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
               Cancel Flight
             </button>

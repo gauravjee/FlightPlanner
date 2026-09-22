@@ -57,6 +57,11 @@ interface Props {
   // instructor/student/sortie type for them to fill in. Ignored in edit
   // mode (existingFlight takes precedence).
   prefill?: { aircraftId: string; date: string; startTime: string } | null;
+  // Set when a student is self-booking (students_can_self_book FTO
+  // setting) — locks the Student field to them and the Instructor field
+  // to their assigned instructor (server re-enforces both; see
+  // app/api/scheduled-flights/route.ts).
+  selfBookingStudentId?: string;
 }
 
 // ============================================================
@@ -103,13 +108,18 @@ function exerciseRequiresSoloRelease(exercise: string): boolean {
 // ============================================================
 // MAIN COMPONENT
 // ============================================================
-export default function BookingForm({ onClose, onSuccess, existingFlight, prefill }: Props) {
+export default function BookingForm({ onClose, onSuccess, existingFlight, prefill, selfBookingStudentId }: Props) {
   useEscapeToClose(onClose);
 
   // ----- Store -----
   const { aircraft } = useAircraft();
   const { instructors } = useInstructors();
   const { students } = useStudents();
+  // Self-booking student's own record and their assigned instructor id
+  // (empty string if none assigned — the Instructor field then shows the
+  // "no assigned instructor" warning instead of letting them pick one).
+  const selfBookingStudent = selfBookingStudentId ? students.find(s => s.id === selfBookingStudentId) : undefined;
+  const selfBookingInstructorId = selfBookingStudent?.assignedInstructorId || '';
   // Scheduled flights come from SWR (Stage 5, 2026-09-01) — fetch-on-mount +
   // dedup. Raw (unenriched) flights are fine here: this form's conflict
   // logic only reads aircraftId/studentId/instructorId/status/startTime/
@@ -277,8 +287,8 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     if (prefill) {
       return {
         aircraftId: prefill.aircraftId,
-        instructorId: '',
-        studentId: '',
+        instructorId: selfBookingStudentId ? selfBookingInstructorId : '',
+        studentId: selfBookingStudentId || '',
         date: prefill.date,
         startTime: prefill.startTime,
         endTime: addHoursToTime(prefill.startTime, 1),
@@ -289,8 +299,8 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     }
     return {
       aircraftId: '',
-      instructorId: '',
-      studentId: '',
+      instructorId: selfBookingStudentId ? selfBookingInstructorId : '',
+      studentId: selfBookingStudentId || '',
       date: todayLocal,
       startTime: formatTime(defaultStart),
       endTime: formatTime(defaultEnd),
@@ -526,6 +536,11 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
         }
         if (value === 'SOLO') {
           updated.instructorId = '';
+        }
+        // Self-booking students can't pick an instructor — re-lock to
+        // their assigned one whenever a switch lands back on DUAL.
+        if (value === 'DUAL' && selfBookingStudentId) {
+          updated.instructorId = selfBookingInstructorId;
         }
       }
 
@@ -909,11 +924,11 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
             <select
               value={isMaintenance ? '' : form.studentId}
               onChange={e => handleFieldChange('studentId', e.target.value)}
-              disabled={isMaintenance}
+              disabled={isMaintenance || !!selfBookingStudentId}
               required={!isMaintenance}
-              className={`w-full surface-inner rounded-lg px-3 py-2 ${isMaintenance ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              className={`w-full surface-inner rounded-lg px-3 py-2 ${(isMaintenance || selfBookingStudentId) ? 'opacity-50 cursor-not-allowed' : ''}`}>
               <option value="">{isMaintenance ? 'N/A – Maintenance Flight' : 'Select Student'}</option>
-              {!isMaintenance && students.filter(s => s.status === 'ACTIVE').map(s => {
+              {!isMaintenance && students.filter(s => s.status === 'ACTIVE' || s.id === selfBookingStudentId).map(s => {
                 const medicalDate = s.medicalExpiry ? new Date(s.medicalExpiry) : null;
                 const today = new Date(); today.setHours(0, 0, 0, 0);
                 const isExpired = medicalDate && medicalDate < today;
@@ -954,13 +969,18 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
               value={isSolo ? '' : form.instructorId}
               onChange={e => handleFieldChange('instructorId', e.target.value)}
               required={!isSolo}
-              disabled={isSolo}
-              className={`w-full surface-inner rounded-lg px-3 py-2 ${isSolo ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              disabled={isSolo || !!selfBookingStudentId}
+              className={`w-full surface-inner rounded-lg px-3 py-2 ${(isSolo || selfBookingStudentId) ? 'opacity-50 cursor-not-allowed' : ''}`}>
               <option value="">
                 {isSolo ? 'N/A – Solo Flight' : 'Select Instructor'}
               </option>
               {!isSolo && instructors.map(i => <option key={i.id} value={i.id}>{i.name} ({i.initials})</option>)}
             </select>
+            {/* Self-booking students can't pick a different instructor —
+                always their own assigned one (server enforces this too). */}
+            {selfBookingStudentId && !isSolo && !selfBookingInstructorId && (
+              <p className="text-xs text-red-400 mt-1">🔒 You have no assigned instructor yet — ask the office to book a dual flight for you.</p>
+            )}
             {/* Instructor conflict warning */}
             {form.instructorId && !isSolo && checkPersonConflict().includes('instructor') && (
               <p className="text-xs text-red-400 mt-1">⚠️ This instructor is already booked at this time</p>
@@ -973,9 +993,16 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
             <select value={form.sortieType} onChange={e => handleFieldChange('sortieType', e.target.value)}
               className="w-full surface-inner rounded-lg px-3 py-2">
               <option value="DUAL">Dual</option>
-              <option value="SOLO">Solo</option>
-              <option value="MAINTENANCE">Maintenance Flight</option>
+              {/* Self-booking students can request Solo too, but only once
+                  released — same rule the server checks on submit. */}
+              <option value="SOLO" disabled={!!selfBookingStudentId && blockingSoloReqs.length > 0}>Solo</option>
+              {!selfBookingStudentId && <option value="MAINTENANCE">Maintenance Flight</option>}
             </select>
+            {selfBookingStudentId && (
+              <p className="text-xs text-tertiary mt-1">
+                📨 Self-booked flights hold the slot but need admin/ops approval before they&apos;re confirmed.
+              </p>
+            )}
           </div>
 
           {/* ===== EXERCISE (Dual & Solo only) ===== */}

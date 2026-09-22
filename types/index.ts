@@ -64,7 +64,7 @@ export interface FlightSlot {
   startTime: string;
   endTime: string;
   sortieType: SortieType;
-  status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED';
+  status: 'SCHEDULED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'PENDING_APPROVAL';
   weatherBriefed: boolean;
   notamBriefed: boolean;
 }

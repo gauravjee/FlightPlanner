@@ -139,6 +139,14 @@ export const SCHEDULE_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'opera
 // "+ Book Slot" button for that one role. See ScheduleBoard.tsx.
 export const SCHEDULE_CREATE_ROLES = ['admin', 'super_admin', 'operations'];
 
+// 2026-09-22: same set as SCHEDULE_CREATE_ROLES, named separately for the
+// student-self-booking approval queue — admin/super_admin/operations decide
+// a PENDING_APPROVAL booking a student made themselves (fto_settings
+// students_can_self_book). Not instructor, even though instructor is in
+// SCHEDULE_MANAGE_ROLES for their own assigned flights — approving a
+// student's own request is an ops/admin call per the operator's spec.
+export const SCHEDULE_APPROVER_ROLES = SCHEDULE_CREATE_ROLES;
+
 // ============================================================
 // SCHEDULE — editing, cancelling, or debriefing an EXISTING flight
 // ============================================================
