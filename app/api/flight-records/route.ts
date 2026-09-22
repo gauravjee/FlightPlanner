@@ -25,6 +25,13 @@
 // students at once," now used by the Instructor Dashboard's "My Students"
 // progress table instead of filtering the capped `?studentId`-less list.
 //
+// 2026-09-22: safety_officer and maintenance can read the logbook (hours,
+// dates, aircraft) but don't need training-assessment content — instructor
+// notes and student performance ratings. Stripped from the response for
+// those two roles only; every other role's response is unchanged.
+const ASSESSMENT_FIELDS = ['instructor_notes', 'student_performance'] as const;
+const ROLES_WITHOUT_ASSESSMENT_FIELDS = ['safety_officer', 'maintenance'];
+
 // POST: flight records are add-only from the UI today (no edit/delete
 // anywhere in lib/store.ts or FlightRecordForm.tsx). Per the 2026-08-17
 // role/tab matrix, operations isn't on this tab at all; maintenance can
@@ -77,7 +84,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Failed to load flight records.' }, { status: 500 });
   }
 
-  return NextResponse.json({ records: data || [] });
+  let records = data || [];
+  if (role && ROLES_WITHOUT_ASSESSMENT_FIELDS.includes(role)) {
+    records = records.map(row => {
+      const trimmed = { ...row };
+      for (const field of ASSESSMENT_FIELDS) delete trimmed[field];
+      return trimmed;
+    });
+  }
+
+  return NextResponse.json({ records });
 }
 
 export async function POST(request: Request) {
