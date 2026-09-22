@@ -140,10 +140,10 @@ export async function POST(request: Request) {
 
   // 2026-09-23: an approver adding leave directly (status APPROVED from the
   // start, never passing through PENDING) must cancel bookings in the range
-  // too — otherwise the most common way staff record leave skips it.
-  if (newStatus === 'APPROVED') {
-    await cancelFlightsDuringLeave(String(personType), String(personId), String(startDate), String(endDate));
-  }
+  // too — otherwise the most common way staff record leave skips it. The
+  // inserted row carries the leave's time window, so partial-day leave only
+  // cancels overlapping flights. `autoCancel` tells the page what happened.
+  const autoCancel = newStatus === 'APPROVED' ? await cancelFlightsDuringLeave(data) : undefined;
 
-  return NextResponse.json({ record: data });
+  return NextResponse.json({ record: data, autoCancel });
 }

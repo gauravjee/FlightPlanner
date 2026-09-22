@@ -40,10 +40,7 @@ interface Props {
 // carries these two extra fields that the narrower FlightSlot type
 // doesn't declare. Local extension so this file can read them without
 // widening FlightSlot for every other consumer of that type.
-type SlotWithExtras = FlightSlot & {
-  logbookPending?: boolean; exercise?: string;
-  cancellationReason?: string | null; cancellationNote?: string | null; // 2026-09-23
-};
+type SlotWithExtras = FlightSlot & { logbookPending?: boolean; exercise?: string };
 
 export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   useEscapeToClose(onClose);
@@ -434,17 +431,6 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
             </div>
             <span className="text-sm text-secondary">{duration.toFixed(1)} hours</span>
           </div>
-
-          {/* 2026-09-23: cancellation reason/note were stored but never shown
-              anywhere. Unknown codes (shouldn't exist — the DB CHECK
-              blocks them) fall back to the raw code. */}
-          {slot.status === 'CANCELLED' && (slot as SlotWithExtras).cancellationReason && (
-            <p className="text-xs text-secondary -mt-2">
-              Cancelled: {CANCELLATION_REASONS.find(r => r.code === (slot as SlotWithExtras).cancellationReason)?.label ?? (slot as SlotWithExtras).cancellationReason}
-              {(slot as SlotWithExtras).cancellationNote && <> — {(slot as SlotWithExtras).cancellationNote}</>}
-            </p>
-          )}
-
           {/* ----- AIRCRAFT INFO ----- */}
           {aircraft && (
             <div className="bg-[var(--surface-muted)] rounded-lg p-3">

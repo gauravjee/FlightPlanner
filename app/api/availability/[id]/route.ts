@@ -104,13 +104,14 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (!result.data?.length) return stale();
     // 2026-09-23: an approved change to already-approved leave (e.g. extended
     // from 3 days to 5) must cancel bookings on the newly covered days too.
-    if (body.resolve === 'approve' && pc.action === 'UPDATE' && row.status === 'APPROVED') {
-      await cancelFlightsDuringLeave(
-        row.person_type, String(row.person_id),
-        String(pc.changes?.startDate ?? row.start_date), String(pc.changes?.endDate ?? row.end_date)
-      );
-    }
-    return NextResponse.json({ success: true });
+    const autoCancel = body.resolve === 'approve' && pc.action === 'UPDATE' && row.status === 'APPROVED'
+      ? await cancelFlightsDuringLeave({
+          ...row,
+          start_date: String(pc.changes?.startDate ?? row.start_date),
+          end_date: String(pc.changes?.endDate ?? row.end_date),
+        })
+      : undefined;
+    return NextResponse.json({ success: true, autoCancel });
   }
 
   const dbUpdates: Record<string, unknown> = {};
@@ -143,13 +144,14 @@ export async function PATCH(request: Request, context: RouteContext) {
     // the old row's, since the edit form sends dates and status together.
     // cancelFlightsDuringLeave is idempotent, so an unchanged approved record
     // re-saved here costs one no-op update.
-    if ((dbUpdates.status ?? row.status) === 'APPROVED') {
-      await cancelFlightsDuringLeave(
-        row.person_type, String(row.person_id),
-        String(dbUpdates.start_date ?? row.start_date), String(dbUpdates.end_date ?? row.end_date)
-      );
-    }
-    return NextResponse.json({ success: true });
+    const autoCancel = (dbUpdates.status ?? row.status) === 'APPROVED'
+      ? await cancelFlightsDuringLeave({
+          ...row,
+          start_date: String(dbUpdates.start_date ?? row.start_date),
+          end_date: String(dbUpdates.end_date ?? row.end_date),
+        })
+      : undefined;
+    return NextResponse.json({ success: true, autoCancel });
   }
 
   // ---- instructor/student: own record only ----

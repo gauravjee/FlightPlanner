@@ -115,9 +115,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Students cannot book a maintenance flight.' }, { status: 403 });
     }
 
-    const flightDate = String(startTime).slice(0, 10);
-    if (await isOnApprovedLeave('student', String(studentId), flightDate)) {
-      return NextResponse.json({ error: 'You have approved leave covering this date and cannot book a flight.' }, { status: 403 });
+    if (await isOnApprovedLeave('student', String(studentId), String(startTime), String(endTime))) {
+      return NextResponse.json({ error: 'You have approved leave covering this time and cannot book a flight.' }, { status: 403 });
     }
 
     if (sortieType === 'SOLO') {
@@ -153,8 +152,8 @@ export async function POST(request: Request) {
         );
       }
       instructorId = student.assigned_instructor_id;
-      if (await isOnApprovedLeave('instructor', String(instructorId), flightDate)) {
-        return NextResponse.json({ error: 'Your instructor has approved leave covering this date — booking not allowed.' }, { status: 403 });
+      if (await isOnApprovedLeave('instructor', String(instructorId), String(startTime), String(endTime))) {
+        return NextResponse.json({ error: 'Your instructor has approved leave covering this time — booking not allowed.' }, { status: 403 });
       }
     }
   }

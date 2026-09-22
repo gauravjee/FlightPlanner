@@ -21,6 +21,8 @@
 import useSWR, { mutate } from 'swr';
 import { fetchInstructors } from './useInstructors';
 import { fetchStudents } from './useStudents';
+import { scheduledFlightsKey } from './useScheduledFlights';
+import { leaveCovers, type LeaveWindow } from '@/lib/leave-window';
 import type { AvailabilityRecord } from '@/types';
 
 export const availabilityKey = ['availability'] as const;
@@ -94,7 +96,13 @@ export function useAvailability() {
 // that an instructor's edit/delete of an APPROVED record was only sent for
 // approval. In that case the server left the row unchanged, so the cache is
 // revalidated instead of optimistically patched.
-export type WriteResult = { ok: boolean; pendingApproval?: boolean; error?: string };
+// 2026-09-23: autoCancel is set when the write left the leave APPROVED — what
+// lib/leave.ts's cancelFlightsDuringLeave cancelled, or why it couldn't — so
+// the page can tell the approver instead of bookings vanishing silently.
+export type WriteResult = {
+  ok: boolean; pendingApproval?: boolean; error?: string;
+  autoCancel?: { cancelled: { id: string; startTime: string }[]; error?: string };
+};
 
 async function send(url: string, method: string, body?: unknown): Promise<WriteResult> {
   const res = await fetch(url, {
@@ -107,7 +115,8 @@ async function send(url: string, method: string, body?: unknown): Promise<WriteR
     console.error(`Error (${method} ${url}):`, result.error || res.statusText);
     return { ok: false, error: result.error || 'Request failed.' };
   }
-  return { ok: true, pendingApproval: !!result.pendingApproval };
+  if (result.autoCancel?.cancelled?.length) await mutate(scheduledFlightsKey); // board shows the freed slots
+  return { ok: true, pendingApproval: !!result.pendingApproval, autoCancel: result.autoCancel };
 }
 
 export async function addAvailability(
@@ -156,14 +165,23 @@ export async function resolveAvailability(id: string, resolve: 'approve' | 'reje
 // list here instead of adding query-param plumbing for one caller). Same
 // fail-open behavior on a fetch error as the original: an empty/failed
 // result reads as "no conflicting leave found," not "assume unavailable."
-export async function checkAvailability(personType: string, personId: string, date: string): Promise<boolean> {
+//
+// 2026-09-23: optional startTime/endTime (IST 'HH:MM') — when given, partial-
+// day leave (e.g. 08:00-10:00) only conflicts with flights overlapping it,
+// same rule as the server (lib/leave-window.ts). Without them it answers
+// "any leave on this date". Note a student's GET only returns their own
+// records, so for them this can't see their instructor's leave — the server
+// re-checks that on submit (app/api/scheduled-flights/route.ts).
+export async function checkAvailability(
+  personType: string, personId: string, date: string, startTime?: string, endTime?: string
+): Promise<boolean> {
   const res = await fetch('/api/availability');
   if (!res.ok) return true;
   const { records: data } = await res.json().catch(() => ({ records: [] }));
   const conflicts = (data || []).filter((row: Record<string, unknown>) =>
     row.person_type === personType && String(row.person_id) === String(personId) &&
-    (row.start_date as string) <= date && (row.end_date as string) >= date &&
-    row.status === 'APPROVED'
+    row.status === 'APPROVED' &&
+    leaveCovers(row as unknown as LeaveWindow, date, startTime, endTime)
   );
   return conflicts.length === 0;
 }

@@ -66,8 +66,34 @@ export default function AvailabilityPage() {
     (!!ownInstructorId && r.personType === 'instructor' && r.personId === ownInstructorId) ||
     (!!ownStudentId && r.personType === 'student' && r.personId === ownStudentId);
   const [notice, setNotice] = useState<{ title: string; message: string; danger: boolean } | null>(null);
+  // 2026-09-23: approving leave auto-cancels that person's bookings in the
+  // period (lib/leave.ts). Tell the approver which ones — or that it failed —
+  // rather than letting flights disappear from the board unexplained.
+  const autoCancelNotice = (r: WriteResult): boolean => {
+    const ac = r.autoCancel;
+    if (!ac) return false;
+    if (ac.error) {
+      setNotice({
+        title: 'Leave saved — bookings NOT cancelled',
+        message: 'The leave is approved, but its bookings could not be cancelled automatically. Please cancel them from the Schedule Board.',
+        danger: true,
+      });
+      return true;
+    }
+    if (!ac.cancelled.length) return false;
+    const when = ac.cancelled
+      .map(f => new Date(f.startTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: false }))
+      .join(', ');
+    setNotice({
+      title: 'Leave approved',
+      message: `${ac.cancelled.length} booking${ac.cancelled.length === 1 ? '' : 's'} during this leave ${ac.cancelled.length === 1 ? 'was' : 'were'} cancelled: ${when}.`,
+      danger: false,
+    });
+    return true;
+  };
   const showResult = (r: WriteResult, what: 'add' | 'edit' | 'delete') => {
     if (!r.ok) setNotice({ title: 'Could not save', message: r.error || 'Something went wrong.', danger: true });
+    else if (autoCancelNotice(r)) return;
     else if (r.pendingApproval) setNotice({
       title: 'Sent for approval',
       message: `This leave is already approved, so your ${what === 'delete' ? 'delete' : 'change'} has been sent to an admin. The approved leave stays in force until they approve it.`,
@@ -137,6 +163,7 @@ export default function AvailabilityPage() {
   const handleResolve = async (id: string, resolve: 'approve' | 'reject') => {
     const r = await resolveAvailability(id, resolve);
     if (!r.ok) setNotice({ title: 'Could not save', message: r.error || 'Something went wrong.', danger: true });
+    else autoCancelNotice(r);
   };
 
   const handleDelete = (id: string) => {

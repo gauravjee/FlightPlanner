@@ -23,6 +23,7 @@ import { Calendar, Printer, Plus, Wrench, TriangleAlert, ClipboardList, X, Lock,
 import { getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { useScheduledFlights, withScheduledFlightNames, checkConflicts, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
 import { checkAvailability } from '@/lib/hooks/useAvailability';
+import { toIST } from '@/lib/leave-window';
 import { useMaintenanceRecords } from '@/lib/hooks/useMaintenanceRecords';
 import { useHolidays } from '@/lib/hooks/useHolidays';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
@@ -884,13 +885,15 @@ export default function ScheduleBoard() {
     // move stands, but say so in the toast rather than letting it pass
     // silently. Checked after the move so a slow leave lookup never delays
     // the drop itself.
+    // Time-aware, so partial-day leave only warns when the new slot overlaps it.
+    const endTime = toIST(newEnd.toISOString()).time;
     const [instructorOnLeave, studentOnLeave] = await Promise.all([
-      flight.instructorId ? checkAvailability('instructor', flight.instructorId, selectedDate).then(ok => !ok) : false,
-      flight.studentId ? checkAvailability('student', flight.studentId, selectedDate).then(ok => !ok) : false,
+      flight.instructorId ? checkAvailability('instructor', flight.instructorId, selectedDate, startTime, endTime).then(ok => !ok) : false,
+      flight.studentId ? checkAvailability('student', flight.studentId, selectedDate, startTime, endTime).then(ok => !ok) : false,
     ]);
-    const leaveNote = instructorOnLeave && studentOnLeave ? ' ⚠️ Both the instructor and student have approved leave that day.'
-      : instructorOnLeave ? ' ⚠️ The instructor has approved leave that day.'
-      : studentOnLeave ? ' ⚠️ The student has approved leave that day.' : '';
+    const leaveNote = instructorOnLeave && studentOnLeave ? ' ⚠️ Both the instructor and student have approved leave at that time.'
+      : instructorOnLeave ? ' ⚠️ The instructor has approved leave at that time.'
+      : studentOnLeave ? ' ⚠️ The student has approved leave at that time.' : '';
     setSuccessMessage(`✅ Rescheduled to ${startTime} IST${String(aircraftId) !== String(flight.aircraftId) ? ` on ${aircraft.find(a => String(a.id) === String(aircraftId))?.registration || 'the new aircraft'}` : ''}.${leaveNote}`);
     setTimeout(() => setSuccessMessage(''), leaveNote ? 6000 : 3000);
     // Cache already fresh — updateScheduledFlight local-splices.
