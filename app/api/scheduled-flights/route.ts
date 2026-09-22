@@ -19,6 +19,12 @@
 import { NextResponse } from 'next/server';
 import { requireScheduleCreateAccess, requireSession } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+// 2026-09-23 (leave/vacation enforcement): only used in the student
+// self-booking branch below — every other caller here is staff booking
+// someone else, and BookingForm.tsx's leave check is advisory for staff
+// (same as every other scheduling validation they can see and override). A
+// self-booking student has no such override, so this is the real gate.
+import { isOnApprovedLeave } from '@/lib/leave';
 
 // GET added 2026-09-18 (RLS remediation Step 3 — see
 // claude/rls-remediation-progress-2026-09-18.md): reads used to be direct
@@ -109,6 +115,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Students cannot book a maintenance flight.' }, { status: 403 });
     }
 
+    const flightDate = String(startTime).slice(0, 10);
+    if (await isOnApprovedLeave('student', String(studentId), flightDate)) {
+      return NextResponse.json({ error: 'You have approved leave covering this date and cannot book a flight.' }, { status: 403 });
+    }
+
     if (sortieType === 'SOLO') {
       // Same rule BookingForm.tsx's handleSubmit already enforces
       // client-side (any incomplete requirement flagged blocks_solo) —
@@ -142,6 +153,9 @@ export async function POST(request: Request) {
         );
       }
       instructorId = student.assigned_instructor_id;
+      if (await isOnApprovedLeave('instructor', String(instructorId), flightDate)) {
+        return NextResponse.json({ error: 'Your instructor has approved leave covering this date — booking not allowed.' }, { status: 403 });
+      }
     }
   }
 

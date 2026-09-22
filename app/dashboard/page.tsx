@@ -563,6 +563,24 @@ export default function DashboardPage() {
                   Source: SkyLink (FAA SWIM feed). Situational awareness only — not an official briefing.
                   Verify with AIM India (aim-india.aai.aero) before flight.
                 </p>
+                {/* 2026-09-23 UI audit: a busy station (this FTO's VOBL, for
+                    instance) can genuinely have 50-60 real active NOTAMs at
+                    once — this isn't an over-fetch bug, the API is already
+                    scoped to just this FTO's own airport_code (see
+                    app/api/notam/route.ts, deliberately not client-
+                    controllable). The actual problem was that they all sat
+                    in one undifferentiated list, so the couple of HIGH-
+                    priority ones (closures / unserviceable equipment) could
+                    be scrolled past unnoticed among dozens of routine ones.
+                    A one-line count + sorting HIGH-priority NOTAMs to the
+                    top fixes that without hiding anything. */}
+                {notams.length > 0 && (
+                  <p className="text-xs text-secondary mb-2">
+                    {notams.length} active
+                    {notams.some(n => n.priority === 'HIGH' || n.priority === 'CRITICAL') &&
+                      ` — ${notams.filter(n => n.priority === 'HIGH' || n.priority === 'CRITICAL').length} high priority`}
+                  </p>
+                )}
                 <div className="space-y-2 max-h-80 overflow-y-auto">
                   {/* Four distinct states, because "Loading NOTAMs..." forever
                       was indistinguishable from "there are none" and from
@@ -583,7 +601,13 @@ export default function DashboardPage() {
                       <p className="text-xs text-secondary">No active NOTAMs for {station}.</p>
                     )
                   ) : (
-                    notams.map((notam, i) => (
+                    // HIGH/CRITICAL first (closures, unserviceable equipment)
+                    // so they surface above the routine bulk of the list
+                    // instead of needing to be scrolled to.
+                    [...notams].sort((a, b) => {
+                      const weight = (p: string) => (p === 'HIGH' || p === 'CRITICAL') ? 0 : 1;
+                      return weight(a.priority) - weight(b.priority);
+                    }).map((notam, i) => (
                       <div
                         key={i}
                         className="surface-inner p-3"

@@ -23,7 +23,7 @@ import { useInstructors, getInstructorById } from '@/lib/hooks/useInstructors';
 import { useStudents, getStudentById } from '@/lib/hooks/useStudents';
 import { getLocationDisplay } from '@/lib/location';
 import { SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES } from '@/lib/permissions';
-import { FlightSlot } from '@/types';
+import { FlightSlot, CANCELLATION_REASONS, type CancellationReason } from '@/types';
 import { useState } from 'react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 // ============================================================
@@ -40,7 +40,10 @@ interface Props {
 // carries these two extra fields that the narrower FlightSlot type
 // doesn't declare. Local extension so this file can read them without
 // widening FlightSlot for every other consumer of that type.
-type SlotWithExtras = FlightSlot & { logbookPending?: boolean; exercise?: string };
+type SlotWithExtras = FlightSlot & {
+  logbookPending?: boolean; exercise?: string;
+  cancellationReason?: string | null; cancellationNote?: string | null; // 2026-09-23
+};
 
 export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   useEscapeToClose(onClose);
@@ -107,6 +110,7 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   const student = slot.studentId ? getStudentById(allStudents, slot.studentId) : undefined; // Student (if any)
 
   const [showCancelReason, setShowCancelReason] = useState(false); // Check Cancellation Reason modal visibility
+  const [cancelNote, setCancelNote] = useState(''); // 2026-09-23: optional detail, required for OTHER
   
 
   // Calculate flight duration in hours
@@ -134,8 +138,8 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
    * with a reason, so the Daily Flying Report can count Weather vs.
    * Maintenance vs. Other cancellations. Reloads schedule afterward.
    */
-  const handleCancel = async (reason: 'WEATHER' | 'MAINTENANCE' | 'OTHER') => {
-    await cancelFlight(slot.id, reason);
+  const handleCancel = async (reason: CancellationReason) => {
+    await cancelFlight(slot.id, reason, cancelNote);
     onClose();
   };
 
@@ -431,6 +435,16 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
             <span className="text-sm text-secondary">{duration.toFixed(1)} hours</span>
           </div>
 
+          {/* 2026-09-23: cancellation reason/note were stored but never shown
+              anywhere. Unknown codes (shouldn't exist — the DB CHECK
+              blocks them) fall back to the raw code. */}
+          {slot.status === 'CANCELLED' && (slot as SlotWithExtras).cancellationReason && (
+            <p className="text-xs text-secondary -mt-2">
+              Cancelled: {CANCELLATION_REASONS.find(r => r.code === (slot as SlotWithExtras).cancellationReason)?.label ?? (slot as SlotWithExtras).cancellationReason}
+              {(slot as SlotWithExtras).cancellationNote && <> — {(slot as SlotWithExtras).cancellationNote}</>}
+            </p>
+          )}
+
           {/* ----- AIRCRAFT INFO ----- */}
           {aircraft && (
             <div className="bg-[var(--surface-muted)] rounded-lg p-3">
@@ -681,17 +695,35 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
           )}
           {canManage && showCancelReason && (
             <div className="flex flex-wrap items-center gap-2 surface-inner rounded-lg px-3 py-2">
+              {/* 2026-09-23: reasons come from CANCELLATION_REASONS (types/
+                  index.ts, mirrors the DB CHECK) — manual ones only; ON_LEAVE
+                  and REJECTED are set by the system. Note is optional except
+                  for Other, where it's the only detail there is. */}
+              <input
+                type="text"
+                value={cancelNote}
+                onChange={e => setCancelNote(e.target.value)}
+                placeholder="Note (required for Other)"
+                aria-label="Cancellation note"
+                maxLength={200}
+                className="w-full surface-inner rounded-lg px-3 py-1.5 text-xs"
+              />
               <span className="text-xs text-tertiary">Cancel — reason?</span>
-              <button onClick={() => handleCancel('WEATHER')} className="px-3 py-1.5 text-xs bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
-                🌧️ Weather
-              </button>
-              <button onClick={() => handleCancel('MAINTENANCE')} className="px-3 py-1.5 text-xs bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
-                🔧 Maintenance
-              </button>
-              <button onClick={() => handleCancel('OTHER')} className="px-3 py-1.5 text-xs bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer">
-                Other
-              </button>
-              <button onClick={() => setShowCancelReason(false)} className="px-3 py-1.5 text-xs surface-inner rounded-lg hover:opacity-80 transition cursor-pointer">
+              {CANCELLATION_REASONS.filter(r => r.manual).map(r => {
+                const needsNote = r.code === 'OTHER' && !cancelNote.trim();
+                return (
+                  <button
+                    key={r.code}
+                    onClick={() => handleCancel(r.code)}
+                    disabled={needsNote}
+                    title={needsNote ? 'Add a note to cancel as Other' : undefined}
+                    className="px-3 py-1.5 text-xs bg-red-500/20 text-red-400 rounded-lg hover:bg-red-500/30 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {r.label}
+                  </button>
+                );
+              })}
+              <button onClick={() => { setShowCancelReason(false); setCancelNote(''); }} className="px-3 py-1.5 text-xs surface-inner rounded-lg hover:opacity-80 transition cursor-pointer">
                 Never mind
               </button>
             </div>

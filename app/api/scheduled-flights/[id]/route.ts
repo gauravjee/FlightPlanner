@@ -24,6 +24,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 const FIELD_MAP: Record<string, string> = {
   status: 'status',
   cancellationReason: 'cancellation_reason',
+  cancellationNote: 'cancellation_note', // 2026-09-23, add-cancellation-reasons-and-note.sql
   aircraftId: 'aircraft_id',
   instructorId: 'instructor_id',
   studentId: 'student_id',

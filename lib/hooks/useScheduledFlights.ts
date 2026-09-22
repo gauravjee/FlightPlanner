@@ -43,7 +43,7 @@ import {
 import { fetchAircraft } from './useAircraft';
 import { fetchHolidays } from './useHolidays';
 import { fetchFtoSettings } from './useFtoSettings';
-import type { Aircraft, Instructor, ScheduledFlight, StudentRecord, TimeConflict } from '@/types';
+import type { Aircraft, CancellationReason, Instructor, ScheduledFlight, StudentRecord, TimeConflict } from '@/types';
 
 export const scheduledFlightsKey = ['scheduledFlights'] as const;
 
@@ -87,6 +87,7 @@ export async function fetchScheduledFlights(): Promise<ScheduledFlight[]> {
       logbookPending: !!row.logbook_pending,
       pendingDebrief: (row.pending_debrief as Record<string, unknown> | null) ?? null,
       cancellationReason: (row.cancellation_reason as string | null) ?? null,
+      cancellationNote: (row.cancellation_note as string | null) ?? null,
     };
   });
 }
@@ -294,16 +295,19 @@ export async function resolveScheduledFlight(id: string, resolve: 'approve' | 'r
   return { success: false, error: result.error || 'Failed to resolve the request.' };
 }
 
-export async function cancelFlight(id: string, reason?: 'WEATHER' | 'MAINTENANCE' | 'OTHER'): Promise<void> {
+// 2026-09-23: reason widened to every manual CancellationReason, plus an
+// optional note (see add-cancellation-reasons-and-note.sql).
+export async function cancelFlight(id: string, reason?: CancellationReason, note?: string): Promise<void> {
+  const cancellationNote = note?.trim() || null;
   const res = await fetch(`/api/scheduled-flights/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'CANCELLED', cancellationReason: reason ?? null }),
+    body: JSON.stringify({ status: 'CANCELLED', cancellationReason: reason ?? null, cancellationNote }),
   });
   if (res.ok) {
     mutate<ScheduledFlight[]>(
       scheduledFlightsKey,
-      (current = []) => current.map(f => (f.id === id ? { ...f, status: 'CANCELLED' } : f)),
+      (current = []) => current.map(f => (f.id === id ? { ...f, status: 'CANCELLED', cancellationReason: reason ?? null, cancellationNote } : f)),
       { revalidate: false }
     );
   } else {

@@ -23,8 +23,30 @@ import { useSession } from 'next-auth/react';
 import { syncGroundSchoolFromChecklist, getGroundSchoolSubject } from '@/lib/ground-school-sync';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
-import { ClipboardList, Lock, TriangleAlert, ChevronDown, ChevronRight, GraduationCap, IdCard, X } from 'lucide-react';
+import { ClipboardList, Lock, TriangleAlert, ChevronDown, ChevronRight, GraduationCap, IdCard, X, Check, Eye, Clock } from 'lucide-react';
+import { REQUIREMENTS_WRITE_ROLES } from '@/lib/permissions';
 import { TrainingRequirement } from '@/types';
+
+// 2026-09-23 redesign (see claude/ui-audit-2026-09-23.md): validityYears is
+// real structured data on the requirement (set in Admin Setup ->
+// Requirements), but nothing ever computed an actual expiry from it before —
+// the checklist just showed a static "valid N yrs" label with no way to tell
+// a certificate completed years ago from one completed yesterday. This turns
+// completedDate + validityYears into a real countdown.
+const EXPIRY_WARNING_DAYS = 30;
+type ExpiryInfo = { expired: boolean; expiringSoon: boolean; label: string };
+function getExpiryInfo(req: TrainingRequirement): ExpiryInfo | null {
+  if (!req.isCompleted || !req.completedDate || !req.validityYears) return null;
+  const completed = new Date(req.completedDate);
+  if (Number.isNaN(completed.getTime())) return null;
+  const expiry = new Date(completed);
+  expiry.setFullYear(expiry.getFullYear() + req.validityYears);
+  const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  const expiryLabel = expiry.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (daysLeft < 0) return { expired: true, expiringSoon: false, label: `Expired ${expiryLabel}` };
+  if (daysLeft <= EXPIRY_WARNING_DAYS) return { expired: false, expiringSoon: true, label: `Expires in ${daysLeft}d (${expiryLabel})` };
+  return { expired: false, expiringSoon: false, label: `Valid until ${expiryLabel}` };
+}
 
 interface Props {
   studentId: string;
@@ -90,7 +112,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
   // ----- Permissions -----
   const { data: session } = useSession();
   const userRole = session?.user?.role;
-  const canEdit = !!userRole && ['admin', 'instructor', 'super_admin'].includes(userRole);
+  const canEdit = !!userRole && REQUIREMENTS_WRITE_ROLES.includes(userRole);
 
   // ----- Blocking requirements summary (incomplete + flagged) -----
   // blocksAllFlights takes precedence in the summary/badge over blocksSolo
@@ -285,9 +307,20 @@ export default function RequirementsChecklist({ studentId }: Props) {
         <h3 className="text-lg font-semibold flex items-center gap-2">
           <ClipboardList className="w-4 h-4" /> Requirements Checklist
         </h3>
-        <span className="text-sm text-secondary">
-          {completedCount}/{totalCount} completed
-        </span>
+        <div className="flex items-center gap-2">
+          {/* 2026-09-23: matches the "View only" pill ScheduleBoard already
+              uses for a role without booking access — previously a
+              read-only role (e.g. operations) saw a checkbox that looked
+              clickable but silently did nothing when clicked. */}
+          {!canEdit && (
+            <span className="px-2 py-1 surface-inner text-tertiary rounded-lg text-xs flex items-center gap-1.5">
+              <Eye className="w-3.5 h-3.5" /> View only
+            </span>
+          )}
+          <span className="text-sm text-secondary">
+            {completedCount}/{totalCount} completed
+          </span>
+        </div>
       </div>
 
       {/* Progress bar */}
@@ -341,14 +374,25 @@ export default function RequirementsChecklist({ studentId }: Props) {
 
               {!collapsed && (
                 <div className="space-y-2">
-                  {items.map((req) => (
+                  {items.map((req) => {
+                    const isBlocking = !req.isCompleted && (req.blocksAllFlights || req.blocksSolo);
+                    const expiry = getExpiryInfo(req);
+                    return (
                     <div
                       key={req.id}
-                      className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                      className={`flex items-center justify-between p-3 rounded-lg border-y border-r transition-colors ${
                         req.isCompleted
                           ? 'bg-green-500/10 border-green-500/30'
                           : 'bg-[var(--surface-muted)] border-[var(--border)]'
+                      } ${
+                        // Left accent border makes a blocking gate scannable
+                        // down the whole category at a glance, instead of
+                        // requiring reading each row's small badge — see the
+                        // 2026-09-23 audit's "flat list, no visual separation
+                        // between gates and routine items" finding.
+                        isBlocking ? 'border-l-4' : 'border-l'
                       }`}
+                      style={isBlocking ? { borderLeftColor: req.blocksAllFlights ? 'var(--danger)' : '#f59e0b' } : undefined}
                     >
                       {/* Requirement name, blocking badge, checkbox */}
                       <div className="flex items-center space-x-3 min-w-0">
@@ -356,6 +400,7 @@ export default function RequirementsChecklist({ studentId }: Props) {
                         <button
                           onClick={() => handleCheckboxClick(req)}
                           disabled={!canEdit || loading}
+                          title={!canEdit ? `Only ${REQUIREMENTS_WRITE_ROLES.join('/')} can edit requirements` : undefined}
                           className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
                             req.isCompleted
                               ? 'bg-green-500 border-green-500'
@@ -379,32 +424,43 @@ export default function RequirementsChecklist({ studentId }: Props) {
                           )}
                         </button>
 
-                        <div className="flex items-center gap-2 flex-wrap min-w-0">
-                          <p
-                            className={`text-sm font-medium ${
-                              req.isCompleted
-                                ? 'text-green-400 line-through'
-                                : ''
-                            }`}
-                          >
-                            {req.requirementName}
-                          </p>
-                          {(req.blocksAllFlights || req.blocksSolo) && (
-                            <span
-                              className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${
-                                req.isCompleted
-                                  ? 'text-tertiary bg-[var(--surface-muted)]'
-                                  : 'text-red-400 bg-red-500/10'
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {/* 2026-09-23: strikethrough was dimming exactly
+                                the text you'd want to read clearly once a
+                                requirement is done — a small check + plain
+                                (not struck-through) text reads as "done"
+                                just as clearly without hurting scannability. */}
+                            <p className="text-sm font-medium flex items-center gap-1.5">
+                              {req.isCompleted && <Check className="w-3.5 h-3.5 text-green-500 flex-shrink-0" />}
+                              {req.requirementName}
+                            </p>
+                            {(req.blocksAllFlights || req.blocksSolo) && (
+                              <span
+                                className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded flex-shrink-0 ${
+                                  req.isCompleted
+                                    ? 'text-tertiary bg-[var(--surface-muted)]'
+                                    : 'text-red-400 bg-red-500/10'
+                                }`}
+                                title={
+                                  req.blocksAllFlights
+                                    ? 'Blocks all flights until completed'
+                                    : 'Blocks solo flights until completed'
+                                }
+                              >
+                                <Lock className="w-2.5 h-2.5" />
+                                {req.blocksAllFlights ? 'Blocks All' : 'Blocks Solo'}
+                              </span>
+                            )}
+                          </div>
+                          {expiry && (
+                            <p
+                              className={`text-xs flex items-center gap-1 mt-0.5 ${
+                                expiry.expired ? 'text-red-400' : expiry.expiringSoon ? 'text-amber-500' : 'text-tertiary'
                               }`}
-                              title={
-                                req.blocksAllFlights
-                                  ? 'Blocks all flights until completed'
-                                  : 'Blocks solo flights until completed'
-                              }
                             >
-                              <Lock className="w-2.5 h-2.5" />
-                              {req.blocksAllFlights ? 'Blocks All' : 'Blocks Solo'}
-                            </span>
+                              <Clock className="w-3 h-3" /> {expiry.label}
+                            </p>
                           )}
                         </div>
                       </div>
@@ -417,7 +473,8 @@ export default function RequirementsChecklist({ studentId }: Props) {
                         </div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -3,14 +3,17 @@
 'use client';
 
 import { useState, useEffect, useRef, ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import Image from 'next/image';
 import { signOut, useSession } from 'next-auth/react';
-import { ArrowLeft, Plane, Wrench, Crown, GraduationCap, ClipboardList, UserRound, KeyRound, LogOut, LayoutDashboard, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Plane, Wrench, Crown, GraduationCap, ClipboardList, UserRound, KeyRound, LogOut, LayoutDashboard, ShieldCheck, Menu, X } from 'lucide-react';
 import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { getLocationDisplay } from '@/lib/location';
 import ThemeToggle from './ThemeToggle';
 import { useHeaderConfig } from './HeaderContext';
+import { useVisibleNavItems, type NavItem } from './Sidebar';
+import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 // ============================================================
 // LIVE CLOCK COMPONENT
@@ -113,6 +116,95 @@ function MobileNavLinks({ role }: { role?: string }) {
 }
 
 // ============================================================
+// MOBILE NAV DRAWER — 2026-09-23 UI audit finding: Sidebar.tsx (the full
+// 13-item nav) is `hidden lg:flex`, and below that width the only nav was
+// MobileNavLinks' two icon shortcuts above — Fuel, Maintenance, Instructors,
+// Safety, Duty Hours, Reports etc. were simply unreachable on phone/tablet
+// except by guessing a URL. This reuses Sidebar's own role-filtered item
+// list (useVisibleNavItems) so it can never drift from what the desktop
+// rail shows.
+// ============================================================
+function MobileNavDrawer() {
+  const [open, setOpen] = useState(false);
+  const items = useVisibleNavItems();
+
+  if (items.length === 0) return null;
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="flex lg:hidden text-secondary hover:text-accent transition"
+        aria-label="Open navigation menu"
+      >
+        <Menu className="w-5 h-5" />
+      </button>
+      {/* Mounted only while open, like every other modal in this app — so
+          useEscapeToClose (below) registers/unregisters with the drawer's
+          own open/close lifecycle instead of this always-mounted parent's. */}
+      {open && <MobileNavPanel items={items} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+// Split out of MobileNavDrawer so useEscapeToClose — the same shared hook
+// every other modal/dialog in this app already uses (see
+// lib/useEscapeToClose.ts) — only registers while the drawer is actually
+// open. Calling it unconditionally in MobileNavDrawer itself would register
+// it for that component's whole (always-mounted) lifetime, letting an
+// Escape press it shouldn't own take priority over whatever modal a page is
+// actually showing.
+function MobileNavPanel({ items, onClose }: { items: NavItem[]; onClose: () => void }) {
+  useEscapeToClose(onClose);
+
+  if (typeof document === 'undefined') return null;
+
+  return createPortal(
+    // Portaled straight to <body>: the <header> this button lives in has
+    // `backdrop-blur-sm`, and a `backdrop-filter` on an ancestor makes
+    // that ancestor the containing block for a `fixed`-positioned
+    // descendant (same rule as `filter`/`transform`) — so without the
+    // portal, `fixed inset-0` here would resolve against the header's
+    // own ~60px box instead of the viewport, which is exactly the
+    // "drawer looks cut off at the header" bug seen live 2026-09-23.
+    <div className="fixed inset-0 z-50 lg:hidden">
+      <div
+        className="absolute inset-0"
+        style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}
+        onClick={onClose}
+      />
+      <nav
+        className="absolute left-0 top-0 h-full w-64 max-w-[80vw] overflow-y-auto py-4 px-2"
+        style={{ backgroundColor: 'var(--surface)', borderRight: '1px solid var(--border)' }}
+      >
+        <div className="flex items-center justify-between px-2 pb-3 mb-1 border-b divider">
+          <span className="text-sm font-semibold">Menu</span>
+          <button onClick={onClose} aria-label="Close navigation menu" className="text-secondary hover:text-accent transition">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              onClick={onClose}
+              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
+              style={{ color: 'var(--text-secondary)' }}
+            >
+              <Icon className="w-4 h-4 shrink-0" />
+              {item.label}
+            </Link>
+          );
+        })}
+      </nav>
+    </div>,
+    document.body
+  );
+}
+
+// ============================================================
 // USER MENU – single avatar that opens a small dropdown with
 // account info, Change Password, and Logout. Previously this was two
 // entirely separate blocks of markup (one for md+, one for mobile) that
@@ -153,7 +245,7 @@ function UserMenu() {
           >
             <RoleIcon role={role} className="w-3.5 h-3.5" />
           </div>
-          <span className="hidden md:inline text-xs text-secondary max-w-[110px] truncate">{session.user.name}</span>
+          <span className="hidden lg:inline text-xs text-secondary max-w-[110px] truncate">{session.user.name}</span>
         </button>
 
         {open && (
@@ -240,6 +332,7 @@ export default function Header(props: HeaderProps = {}) {
         <div className="flex items-center justify-between gap-3">
           {/* Left section */}
           <div className="flex items-center gap-3 min-w-0">
+            <MobileNavDrawer />
             <Link
               href={backUrl}
               className={`text-secondary hover:text-accent transition flex items-center gap-1 text-sm flex-shrink-0 ${backCoveredBySidebar ? 'lg:hidden' : ''}`}
@@ -281,7 +374,16 @@ export default function Header(props: HeaderProps = {}) {
             {action && action}
             <ThemeToggle />
             <UserMenu />
-            <div className="hidden md:flex items-center gap-3 border-l divider pl-3">
+            {/* 2026-09-23 UI audit finding #5: this used to show from md
+                (768px) up, so on tablet widths (768-1023, below the lg
+                breakpoint where the hamburger/mobile-drawer nav is still in
+                play) the clock+location block, the account name span, and
+                the theme toggle all competed with the title for space, and
+                the title — the only element with `truncate` — absorbed the
+                entire squeeze (down to "F.." for "FlightPro Manager").
+                Deferred to lg to match the same "below-desktop is compact
+                mode" threshold MobileNavDrawer/MobileNavLinks already use. */}
+            <div className="hidden lg:flex items-center gap-3 border-l divider pl-3">
               <LiveClock />
               <div className="text-right">
                 <p className="text-tertiary text-xs">

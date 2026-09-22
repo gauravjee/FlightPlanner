@@ -43,7 +43,7 @@ import {
 import { canViewModule, type ModuleKey } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 
-interface NavItem {
+export interface NavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -77,7 +77,11 @@ const NAV_ITEMS: NavItem[] = [
   // instructorId-scoped filtering), not a general roster; admin/super_admin
   // already have the full roster via "Instructors" and "Students" above.
   { href: '/dashboard/instructor', label: 'My Students', icon: UserRound, roles: ['instructor'] },
-  { href: '/dashboard/availability', label: 'Availability', icon: Umbrella, roles: ['admin', 'instructor', 'super_admin', 'operations'] },
+  // 2026-09-23: 'student' added — students can now self-serve their own
+  // vacation/leave requests here too (see AVAILABILITY_VIEW_ROLES in
+  // lib/permissions.ts and app/dashboard/availability/page.tsx, which
+  // scopes what a student actually sees/can do once on the page).
+  { href: '/dashboard/availability', label: 'Availability', icon: Umbrella, roles: ['admin', 'instructor', 'super_admin', 'operations', 'student'] },
   { href: '/dashboard/progress', label: 'Progress', icon: ChartColumnIncreasing, roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
   { href: '/dashboard/ground-school', label: 'Ground School', icon: BookOpen, roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
   // BA Test Register (2026-08-20, session 3) — was previously reachable
@@ -137,23 +141,30 @@ const NAV_ACTIVE_EXCLUDED_CHILD_PREFIXES: Record<string, string[]> = {
   '/dashboard/reports': ['/dashboard/reports/breath-analyser'],
 };
 
-export default function Sidebar() {
+// Extracted so the 2026-09-23 mobile nav drawer (Header.tsx) can show the
+// exact same role-filtered link set as the desktop rail below, instead of
+// re-deriving (and risking drift from) the same filter a second time.
+export function useVisibleNavItems(): NavItem[] {
   const { data: session, status } = useSession();
-  const pathname = usePathname();
   // Called unconditionally, before the early return below, per rules of
   // hooks — harmless no-op fetch for roles that can never have an
   // override (the hook still only fires the request once per session).
   const overrides = useMyPermissionOverrides();
 
   // Nothing to show until we actually know who's logged in — avoids a
-  // flash of an empty nav rail while the session is still resolving (same
+  // flash of an empty nav while the session is still resolving (same
   // "render nothing until ready" behavior ProtectedRoute already uses).
-  if (status !== 'authenticated' || !session?.user) return null;
+  if (status !== 'authenticated' || !session?.user) return [];
 
   const role = (session.user as { role?: string }).role;
-  const items = NAV_ITEMS.filter((item) =>
+  return NAV_ITEMS.filter((item) =>
     !!role && (item.roles.includes(role) || (item.moduleKey ? canViewModule(role, overrides, item.moduleKey) : false))
   );
+}
+
+export default function Sidebar() {
+  const pathname = usePathname();
+  const items = useVisibleNavItems();
 
   if (items.length === 0) return null;
 

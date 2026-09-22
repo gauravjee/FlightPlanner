@@ -213,17 +213,38 @@ export interface ScheduledFlight {
   // re-entered from scratch. null/undefined once resolved or if the
   // flight was never left pending.
   pendingDebrief?: Record<string, unknown> | null;
-  // Why this booking was cancelled — 'WEATHER' | 'MAINTENANCE' | 'OTHER',
-  // set by cancelFlight() (lib/store.ts). null/undefined for a flight
-  // that isn't cancelled, or was cancelled before this field existed.
-  // Feeds the Daily Flying Report's cancellation-by-reason counts.
+  // Why this booking was cancelled — one of CANCELLATION_REASONS' codes
+  // (below). null/undefined for a flight that isn't cancelled, or was
+  // cancelled before this field existed. Feeds the Daily Flying Report's
+  // cancellation-by-reason counts.
   cancellationReason?: string | null;
+  // 2026-09-23: optional free-text detail ("student unwell", "VIP
+  // movement") — required in the cancel picker when the reason is OTHER.
+  cancellationNote?: string | null;
   // Display fields (looked up)
   aircraftReg?: string;
   studentName?: string;
   instructorName?: string;
   duration?: number;
 }
+
+// 2026-09-23: every allowed scheduled_flights.cancellation_reason. MUST match
+// the DB CHECK constraint (add-cancellation-reasons-and-note.sql) — the DB
+// rejects anything else, so change both together. `manual: false` codes are
+// set only by the system (REJECTED: a declined student booking request;
+// ON_LEAVE: auto-cancel on approved leave, lib/leave.ts) and aren't offered
+// in the cancel picker.
+export const CANCELLATION_REASONS = [
+  { code: 'WEATHER', label: 'Weather', manual: true },
+  { code: 'MAINTENANCE', label: 'Maintenance', manual: true },
+  { code: 'STUDENT_NO_SHOW', label: 'Student no-show', manual: true },
+  { code: 'INSTRUCTOR_UNAVAILABLE', label: 'Instructor unavailable', manual: true },
+  { code: 'ATC_AIRSPACE', label: 'ATC / airspace', manual: true },
+  { code: 'OTHER', label: 'Other', manual: true },
+  { code: 'ON_LEAVE', label: 'On approved leave', manual: false },
+  { code: 'REJECTED', label: 'Booking request declined', manual: false },
+] as const;
+export type CancellationReason = (typeof CANCELLATION_REASONS)[number]['code'];
 
 // Safety incident — started as a minimal log (2026-08-18), not the full
 // DGCA-format Incident Report (a separate, larger, not-yet-built report).

@@ -46,15 +46,37 @@
 import { NextResponse } from 'next/server';
 import { requireRole, getOwnInstructorId, AVAILABILITY_VIEW_ROLES, AVAILABILITY_APPROVER_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { cancelFlightsDuringLeave } from '@/lib/leave';
+
+// 2026-09-23: resolves "who am I" for the self-service ownership checks
+// below, for either self-service person type. Instructors have no cached id
+// on the session (see getOwnInstructorId's own comment) so still need the
+// email lookup; a student's id is already on the JWT (session.user.studentId,
+// same field the self-booking flow in scheduled-flights/route.ts uses).
+async function getOwnSelfServiceId(role: string | undefined, session: { user: { email?: string | null; studentId?: string | null } }): Promise<string | null> {
+  if (role === 'instructor') return getOwnInstructorId(session.user.email);
+  if (role === 'student') return session.user.studentId ?? null;
+  return null;
+}
 
 export async function GET() {
-  const { error } = await requireRole(AVAILABILITY_VIEW_ROLES);
+  const { session, error } = await requireRole(AVAILABILITY_VIEW_ROLES);
   if (error) return error;
 
-  const { data, error: dbError } = await supabaseAdmin
-    .from('availability')
-    .select('*')
-    .order('start_date', { ascending: true });
+  let query = supabaseAdmin.from('availability').select('*').order('start_date', { ascending: true });
+
+  // 2026-09-23: a student only ever sees their own leave requests — unlike
+  // instructor/admin/operations/super_admin, who share one staff-wide leave
+  // calendar (existing behavior, unchanged). Scoped server-side, not just
+  // hidden in the UI, since this is the same GET the student's own client
+  // calls.
+  if (session.user.role === 'student') {
+    const ownId = session.user.studentId;
+    if (!ownId) return NextResponse.json({ records: [] });
+    query = query.eq('person_type', 'student').eq('person_id', ownId);
+  }
+
+  const { data, error: dbError } = await query;
 
   if (dbError) {
     console.error('Error loading availability:', dbError);
@@ -88,8 +110,12 @@ export async function POST(request: Request) {
   let newStatus = status || 'APPROVED';
   let newCreatedBy = createdBy || null;
   if (!AVAILABILITY_APPROVER_ROLES.includes(session.user.role ?? '')) {
-    const ownId = session.user.role === 'instructor' ? await getOwnInstructorId(session.user.email) : null;
-    if (!ownId || personType !== 'instructor' || String(personId) !== ownId) {
+    // 2026-09-23: was instructor-only ('student' added, same self-service
+    // shape) — a non-approver may only ever file leave for themselves,
+    // matching their own role's person type.
+    const ownId = await getOwnSelfServiceId(session.user.role, session);
+    const selfServiceType = session.user.role === 'instructor' ? 'instructor' : session.user.role === 'student' ? 'student' : null;
+    if (!ownId || personType !== selfServiceType || String(personId) !== ownId) {
       return NextResponse.json({ error: 'You can only add leave for yourself.' }, { status: 403 });
     }
     newStatus = 'PENDING';
@@ -110,6 +136,13 @@ export async function POST(request: Request) {
   if (dbError) {
     console.error('Error creating availability record:', dbError);
     return NextResponse.json({ error: 'Failed to create leave record.' }, { status: 500 });
+  }
+
+  // 2026-09-23: an approver adding leave directly (status APPROVED from the
+  // start, never passing through PENDING) must cancel bookings in the range
+  // too — otherwise the most common way staff record leave skips it.
+  if (newStatus === 'APPROVED') {
+    await cancelFlightsDuringLeave(String(personType), String(personId), String(startDate), String(endDate));
   }
 
   return NextResponse.json({ record: data });

@@ -22,6 +22,7 @@ import { useSession } from 'next-auth/react';
 import { Calendar, Printer, Plus, Wrench, TriangleAlert, ClipboardList, X, Lock, Eye } from 'lucide-react';
 import { getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { useScheduledFlights, withScheduledFlightNames, checkConflicts, updateScheduledFlight } from '@/lib/hooks/useScheduledFlights';
+import { checkAvailability } from '@/lib/hooks/useAvailability';
 import { useMaintenanceRecords } from '@/lib/hooks/useMaintenanceRecords';
 import { useHolidays } from '@/lib/hooks/useHolidays';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
@@ -878,8 +879,20 @@ export default function ScheduleBoard() {
       setTimeout(() => setErrorMessage(''), 4000);
       return;
     }
-    setSuccessMessage(`✅ Rescheduled to ${startTime} IST${String(aircraftId) !== String(flight.aircraftId) ? ` on ${aircraft.find(a => String(a.id) === String(aircraftId))?.registration || 'the new aircraft'}` : ''}.`);
-    setTimeout(() => setSuccessMessage(''), 3000);
+    // 2026-09-23 (leave enforcement): dragging is staff-only, and for staff a
+    // leave clash is advisory (same as BookingForm's conflictWarning) — the
+    // move stands, but say so in the toast rather than letting it pass
+    // silently. Checked after the move so a slow leave lookup never delays
+    // the drop itself.
+    const [instructorOnLeave, studentOnLeave] = await Promise.all([
+      flight.instructorId ? checkAvailability('instructor', flight.instructorId, selectedDate).then(ok => !ok) : false,
+      flight.studentId ? checkAvailability('student', flight.studentId, selectedDate).then(ok => !ok) : false,
+    ]);
+    const leaveNote = instructorOnLeave && studentOnLeave ? ' ⚠️ Both the instructor and student have approved leave that day.'
+      : instructorOnLeave ? ' ⚠️ The instructor has approved leave that day.'
+      : studentOnLeave ? ' ⚠️ The student has approved leave that day.' : '';
+    setSuccessMessage(`✅ Rescheduled to ${startTime} IST${String(aircraftId) !== String(flight.aircraftId) ? ` on ${aircraft.find(a => String(a.id) === String(aircraftId))?.registration || 'the new aircraft'}` : ''}.${leaveNote}`);
+    setTimeout(() => setSuccessMessage(''), leaveNote ? 6000 : 3000);
     // Cache already fresh — updateScheduledFlight local-splices.
   };
 

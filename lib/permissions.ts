@@ -177,14 +177,24 @@ export const SCHEDULE_MANAGE_ROLES = ['admin', 'instructor', 'super_admin', 'ope
 // (view + manage, same as admin/instructor/super_admin already had — the
 // matrix doesn't call out a view-only restriction here the way it does for
 // Aircraft/Fuel/Maintenance/Flight Records/Students).
-export const AVAILABILITY_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'operations'];
+//
+// 2026-09-23: 'student' added — students can now apply for their own leave
+// (vacation), same self-service shape instructors already had. A student's
+// GET is scoped server-side to their own records only (see
+// app/api/availability/route.ts) — this constant only says who may reach
+// the endpoint at all, not what they see once there.
+export const AVAILABILITY_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'operations', 'student'];
 
 // 2026-09-21: only these roles approve leave, resolve change/delete requests
 // and edit or delete any record directly. Everyone else in
-// AVAILABILITY_VIEW_ROLES can view; an instructor additionally manages their
-// OWN records (edits/deletes of an already-approved one go to an approver
-// first) — see app/api/availability/[id]/route.ts.
-export const AVAILABILITY_APPROVER_ROLES = ['admin', 'super_admin'];
+// AVAILABILITY_VIEW_ROLES can view; an instructor/student additionally
+// manages their OWN records (edits/deletes of an already-approved one go to
+// an approver first) — see app/api/availability/[id]/route.ts.
+//
+// 2026-09-23: 'operations' added, per explicit operator decision — student
+// (and instructor) leave can now be approved by operations day-to-day, not
+// just admin/super_admin.
+export const AVAILABILITY_APPROVER_ROLES = ['admin', 'super_admin', 'operations'];
 
 // ============================================================
 // STUDENT PROGRESS

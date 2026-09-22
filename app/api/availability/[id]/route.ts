@@ -18,14 +18,27 @@
 //    one is left untouched (still in force) and the requested edit/delete is
 //    parked in availability.pending_change until an approver decides.
 //    `status` is never writable by an instructor.
-//  - operations (and anyone else in AVAILABILITY_VIEW_ROLES): view-only.
+//  - 2026-09-23: operations is now an approver too, and a student manages
+//    their own records the same way an instructor does.
 // Needs add-availability-pending-change.sql applied (adds pending_change).
 
 import { NextResponse } from 'next/server';
 import { requireRole, getOwnInstructorId, AVAILABILITY_VIEW_ROLES, AVAILABILITY_APPROVER_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { cancelFlightsDuringLeave } from '@/lib/leave';
 
 type RouteContext = { params: Promise<{ id: string }> };
+type Session = { user: { email?: string | null; role?: string; studentId?: string | null } };
+
+// 2026-09-23: same self-service id resolution as app/api/availability/route.ts
+// — instructors are looked up by session email, a student's id is already on
+// the JWT. Returns null for any other role (approvers never need this; they
+// go through the isApprover branch instead).
+async function getOwnSelfServiceId(session: Session): Promise<string | null> {
+  if (session.user.role === 'instructor') return getOwnInstructorId(session.user.email);
+  if (session.user.role === 'student') return session.user.studentId ?? null;
+  return null;
+}
 
 const FIELD_MAP: Record<string, string> = {
   leaveType: 'leave_type',
@@ -89,6 +102,14 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'Failed to resolve the request.' }, { status: 500 });
     }
     if (!result.data?.length) return stale();
+    // 2026-09-23: an approved change to already-approved leave (e.g. extended
+    // from 3 days to 5) must cancel bookings on the newly covered days too.
+    if (body.resolve === 'approve' && pc.action === 'UPDATE' && row.status === 'APPROVED') {
+      await cancelFlightsDuringLeave(
+        row.person_type, String(row.person_id),
+        String(pc.changes?.startDate ?? row.start_date), String(pc.changes?.endDate ?? row.end_date)
+      );
+    }
     return NextResponse.json({ success: true });
   }
 
@@ -116,12 +137,25 @@ export async function PATCH(request: Request, context: RouteContext) {
       return NextResponse.json({ error: 'Failed to update leave record.' }, { status: 500 });
     }
     if (!rows?.length) return stale();
+    // 2026-09-23: whenever the record ends up APPROVED — a fresh approval, or
+    // an approver editing the dates of already-approved leave — cancel
+    // bookings in the (possibly new) range. Uses the effective values, not
+    // the old row's, since the edit form sends dates and status together.
+    // cancelFlightsDuringLeave is idempotent, so an unchanged approved record
+    // re-saved here costs one no-op update.
+    if ((dbUpdates.status ?? row.status) === 'APPROVED') {
+      await cancelFlightsDuringLeave(
+        row.person_type, String(row.person_id),
+        String(dbUpdates.start_date ?? row.start_date), String(dbUpdates.end_date ?? row.end_date)
+      );
+    }
     return NextResponse.json({ success: true });
   }
 
-  // ---- instructor: own record only ----
-  const ownId = session.user.role === 'instructor' ? await getOwnInstructorId(session.user.email) : null;
-  if (!ownId || row.person_type !== 'instructor' || String(row.person_id) !== ownId) {
+  // ---- instructor/student: own record only ----
+  const ownId = await getOwnSelfServiceId(session as Session);
+  const selfServiceType = session.user.role === 'instructor' ? 'instructor' : session.user.role === 'student' ? 'student' : null;
+  if (!ownId || row.person_type !== selfServiceType || String(row.person_id) !== ownId) {
     return NextResponse.json({ error: 'You can only change your own leave records.' }, { status: 403 });
   }
   if (row.pending_change) {
@@ -169,8 +203,9 @@ export async function DELETE(_request: Request, context: RouteContext) {
   if (!row) return notFound();
 
   if (!isApprover) {
-    const ownId = session.user.role === 'instructor' ? await getOwnInstructorId(session.user.email) : null;
-    if (!ownId || row.person_type !== 'instructor' || String(row.person_id) !== ownId) {
+    const ownId = await getOwnSelfServiceId(session as Session);
+    const selfServiceType = session.user.role === 'instructor' ? 'instructor' : session.user.role === 'student' ? 'student' : null;
+    if (!ownId || row.person_type !== selfServiceType || String(row.person_id) !== ownId) {
       return NextResponse.json({ error: 'You can only delete your own leave records.' }, { status: 403 });
     }
     if (row.pending_change) {

@@ -55,9 +55,16 @@ export default function AvailabilityPage() {
   const isApprover = AVAILABILITY_APPROVER_ROLES.includes(role);
   // Same email match the server uses to decide which records are "mine".
   const ownInstructorId = role === 'instructor' ? instructors.find(i => i.email === session?.user?.email)?.id : undefined;
-  const canAdd = isApprover || !!ownInstructorId;
+  // 2026-09-23: same self-service shape for a student managing their own
+  // vacation — studentId is already on the session (see
+  // ScheduleBoard.tsx's self-booking prop for the same pattern), no lookup
+  // needed the way instructor's email match is.
+  const ownStudentId = role === 'student' ? (session?.user as { studentId?: string } | undefined)?.studentId ?? undefined : undefined;
+  const canAdd = isApprover || !!ownInstructorId || !!ownStudentId;
   const canManage = (r: AvailabilityRecord) =>
-    isApprover || (!!ownInstructorId && r.personType === 'instructor' && r.personId === ownInstructorId);
+    isApprover ||
+    (!!ownInstructorId && r.personType === 'instructor' && r.personId === ownInstructorId) ||
+    (!!ownStudentId && r.personType === 'student' && r.personId === ownStudentId);
   const [notice, setNotice] = useState<{ title: string; message: string; danger: boolean } | null>(null);
   const showResult = (r: WriteResult, what: 'add' | 'edit' | 'delete') => {
     if (!r.ok) setNotice({ title: 'Could not save', message: r.error || 'Something went wrong.', danger: true });
@@ -327,6 +334,7 @@ export default function AvailabilityPage() {
           <AvailabilityForm
             record={editingRecord}
             lockedInstructorId={isApprover ? undefined : ownInstructorId}
+            lockedStudentId={isApprover ? undefined : ownStudentId}
             onSave={handleSave}
             onClose={() => { setShowForm(false); setEditingRecord(null); }}
           />

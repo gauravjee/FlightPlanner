@@ -1,0 +1,12 @@
+-- add-availability-pending-change.sql
+-- 2026-09-21 (leave ownership + approval). ADDITIVE ONLY: adds one nullable
+-- column, touches no existing data, no approval-before-running needed under
+-- the destructive-change rule.
+--
+-- pending_change holds a change or delete an instructor asked for on an
+-- APPROVED leave record; the row itself stays as it is (still in force)
+-- until an admin/super_admin approves or rejects it. Shape:
+--   {"action":"UPDATE"|"DELETE","changes":{...camelCase fields...},
+--    "requestedBy":"name","requestedAt":"ISO timestamp"}
+-- NULL = nothing waiting.
+alter table public.availability add column if not exists pending_change jsonb;

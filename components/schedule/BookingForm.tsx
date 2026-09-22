@@ -25,7 +25,7 @@
 
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   getAircraftBufferMinutes, parseTurnaroundBufferSetting,
   MIN_FLIGHT_DURATION_MIN, FLIGHT_DURATION_INCREMENT_MIN,
@@ -42,6 +42,7 @@ import { useHolidays } from '@/lib/hooks/useHolidays';
 import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { useExercises } from '@/lib/hooks/useExercises';
 import { useTrainingRequirements, fetchTrainingRequirements } from '@/lib/hooks/useTrainingRequirements';
+import { checkAvailability } from '@/lib/hooks/useAvailability';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -161,12 +162,34 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // getAircraftBufferMinutes.
   const turnaroundMin = parseTurnaroundBufferSetting(ftoSettings['buffer_minutes']);
 
-  // ----- Default times (next full hour) -----
+  // ----- Default times (next full hour, clamped into today's bookable
+  // window) -----
+  // 2026-09-23 fix: this used to be "next full hour" with no regard for
+  // the FTO's configured operating window (Settings -> Daily Time Slots).
+  // Opening "Book Slot" outside that window — e.g. at 1am with a
+  // 06:00-20:00 window — produced a default hour (02:00) the Hour dropdown
+  // below doesn't even list; the dropdown silently fell back to displaying
+  // its first option while the real state still held the invalid hour, so
+  // the Minute dropdown (built from that same invalid hour) rendered with
+  // zero options — the empty, unusable "second select" seen live. Clamping
+  // both defaults into [slotStart, slotEnd] guarantees they always land on
+  // an hour the dropdowns actually offer.
+  const [slotStartH, slotStartM] = slotStart.split(':').map(Number);
+  const [slotEndH, slotEndM] = slotEnd.split(':').map(Number);
   const now = new Date();
   const defaultStart = new Date(now);
   defaultStart.setHours(now.getHours() + 1, 0, 0, 0);
+  const nowPlus1Total = defaultStart.getHours() * 60 + defaultStart.getMinutes();
+  const windowStartTotal = slotStartH * 60 + slotStartM;
+  const windowEndTotal = slotEndH * 60 + slotEndM;
+  if (nowPlus1Total < windowStartTotal || nowPlus1Total >= windowEndTotal) {
+    defaultStart.setHours(slotStartH, slotStartM, 0, 0);
+  }
   const defaultEnd = new Date(defaultStart);
   defaultEnd.setHours(defaultStart.getHours() + 2);
+  if (defaultEnd.getHours() * 60 + defaultEnd.getMinutes() > windowEndTotal) {
+    defaultEnd.setHours(slotEndH, slotEndM, 0, 0);
+  }
 
   // Helper to format a Date to HH:MM (rounded to nearest 30 min) — only used
   // for the two "next full hour" defaults above, which always land on an
@@ -332,6 +355,34 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // instructorId/studentId/exercise are cleared on sortie-type switch in
   // handleFieldChange (the event handler that causes the switch) rather
   // than synced here via effect — see the `field === 'sortieType'` branch.
+
+  // 2026-09-23 (leave/vacation enforcement): checkAvailability() existed
+  // already (lib/hooks/useAvailability.ts) but was never actually called
+  // anywhere — instructor and student leave could be approved without it
+  // affecting the booking form at all. This live-checks whenever the
+  // selected student/instructor/date changes and surfaces a non-blocking
+  // warning via the form's own (previously also unused) conflictWarning
+  // banner — staff can see it and still choose to book anyway, same as
+  // every other scheduling validation in this file being advisory rather
+  // than a hard stop for staff. The actual hard stop for a self-booking
+  // student is a fresh check in handleSubmit below, not this effect — a
+  // student has no way to override, so a possibly-stale effect result isn't
+  // good enough to gate submission on.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [studentOnLeave, instructorOnLeave] = await Promise.all([
+        form.studentId && !isMaintenance ? checkAvailability('student', form.studentId, form.date).then(ok => !ok) : Promise.resolve(false),
+        form.instructorId && !isSolo ? checkAvailability('instructor', form.instructorId, form.date).then(ok => !ok) : Promise.resolve(false),
+      ]);
+      if (cancelled || selfBookingStudentId) return; // self-booking gets its own hard-block message at submit time instead
+      if (studentOnLeave && instructorOnLeave) setConflictWarning('⚠️ Both the selected student and instructor have approved leave covering this date.');
+      else if (studentOnLeave) setConflictWarning('⚠️ This student has approved leave covering this date.');
+      else if (instructorOnLeave) setConflictWarning('⚠️ This instructor has approved leave covering this date.');
+      else setConflictWarning('');
+    })();
+    return () => { cancelled = true; };
+  }, [form.studentId, form.instructorId, form.date, isMaintenance, isSolo, selfBookingStudentId]);
 
   // SWR migration, Stage 8 (2026-09-02): keyed per-studentId (null while
   // Maintenance or no student picked, via SWR's null-key idiom), so
@@ -606,6 +657,24 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
     // Person conflict check
     const personConflict = checkPersonConflict(); if (personConflict) { setError(personConflict); return; }
+
+    // 2026-09-23 (leave/vacation enforcement): a self-booking student has no
+    // way to pick a different student or instructor, so unlike staff (who
+    // just get the advisory conflictWarning banner above and can decide for
+    // themselves) this is a hard stop — checked fresh here rather than
+    // trusting the effect-derived warning, which can be a beat stale if the
+    // date was just changed. Server-side re-check lives in
+    // app/api/scheduled-flights/route.ts's student self-booking branch.
+    if (selfBookingStudentId) {
+      if (!(await checkAvailability('student', form.studentId, form.date))) {
+        setError('❌ You have approved leave covering this date and cannot book a flight.');
+        return;
+      }
+      if (!isSolo && form.instructorId && !(await checkAvailability('instructor', form.instructorId, form.date))) {
+        setError('❌ Your instructor has approved leave covering this date — booking not allowed.');
+        return;
+      }
+    }
 
     setLoading(true);
 

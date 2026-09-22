@@ -17,13 +17,24 @@ interface Props {
   // status/created-by are decided server-side (new = PENDING; an edit of an
   // APPROVED record goes to an admin for approval first).
   lockedInstructorId?: string;
+  // 2026-09-23: same lock, for a student managing their own vacation/leave.
+  // Exactly one of lockedInstructorId/lockedStudentId is ever set — never
+  // both — since a session is only ever one role at a time.
+  lockedStudentId?: string;
 }
 
-export default function AvailabilityForm({ record, onSave, onClose, lockedInstructorId }: Props) {
+export default function AvailabilityForm({ record, onSave, onClose, lockedInstructorId, lockedStudentId }: Props) {
   useEscapeToClose(onClose);
   const { instructors } = useInstructors();
   const { students } = useStudents();
   const isEditing = !!record;
+
+  // Single "am I locked, and to what" pair used everywhere below instead of
+  // branching on lockedInstructorId specifically — keeps the instructor and
+  // student self-service cases identical apart from which list/labels apply.
+  const lockedPersonType: 'instructor' | 'student' | undefined =
+    lockedInstructorId ? 'instructor' : lockedStudentId ? 'student' : undefined;
+  const lockedPersonId = lockedInstructorId || lockedStudentId;
 
   const today = new Date().toLocaleDateString('en-CA');
 
@@ -48,15 +59,15 @@ export default function AvailabilityForm({ record, onSave, onClose, lockedInstru
           createdBy: record.createdBy || '',
         }
       : {
-          personType: 'instructor' as 'instructor' | 'student',
-          personId: lockedInstructorId || '',
+          personType: lockedPersonType || ('instructor' as 'instructor' | 'student'),
+          personId: lockedPersonId || '',
           leaveType: 'UNAVAILABLE',
           startDate: today,
           endDate: today,
           startTime: '',
           endTime: '',
           reason: '',
-          status: lockedInstructorId ? 'PENDING' : 'APPROVED',
+          status: lockedPersonId ? 'PENDING' : 'APPROVED',
           createdBy: '',
         }
   );
@@ -91,17 +102,20 @@ export default function AvailabilityForm({ record, onSave, onClose, lockedInstru
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
-          {lockedInstructorId && (
+          {lockedPersonId && (
             <p className="text-sm text-secondary">
-              Instructor: <span style={{ color: 'var(--text-primary)' }}>{instructors.find(i => i.id === lockedInstructorId)?.name || 'You'}</span>
+              {lockedPersonType === 'instructor' ? 'Instructor' : 'Student'}:{' '}
+              <span style={{ color: 'var(--text-primary)' }}>
+                {(lockedPersonType === 'instructor' ? instructors : students).find(p => p.id === lockedPersonId)?.name || 'You'}
+              </span>
             </p>
           )}
-          {lockedInstructorId && record?.status === 'APPROVED' && (
+          {lockedPersonId && record?.status === 'APPROVED' && (
             <p className="text-xs rounded-lg px-3 py-2 surface-inner">
               This leave is already approved. Your changes are sent to an admin for approval; the approved leave stays in force until then.
             </p>
           )}
-          {!lockedInstructorId && (
+          {!lockedPersonId && (
 <>
 {/* Person Type */}
           <div>
@@ -206,7 +220,7 @@ export default function AvailabilityForm({ record, onSave, onClose, lockedInstru
           </div>
           <p className="text-xs text-tertiary -mt-2">Leave blank for full-day absence</p>
 
-          {!lockedInstructorId && (
+          {!lockedPersonId && (
 <>
 {/* Status */}
           <div>
@@ -237,7 +251,7 @@ export default function AvailabilityForm({ record, onSave, onClose, lockedInstru
             />
           </div>
 
-          {!lockedInstructorId && (
+          {!lockedPersonId && (
 <>
 {/* Created By */}
           <div>
