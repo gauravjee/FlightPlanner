@@ -201,6 +201,12 @@ export const AVAILABILITY_APPROVER_ROLES = ['admin', 'super_admin', 'operations'
 // Flight-line work, so operations included, unlike editing the roster itself.
 export const INSTRUCTOR_OFF_DUTY_ROLES = ['admin', 'super_admin', 'operations'];
 
+// 2026-09-23: instructor duty roster (app/dashboard/roster, app/api/roster;
+// claude/duty-roster-design-2026-09-23.md). Instructors can see it, admin/
+// super_admin/operations change it. Students don't see it.
+export const ROSTER_VIEW_ROLES = ['admin', 'super_admin', 'operations', 'instructor'];
+export const ROSTER_EDIT_ROLES = ['admin', 'super_admin', 'operations'];
+
 // ============================================================
 // STUDENT PROGRESS
 // ============================================================

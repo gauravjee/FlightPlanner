@@ -38,7 +38,7 @@ import { useSession } from 'next-auth/react';
 import {
   LayoutDashboard, Calendar, Plane, Users, Fuel, FileText, Wrench,
   GraduationCap, UserRound, Umbrella, ChartColumnIncreasing, BookOpen,
-  Settings, ClipboardList, Wind, ShieldAlert, TriangleAlert, Hourglass,
+  Settings, ClipboardList, Wind, ShieldAlert, TriangleAlert, Hourglass, CalendarDays,
 } from 'lucide-react';
 import { canViewModule, type ModuleKey } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
@@ -118,6 +118,9 @@ const NAV_ITEMS: NavItem[] = [
   // see that page's own header comment for why this isn't a DGCA
   // compliance claim. Roles hand-synced to that page's own VIEW_ROLES.
   { href: '/dashboard/duty-hours', label: 'Duty Hours', icon: Hourglass, roles: ['admin', 'super_admin', 'operations', 'instructor'] },
+  // 2026-09-23: instructor duty roster — roles hand-synced to
+  // lib/permissions.ts's ROSTER_VIEW_ROLES.
+  { href: '/dashboard/roster', label: 'Duty Roster', icon: CalendarDays, roles: ['admin', 'super_admin', 'operations', 'instructor'] },
   // roles here hand-synced to lib/permissions.ts's REPORTS_VIEW_ROLES —
   // instructor/maintenance can see a generated report but only
   // admin/super_admin/operations can generate/save one (see
