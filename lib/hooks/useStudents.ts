@@ -177,11 +177,11 @@ export async function addStudent(student: Omit<StudentRecord, 'id'>): Promise<{
   const result = await res.json().catch(() => ({}));
   if (res.ok) {
     const created = result.student;
-    // The payload sent IS the new record (server only adds an id here —
-    // instructor name isn't baked into cached rows anymore, so there's
-    // nothing server-derived to wait for), so a local splice is correct
-    // per the migration plan's cache-update rule.
-    const newStudent: StudentRecord = { ...student, id: String(created.id) };
+    // The payload sent IS the new record, except for what the server adds:
+    // the id and (2026-09-24) the enrollment number, issued server-side by
+    // next_enrollment_id() — the form sends none. A local splice is still
+    // correct per the migration plan's cache-update rule.
+    const newStudent: StudentRecord = { ...student, id: String(created.id), enrollmentId: String(created.enrollment_id ?? '') };
     mutate<StudentRecord[]>(studentsKey, (current = []) => [...current, newStudent], { revalidate: false });
     return {
       success: true,
