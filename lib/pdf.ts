@@ -6,6 +6,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { FlightRecord, StudentRecord, BATest, MaintenanceRecord } from '@/types';
 import { totalPicHours, totalSoloHours } from '@/lib/flight-hours';
+import { dayLabel, formatHours, type RosterReport } from '@/lib/duty-roster-report';
 
 // jspdf-autotable augments the jsPDF instance with `lastAutoTable` at
 // runtime, but its TS types don't declare that property — this local
@@ -745,4 +746,71 @@ export function generateAuditPack(pack: {
   pack.maintenance.forEach(m => generateMaintenanceLogReport(m, doc));
 
   doc.save(`DGCA_Audit_Pack_${pack.from}_to_${pack.to}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// Weekly Duty Roster (2026-09-23) — the same table the report page shows
+// (lib/duty-roster-report.ts builds both). Landscape A4, one row per
+// instructor, Mon–Sun columns, rostered/booked totals, closed days shaded.
+// ---------------------------------------------------------------------------
+export function generateWeeklyDutyRoster(report: RosterReport & {
+  ftoName?: string;
+  generatedBy?: string;
+  generatedAt: string; // already formatted, IST
+}, into?: jsPDF): jsPDF {
+  const owned = !into;
+  const doc = section(into, 'landscape') as JsPDFWithAutoTable;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const first = report.days[0]?.date ?? '';
+  const last = report.days[report.days.length - 1]?.date ?? '';
+
+  doc.setFillColor(30, 41, 59);
+  doc.rect(0, 0, pageWidth, 30, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(16);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Weekly Duty Roster', 14, 15);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Week: ${dayLabel(first)} to ${dayLabel(last)} ${last.slice(0, 4)} (IST)`, 14, 24);
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'bold');
+  doc.text(report.ftoName || 'FTO name not set', pageWidth - 14, 15, { align: 'right' });
+  doc.setTextColor(0, 0, 0);
+
+  const closedCols = new Set(report.days.flatMap((d, i) => (d.closed ? [i + 1] : [])));
+  autoTable(doc, {
+    startY: 38,
+    head: [['Instructor', ...report.days.map(d => dayLabel(d.date)), 'Rostered', 'Booked']],
+    body: report.rows.length
+      ? report.rows.map(r => [`${r.name} (${r.initials})`, ...r.cells.map(c => c.text), formatHours(r.rosteredHours), formatHours(r.bookedHours)])
+      : [['No active instructors.', '', '', '', '', '', '', '', '', '']],
+    theme: 'grid',
+    styles: { fontSize: 7.5, cellPadding: 2, valign: 'middle' },
+    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 8 },
+    columnStyles: { 0: { cellWidth: 40, fontStyle: 'bold' }, 8: { cellWidth: 18 }, 9: { cellWidth: 18 } },
+    didParseCell: data => {
+      if (data.section === 'body' && closedCols.has(data.column.index)) data.cell.styles.fillColor = [229, 231, 235];
+    },
+  });
+
+  let y = (doc.lastAutoTable?.finalY ?? 38) + 8;
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const line = (text: string, bold = false) => {
+    if (y > pageHeight - 14) { doc.addPage('a4', 'landscape'); y = 20; }
+    doc.setFont('helvetica', bold ? 'bold' : 'normal');
+    doc.text(text, 14, y);
+    y += 5;
+  };
+  doc.setFontSize(8);
+  line('Key: hours = on duty (IST) · Off = rostered off · Leave = approved leave · Closed = school closed · * = one-off change · "booked" = booked + flown hours that day (cancelled excluded).');
+  const closed = report.days.filter(d => d.closed).map(d => `${dayLabel(d.date)} — ${d.closed}`);
+  if (closed.length) line(`Closed: ${closed.join('; ')}`);
+  if (report.notes.length) {
+    line('One-off changes:', true);
+    report.notes.forEach(n => line(`* ${n}`));
+  }
+  line(`Generated${report.generatedBy ? ` by ${report.generatedBy}` : ''} on ${report.generatedAt}.`);
+
+  return finish(doc, owned, `Duty_Roster_${first}_to_${last}.pdf`);
 }

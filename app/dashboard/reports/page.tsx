@@ -9,11 +9,12 @@
 'use client';
 
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
-import { REPORTS_VIEW_ROLES } from '@/lib/permissions';
-import { ClipboardList, Wrench, Wind, TriangleAlert, ArrowRight, BookOpen, FolderDown } from 'lucide-react';
+import { REPORTS_VIEW_ROLES, ROSTER_VIEW_ROLES } from '@/lib/permissions';
+import { ClipboardList, Wrench, Wind, TriangleAlert, ArrowRight, BookOpen, FolderDown, CalendarDays } from 'lucide-react';
 
 const REPORT_CARDS = [
   {
@@ -57,6 +58,16 @@ const REPORT_CARDS = [
     description: 'Daily, weekly, or monthly rollup of the BA Test Register (CAR Section 5, Series F, Part III) — summary stats plus PDF and Excel/CSV export. To add or edit today\'s entries, use "BA Test Register" in the left sidebar.',
     status: 'live' as const,
   },
+  // 2026-09-23: only shown to roles that can read the roster (the report
+  // page itself is gated to ROSTER_VIEW_ROLES).
+  {
+    href: '/dashboard/reports/duty-roster',
+    icon: CalendarDays,
+    title: 'Weekly Duty Roster',
+    description: 'One week, Monday to Sunday: each instructor\'s duty hours, leave, one-off changes, school-closed days and hours already booked, with rostered/booked totals and a PDF download.',
+    status: 'live' as const,
+    roles: ROSTER_VIEW_ROLES,
+  },
   {
     icon: TriangleAlert,
     title: 'DGCA Incident Report',
@@ -66,6 +77,8 @@ const REPORT_CARDS = [
 ];
 
 export default function ReportsPage() {
+  const { data: session } = useSession();
+  const role = session?.user?.role ?? '';
   useSetHeader({
     title: 'Reports',
     subtitle: 'DGCA-facing compliance & operations reports',
@@ -77,7 +90,7 @@ export default function ReportsPage() {
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
           <div className="max-w-5xl mx-auto px-4 py-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {REPORT_CARDS.map((card, i) => {
+              {REPORT_CARDS.filter(card => !card.roles || card.roles.includes(role)).map((card, i) => {
                 const Icon = card.icon;
                 const body = (
                   <div className="surface-card p-5 h-full flex flex-col transition-all hover:opacity-90">
