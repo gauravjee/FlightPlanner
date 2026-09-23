@@ -44,6 +44,10 @@ import { useExercises } from '@/lib/hooks/useExercises';
 import { useTrainingRequirements, fetchTrainingRequirements } from '@/lib/hooks/useTrainingRequirements';
 import { checkAvailability } from '@/lib/hooks/useAvailability';
 import { effectiveDailyLimit, exceedsDailyLimit } from '@/lib/instructor-status';
+import { useSession } from 'next-auth/react';
+import { useRoster } from '@/lib/hooks/useRoster';
+import { dutyWindow, flightFitsDuty, describeWindow, dutySourceNote } from '@/lib/roster';
+import { ROSTER_VIEW_ROLES, ROSTER_OVERRIDE_ROLES } from '@/lib/permissions';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -425,6 +429,34 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
       : '';
   }, [isSolo, form.instructorId, form.date, form.startTime, form.endTime, existingFlight, instructors, ftoSettings, scheduledFlights]);
 
+  // 2026-09-23 (roster step 3): outside the instructor's duty hours is
+  // blocked — same rule the server enforces (lib/roster.ts + lib/roster-
+  // server.ts). Admin/super_admin can tick "Override roster"; the flight is
+  // then marked as booked outside roster. Same unchanged-edit exemption as
+  // the daily limit. Roles that can't read the roster (students) fall back
+  // to opening hours here; the server still checks the real roster.
+  const { data: session } = useSession();
+  const role = session?.user?.role ?? '';
+  const canOverrideRoster = ROSTER_OVERRIDE_ROLES.includes(role);
+  const { weekly: rosterWeekly, exceptions: rosterExceptions } = useRoster(ROSTER_VIEW_ROLES.includes(role));
+  const [rosterOverride, setRosterOverride] = useState(false);
+  const rosterMessage = useMemo(() => {
+    if (isSolo || !form.instructorId || !form.date || !form.startTime || !form.endTime) return '';
+    const startIso = new Date(`${form.date}T${form.startTime}:00+05:30`).toISOString();
+    const endIso = new Date(`${form.date}T${form.endTime}:00+05:30`).toISOString();
+    if (existingFlight
+      && String(existingFlight.instructorId) === String(form.instructorId)
+      && new Date(existingFlight.startTime).getTime() === new Date(startIso).getTime()
+      && new Date(existingFlight.endTime).getTime() === new Date(endIso).getTime()) return '';
+    const instr = instructors.find(i => String(i.id) === String(form.instructorId));
+    const r = dutyWindow({
+      instructorId: String(form.instructorId), date: form.date, weekly: rosterWeekly, exceptions: rosterExceptions,
+      offDutyDate: instr?.offDutyDate, openStart: ftoSettings['time_slot_start'], openEnd: ftoSettings['time_slot_end'],
+    });
+    return flightFitsDuty(r.window, startIso, endIso) ? ''
+      : `⛔ ${instr?.name ?? 'The instructor'} isn't on duty then — duty hours on ${form.date}: ${describeWindow(r.window)}${dutySourceNote(r.source)}.`;
+  }, [isSolo, form.instructorId, form.date, form.startTime, form.endTime, existingFlight, instructors, ftoSettings, rosterWeekly, rosterExceptions]);
+
   // SWR migration, Stage 8 (2026-09-02): keyed per-studentId (null while
   // Maintenance or no student picked, via SWR's null-key idiom), so
   // switching students just gets a different cache entry — no more manual
@@ -702,6 +734,9 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     // Daily flying limit — hard block, no override (server re-checks).
     if (dailyLimitMessage) { setError(dailyLimitMessage.replace('⛔', '❌')); return; }
 
+    // Duty roster — blocked unless admin/super_admin ticked the override (server re-checks).
+    if (rosterMessage && !(canOverrideRoster && rosterOverride)) { setError(rosterMessage.replace('⛔', '❌')); return; }
+
     // 2026-09-23 (leave/vacation enforcement): hard stop — checked fresh here
     // rather than trusting the effect-derived banner, which can be a beat
     // stale if the date was just changed. Server re-checks in both
@@ -805,6 +840,12 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
         || endIST.getTime() !== new Date(existingFlight.endTime).getTime();
       const updateResult = await updateScheduledFlight(existingFlight.id, {
         ...(moved ? { aircraftId: form.aircraftId, startTime: startIST.toISOString(), endTime: endIST.toISOString() } : {}),
+        // Only when the server re-checks the roster (instructor or times
+        // changed) — otherwise the local cache would drop an existing flag.
+        ...(!isSolo && (String(existingFlight.instructorId) !== String(form.instructorId)
+          || startIST.getTime() !== new Date(existingFlight.startTime).getTime()
+          || endIST.getTime() !== new Date(existingFlight.endTime).getTime())
+          ? { rosterOverride: !!rosterMessage && rosterOverride } : {}),
         instructorId: isSolo ? '' : form.instructorId,
         studentId: isMaintenance ? undefined : form.studentId,
         sortieType: form.sortieType,
@@ -831,6 +872,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
         status: 'SCHEDULED',           
         weatherBriefed: false,         
         notamBriefed: false,           
+        rosterOverride: !!rosterMessage && rosterOverride,
       });
       setLoading(false);
       if (result.success) { onSuccess(result.message); } else { setError(result.message); }
@@ -1106,6 +1148,17 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
             )}
             {dailyLimitMessage && (
               <p role="alert" className="text-xs text-red-400 mt-1">{dailyLimitMessage}</p>
+            )}
+            {rosterMessage && (
+              <>
+                <p role="alert" className="text-xs text-red-400 mt-1">{rosterMessage}</p>
+                {canOverrideRoster && (
+                  <label className="flex items-center gap-2 text-xs mt-1 text-secondary">
+                    <input type="checkbox" checked={rosterOverride} onChange={e => setRosterOverride(e.target.checked)} />
+                    Override roster — book outside duty hours anyway (the flight is marked)
+                  </label>
+                )}
+              </>
             )}
           </div>
 

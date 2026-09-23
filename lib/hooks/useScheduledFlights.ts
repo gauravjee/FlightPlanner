@@ -88,6 +88,7 @@ export async function fetchScheduledFlights(): Promise<ScheduledFlight[]> {
       pendingDebrief: (row.pending_debrief as Record<string, unknown> | null) ?? null,
       cancellationReason: (row.cancellation_reason as string | null) ?? null,
       cancellationNote: (row.cancellation_note as string | null) ?? null,
+      rosterOverride: !!row.roster_override,
     };
   });
 }
@@ -240,6 +241,7 @@ export async function bookFlight(
       status: booking.status || 'SCHEDULED',
       weatherBriefed: booking.weatherBriefed || false, notamBriefed: booking.notamBriefed || false,
       notes: booking.notes || '',
+      rosterOverride: booking.rosterOverride || false,
     }),
   });
   if (res.ok) {

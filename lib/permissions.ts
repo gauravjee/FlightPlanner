@@ -206,6 +206,9 @@ export const INSTRUCTOR_OFF_DUTY_ROLES = ['admin', 'super_admin', 'operations'];
 // super_admin/operations change it. Students don't see it.
 export const ROSTER_VIEW_ROLES = ['admin', 'super_admin', 'operations', 'instructor'];
 export const ROSTER_EDIT_ROLES = ['admin', 'super_admin', 'operations'];
+// Who may book an instructor outside their duty hours on purpose (the
+// "Override roster" tick box) — operator decision: admin + super admin only.
+export const ROSTER_OVERRIDE_ROLES = ['admin', 'super_admin'];
 
 // ============================================================
 // STUDENT PROGRESS

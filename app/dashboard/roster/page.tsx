@@ -149,7 +149,7 @@ export default function RosterPage() {
   // ---------- Bookings outside the roster ----------
   const outside = useMemo(() => {
     return scheduledFlights
-      .filter(f => f.instructorId && new Date(f.endTime).getTime() > nowMs && (f.status === 'SCHEDULED' || f.status === 'PENDING_APPROVAL'))
+      .filter(f => f.instructorId && !f.rosterOverride && new Date(f.endTime).getTime() > nowMs && (f.status === 'SCHEDULED' || f.status === 'PENDING_APPROVAL'))
       .map(f => ({ f, w: windowFor(String(f.instructorId), toIST(f.startTime).date).window }))
       .filter(({ f, w }) => !flightFitsDuty(w, f.startTime, f.endTime))
       .sort((a, b) => a.f.startTime.localeCompare(b.f.startTime));
@@ -321,7 +321,7 @@ export default function RosterPage() {
                 <TriangleAlert className="w-4 h-4" style={{ color: outside.length ? 'var(--warning-text)' : 'var(--text-tertiary)' }} />
                 Upcoming bookings outside the roster ({outside.length})
               </h2>
-              <p className="text-xs text-tertiary mb-3">Changing a roster never cancels a booking — move or cancel these from the Schedule.</p>
+              <p className="text-xs text-tertiary mb-3">Changing a roster never cancels a booking — move or cancel these from the Schedule. Flights an admin booked outside the roster on purpose aren&apos;t listed.</p>
               {outside.length === 0 ? (
                 <p className="text-sm text-secondary">None — every upcoming booking is inside its instructor&apos;s duty hours.</p>
               ) : (

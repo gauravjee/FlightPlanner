@@ -5,6 +5,7 @@
 // Plan + operator decisions: claude/instructor-status-plan-2026-09-23.md.
 
 import { leaveCovers, toIST, type LeaveWindow } from './leave-window';
+import { onDutyAt, type DutyWindow } from './roster';
 
 export type ComputedStatus = 'ON_LEAVE' | 'FLYING' | 'LIMIT_REACHED' | 'OFF_DUTY' | 'AVAILABLE';
 
@@ -72,6 +73,10 @@ export function computeInstructorStatus(args: {
   offDutyDate?: string | null;
   openStart?: string;
   openEnd?: string;
+  // 2026-09-23 (roster step 3): today's duty window from lib/roster.ts. When
+  // given it replaces offDutyDate + opening hours (the roster already
+  // includes both); null = off all day.
+  duty?: DutyWindow;
 }): ComputedStatus {
   const { date, time } = toIST(args.now.toISOString());
   const mine = (type?: string, id?: string | number) => type === 'instructor' && String(id) === String(args.instructorId);
@@ -84,8 +89,12 @@ export function computeInstructorStatus(args: {
 
   if (dayHours(args.flights, args.instructorId, date) >= args.limit - 1e-9) return 'LIMIT_REACHED';
 
-  if (args.offDutyDate === date) return 'OFF_DUTY';
-  if (args.openStart && args.openEnd && (time < args.openStart || time >= args.openEnd)) return 'OFF_DUTY';
+  if (args.duty !== undefined) {
+    if (!onDutyAt(args.duty, time)) return 'OFF_DUTY';
+  } else {
+    if (args.offDutyDate === date) return 'OFF_DUTY';
+    if (args.openStart && args.openEnd && (time < args.openStart || time >= args.openEnd)) return 'OFF_DUTY';
+  }
 
   return 'AVAILABLE';
 }

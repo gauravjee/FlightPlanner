@@ -79,6 +79,11 @@ export function onDutyAt(window: DutyWindow, time: string): boolean {
   return !!window && time >= window.start && time < window.end;
 }
 
+/** Plain-words reason a duty window applies, for refusal messages. */
+export function dutySourceNote(source: DutySource): string {
+  return source === 'off-duty-today' ? ' (marked off duty today)' : source === 'exception' ? ' (one-off change)' : '';
+}
+
 /** 'Off' or '06:00–14:00' — for messages and the calendar. */
 export function describeWindow(window: DutyWindow): string {
   return window ? `${window.start}–${window.end}` : 'Off';

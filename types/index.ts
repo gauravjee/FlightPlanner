@@ -221,6 +221,9 @@ export interface ScheduledFlight {
   // 2026-09-23: optional free-text detail ("student unwell", "VIP
   // movement") — required in the cancel picker when the reason is OTHER.
   cancellationNote?: string | null;
+  // 2026-09-23 (roster step 3): admin/super_admin booked this outside the
+  // instructor's duty hours on purpose (scheduled_flights.roster_override).
+  rosterOverride?: boolean;
   // Display fields (looked up)
   aircraftReg?: string;
   studentName?: string;

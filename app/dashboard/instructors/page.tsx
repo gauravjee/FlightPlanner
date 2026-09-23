@@ -19,6 +19,9 @@ import { INSTRUCTORS_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { computeInstructorStatus, dayHours, effectiveDailyLimit, STATUS_LABELS, type ComputedStatus } from '@/lib/instructor-status';
 import { toIST } from '@/lib/leave-window';
+import { useRoster } from '@/lib/hooks/useRoster';
+import { dutyWindow } from '@/lib/roster';
+import { ROSTER_VIEW_ROLES } from '@/lib/permissions';
 import { Search, GraduationCap } from 'lucide-react';
 
 export default function InstructorsPage() {
@@ -34,6 +37,9 @@ export default function InstructorsPage() {
   // can't show On leave, but nothing breaks.
   const { availabilityRecords } = useAvailability();
   const { ftoSettings } = useFtoSettings();
+  // 2026-09-23 (roster step 3): Off duty follows the duty roster. Roles that
+  // can't read it fall back to opening hours + "off duty today".
+  const { weekly, exceptions } = useRoster(ROSTER_VIEW_ROLES.includes(session?.user?.role ?? ''));
   const [showForm, setShowForm] = useState(false);
   const [editingInstructor, setEditingInstructor] = useState<Instructor | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -64,14 +70,17 @@ export default function InstructorsPage() {
       return [i.id, {
         status: computeInstructorStatus({
           instructorId: i.id, now, flights: scheduledFlights, leaves, limit,
-          offDutyDate: i.offDutyDate, openStart: ftoSettings['time_slot_start'], openEnd: ftoSettings['time_slot_end'],
+          duty: dutyWindow({
+            instructorId: i.id, date: today, weekly, exceptions, offDutyDate: i.offDutyDate,
+            openStart: ftoSettings['time_slot_start'], openEnd: ftoSettings['time_slot_end'],
+          }).window,
         }),
         todayHours: dayHours(scheduledFlights, i.id, today),
         limit,
         offDutyToday: i.offDutyDate === today,
       }];
     }));
-  }, [instructors, scheduledFlights, availabilityRecords, ftoSettings, now]);
+  }, [instructors, scheduledFlights, availabilityRecords, ftoSettings, now, weekly, exceptions]);
 
   // Filter instructors based on search and status
   const filteredInstructors = (showInactive ? instructors : activeInstructors).filter(i => {

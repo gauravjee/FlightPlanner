@@ -51,4 +51,11 @@ assert.equal(computeInstructorStatus({ ...base, leaves: [{ ...leave, status: 'PE
 // Leave outranks everything, including flying.
 assert.equal(computeInstructorStatus({ ...base, leaves: [leave], flights: [f(9, '2026-09-29T04:30:00Z', '2026-09-29T06:30:00Z', 'IN_PROGRESS')] }), 'ON_LEAVE');
 
+// 2026-09-23: with a roster duty window (10:30 IST now), it replaces the
+// off-duty-today and opening-hours checks; limit/flying/leave still win.
+assert.equal(computeInstructorStatus({ ...base, duty: { start: '06:00', end: '14:00' } }), 'AVAILABLE');
+assert.equal(computeInstructorStatus({ ...base, duty: { start: '12:00', end: '20:00' } }), 'OFF_DUTY'); // shift starts later
+assert.equal(computeInstructorStatus({ ...base, duty: null }), 'OFF_DUTY');                              // day off
+assert.equal(computeInstructorStatus({ ...base, duty: null, limit: 2, flights: [f(9, '2026-09-29T01:30:00Z', '2026-09-29T03:30:00Z', 'COMPLETED')] }), 'LIMIT_REACHED');
+
 console.log('instructor-status: all checks passed');

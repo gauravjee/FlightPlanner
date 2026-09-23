@@ -17,7 +17,7 @@
 // scheduled_flights with no server-side check whatsoever.
 
 import { NextResponse } from 'next/server';
-import { requireScheduleCreateAccess, requireSession } from '@/lib/api-auth';
+import { requireScheduleCreateAccess, requireSession, ROSTER_OVERRIDE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 // 2026-09-23 (leave/vacation enforcement): only used in the student
 // self-booking branch below — every other caller here is staff booking
@@ -27,6 +27,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { isOnApprovedLeave } from '@/lib/leave';
 import { dailyLimitRefusal } from '@/lib/daily-limit';
 import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
+import { rosterRefusal } from '@/lib/roster-server';
 
 // GET added 2026-09-18 (RLS remediation Step 3 — see
 // claude/rls-remediation-progress-2026-09-18.md): reads used to be direct
@@ -112,6 +113,7 @@ export async function POST(request: Request) {
   // behalf, which is the existing, unrestricted behavior. A self-booking
   // student can only ever create a PENDING_APPROVAL request for themselves.
   let pendingApproval = false;
+  let rosterOverride = false; // set below when admin/super_admin books outside the roster
   if (session.user.role === 'student') {
     if (!session.user.studentId) {
       return NextResponse.json({ error: 'No student profile is linked to this account.' }, { status: 403 });
@@ -197,6 +199,19 @@ export async function POST(request: Request) {
     // skip this whole block.
     const refusal = await dailyLimitRefusal(String(instructorId), String(startTime), String(endTime));
     if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+
+    // 2026-09-23 (roster step 3): outside the instructor's duty hours is
+    // blocked; only admin/super_admin may override, and the flight is marked.
+    const outside = await rosterRefusal(String(instructorId), String(startTime), String(endTime));
+    if (outside) {
+      if (!ROSTER_OVERRIDE_ROLES.includes(session.user.role ?? '')) {
+        return NextResponse.json({ error: outside }, { status: 403 });
+      }
+      if (body.rosterOverride !== true) {
+        return NextResponse.json({ error: `${outside} Tick "Override roster" to book anyway.` }, { status: 403 });
+      }
+      rosterOverride = true;
+    }
   }
 
   const { error: dbError } = await supabaseAdmin.from('scheduled_flights').insert({
@@ -211,6 +226,7 @@ export async function POST(request: Request) {
     weather_briefed: weatherBriefed || false,
     notam_briefed: notamBriefed || false,
     notes: notes || '',
+    roster_override: rosterOverride,
   });
 
   if (dbError) {

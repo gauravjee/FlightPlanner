@@ -40,7 +40,7 @@ interface Props {
 // carries these two extra fields that the narrower FlightSlot type
 // doesn't declare. Local extension so this file can read them without
 // widening FlightSlot for every other consumer of that type.
-type SlotWithExtras = FlightSlot & { logbookPending?: boolean; exercise?: string };
+type SlotWithExtras = FlightSlot & { logbookPending?: boolean; exercise?: string; rosterOverride?: boolean };
 
 export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
   useEscapeToClose(onClose);
@@ -426,6 +426,16 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
                   title="Flight is completed but no logbook entry has been created yet — finish it from the Flights page."
                 >
                   📋 Logbook Pending
+                </span>
+              )}
+              {/* 2026-09-23 (roster step 3): admin/super_admin booked this
+                  outside the instructor's duty hours on purpose. */}
+              {(slot as SlotWithExtras).rosterOverride && (
+                <span
+                  className="px-3 py-1 rounded-full text-sm font-medium bg-purple-500/20 text-purple-400"
+                  title="Booked outside the instructor's duty roster by an admin override."
+                >
+                  Booked outside roster
                 </span>
               )}
             </div>

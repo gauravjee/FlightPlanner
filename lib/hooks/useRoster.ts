@@ -35,8 +35,11 @@ export async function fetchRoster(): Promise<RosterData> {
   };
 }
 
-export function useRoster() {
-  const { data, error, isLoading } = useSWR<RosterData>(rosterKey, fetchRoster);
+// `enabled` false skips the fetch (roles outside ROSTER_VIEW_ROLES get a 403;
+// with no roster loaded, lib/roster.ts falls back to opening hours and the
+// server still enforces the real roster).
+export function useRoster(enabled = true) {
+  const { data, error, isLoading } = useSWR<RosterData>(enabled ? rosterKey : null, fetchRoster);
   return { weekly: data?.weekly ?? [], exceptions: data?.exceptions ?? [], isLoading, error };
 }
 

@@ -16,11 +16,12 @@
 // boundary.
 
 import { NextResponse } from 'next/server';
-import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES } from '@/lib/api-auth';
+import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES, ROSTER_OVERRIDE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { dailyLimitRefusal } from '@/lib/daily-limit';
 import { isOnApprovedLeave } from '@/lib/leave';
 import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
+import { rosterRefusal } from '@/lib/roster-server';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -80,7 +81,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ success: true });
   }
 
-  const { error } = await requireRole(SCHEDULE_MANAGE_ROLES);
+  const { session, error } = await requireRole(SCHEDULE_MANAGE_ROLES);
   if (error) return error;
 
   const dbUpdates: Record<string, unknown> = {};
@@ -154,6 +155,20 @@ export async function PATCH(request: Request, context: RouteContext) {
       if (addsHours && next.instructor && next.status !== 'CANCELLED') {
         const refusal = await dailyLimitRefusal(next.instructor, next.start, next.end, id);
         if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+
+        // 2026-09-23 (roster step 3): same duty-hours rule as creating a
+        // flight — only admin/super_admin may override, and the flag follows
+        // where the flight now sits (cleared when a move brings it inside).
+        const outside = await rosterRefusal(next.instructor, next.start, next.end);
+        if (outside) {
+          if (!ROSTER_OVERRIDE_ROLES.includes(session.user.role ?? '')) {
+            return NextResponse.json({ error: outside }, { status: 403 });
+          }
+          if (body.rosterOverride !== true) {
+            return NextResponse.json({ error: `${outside} Tick "Override roster" to book anyway.` }, { status: 403 });
+          }
+        }
+        dbUpdates.roster_override = !!outside;
       }
     }
   }
