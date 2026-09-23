@@ -63,8 +63,8 @@ const REPORT_CARDS = [
   {
     href: '/dashboard/reports/duty-roster',
     icon: CalendarDays,
-    title: 'Weekly Duty Roster',
-    description: 'One week, Monday to Sunday: each instructor\'s duty hours, leave, one-off changes, school-closed days and hours already booked, with rostered/booked totals and a PDF download.',
+    title: 'Duty Roster Report',
+    description: 'Weekly, monthly or a custom period (up to 90 days), for all or selected instructors: duty hours, leave, one-off changes, school-closed days and hours already booked, with rostered/booked totals and a PDF download.',
     status: 'live' as const,
     roles: ROSTER_VIEW_ROLES,
   },

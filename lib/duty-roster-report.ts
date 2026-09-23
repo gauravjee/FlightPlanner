@@ -29,6 +29,14 @@ export function mondayOf(date: string): string {
   return shiftDate(date, -((new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7));
 }
 
+/** Number of calendar days from `from` to `to`, counting both ends. */
+export function daysInclusive(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+}
+
+/** Longest custom range allowed (operator decision 2026-09-23), both ends counted. */
+export const MAX_REPORT_DAYS = 90;
+
 /** 'Mon 28 Sep' */
 export function dayLabel(date: string): string {
   const d = new Date(`${date}T00:00:00Z`);
@@ -40,7 +48,9 @@ const minutes = (t: string) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)
 export const formatHours = (h: number) => `${Number(h.toFixed(1))}h`;
 
 export function buildRosterReport(args: {
-  monday: string;
+  from: string; // first day, 'YYYY-MM-DD'
+  to: string;   // last day, inclusive
+
   instructors: { id: string; name: string; initials: string; offDutyDate?: string | null }[];
   weekly: WeeklyRow[];
   exceptions: (RosterException & { note?: string })[];
@@ -50,8 +60,8 @@ export function buildRosterReport(args: {
   openEnd?: string;
   closedReason: (date: string) => string | null;
 }): RosterReport {
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const date = shiftDate(args.monday, i);
+  const days = Array.from({ length: Math.max(0, daysInclusive(args.from, args.to)) }, (_, i) => {
+    const date = shiftDate(args.from, i);
     return { date, closed: args.closedReason(date) };
   });
   const notes: string[] = [];

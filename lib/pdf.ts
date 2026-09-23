@@ -749,18 +749,26 @@ export function generateAuditPack(pack: {
 }
 
 // ---------------------------------------------------------------------------
-// Weekly Duty Roster (2026-09-23) — the same table the report page shows
-// (lib/duty-roster-report.ts builds both). Landscape A4, one row per
-// instructor, Mon–Sun columns, rostered/booked totals, closed days shaded.
+// Duty Roster report (2026-09-23) — the same table the report page shows
+// (lib/duty-roster-report.ts builds both). Landscape A4. layout 'week':
+// instructors down, the 7 days across (as before). layout 'days' (monthly /
+// custom, up to 90 days): one row per date, one column per instructor, then
+// Rostered / Booked total rows; headings repeat on every page. Closed days
+// shaded.
 // ---------------------------------------------------------------------------
-export function generateWeeklyDutyRoster(report: RosterReport & {
+export function generateDutyRoster(report: RosterReport & {
+  layout: 'week' | 'days';
+  title: string;           // e.g. 'Weekly Duty Roster', 'Duty Roster — October 2026'
+  periodLabel: string;     // e.g. 'Monthly · Thu 1 Oct to Sat 31 Oct 2026 (IST) · 31 days'
+  instructorsLabel: string; // 'All instructors' or the names picked
   ftoName?: string;
   generatedBy?: string;
-  generatedAt: string; // already formatted, IST
+  generatedAt: string;     // already formatted, IST
 }, into?: jsPDF): jsPDF {
   const owned = !into;
   const doc = section(into, 'landscape') as JsPDFWithAutoTable;
   const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
   const first = report.days[0]?.date ?? '';
   const last = report.days[report.days.length - 1]?.date ?? '';
 
@@ -769,38 +777,72 @@ export function generateWeeklyDutyRoster(report: RosterReport & {
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(16);
   doc.setFont('helvetica', 'bold');
-  doc.text('Weekly Duty Roster', 14, 15);
+  doc.text(report.title, 14, 15);
   doc.setFontSize(9);
   doc.setFont('helvetica', 'normal');
-  doc.text(`Week: ${dayLabel(first)} to ${dayLabel(last)} ${last.slice(0, 4)} (IST)`, 14, 24);
+  doc.text(report.periodLabel, 14, 24);
   doc.setFontSize(11);
   doc.setFont('helvetica', 'bold');
   doc.text(report.ftoName || 'FTO name not set', pageWidth - 14, 15, { align: 'right' });
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'normal');
+  doc.text(doc.splitTextToSize(report.instructorsLabel, 120)[0] as string, pageWidth - 14, 24, { align: 'right' });
   doc.setTextColor(0, 0, 0);
 
-  const closedCols = new Set(report.days.flatMap((d, i) => (d.closed ? [i + 1] : [])));
-  autoTable(doc, {
-    startY: 38,
-    head: [['Instructor', ...report.days.map(d => dayLabel(d.date)), 'Rostered', 'Booked']],
-    body: report.rows.length
-      ? report.rows.map(r => [`${r.name} (${r.initials})`, ...r.cells.map(c => c.text), formatHours(r.rosteredHours), formatHours(r.bookedHours)])
-      : [['No active instructors.', '', '', '', '', '', '', '', '', '']],
-    theme: 'grid',
-    styles: { fontSize: 7.5, cellPadding: 2, valign: 'middle' },
-    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 8 },
-    columnStyles: { 0: { cellWidth: 40, fontStyle: 'bold' }, 8: { cellWidth: 18 }, 9: { cellWidth: 18 } },
-    didParseCell: data => {
-      if (data.section === 'body' && closedCols.has(data.column.index)) data.cell.styles.fillColor = [229, 231, 235];
-    },
-  });
+  const shade = [229, 231, 235] as [number, number, number];
+  const pageNo = () => {
+    doc.setFontSize(7);
+    doc.text(`Page ${doc.getNumberOfPages()}`, pageWidth - 14, pageHeight - 6, { align: 'right' });
+  };
+  const none = report.rows.length === 0;
+
+  if (report.layout === 'week') {
+    const closedCols = new Set(report.days.flatMap((d, i) => (d.closed ? [i + 1] : [])));
+    autoTable(doc, {
+      startY: 38,
+      head: [['Instructor', ...report.days.map(d => dayLabel(d.date)), 'Rostered', 'Booked']],
+      body: none
+        ? [['No instructors selected.', ...report.days.map(() => ''), '', '']]
+        : report.rows.map(r => [`${r.name} (${r.initials})`, ...r.cells.map(c => c.text), formatHours(r.rosteredHours), formatHours(r.bookedHours)]),
+      theme: 'grid',
+      styles: { fontSize: 7.5, cellPadding: 2, valign: 'middle' },
+      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 8 },
+      columnStyles: { 0: { cellWidth: 40, fontStyle: 'bold' }, 8: { cellWidth: 18 }, 9: { cellWidth: 18 } },
+      didParseCell: data => {
+        if (data.section === 'body' && closedCols.has(data.column.index)) data.cell.styles.fillColor = shade;
+      },
+      didDrawPage: pageNo,
+    });
+  } else {
+    const body = report.days.map((d, i) => [dayLabel(d.date), ...report.rows.map(r => r.cells[i].text)]);
+    body.push(['Rostered', ...report.rows.map(r => formatHours(r.rosteredHours))]);
+    body.push(['Booked', ...report.rows.map(r => formatHours(r.bookedHours))]);
+    autoTable(doc, {
+      startY: 38,
+      margin: { top: 20 },
+      showHead: 'everyPage',
+      head: [['Date', ...(none ? ['No instructors selected.'] : report.rows.map(r => `${r.name} (${r.initials})`))]],
+      body: none ? [] : body,
+      theme: 'grid',
+      styles: { fontSize: 7.5, cellPadding: 1.6, valign: 'middle' },
+      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 8 },
+      columnStyles: { 0: { cellWidth: 28, fontStyle: 'bold' } },
+      didParseCell: data => {
+        if (data.section !== 'body') return;
+        const i = data.row.index;
+        if (i >= report.days.length) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.fillColor = [241, 245, 249]; }
+        else if (report.days[i].closed) data.cell.styles.fillColor = shade;
+      },
+      didDrawPage: pageNo,
+    });
+  }
 
   let y = (doc.lastAutoTable?.finalY ?? 38) + 8;
-  const pageHeight = doc.internal.pageSize.getHeight();
   // Wraps to the page width — the key and long notes don't fit on one line.
   const line = (text: string, bold = false) => {
     doc.setFont('helvetica', bold ? 'bold' : 'normal');
     for (const part of doc.splitTextToSize(text, pageWidth - 28) as string[]) {
-      if (y > pageHeight - 14) { doc.addPage('a4', 'landscape'); y = 20; }
+      if (y > pageHeight - 14) { doc.addPage('a4', 'landscape'); y = 20; pageNo(); doc.setFontSize(8); }
       doc.text(part, 14, y);
       y += 4.5;
     }

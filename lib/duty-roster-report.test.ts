@@ -2,7 +2,7 @@
 // Run: npx tsx lib/duty-roster-report.test.ts   (no test framework needed)
 
 import assert from 'node:assert/strict';
-import { buildRosterReport, mondayOf, dayLabel, formatHours } from './duty-roster-report';
+import { buildRosterReport, mondayOf, dayLabel, formatHours, daysInclusive, MAX_REPORT_DAYS } from './duty-roster-report';
 
 assert.equal(mondayOf('2026-09-23'), '2026-09-21'); // Wed -> Mon
 assert.equal(mondayOf('2026-09-27'), '2026-09-21'); // Sun belongs to the week before
@@ -10,12 +10,17 @@ assert.equal(mondayOf('2026-09-28'), '2026-09-28');
 assert.equal(dayLabel('2026-09-28'), 'Mon 28 Sep');
 assert.equal(formatHours(3.5), '3.5h');
 assert.equal(formatHours(7), '7h');
+// Range length counts both ends: 1 Oct to 29 Dec is exactly the 90-day limit.
+assert.equal(daysInclusive('2026-10-01', '2026-10-01'), 1);
+assert.equal(daysInclusive('2026-10-01', '2026-10-31'), 31);
+assert.equal(daysInclusive('2026-10-01', '2026-12-29'), MAX_REPORT_DAYS);
+assert.equal(daysInclusive('2026-10-01', '2026-12-30'), MAX_REPORT_DAYS + 1);
 
 // Week of Mon 28 Sep 2026. Instructor 6 rostered Mon-Sat 06:00-14:00, Sun off.
 const weekly = [1, 2, 3, 4, 5, 6].map(d => ({ instructorId: '6', weekday: d, startTime: '06:00', endTime: '14:00' }))
   .concat([{ instructorId: '6', weekday: 0, startTime: null as unknown as string, endTime: null as unknown as string }]);
 const r = buildRosterReport({
-  monday: '2026-09-28',
+  from: '2026-09-28', to: '2026-10-04',
   instructors: [
     { id: '6', name: 'Dummy Instructor', initials: 'DI', offDutyDate: '2026-10-02' }, // off duty Fri
     { id: '7', name: 'New Instructor', initials: 'NI' },                              // no roster
@@ -50,10 +55,19 @@ assert.equal(r.rows[1].rosteredHours, 14 * 5);
 
 // Full-day leave: no hours at all.
 const full = buildRosterReport({
-  monday: '2026-09-28', instructors: [{ id: '6', name: 'D', initials: 'D' }], weekly, exceptions: [],
+  from: '2026-09-28', to: '2026-10-04', instructors: [{ id: '6', name: 'D', initials: 'D' }], weekly, exceptions: [],
   leaves: [{ personId: '6', start_date: '2026-09-28', end_date: '2026-09-28' }], flights: [], closedReason: () => null,
 });
 assert.equal(full.rows[0].cells[0].text, 'Leave');
 assert.equal(full.rows[0].rosteredHours, 8 * 5); // Tue-Sat only
+
+// Any range, not just a week: a whole month gives one entry per day.
+const month = buildRosterReport({
+  from: '2026-10-01', to: '2026-10-31', instructors: [{ id: '6', name: 'D', initials: 'D' }], weekly, exceptions: [],
+  leaves: [], flights: [], closedReason: d => (d === '2026-10-02' ? 'Holiday' : null),
+});
+assert.equal(month.days.length, 31);
+assert.equal(month.rows[0].cells.length, 31);
+assert.equal(month.days[1].closed, 'Holiday');
 
 console.log('duty-roster-report: all checks passed');
