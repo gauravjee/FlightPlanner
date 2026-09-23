@@ -39,7 +39,7 @@ const ALLOWED_ROLES = ['super_admin'];
 // included so the table can show/pre-fill each eligible user's current
 // per-user grants — see lib/permissions.ts's MODULE_ACCESS and the "Edit
 // Permissions" action in UserManagementTab.tsx.
-const SAFE_COLUMNS = 'id, email, name, role, is_active, force_password_reset, last_login, created_at, permission_overrides';
+const SAFE_COLUMNS = 'id, email, name, role, is_active, force_password_reset, last_login, created_at, permission_overrides, joining_date';
 
 export async function GET() {
   const { error } = await requireRole(ALLOWED_ROLES);
@@ -91,6 +91,8 @@ export async function POST(request: Request) {
     role,
     is_active: true,
     force_password_reset: true, // must change password on first login
+    // 2026-09-24: staff joining date — not for super_admin or students (students keep theirs on the Students page).
+    joining_date: !['super_admin', 'student'].includes(role) && typeof body.joiningDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.joiningDate) ? body.joiningDate : null,
   });
 
   if (insertError) {

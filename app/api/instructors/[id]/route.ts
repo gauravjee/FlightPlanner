@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import { requireModuleAccess } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { todayIST } from '@/lib/ist';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -24,6 +25,8 @@ const FIELD_MAP: Record<string, string> = {
   status: 'status',
   canSelfBook: 'can_self_book',
   employmentStatus: 'employment_status', // 2026-09-23, add-instructor-employment-status.sql
+  lastWorkingDate: 'last_working_date', // 2026-09-24, add-instructor-last-working-date.sql
+  joiningDate: 'joining_date', // 2026-09-24, add-staff-joining-date.sql
 };
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -64,6 +67,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (dbUpdates.license_issue_date === '') {
     dbUpdates.license_issue_date = null;
   }
+  if (dbUpdates.joining_date === '') dbUpdates.joining_date = null;
+  if (dbUpdates.joining_date && !/^\d{4}-\d{2}-\d{2}$/.test(String(dbUpdates.joining_date))) {
+    return NextResponse.json({ error: 'Joining date must be a date.' }, { status: 400 });
+  }
 
   // canSelfBook stays super_admin-only regardless of module access —
   // Full Access to the Instructors module (whether from a role default or
@@ -81,8 +88,21 @@ export async function PATCH(request: Request, context: RouteContext) {
   // can_self_book above; an unknown value is rejected.
   if (!['admin', 'super_admin'].includes(session.user.role ?? '')) {
     delete dbUpdates.employment_status;
+    delete dbUpdates.last_working_date;
   } else if (dbUpdates.employment_status !== undefined && !['ACTIVE', 'INACTIVE'].includes(String(dbUpdates.employment_status))) {
     return NextResponse.json({ error: 'Employment status must be ACTIVE or INACTIVE.' }, { status: 400 });
+  } else if (dbUpdates.employment_status === 'ACTIVE') {
+    dbUpdates.last_working_date = null; // back at work: no last day
+  } else if ((dbUpdates.employment_status === 'INACTIVE' || dbUpdates.last_working_date !== undefined)
+    && !/^\d{4}-\d{2}-\d{2}$/.test(String(dbUpdates.last_working_date ?? ''))) {
+    // 2026-09-24: reports use it to decide which periods still show them.
+    return NextResponse.json({ error: 'Pick the last working day for an Inactive instructor.' }, { status: 400 });
+  } else if (dbUpdates.last_working_date && String(dbUpdates.last_working_date) > todayIST()) {
+    // Operator 2026-09-24: no future last days — mark them Inactive on or after it.
+    return NextResponse.json({ error: "The last working day can't be in the future. Mark them Inactive on or after their last day." }, { status: 400 });
+  }
+  if (dbUpdates.joining_date && dbUpdates.last_working_date && String(dbUpdates.last_working_date) < String(dbUpdates.joining_date)) {
+    return NextResponse.json({ error: "The last working day can't be before the joining date." }, { status: 400 });
   }
 
   if (Object.keys(dbUpdates).length === 0) {

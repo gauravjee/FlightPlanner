@@ -82,17 +82,17 @@ export default function DutyRosterReportPage() {
     : dayCount > MAX_REPORT_DAYS ? `The range can't be more than ${MAX_REPORT_DAYS} days — you picked ${dayCount}.`
     : '';
 
-  // ----- Instructors: active ones, plus anyone since set Inactive who
-  // still has bookings in the period (so past periods keep their history).
-  const candidates = useMemo(() => {
-    const booked = new Set(scheduledFlights
-      .filter(f => f.status !== 'CANCELLED' && f.instructorId)
-      .filter(f => { const d = toIST(f.startTime).date; return d >= from && d <= to; })
-      .map(f => String(f.instructorId)));
-    return instructors
-      .filter(i => i.employmentStatus !== 'INACTIVE' || booked.has(String(i.id)))
-      .map(i => (i.employmentStatus === 'INACTIVE' ? { ...i, name: `${i.name} (inactive)` } : i));
-  }, [instructors, scheduledFlights, from, to]);
+  // ----- Instructors: active ones, plus Inactive ones whose last working
+  // day falls on or after the period's first day (operator rule 2026-09-24).
+  // Inactive with no last working day recorded -> not shown. Anyone whose
+  // joining date is after the period's last day -> not shown.
+  const candidates = useMemo(() => instructors
+    .filter(i => !i.joiningDate || i.joiningDate <= to)
+    .filter(i => i.employmentStatus !== 'INACTIVE' || (!!i.lastWorkingDate && i.lastWorkingDate >= from))
+    .map(i => (i.employmentStatus === 'INACTIVE'
+      ? { ...i, name: `${i.name} (last day ${dayLabel(i.lastWorkingDate!)} ${i.lastWorkingDate!.slice(0, 4)})` }
+      : { ...i, lastWorkingDate: null })),
+  [instructors, from, to]);
   const selected = useMemo(() => (picked === null ? candidates : candidates.filter(i => picked.includes(String(i.id)))), [picked, candidates]);
   const toggle = (id: string) => {
     const current = picked ?? candidates.map(i => String(i.id));
@@ -328,7 +328,7 @@ export default function DutyRosterReportPage() {
                   <p>Flying-limit use = booked hours ÷ (daily flying limit × days on duty); Total = all booked ÷ all possible. Daily flying limit = lower of the instructor&apos;s own Max Daily Hours and the school ceiling.</p>
                   <p>Days on duty = rostered working days on which the school is open, not counting full-day leave (a part-day leave day still counts). Rostered days off = days the roster has them off (weekly pattern, a day-off change, or &quot;off duty today&quot;). Approved leave = leave applied for and approved on the Availability page; part-day = ½. Roster changes = days whose hours were changed on the Duty Roster calendar.</p>
                 </>)}
-                <p>Key: hours = on duty (IST) · Off = rostered off · <span style={{ color: 'var(--warning-text)' }}>Leave</span> = approved leave · Closed = school closed · <span style={{ color: 'var(--accent)' }}>*</span> = one-off change · &quot;booked&quot; = booked + flown hours that day, incl. pending requests (cancelled excluded).</p>
+                {view !== 'summary' && <p>Key: hours = on duty (IST) · Off = rostered off · <span style={{ color: 'var(--warning-text)' }}>Leave</span> = approved leave · Closed = school closed · Not joined / Left = before their joining date / after their last working day · <span style={{ color: 'var(--accent)' }}>*</span> = one-off change · &quot;booked&quot; = booked + flown hours that day, incl. pending requests (cancelled excluded).</p>}
                 {report.days.some(d => d.closed) && (
                   <p>Closed: {report.days.filter(d => d.closed).map(d => `${dayLabel(d.date)} — ${d.closed}`).join('; ')}</p>
                 )}

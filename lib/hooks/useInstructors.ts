@@ -49,6 +49,8 @@ export async function fetchInstructors(): Promise<Instructor[]> {
     // 2026-09-23: missing/unknown reads as ACTIVE — never hides anyone by accident.
     employmentStatus: row.employment_status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
     offDutyDate: (row.off_duty_date as string | null) ?? null,
+    lastWorkingDate: (row.last_working_date as string | null) ?? null,
+    joiningDate: (row.joining_date as string | null) ?? null,
     // Defaults to false if the migration hasn't been run yet in Supabase
     // (add-instructor-self-booking-permission.sql) — column missing/null
     // both read as "can't self-book," the safe side.

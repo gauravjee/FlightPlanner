@@ -79,6 +79,15 @@ export async function PATCH(request: Request, context: RouteContext) {
     dbUpdates.role = body.role;
   }
 
+  // 2026-09-24: staff joining date ('' clears it). The Edit User modal only
+  // offers it for staff roles (not super_admin or student).
+  if (body.joiningDate !== undefined) {
+    if (body.joiningDate !== '' && !(typeof body.joiningDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.joiningDate))) {
+      return NextResponse.json({ error: 'Joining date must be a date.' }, { status: 400 });
+    }
+    dbUpdates.joining_date = body.joiningDate || null;
+  }
+
   // action: 'setPermissionOverrides' expects
   // { permissionOverrides: Record<ModuleKey, 'view' | 'full'> } — replaces
   // the whole column (a module key simply absent from the object means

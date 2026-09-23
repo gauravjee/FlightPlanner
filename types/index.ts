@@ -497,6 +497,11 @@ export interface Instructor {
   // default, not bookable, not assignable to students. Separate from
   // `status` (operational) and from login access (users.is_active).
   employmentStatus?: 'ACTIVE' | 'INACTIVE';
+  // 2026-09-24: an Inactive instructor's last working day (YYYY-MM-DD);
+  // null while Active. add-instructor-last-working-date.sql.
+  lastWorkingDate?: string | null;
+  // 2026-09-24: first working day (YYYY-MM-DD), optional. add-staff-joining-date.sql.
+  joiningDate?: string | null;
   // Whether this instructor can create their own new Schedule bookings —
   // false by default, granted per instructor by a super_admin (Instructors
   // tab). See add-instructor-self-booking-permission.sql and

@@ -92,4 +92,20 @@ assert.equal(t.bookedHours, 7);
 assert.equal(t.use, flyingLimitUse(7, 7 * 6 + 6 * 7)); // 7 / 84 = 8%
 assert.equal(t.use, 8);
 
+// Left (2026-09-24): last working day Wed 30 Sep -> Thu-Sun read "Left", count nothing.
+const left = buildRosterReport({
+  from: '2026-09-28', to: '2026-10-04', weekly, exceptions: [], leaves: [], flights: [], closedReason: () => null,
+  instructors: [{ id: '6', name: 'A', initials: 'A', lastWorkingDate: '2026-09-30' }],
+});
+assert.deepEqual(left.rows[0].cells.map(c => c.text), ['06:00–14:00', '06:00–14:00', '06:00–14:00', 'Left', 'Left', 'Left', 'Left']);
+assert.deepEqual([left.rows[0].dutyDays, left.rows[0].daysOff, left.rows[0].rosteredHours], [3, 0, 24]);
+
+// Not joined (2026-09-24): joined Wed 30 Sep -> Mon-Tue read "Not joined", count nothing.
+const joined = buildRosterReport({
+  from: '2026-09-28', to: '2026-10-04', weekly, exceptions: [], leaves: [], flights: [], closedReason: () => null,
+  instructors: [{ id: '6', name: 'A', initials: 'A', joiningDate: '2026-09-30' }],
+});
+assert.deepEqual(joined.rows[0].cells.map(c => c.text).slice(0, 3), ['Not joined', 'Not joined', '06:00–14:00']);
+assert.deepEqual([joined.rows[0].dutyDays, joined.rows[0].daysOff, joined.rows[0].rosteredHours], [4, 1, 32]);
+
 console.log('duty-roster-report: all checks passed');

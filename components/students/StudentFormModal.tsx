@@ -408,6 +408,13 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
             </div>
           </div>
 
+          {/* 2026-09-24: joining date — the existing students.joined_date, new students default to today. */}
+          <div>
+            <label htmlFor="student-joining-date" className="block text-sm text-secondary mb-1">Joining Date</label>
+            <input id="student-joining-date" type="date" value={form.joinedDate} onChange={e => handleChange('joinedDate', e.target.value)}
+              className={inputClass} />
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-secondary mb-1">

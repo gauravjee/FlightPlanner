@@ -55,7 +55,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
 
-  const { name, initials, licenseNumber, licenseExpiryDate, licenseIssueDate, ratings, maxDailyHours, email, phone, status } =
+  const { name, initials, licenseNumber, licenseExpiryDate, licenseIssueDate, ratings, maxDailyHours, email, phone, status, joiningDate } =
     body as Record<string, unknown>;
 
   if (!name || !initials) {
@@ -76,6 +76,8 @@ export async function POST(request: Request) {
       // license_number itself.
       license_expiry_date: licenseExpiryDate || null,
       license_issue_date: licenseIssueDate || null,
+      // 2026-09-24: optional first working day (add-staff-joining-date.sql).
+      joining_date: typeof joiningDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(joiningDate) ? joiningDate : null,
       ratings,
       max_daily_hours: maxDailyHours,
       email, phone, status,

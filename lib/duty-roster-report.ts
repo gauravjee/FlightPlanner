@@ -79,7 +79,9 @@ export function buildRosterReport(args: {
   from: string; // first day, 'YYYY-MM-DD'
   to: string;   // last day, inclusive
 
-  instructors: { id: string; name: string; initials: string; offDutyDate?: string | null; dailyLimit?: number }[];
+  // 2026-09-24: days before joiningDate read "Not joined", days after an
+  // Inactive instructor's lastWorkingDate read "Left"; both count toward nothing.
+  instructors: { id: string; name: string; initials: string; offDutyDate?: string | null; dailyLimit?: number; joiningDate?: string | null; lastWorkingDate?: string | null }[];
   weekly: WeeklyRow[];
   exceptions: (RosterException & { note?: string })[];
   leaves: (LeaveWindow & { personId: string })[]; // approved instructor leave only
@@ -100,6 +102,8 @@ export function buildRosterReport(args: {
       const booked = dayHours(args.flights, instr.id, date);
       bookedHours += booked;
       const bookedText = booked > 0 ? ` · ${formatHours(booked)} booked` : '';
+      if (instr.joiningDate && date < instr.joiningDate) return { kind: 'off', text: `Not joined${bookedText}`, changed: false, booked };
+      if (instr.lastWorkingDate && date > instr.lastWorkingDate) return { kind: 'off', text: `Left${bookedText}`, changed: false, booked };
       if (closed) { closedDays++; return { kind: 'closed', text: `Closed${bookedText}`, changed: false, booked }; }
 
       const leave = args.leaves.find(l => String(l.personId) === String(instr.id) && leaveCovers(l, date));

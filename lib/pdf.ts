@@ -881,7 +881,7 @@ export function generateDutyRoster(report: RosterReport & {
     line('Flying-limit use = booked hours ÷ (daily flying limit × days on duty); Total row = all booked ÷ all possible. Daily flying limit = lower of the instructor\'s own Max Daily Hours and the school ceiling.');
     line('Days on duty = rostered working days on which the school is open, not counting full-day leave (a part-day leave day still counts). Rostered days off = days the roster has them off (weekly pattern, a day-off change, or "off duty today"). Approved leave = leave applied for and approved on the Availability page; part-day = ½. Roster changes = days whose hours were changed on the Duty Roster calendar.');
   }
-  if (report.layout !== 'summary') line('Key: hours = on duty (IST) · Off = rostered off · Leave = approved leave · Closed = school closed · * = one-off change · "booked" = booked + flown hours that day, incl. pending requests (cancelled excluded).');
+  if (report.layout !== 'summary') line('Key: hours = on duty (IST) · Off = rostered off · Leave = approved leave · Closed = school closed · Not joined / Left = before their joining date / after their last working day · * = one-off change · "booked" = booked + flown hours that day, incl. pending requests (cancelled excluded).');
   const closed = report.days.filter(d => d.closed).map(d => `${dayLabel(d.date)} — ${d.closed}`);
   if (closed.length) line(`Closed: ${closed.join('; ')}`);
   if (report.notes.length) {

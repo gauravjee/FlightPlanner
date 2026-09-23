@@ -21,6 +21,7 @@ interface UserLike {
   name: string;
   email: string;
   role: string;
+  joining_date?: string | null;
 }
 
 interface Props {
@@ -31,7 +32,9 @@ interface Props {
 
 export default function UserEditModal({ user, onClose, onSaved }: Props) {
   useEscapeToClose(onClose);
-  const [form, setForm] = useState({ name: user.name, email: user.email, role: user.role });
+  const [form, setForm] = useState({ name: user.name, email: user.email, role: user.role, joiningDate: user.joining_date || '' });
+  // 2026-09-24: joining date is for staff — not super_admin, not students.
+  const hasJoiningDate = !['super_admin', 'student'].includes(form.role);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -51,7 +54,7 @@ export default function UserEditModal({ user, onClose, onSaved }: Props) {
       const res = await fetch(`/api/admin/users/${user.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, email, role: form.role }),
+        body: JSON.stringify({ name, email, role: form.role, ...(hasJoiningDate ? { joiningDate: form.joiningDate } : {}) }),
       });
       if (!res.ok) {
         const { error } = await res.json().catch(() => ({ error: 'Unknown error' }));
@@ -113,6 +116,14 @@ export default function UserEditModal({ user, onClose, onSaved }: Props) {
               per-user permission overrides already granted to them separately.
             </p>
           </div>
+
+          {hasJoiningDate && (
+            <div>
+              <label htmlFor="user-joining-date" className="block text-xs text-tertiary mb-1">Joining Date</label>
+              <input id="user-joining-date" type="date" value={form.joiningDate}
+                onChange={e => setForm(p => ({ ...p, joiningDate: e.target.value }))} className={inputClass} />
+            </div>
+          )}
 
           <div className="flex space-x-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
             <button type="button" onClick={onClose}

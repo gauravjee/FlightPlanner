@@ -9,6 +9,7 @@ import { Pencil, GraduationCap, Save, X, CalendarCheck } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { effectiveDailyLimit } from '@/lib/instructor-status';
+import { todayIST } from '@/lib/ist';
 
 interface Props {
   instructor: Instructor | null;
@@ -29,6 +30,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
   // 2026-09-23: Active/Inactive is admin/super_admin only (server enforces
   // the same — see app/api/instructors/[id]/route.ts).
   const canSetEmployment = isSuperAdmin || session?.user?.role === 'admin';
+  const [today] = useState(todayIST); // max for the last working day (no future dates)
 
   // The parent only ever renders this modal conditionally ({showForm &&
   // <InstructorFormModal .../>}), so `instructor` is fixed for this
@@ -51,6 +53,8 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
           status: instructor.status,
           canSelfBook: !!instructor.canSelfBook,
           employmentStatus: instructor.employmentStatus ?? 'ACTIVE',
+          lastWorkingDate: instructor.lastWorkingDate || '',
+          joiningDate: instructor.joiningDate || '',
         }
       : {
           name: '',
@@ -66,6 +70,8 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
           status: 'AVAILABLE' as Instructor['status'],
           canSelfBook: false,
           employmentStatus: 'ACTIVE' as NonNullable<Instructor['employmentStatus']>,
+          lastWorkingDate: '',
+          joiningDate: '',
         }
   );
 
@@ -202,6 +208,12 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
             </p>
           </div>
 
+          <div>
+            <label htmlFor="joining-date" className="block text-xs text-secondary mb-1">Joining Date</label>
+            <input id="joining-date" type="date" value={form.joiningDate}
+              onChange={e => setForm(p => ({ ...p, joiningDate: e.target.value }))} className={inputClass} />
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-secondary mb-1">Email</label>
@@ -222,18 +234,25 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
               <label className="block text-xs text-secondary mb-1">Employment</label>
               <select
                 value={form.employmentStatus}
-                onChange={e => setForm(p => ({ ...p, employmentStatus: e.target.value as NonNullable<Instructor['employmentStatus']> }))}
+                onChange={e => {
+                  const v = e.target.value as NonNullable<Instructor['employmentStatus']>;
+                  // 2026-09-24: going Inactive pre-fills today as the last working day.
+                  setForm(p => ({ ...p, employmentStatus: v, lastWorkingDate: v === 'INACTIVE' ? (p.lastWorkingDate || todayIST()) : p.lastWorkingDate }));
+                }}
                 className={inputClass}
               >
                 <option value="ACTIVE">Active — current instructor</option>
                 <option value="INACTIVE">Inactive — left / retired</option>
               </select>
-              {form.employmentStatus === 'INACTIVE' && (
+              {form.employmentStatus === 'INACTIVE' && (<>
+                <label htmlFor="last-working-date" className="block text-xs text-secondary mt-2 mb-1">Last working day</label>
+                <input id="last-working-date" type="date" required max={today} min={form.joiningDate || undefined} value={form.lastWorkingDate}
+                  onChange={e => setForm(p => ({ ...p, lastWorkingDate: e.target.value }))} className={inputClass} />
                 <p className="text-xs text-tertiary mt-1">
                   Hidden from the roster by default, can&apos;t be booked or assigned to students. Their login isn&apos;t
                   affected — disable that separately in User Management if needed.
                 </p>
-              )}
+              </>)}
             </div>
           )}
 

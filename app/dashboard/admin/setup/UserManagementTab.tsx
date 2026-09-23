@@ -36,6 +36,7 @@ interface User {
   last_login: string | null;
   created_at: string;
   permission_overrides?: PermissionOverrides | null;
+  joining_date?: string | null;
 }
 
 // ============================================================
@@ -81,6 +82,7 @@ export default function UserManagementTab() {
     name: '',            // User's full name
     role: 'instructor',  // Default role
     sendEmail: true,     // Whether to send welcome email
+    joiningDate: '',     // 2026-09-24: staff joining date (optional; not for super admin)
   });
 
   /**
@@ -164,7 +166,7 @@ export default function UserManagementTab() {
       }
 
       // Reset form and reload user list
-      setForm({ email: '', name: '', role: 'instructor', sendEmail: true });
+      setForm({ email: '', name: '', role: 'instructor', sendEmail: true, joiningDate: '' });
       loadUsers();
     } catch (err) {
       alert('❌ Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
@@ -338,6 +340,14 @@ export default function UserManagementTab() {
             </label>
           </div>
         </div>
+
+        {!['super_admin', 'student'].includes(form.role) && (
+          <div className="mb-3 md:w-1/2">
+            <label htmlFor="new-user-joining-date" className="block text-xs text-tertiary mb-1">Joining Date</label>
+            <input id="new-user-joining-date" type="date" value={form.joiningDate}
+              onChange={e => setForm(p => ({ ...p, joiningDate: e.target.value }))} className={inputClass} />
+          </div>
+        )}
 
         {/* Submit Button */}
         <button
