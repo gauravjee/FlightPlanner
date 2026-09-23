@@ -7,6 +7,8 @@ import { useSession } from 'next-auth/react';
 import { Instructor } from '@/types';
 import { Pencil, GraduationCap, Save, X, CalendarCheck } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
+import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
+import { effectiveDailyLimit } from '@/lib/instructor-status';
 
 interface Props {
   instructor: Instructor | null;
@@ -18,6 +20,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
   useEscapeToClose(onClose);
   const isEditing = !!instructor;
   const { data: session } = useSession();
+  const { ftoSettings } = useFtoSettings();
   // Granting self-booking is a super_admin-only action (see
   // requireScheduleCreateAccess() in lib/api-auth.ts) — admin can otherwise
   // manage instructors, but this one field is more sensitive since it
@@ -182,22 +185,21 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs text-secondary mb-1">Status</label>
-              <select value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value as Instructor['status'] }))}
-                className={inputClass}>
-                <option value="AVAILABLE">Available</option>
-                <option value="FLYING">Flying</option>
-                <option value="OFF_DUTY">Off Duty</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs text-secondary mb-1">Max Daily Hours</label>
-              <input type="number" value={form.maxDailyHours || ''} onChange={e => setForm(p => ({ ...p, maxDailyHours: parseInt(e.target.value) || 0 }))}
-                min={1} max={12}
-                className={inputClass} />
-            </div>
+          {/* 2026-09-23: the hand-set Status dropdown is gone — status is now
+              computed (On leave / Flying / Limit reached / Off duty /
+              Available; lib/instructor-status.ts). It also used to display
+              "Available" for a stored value it didn't list and keep that
+              value on save. Max Daily Hours shows the limit that applies. */}
+          <div>
+            <label className="block text-xs text-secondary mb-1">Max Daily Hours</label>
+            <input type="number" value={form.maxDailyHours || ''} onChange={e => setForm(p => ({ ...p, maxDailyHours: parseInt(e.target.value) || 0 }))}
+              min={1} max={12}
+              className={inputClass} />
+            <p className="text-xs text-tertiary mt-1">
+              Limit that applies: {effectiveDailyLimit(form.maxDailyHours, ftoSettings['instructor_daily_limit_hours'])}h — the lower of
+              this and the school ceiling ({effectiveDailyLimit(undefined, ftoSettings['instructor_daily_limit_hours'])}h, Admin Setup → FTO Settings).
+              Bookings over it are refused.
+            </p>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

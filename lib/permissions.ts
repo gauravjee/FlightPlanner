@@ -196,6 +196,11 @@ export const AVAILABILITY_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'o
 // just admin/super_admin.
 export const AVAILABILITY_APPROVER_ROLES = ['admin', 'super_admin', 'operations'];
 
+// 2026-09-23: who can mark an instructor "Off duty today" (one-day override
+// of the computed status — app/api/instructors/[id]/off-duty/route.ts).
+// Flight-line work, so operations included, unlike editing the roster itself.
+export const INSTRUCTOR_OFF_DUTY_ROLES = ['admin', 'super_admin', 'operations'];
+
 // ============================================================
 // STUDENT PROGRESS
 // ============================================================

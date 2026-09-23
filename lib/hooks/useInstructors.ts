@@ -48,6 +48,7 @@ export async function fetchInstructors(): Promise<Instructor[]> {
     phone: (row.phone as string) || '', status: row.status as Instructor['status'],
     // 2026-09-23: missing/unknown reads as ACTIVE — never hides anyone by accident.
     employmentStatus: row.employment_status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
+    offDutyDate: (row.off_duty_date as string | null) ?? null,
     // Defaults to false if the migration hasn't been run yet in Supabase
     // (add-instructor-self-booking-permission.sql) — column missing/null
     // both read as "can't self-book," the safe side.
@@ -124,4 +125,22 @@ export async function removeInstructor(id: string): Promise<void> {
   } else {
     console.error('Error removing instructor:', await res.text());
   }
+}
+
+// 2026-09-23: "Off duty today" one-day override (app/api/instructors/[id]/
+// off-duty/route.ts). Returns an error message, or null on success.
+export async function setOffDutyToday(id: string, offDuty: boolean): Promise<string | null> {
+  const res = await fetch(`/api/instructors/${id}/off-duty`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ offDuty }),
+  });
+  const result = await res.json().catch(() => ({}));
+  if (!res.ok) return result.error || 'Failed to update off-duty status.';
+  mutate<Instructor[]>(
+    instructorsKey,
+    (current = []) => current.map(i => (i.id === id ? { ...i, offDutyDate: result.offDutyDate ?? null } : i)),
+    { revalidate: false }
+  );
+  return null;
 }

@@ -18,6 +18,8 @@ import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useScheduledFlights } from '@/lib/hooks/useScheduledFlights';
+import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
+import { dayHours, effectiveDailyLimit } from '@/lib/instructor-status';
 import { Info } from 'lucide-react';
 
 const VIEW_ROLES = ['admin', 'super_admin', 'operations', 'instructor'];
@@ -29,6 +31,7 @@ function localDateStr(iso: string): string {
 export default function DutyHoursPage() {
   const { instructors } = useInstructors();
   const { scheduledFlights } = useScheduledFlights();
+  const { ftoSettings } = useFtoSettings();
 
   useSetHeader({
     title: 'Instructor Duty Hours',
@@ -43,15 +46,17 @@ export default function DutyHoursPage() {
     // 2026-09-23: current (Active) instructors only.
     return instructors.filter(i => i.employmentStatus !== 'INACTIVE').map(instr => {
       const flights = active.filter(f => String(f.instructorId) === String(instr.id));
-      const todayHours = flights
-        .filter(f => localDateStr(f.startTime) === today)
-        .reduce((sum, f) => sum + (f.duration || 0), 0);
+      // 2026-09-23: same rule the booking hard block uses (lib/instructor-
+      // status.ts) — booked + flown, against the limit that actually applies
+      // (lower of own Max Daily Hours and the school ceiling).
+      const todayHours = dayHours(scheduledFlights, instr.id, today);
+      const limit = effectiveDailyLimit(instr.maxDailyHours, ftoSettings['instructor_daily_limit_hours']);
       const weekHours = flights
         .filter(f => { const d = localDateStr(f.startTime); return d >= sevenDaysAgo && d <= today; })
         .reduce((sum, f) => sum + (f.duration || 0), 0);
-      return { instructor: instr, todayHours, weekHours, overToday: instr.maxDailyHours > 0 && todayHours > instr.maxDailyHours };
+      return { instructor: instr, todayHours, weekHours, limit, atLimit: todayHours >= limit - 1e-9 };
     }).sort((a, b) => b.todayHours - a.todayHours);
-  }, [instructors, scheduledFlights]);
+  }, [instructors, scheduledFlights, ftoSettings]);
 
   return (
     <ProtectedRoute>
@@ -63,8 +68,9 @@ export default function DutyHoursPage() {
               <p>
                 This is a lightweight visibility tool, not a DGCA-mandated Flight Duty Time Limitations report — DGCA&apos;s
                 FDTL CAR is written for commercial/scheduled air-transport crew, and no confirmed rule extends it to FTO
-                instructors. Hours below are computed from Scheduled/Completed bookings against each instructor&apos;s own
-                configured Max Daily Hours (Instructors tab), for the flight line to keep an eye on fatigue.
+                instructors. Today&apos;s hours count every booked and flown flight (cancelled ones don&apos;t), against the limit
+                that applies — the lower of the instructor&apos;s own Max Daily Hours and the school-wide ceiling (Admin Setup →
+                FTO Settings). That limit is the school&apos;s own rule and is enforced: bookings that would go over it are refused.
               </p>
             </div>
 
@@ -78,20 +84,20 @@ export default function DutyHoursPage() {
                       <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                         <th className="pb-3">Instructor</th>
                         <th className="pb-3">Today</th>
-                        <th className="pb-3">Max Daily Hours</th>
+                        <th className="pb-3">Daily Limit</th>
                         <th className="pb-3">Last 7 Days</th>
                       </tr>
                     </thead>
                     <tbody className="text-secondary">
-                      {rows.map(({ instructor, todayHours, weekHours, overToday }) => (
+                      {rows.map(({ instructor, todayHours, weekHours, limit, atLimit }) => (
                         <tr key={instructor.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
                           <td className="py-3">{instructor.name}</td>
                           <td className="py-3">
-                            <span className={overToday ? 'badge badge-danger' : todayHours > 0 ? 'badge badge-accent' : 'badge badge-neutral'}>
+                            <span className={atLimit ? 'badge badge-danger' : todayHours > 0 ? 'badge badge-accent' : 'badge badge-neutral'}>
                               {todayHours.toFixed(1)}h
                             </span>
                           </td>
-                          <td className="py-3 text-tertiary">{instructor.maxDailyHours ? `${instructor.maxDailyHours}h` : '—'}</td>
+                          <td className="py-3 text-tertiary">{limit}h</td>
                           <td className="py-3">{weekHours.toFixed(1)}h</td>
                         </tr>
                       ))}

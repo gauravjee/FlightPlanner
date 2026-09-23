@@ -43,6 +43,7 @@ import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { useExercises } from '@/lib/hooks/useExercises';
 import { useTrainingRequirements, fetchTrainingRequirements } from '@/lib/hooks/useTrainingRequirements';
 import { checkAvailability } from '@/lib/hooks/useAvailability';
+import { effectiveDailyLimit, exceedsDailyLimit } from '@/lib/instructor-status';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
@@ -390,6 +391,27 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     return () => { cancelled = true; };
   }, [form.studentId, form.instructorId, form.date, form.startTime, form.endTime, isMaintenance, isSolo, selfBookingStudentId]);
 
+  // 2026-09-23: daily flying limit — a HARD block for everyone (operator
+  // decision), same rule the server enforces (lib/daily-limit.ts). Shown live
+  // under the Instructor field and re-checked in handleSubmit. An edit that
+  // doesn't change instructor or times never trips it, so a notes-only edit
+  // of a day that's already at the limit still saves (the server agrees).
+  const dailyLimitMessage = useMemo(() => {
+    if (isSolo || !form.instructorId || !form.date || !form.startTime || !form.endTime) return '';
+    const startIso = new Date(`${form.date}T${form.startTime}:00+05:30`).toISOString();
+    const endIso = new Date(`${form.date}T${form.endTime}:00+05:30`).toISOString();
+    if (existingFlight
+      && String(existingFlight.instructorId) === String(form.instructorId)
+      && new Date(existingFlight.startTime).getTime() === new Date(startIso).getTime()
+      && new Date(existingFlight.endTime).getTime() === new Date(endIso).getTime()) return '';
+    const instr = instructors.find(i => String(i.id) === String(form.instructorId));
+    const limit = effectiveDailyLimit(instr?.maxDailyHours, ftoSettings['instructor_daily_limit_hours']);
+    const r = exceedsDailyLimit(scheduledFlights, form.instructorId, startIso, endIso, limit, existingFlight?.id);
+    return r.exceeded
+      ? `⛔ This takes ${instr?.name ?? 'the instructor'} to ${r.after.toFixed(1)}h that day — over the ${limit}h daily flying limit (${r.used.toFixed(1)}h already booked or flown).`
+      : '';
+  }, [isSolo, form.instructorId, form.date, form.startTime, form.endTime, existingFlight, instructors, ftoSettings, scheduledFlights]);
+
   // SWR migration, Stage 8 (2026-09-02): keyed per-studentId (null while
   // Maintenance or no student picked, via SWR's null-key idiom), so
   // switching students just gets a different cache entry — no more manual
@@ -663,6 +685,9 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
     // Person conflict check
     const personConflict = checkPersonConflict(); if (personConflict) { setError(personConflict); return; }
+
+    // Daily flying limit — hard block, no override (server re-checks).
+    if (dailyLimitMessage) { setError(dailyLimitMessage.replace('⛔', '❌')); return; }
 
     // 2026-09-23 (leave/vacation enforcement): a self-booking student has no
     // way to pick a different student or instructor, so unlike staff (who
@@ -1064,6 +1089,9 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
             {/* Instructor conflict warning */}
             {form.instructorId && !isSolo && checkPersonConflict().includes('instructor') && (
               <p className="text-xs text-red-400 mt-1">⚠️ This instructor is already booked at this time</p>
+            )}
+            {dailyLimitMessage && (
+              <p role="alert" className="text-xs text-red-400 mt-1">{dailyLimitMessage}</p>
             )}
           </div>
 

@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabase-client';
 import { DAY_NAMES, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { mutate } from 'swr';
 import { ftoSettingsKey } from '@/lib/hooks/useFtoSettings';
+import { DEFAULT_SCHOOL_DAILY_LIMIT_HOURS } from '@/lib/instructor-status';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import {
   Settings, School, Image as ImageIcon, Upload, LoaderCircle, Plane, Trash2,
@@ -727,6 +728,27 @@ export default function SettingsTab() {
                     <option value="120">2 hours</option>
                 </select>
                 <p className="text-xs text-tertiary mt-1">Required gap between consecutive bookings on same aircraft. An additional 15 minutes is always added automatically when that aircraft&apos;s fuel is at or below 50L, for a mandatory refuel.</p>
+                </div>
+
+                {/* Instructor daily flying ceiling (2026-09-23) — see
+                    lib/instructor-status.ts. Blank = the built-in default (7). */}
+                <div>
+                <label className="block text-xs text-tertiary mb-1">Max Flying Hours per Instructor per Day</label>
+                <input
+                    type="number"
+                    min={1}
+                    max={12}
+                    step={0.5}
+                    value={getValue('instructor_daily_limit_hours')}
+                    placeholder={String(DEFAULT_SCHOOL_DAILY_LIMIT_HOURS)}
+                    onChange={e => setValue('instructor_daily_limit_hours', e.target.value)}
+                    className={inputClass}
+                />
+                <p className="text-xs text-tertiary mt-1">
+                    School-wide ceiling. Each instructor is held to the lower of this and their own Max Daily Hours
+                    (Instructors tab). Booked + flown hours count; bookings that would go over are refused for everyone.
+                    Leave blank to use {DEFAULT_SCHOOL_DAILY_LIMIT_HOURS} hours.
+                </p>
                 </div>
             </div>
 

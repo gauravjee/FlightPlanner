@@ -2,19 +2,36 @@
 // Card component displaying instructor details with edit/delete actions
 'use client';
 
+import { useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Instructor } from '@/types';
-import { canWriteModule } from '@/lib/permissions';
+import { canWriteModule, INSTRUCTOR_OFF_DUTY_ROLES } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
-import { Pencil, Trash2, Eye, CalendarCheck, TriangleAlert, CircleAlert, CircleCheck } from 'lucide-react';
+import { STATUS_LABELS, type ComputedStatus } from '@/lib/instructor-status';
+import { setOffDutyToday } from '@/lib/hooks/useInstructors';
+import { Pencil, Trash2, Eye, CalendarCheck, TriangleAlert, CircleAlert, CircleCheck, Moon, Sun } from 'lucide-react';
 
 interface Props {
   instructor: Instructor;
   onEdit: (instructor: Instructor) => void;
   onDelete: (id: string) => void;
+  // 2026-09-23: computed by the page (lib/instructor-status.ts) — the
+  // stored `status` label is no longer shown.
+  computedStatus: ComputedStatus;
+  todayHours: number;
+  effectiveLimit: number;
+  offDutyToday: boolean;
 }
 
-export default function InstructorCard({ instructor, onEdit, onDelete }: Props) {
+const STATUS_STYLE: Record<ComputedStatus, { color: string; badge: string }> = {
+  AVAILABLE: { color: 'var(--success)', badge: 'badge-success' },
+  FLYING: { color: 'var(--accent)', badge: 'badge-accent' },
+  ON_LEAVE: { color: 'var(--warning-text)', badge: 'badge-warning' },
+  LIMIT_REACHED: { color: 'var(--danger)', badge: 'badge-danger' },
+  OFF_DUTY: { color: 'var(--text-secondary)', badge: 'badge-neutral' },
+};
+
+export default function InstructorCard({ instructor, onEdit, onDelete, computedStatus, todayHours, effectiveLimit, offDutyToday }: Props) {
   // Per the 2026-08-17 role/tab matrix, only admin/super_admin manage the
   // instructor roster by default (operations can view it — see
   // INSTRUCTORS_VIEW_ROLES — but not add/edit/remove), unless a
@@ -24,6 +41,16 @@ export default function InstructorCard({ instructor, onEdit, onDelete }: Props) 
   const { data: session } = useSession();
   const overrides = useMyPermissionOverrides();
   const canWrite = canWriteModule(session?.user?.role, overrides, 'instructors');
+  const canSetOffDuty = INSTRUCTOR_OFF_DUTY_ROLES.includes(session?.user?.role ?? '');
+  const [offDutyBusy, setOffDutyBusy] = useState(false);
+  const [offDutyError, setOffDutyError] = useState('');
+  const toggleOffDuty = async () => {
+    setOffDutyBusy(true);
+    setOffDutyError('');
+    const err = await setOffDutyToday(instructor.id, !offDutyToday);
+    if (err) setOffDutyError(err);
+    setOffDutyBusy(false);
+  };
 
   // Parse ratings - stored as comma-separated string in database
   const ratingsList = (instructor.ratings as string).split(',').map(r => r.trim());
@@ -62,10 +89,9 @@ export default function InstructorCard({ instructor, onEdit, onDelete }: Props) 
           ? { backgroundColor: 'var(--success-soft)', border: '1px solid color-mix(in srgb, var(--success) 50%, transparent)' }
           : { backgroundColor: 'var(--surface-muted)' };
 
-  const statusColor = instructor.status === 'AVAILABLE' ? 'var(--success)' :
-    instructor.status === 'FLYING' ? 'var(--accent)' : 'var(--text-secondary)';
-  const statusBadgeClass = instructor.status === 'AVAILABLE' ? 'badge-success' :
-    instructor.status === 'FLYING' ? 'badge-accent' : 'badge-neutral';
+  const statusColor = STATUS_STYLE[computedStatus].color;
+  const statusBadgeClass = STATUS_STYLE[computedStatus].badge;
+  const ownLimit = Number(instructor.maxDailyHours) || 0;
 
   return (
     <div className="surface-card p-5 transition-all">
@@ -86,16 +112,24 @@ export default function InstructorCard({ instructor, onEdit, onDelete }: Props) 
           <span className="badge badge-neutral">INACTIVE</span>
         ) : (
           <span className={`badge ${statusBadgeClass}`}>
-            {instructor.status.replace('_', ' ')}
+            {STATUS_LABELS[computedStatus]}
           </span>
         )}
       </div>
 
       {/* Details grid */}
       <div className="grid grid-cols-2 gap-3 mb-4">
+        {/* 2026-09-23: today's booked + flown hours against the limit that
+            actually applies — the lower of their own Max Daily Hours and the
+            school-wide ceiling (Admin Setup -> FTO Settings). */}
         <div className="surface-inner p-3">
-          <p className="text-xs text-tertiary">Max Daily Hours</p>
-          <p className="text-lg font-bold">{instructor.maxDailyHours}h</p>
+          <p className="text-xs text-tertiary">Today</p>
+          <p className="text-lg font-bold" style={todayHours >= effectiveLimit ? { color: 'var(--danger)' } : undefined}>
+            {todayHours.toFixed(1)} / {effectiveLimit}h
+          </p>
+          {ownLimit > effectiveLimit && (
+            <p className="text-xs text-tertiary">Own limit {ownLimit}h, capped by school ceiling</p>
+          )}
         </div>
         <div className="surface-inner p-3">
           <p className="text-xs text-tertiary">Contact</p>
@@ -145,6 +179,21 @@ export default function InstructorCard({ instructor, onEdit, onDelete }: Props) 
       {instructor.canSelfBook && (
         <div className="mb-3 flex items-center gap-1.5 text-xs" style={{ color: 'var(--success)' }}>
           <CalendarCheck className="w-3.5 h-3.5" /> Can self-book Schedule slots
+        </div>
+      )}
+
+      {/* 2026-09-23: one-day "Off duty today" override — expires at midnight.
+          Flight-line staff (INSTRUCTOR_OFF_DUTY_ROLES), incl. operations. */}
+      {canSetOffDuty && instructor.employmentStatus !== 'INACTIVE' && (
+        <div className="mb-3">
+          <button
+            onClick={toggleOffDuty}
+            disabled={offDutyBusy}
+            className="w-full px-3 py-2 rounded-lg text-sm transition cursor-pointer flex items-center justify-center gap-1.5 surface-inner disabled:opacity-50"
+          >
+            {offDutyToday ? <><Sun className="w-3.5 h-3.5" /> Back on duty today</> : <><Moon className="w-3.5 h-3.5" /> Mark off duty today</>}
+          </button>
+          {offDutyError && <p role="alert" className="text-xs mt-1" style={{ color: 'var(--danger)' }}>{offDutyError}</p>}
         </div>
       )}
 

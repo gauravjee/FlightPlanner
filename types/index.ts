@@ -482,7 +482,13 @@ export interface Instructor {
   maxDailyHours: number;
   email: string;
   phone: string;
+  // LEGACY hand-set label — no longer shown anywhere (2026-09-23): the status
+  // is now computed (lib/instructor-status.ts). Kept only because dropping a
+  // column is a separate, approval-gated clean-up.
   status: 'AVAILABLE' | 'FLYING' | 'OFF_DUTY';
+  // 2026-09-23: one-day "Off duty today" override (YYYY-MM-DD, IST) — only
+  // counts while it equals today. add-instructor-off-duty-date.sql.
+  offDutyDate?: string | null;
   // 2026-09-23: whether they still work here (add-instructor-employment-
   // status.sql). INACTIVE = left/retired: hidden from the roster by
   // default, not bookable, not assignable to students. Separate from

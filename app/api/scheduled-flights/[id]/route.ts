@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { dailyLimitRefusal } from '@/lib/daily-limit';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -91,17 +92,43 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
   }
 
-  // 2026-09-23: moving a booking onto an Inactive instructor is refused, same
-  // as creating one (app/api/scheduled-flights/route.ts). Only when the
-  // instructor actually CHANGES: BookingForm's edit always re-sends the
-  // current instructorId, and a notes-only edit of an old booking whose
-  // instructor has since left must still save.
-  if (dbUpdates.instructor_id) {
-    const { data: current } = await supabaseAdmin.from('scheduled_flights').select('instructor_id').eq('id', id).maybeSingle();
-    if (current && String(current.instructor_id) !== String(dbUpdates.instructor_id)) {
-      const { data: instr } = await supabaseAdmin.from('instructors').select('employment_status').eq('id', String(dbUpdates.instructor_id)).maybeSingle();
-      if (instr?.employment_status === 'INACTIVE') {
-        return NextResponse.json({ error: 'This instructor is no longer active and can\'t be booked.' }, { status: 403 });
+  // 2026-09-23: instructor guards on edits/reschedules (incl. drag-and-drop).
+  // Both only act on what actually CHANGES — BookingForm's edit always
+  // re-sends the current instructorId, and a notes-only edit of an existing
+  // booking must still save even if its instructor has since left or its day
+  // is already at the limit.
+  if (['instructor_id', 'start_time', 'end_time', 'status'].some(k => dbUpdates[k] !== undefined)) {
+    const { data: current } = await supabaseAdmin.from('scheduled_flights')
+      .select('instructor_id, start_time, end_time, status').eq('id', id).maybeSingle();
+    if (current) {
+      const next = {
+        instructor: String(dbUpdates.instructor_id ?? current.instructor_id ?? ''),
+        start: String(dbUpdates.start_time ?? current.start_time),
+        end: String(dbUpdates.end_time ?? current.end_time),
+        status: String(dbUpdates.status ?? current.status),
+      };
+      const instructorChanged = next.instructor !== String(current.instructor_id ?? '');
+
+      // Moving a booking onto an Inactive instructor is refused, same as
+      // creating one (app/api/scheduled-flights/route.ts).
+      if (instructorChanged && next.instructor) {
+        const { data: instr } = await supabaseAdmin.from('instructors').select('employment_status').eq('id', next.instructor).maybeSingle();
+        if (instr?.employment_status === 'INACTIVE') {
+          return NextResponse.json({ error: 'This instructor is no longer active and can\'t be booked.' }, { status: 403 });
+        }
+      }
+
+      // Daily flying limit — HARD block, every role (lib/daily-limit.ts).
+      // Checked when hours move onto someone's day: a different instructor,
+      // different times, or a cancelled flight coming back. The flight's own
+      // old slot is excluded so it isn't counted twice.
+      const addsHours = instructorChanged
+        || new Date(next.start).getTime() !== new Date(current.start_time).getTime()
+        || new Date(next.end).getTime() !== new Date(current.end_time).getTime()
+        || (current.status === 'CANCELLED' && next.status !== 'CANCELLED');
+      if (addsHours && next.instructor && next.status !== 'CANCELLED') {
+        const refusal = await dailyLimitRefusal(next.instructor, next.start, next.end, id);
+        if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
       }
     }
   }

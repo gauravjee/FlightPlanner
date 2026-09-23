@@ -25,6 +25,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 // (same as every other scheduling validation they can see and override). A
 // self-booking student has no such override, so this is the real gate.
 import { isOnApprovedLeave } from '@/lib/leave';
+import { dailyLimitRefusal } from '@/lib/daily-limit';
 
 // GET added 2026-09-18 (RLS remediation Step 3 — see
 // claude/rls-remediation-progress-2026-09-18.md): reads used to be direct
@@ -170,6 +171,12 @@ export async function POST(request: Request) {
           : 'This instructor is no longer active and can\'t be booked.',
       }, { status: 403 });
     }
+
+    // 2026-09-23: daily flying limit — HARD block for every role, no
+    // override (lib/daily-limit.ts). Solo flights have no instructor and
+    // skip this whole block.
+    const refusal = await dailyLimitRefusal(String(instructorId), String(startTime), String(endTime));
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
   }
 
   const { error: dbError } = await supabaseAdmin.from('scheduled_flights').insert({
