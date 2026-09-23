@@ -227,10 +227,16 @@ export function parsePartialWeeklyOffRule(raw: string | undefined): PartialWeekl
   return null;
 }
 
+// 2026-09-23: a 'YYYY-MM-DD' date's weekday and day-of-month are fixed facts
+// of the calendar — read them in UTC so the answer never depends on the
+// browser's timezone (it used to parse as browser-local midnight). Which
+// calendar date a flight falls on is decided by the caller, in IST.
+const calendarDate = (dateStr: string) => new Date(dateStr + 'T00:00:00Z');
+
 // Is `dateStr` ('YYYY-MM-DD') a day of the week the FTO is closed every week?
 export function isWeeklyOffDay(dateStr: string, weeklyOffDays: number[]): boolean {
   if (!dateStr || weeklyOffDays.length === 0) return false;
-  const day = new Date(dateStr + 'T00:00:00').getDay();
+  const day = calendarDate(dateStr).getUTCDay();
   return weeklyOffDays.includes(day);
 }
 
@@ -238,8 +244,8 @@ export function isWeeklyOffDay(dateStr: string, weeklyOffDays: number[]): boolea
 // month — e.g. the 1st-7th of the month is always the 1st occurrence of
 // whatever weekday it is, the 8th-14th the 2nd, etc.
 export function weekdayOccurrenceInMonth(dateStr: string): number {
-  const d = new Date(dateStr + 'T00:00:00');
-  return Math.ceil(d.getDate() / 7);
+  const d = calendarDate(dateStr);
+  return Math.ceil(d.getUTCDate() / 7);
 }
 
 // Is `dateStr` closed under the partial (occurrence-based) weekly-off
@@ -250,8 +256,8 @@ export function weekdayOccurrenceInMonth(dateStr: string): number {
 // needed, the comparison just never hits.
 export function isPartialWeeklyOffDay(dateStr: string, rule: PartialWeeklyOffRule | null): boolean {
   if (!dateStr || !rule) return false;
-  const d = new Date(dateStr + 'T00:00:00');
-  if (d.getDay() !== rule.day) return false;
+  const d = calendarDate(dateStr);
+  if (d.getUTCDay() !== rule.day) return false;
   return rule.occurrences.includes(weekdayOccurrenceInMonth(dateStr));
 }
 
@@ -271,7 +277,7 @@ export function getSchedulingBlockReason(
   const holiday = findHolidayForDate(dateStr, holidays);
   if (holiday) return { type: 'holiday', label: holiday.holidayName };
   if (isWeeklyOffDay(dateStr, weeklyOffDays)) {
-    const day = new Date(dateStr + 'T00:00:00').getDay();
+    const day = calendarDate(dateStr).getUTCDay();
     return { type: 'weekly_off', label: `Weekly off (${DAY_NAMES[day]})` };
   }
   if (isPartialWeeklyOffDay(dateStr, partialRule)) {

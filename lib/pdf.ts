@@ -796,14 +796,17 @@ export function generateWeeklyDutyRoster(report: RosterReport & {
 
   let y = (doc.lastAutoTable?.finalY ?? 38) + 8;
   const pageHeight = doc.internal.pageSize.getHeight();
+  // Wraps to the page width — the key and long notes don't fit on one line.
   const line = (text: string, bold = false) => {
-    if (y > pageHeight - 14) { doc.addPage('a4', 'landscape'); y = 20; }
     doc.setFont('helvetica', bold ? 'bold' : 'normal');
-    doc.text(text, 14, y);
-    y += 5;
+    for (const part of doc.splitTextToSize(text, pageWidth - 28) as string[]) {
+      if (y > pageHeight - 14) { doc.addPage('a4', 'landscape'); y = 20; }
+      doc.text(part, 14, y);
+      y += 4.5;
+    }
   };
   doc.setFontSize(8);
-  line('Key: hours = on duty (IST) · Off = rostered off · Leave = approved leave · Closed = school closed · * = one-off change · "booked" = booked + flown hours that day (cancelled excluded).');
+  line('Key: hours = on duty (IST) · Off = rostered off · Leave = approved leave · Closed = school closed · * = one-off change · "booked" = booked + flown hours that day, incl. pending requests (cancelled excluded).');
   const closed = report.days.filter(d => d.closed).map(d => `${dayLabel(d.date)} — ${d.closed}`);
   if (closed.length) line(`Closed: ${closed.join('; ')}`);
   if (report.notes.length) {

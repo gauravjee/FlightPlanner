@@ -36,16 +36,24 @@ assert.deepEqual(r.days.map(d => d.date), ['2026-09-28', '2026-09-29', '2026-09-
 const di = r.rows[0].cells;
 assert.deepEqual(di[0], { kind: 'duty', text: '06:00–14:00 · 3.5h booked', changed: false, booked: 3.5 });
 assert.deepEqual(di[1], { kind: 'duty', text: '08:00–10:00*', changed: true, booked: 0 });          // one-off change
-assert.equal(di[2].text, 'Leave 10:00–12:00');                                                    // partial-day leave wins
+assert.deepEqual(di[2], { kind: 'leave', text: '06:00–14:00 · Leave 10:00–12:00', changed: false, booked: 0 }); // part-day leave
 assert.equal(di[3].text, '06:00–14:00');
 assert.equal(di[4].text, 'Closed');                                                               // holiday beats off-duty-today
 assert.equal(di[6].text, 'Closed');
-// Rostered: Mon 8 + Tue 2 + Thu 8 + Sat 8 = 26 (leave and closed days don't count).
-assert.equal(r.rows[0].rosteredHours, 26);
+// Rostered: Mon 8 + Tue 2 + Wed 6 (8 minus the 2h leave) + Thu 8 + Sat 8 = 32; closed days don't count.
+assert.equal(r.rows[0].rosteredHours, 32);
 assert.equal(r.rows[0].bookedHours, 3.5);
 assert.deepEqual(r.notes, ['Tue 29 Sep, Dummy Instructor: one-off change — Checkride']);
 // No roster -> opening hours every open day.
 assert.equal(r.rows[1].cells[0].text, '06:00–20:00');
 assert.equal(r.rows[1].rosteredHours, 14 * 5);
+
+// Full-day leave: no hours at all.
+const full = buildRosterReport({
+  monday: '2026-09-28', instructors: [{ id: '6', name: 'D', initials: 'D' }], weekly, exceptions: [],
+  leaves: [{ personId: '6', start_date: '2026-09-28', end_date: '2026-09-28' }], flights: [], closedReason: () => null,
+});
+assert.equal(full.rows[0].cells[0].text, 'Leave');
+assert.equal(full.rows[0].rosteredHours, 8 * 5); // Tue-Sat only
 
 console.log('duty-roster-report: all checks passed');

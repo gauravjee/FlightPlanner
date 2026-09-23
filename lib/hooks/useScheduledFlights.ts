@@ -43,6 +43,7 @@ import {
 import { fetchAircraft } from './useAircraft';
 import { fetchHolidays } from './useHolidays';
 import { fetchFtoSettings } from './useFtoSettings';
+import { toIST } from '@/lib/leave-window';
 import type { Aircraft, CancellationReason, Instructor, ScheduledFlight, StudentRecord, TimeConflict } from '@/types';
 
 export const scheduledFlightsKey = ['scheduledFlights'] as const;
@@ -205,7 +206,7 @@ export async function checkConflicts(
 export async function bookFlight(
   booking: Omit<ScheduledFlight, 'id' | 'aircraftReg' | 'studentName' | 'instructorName' | 'duration'>
 ): Promise<{ success: boolean; message: string; pendingApproval?: boolean }> {
-  const bookingDateStr = new Date(booking.startTime).toLocaleDateString('en-CA');
+  const bookingDateStr = toIST(booking.startTime).date; // FTO (IST) date, not the browser's
   const [holidays, ftoSettings] = await Promise.all([fetchHolidays(), fetchFtoSettings()]);
   const blockReason = getSchedulingBlockReason(
     bookingDateStr, holidays,
@@ -333,7 +334,7 @@ export async function updateScheduledFlight(id: string, updates: Partial<Schedul
   // path too in case a new startTime ever reaches it another way (e.g.
   // ScheduleBoard's drag-and-drop reschedule).
   if (updates.startTime !== undefined) {
-    const newDateStr = new Date(updates.startTime).toLocaleDateString('en-CA');
+    const newDateStr = toIST(updates.startTime).date; // FTO (IST) date, not the browser's
     const [holidays, ftoSettings] = await Promise.all([fetchHolidays(), fetchFtoSettings()]);
     const blockReason = getSchedulingBlockReason(
       newDateStr, holidays,

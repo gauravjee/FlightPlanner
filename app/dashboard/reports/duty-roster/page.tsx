@@ -47,9 +47,18 @@ export default function DutyRosterReportPage() {
   const report = useMemo(() => {
     const weeklyOff = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
     const partial = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
+    // Active instructors, plus anyone since set Inactive who still has
+    // bookings that week — so past weeks keep their full history.
+    const sunday = shiftDate(monday, 6);
+    const flewThisWeek = new Set(scheduledFlights
+      .filter(f => f.status !== 'CANCELLED' && f.instructorId)
+      .filter(f => { const d = toIST(f.startTime).date; return d >= monday && d <= sunday; })
+      .map(f => String(f.instructorId)));
     return buildRosterReport({
       monday,
-      instructors: instructors.filter(i => i.employmentStatus !== 'INACTIVE'),
+      instructors: instructors
+        .filter(i => i.employmentStatus !== 'INACTIVE' || flewThisWeek.has(String(i.id)))
+        .map(i => (i.employmentStatus === 'INACTIVE' ? { ...i, name: `${i.name} (inactive)` } : i)),
       weekly, exceptions,
       leaves: availabilityRecords
         .filter(l => l.status === 'APPROVED' && l.personType === 'instructor')
@@ -66,7 +75,7 @@ export default function DutyRosterReportPage() {
       ...report,
       ftoName: getFtoSetting(ftoSettings, 'school_name'),
       generatedBy: session?.user?.name || session?.user?.email || undefined,
-      generatedAt: `${now.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' })} ${toIST(now.toISOString()).time} IST`,
+      generatedAt: (({ date, time }) => `${dayLabel(date)} ${date.slice(0, 4)} ${time} IST`)(toIST(now.toISOString())),
     });
   };
 
@@ -129,7 +138,7 @@ export default function DutyRosterReportPage() {
             </div>
 
             <div className="text-xs text-tertiary space-y-1">
-              <p>Key: hours = on duty (IST) · Off = rostered off · <span style={{ color: 'var(--warning-text)' }}>Leave</span> = approved leave · Closed = school closed · <span style={{ color: 'var(--accent)' }}>*</span> = one-off change · &quot;booked&quot; = booked + flown hours that day (cancelled excluded).</p>
+              <p>Key: hours = on duty (IST) · Off = rostered off · <span style={{ color: 'var(--warning-text)' }}>Leave</span> = approved leave · Closed = school closed · <span style={{ color: 'var(--accent)' }}>*</span> = one-off change · &quot;booked&quot; = booked + flown hours that day, incl. pending requests (cancelled excluded).</p>
               {report.days.some(d => d.closed) && (
                 <p>Closed: {report.days.filter(d => d.closed).map(d => `${dayLabel(d.date)} — ${d.closed}`).join('; ')}</p>
               )}

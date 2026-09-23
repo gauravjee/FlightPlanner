@@ -65,10 +65,7 @@ export function buildRosterReport(args: {
       if (closed) return { kind: 'closed', text: `Closed${bookedText}`, changed: false, booked };
 
       const leave = args.leaves.find(l => String(l.personId) === String(instr.id) && leaveCovers(l, date));
-      if (leave) {
-        const part = leave.start_time ? ` ${leave.start_time.slice(0, 5)}–${(leave.end_time || '24:00').slice(0, 5)}` : '';
-        return { kind: 'leave', text: `Leave${part}${bookedText}`, changed: false, booked };
-      }
+      if (leave && !leave.start_time) return { kind: 'leave', text: `Leave${bookedText}`, changed: false, booked };
 
       const r = dutyWindow({
         instructorId: instr.id, date, weekly: args.weekly, exceptions: args.exceptions,
@@ -81,6 +78,17 @@ export function buildRosterReport(args: {
         notes.push(`${dayLabel(date)}, ${instr.name}: ${what}${ex?.note ? ` — ${ex.note}` : ''}`);
       }
       const mark = changed ? '*' : '';
+      // 2026-09-23: part-day leave — the rest of the shift still counts;
+      // only the overlap with the leave window comes off the rostered total.
+      if (leave) {
+        const ls = leave.start_time!.slice(0, 5), le = (leave.end_time || '24:00').slice(0, 5);
+        if (r.window) {
+          const overlap = Math.max(0, Math.min(minutes(r.window.end), minutes(le)) - Math.max(minutes(r.window.start), minutes(ls)));
+          rosteredHours += (minutes(r.window.end) - minutes(r.window.start) - overlap) / 60;
+        }
+        const shift = r.window ? `${r.window.start}–${r.window.end}` : 'Off';
+        return { kind: 'leave', text: `${shift}${mark} · Leave ${ls}–${le}${bookedText}`, changed, booked };
+      }
       if (!r.window) return { kind: 'off', text: `Off${mark}${bookedText}`, changed, booked };
       rosteredHours += (minutes(r.window.end) - minutes(r.window.start)) / 60;
       return { kind: 'duty', text: `${r.window.start}–${r.window.end}${mark}${bookedText}`, changed, booked };
