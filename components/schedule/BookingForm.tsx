@@ -361,19 +361,30 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // already (lib/hooks/useAvailability.ts) but was never actually called
   // anywhere — instructor and student leave could be approved without it
   // affecting the booking form at all. This live-checks whenever the
-  // selected student/instructor/date changes and surfaces a non-blocking
-  // warning via the form's own (previously also unused) conflictWarning
-  // banner — staff can see it and still choose to book anyway, same as
-  // every other scheduling validation in this file being advisory rather
-  // than a hard stop for staff. The actual hard stop for a self-booking
-  // student is a fresh check in handleSubmit below, not this effect — a
-  // student has no way to override, so a possibly-stale effect result isn't
-  // good enough to gate submission on — but the student still sees the
-  // message here, live, instead of only after filling in the whole form.
+  // selected student/instructor/date changes and shows it in the form's
+  // conflictWarning banner. The actual hard stop is a fresh check in
+  // handleSubmit below, not this effect — a possibly-stale effect result
+  // isn't good enough to gate submission on — but everyone sees the message
+  // here, live, instead of only after filling in the whole form.
   // Time-aware: partial-day leave only clashes with flights overlapping it.
+  // 2026-09-23 (later): now a HARD block for everyone, staff included —
+  // operator decision; the server refuses too (scheduled-flights routes).
+  // An edit that keeps the same people and times is exempt, same as the
+  // server, so notes-only edits always save.
+  const isUnchangedEdit = () => {
+    if (!existingFlight) return false;
+    const s = new Date(`${form.date}T${form.startTime}:00+05:30`).getTime();
+    const e = new Date(`${form.date}T${form.endTime}:00+05:30`).getTime();
+    return String(existingFlight.instructorId || '') === String(form.instructorId || '')
+      && String(existingFlight.studentId || '') === String(form.studentId || '')
+      && new Date(existingFlight.startTime).getTime() === s
+      && new Date(existingFlight.endTime).getTime() === e;
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      if (isUnchangedEdit()) { setConflictWarning(''); return; }
       const [studentOnLeave, instructorOnLeave] = await Promise.all([
         form.studentId && !isMaintenance ? checkAvailability('student', form.studentId, form.date, form.startTime, form.endTime).then(ok => !ok) : Promise.resolve(false),
         form.instructorId && !isSolo ? checkAvailability('instructor', form.instructorId, form.date, form.startTime, form.endTime).then(ok => !ok) : Promise.resolve(false),
@@ -383,13 +394,15 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
         // A student can't override, so word it as the block it is.
         setConflictWarning(studentOnLeave ? '⛔ You have approved leave at this time — you can\'t book it.'
           : instructorOnLeave ? '⛔ Your instructor has approved leave at this time — you can\'t book it.' : '');
-      } else if (studentOnLeave && instructorOnLeave) setConflictWarning('⚠️ Both the selected student and instructor have approved leave at this time.');
-      else if (studentOnLeave) setConflictWarning('⚠️ This student has approved leave at this time.');
-      else if (instructorOnLeave) setConflictWarning('⚠️ This instructor has approved leave at this time.');
+      } else if (studentOnLeave && instructorOnLeave) setConflictWarning('⛔ Both the selected student and instructor have approved leave at this time — they can\'t be booked.');
+      else if (studentOnLeave) setConflictWarning('⛔ This student has approved leave at this time — they can\'t be booked.');
+      else if (instructorOnLeave) setConflictWarning('⛔ This instructor has approved leave at this time — they can\'t be booked.');
       else setConflictWarning('');
     })();
     return () => { cancelled = true; };
-  }, [form.studentId, form.instructorId, form.date, form.startTime, form.endTime, isMaintenance, isSolo, selfBookingStudentId]);
+    // isUnchangedEdit reads only form + existingFlight, both listed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.studentId, form.instructorId, form.date, form.startTime, form.endTime, isMaintenance, isSolo, selfBookingStudentId, existingFlight]);
 
   // 2026-09-23: daily flying limit — a HARD block for everyone (operator
   // decision), same rule the server enforces (lib/daily-limit.ts). Shown live
@@ -689,20 +702,21 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     // Daily flying limit — hard block, no override (server re-checks).
     if (dailyLimitMessage) { setError(dailyLimitMessage.replace('⛔', '❌')); return; }
 
-    // 2026-09-23 (leave/vacation enforcement): a self-booking student has no
-    // way to pick a different student or instructor, so unlike staff (who
-    // just get the advisory conflictWarning banner above and can decide for
-    // themselves) this is a hard stop — checked fresh here rather than
-    // trusting the effect-derived warning, which can be a beat stale if the
-    // date was just changed. Server-side re-check lives in
-    // app/api/scheduled-flights/route.ts's student self-booking branch.
-    if (selfBookingStudentId) {
-      if (!(await checkAvailability('student', form.studentId, form.date, form.startTime, form.endTime))) {
-        setError('❌ You have approved leave covering this time and cannot book a flight.');
+    // 2026-09-23 (leave/vacation enforcement): hard stop — checked fresh here
+    // rather than trusting the effect-derived banner, which can be a beat
+    // stale if the date was just changed. Server re-checks in both
+    // app/api/scheduled-flights routes.
+    // 2026-09-23 (later): same fresh check for staff too — hard block for
+    // everyone now; an unchanged edit is exempt (matches the server).
+    if (!isUnchangedEdit()) {
+      if (!isMaintenance && form.studentId && !(await checkAvailability('student', form.studentId, form.date, form.startTime, form.endTime))) {
+        setError(selfBookingStudentId ? '❌ You have approved leave covering this time and cannot book a flight.'
+          : '❌ This student has approved leave covering this time — they can\'t be booked.');
         return;
       }
       if (!isSolo && form.instructorId && !(await checkAvailability('instructor', form.instructorId, form.date, form.startTime, form.endTime))) {
-        setError('❌ Your instructor has approved leave covering this time — booking not allowed.');
+        setError(selfBookingStudentId ? '❌ Your instructor has approved leave covering this time — booking not allowed.'
+          : '❌ This instructor has approved leave covering this time — they can\'t be booked.');
         return;
       }
     }

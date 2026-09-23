@@ -129,6 +129,11 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   if (isApprover) {
+    // 2026-09-23: leave operations entered on someone's behalf is approved
+    // by admin/super_admin only (app/api/availability/route.ts).
+    if (row.needs_admin_approval && session.user.role === 'operations' && dbUpdates.status === 'APPROVED' && row.status !== 'APPROVED') {
+      return NextResponse.json({ error: 'Leave entered by operations needs an admin or super admin to approve it.' }, { status: 403 });
+    }
     if (row.pending_change) {
       return NextResponse.json({ error: 'Approve or reject the waiting request first.' }, { status: 409 });
     }

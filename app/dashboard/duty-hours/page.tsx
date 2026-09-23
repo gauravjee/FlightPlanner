@@ -20,12 +20,15 @@ import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useScheduledFlights } from '@/lib/hooks/useScheduledFlights';
 import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { dayHours, effectiveDailyLimit } from '@/lib/instructor-status';
+import { toIST } from '@/lib/leave-window';
 import { Info } from 'lucide-react';
 
 const VIEW_ROLES = ['admin', 'super_admin', 'operations', 'instructor'];
 
-function localDateStr(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-CA');
+// 2026-09-23: FTO (IST) calendar date, not the browser's — same as the
+// booking limit check, so "Today" matches whatever computer opens this page.
+function istDate(iso: string): string {
+  return toIST(iso).date;
 }
 
 export default function DutyHoursPage() {
@@ -40,8 +43,8 @@ export default function DutyHoursPage() {
 
   const rows = useMemo(() => {
     const now = new Date();
-    const today = now.toLocaleDateString('en-CA');
-    const sevenDaysAgo = new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toLocaleDateString('en-CA');
+    const today = istDate(now.toISOString());
+    const sevenDaysAgo = istDate(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString());
     const active = scheduledFlights.filter(f => f.status !== 'CANCELLED');
     // 2026-09-23: current (Active) instructors only.
     return instructors.filter(i => i.employmentStatus !== 'INACTIVE').map(instr => {
@@ -52,7 +55,7 @@ export default function DutyHoursPage() {
       const todayHours = dayHours(scheduledFlights, instr.id, today);
       const limit = effectiveDailyLimit(instr.maxDailyHours, ftoSettings['instructor_daily_limit_hours']);
       const weekHours = flights
-        .filter(f => { const d = localDateStr(f.startTime); return d >= sevenDaysAgo && d <= today; })
+        .filter(f => { const d = istDate(f.startTime); return d >= sevenDaysAgo && d <= today; })
         .reduce((sum, f) => sum + (f.duration || 0), 0);
       return { instructor: instr, todayHours, weekHours, limit, atLimit: todayHours >= limit - 1e-9 };
     }).sort((a, b) => b.todayHours - a.todayHours);

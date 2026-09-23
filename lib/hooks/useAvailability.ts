@@ -54,6 +54,7 @@ export async function fetchAvailability(): Promise<AvailabilityRecord[]> {
       startTime: (row.start_time as string) || undefined, endTime: (row.end_time as string) || undefined,
       reason: row.reason as string, status: row.status as string, createdBy: row.created_by as string,
       pendingChange: (row.pending_change as AvailabilityRecord['pendingChange']) || undefined,
+      needsAdminApproval: Boolean(row.needs_admin_approval),
       personName: person?.name || 'Unknown', personInitials: person?.initials || '??',
     };
   });

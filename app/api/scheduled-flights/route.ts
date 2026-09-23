@@ -159,6 +159,18 @@ export async function POST(request: Request) {
     }
   }
 
+  // 2026-09-23: approved leave is a HARD block for every role, no override
+  // (operator decision) — staff used to get only a warning. The student
+  // self-booking branch above already checked both people.
+  if (session.user.role !== 'student') {
+    if (instructorId && await isOnApprovedLeave('instructor', String(instructorId), String(startTime), String(endTime))) {
+      return NextResponse.json({ error: 'This instructor has approved leave at this time and can\'t be booked.' }, { status: 403 });
+    }
+    if (studentId && await isOnApprovedLeave('student', String(studentId), String(startTime), String(endTime))) {
+      return NextResponse.json({ error: 'This student has approved leave at this time and can\'t be booked.' }, { status: 403 });
+    }
+  }
+
   // 2026-09-23: an Inactive (left/retired) instructor can't be booked, by
   // anyone — the booking form hides them, this stops a direct request or a
   // student whose assigned instructor has since left.

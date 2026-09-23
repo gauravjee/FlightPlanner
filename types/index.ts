@@ -608,6 +608,9 @@ export interface AvailabilityRecord {
     requestedBy?: string;
     requestedAt?: string;
   };
+  // 2026-09-23: entered by operations on someone's behalf — only admin/
+  // super_admin may approve it (add-availability-needs-admin-approval.sql).
+  needsAdminApproval?: boolean;
   personName?: string;      // For display
   personInitials?: string;  // For display
 }

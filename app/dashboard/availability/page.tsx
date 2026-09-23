@@ -99,6 +99,11 @@ export default function AvailabilityPage() {
       message: `This leave is already approved, so your ${what === 'delete' ? 'delete' : 'change'} has been sent to an admin. The approved leave stays in force until they approve it.`,
       danger: false,
     });
+    else if (what === 'add' && role === 'operations') setNotice({
+      title: 'Leave entered',
+      message: 'It is waiting for an admin or super admin to approve it. Their bookings in that period stay in place until it is approved.',
+      danger: false,
+    });
     else if (what === 'add' && !isApprover) setNotice({
       title: 'Leave submitted',
       message: 'Your leave request is waiting for admin approval.',
@@ -302,6 +307,11 @@ export default function AvailabilityPage() {
                               {record.pendingChange.requestedBy ? ` (${record.pendingChange.requestedBy})` : ''}
                             </span>
                           )}
+                          {record.status === 'PENDING' && record.needsAdminApproval && (
+                            <span className="block text-xs text-tertiary mt-1">
+                              Entered by operations{record.createdBy ? ` (${record.createdBy})` : ''} — admin / super admin approves
+                            </span>
+                          )}
                         </td>
                         <td className="py-3">
                           <div className="flex space-x-1">
@@ -318,7 +328,7 @@ export default function AvailabilityPage() {
                               )
                             ) : canManage(record) && (
                               <>
-                                {isApprover && record.status === 'PENDING' && (
+                                {isApprover && record.status === 'PENDING' && !(role === 'operations' && record.needsAdminApproval) && (
                                   <button onClick={async () => { const r = await updateAvailability(record.id, { status: 'APPROVED' }); showResult(r, 'edit'); }} className="px-2 py-1 rounded text-xs transition" style={{ backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' }} aria-label={`Approve ${record.personName}'s leave record`}>
                                     <Check className="w-3 h-3" />
                                   </button>

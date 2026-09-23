@@ -109,6 +109,15 @@ export async function POST(request: Request) {
 
   let newStatus = status || 'APPROVED';
   let newCreatedBy = createdBy || null;
+  // 2026-09-23: operations can enter leave on anyone's behalf (e.g. an
+  // instructor's emergency leave), but it starts PENDING and only admin/
+  // super_admin can approve it — nobody approves their own entry. Needs
+  // add-availability-needs-admin-approval.sql.
+  const needsAdminApproval = session.user.role === 'operations';
+  if (needsAdminApproval) {
+    newStatus = 'PENDING';
+    newCreatedBy = session.user.name || session.user.email || null;
+  }
   if (!AVAILABILITY_APPROVER_ROLES.includes(session.user.role ?? '')) {
     // 2026-09-23: was instructor-only ('student' added, same self-service
     // shape) — a non-approver may only ever file leave for themselves,
@@ -129,6 +138,7 @@ export async function POST(request: Request) {
       start_date: startDate, end_date: endDate,
       start_time: startTime || null, end_time: endTime || null,
       reason: reason || null, status: newStatus, created_by: newCreatedBy,
+      ...(needsAdminApproval ? { needs_admin_approval: true } : {}),
     })
     .select()
     .single();

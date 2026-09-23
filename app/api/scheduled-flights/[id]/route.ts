@@ -19,6 +19,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { dailyLimitRefusal } from '@/lib/daily-limit';
+import { isOnApprovedLeave } from '@/lib/leave';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -97,12 +98,13 @@ export async function PATCH(request: Request, context: RouteContext) {
   // re-sends the current instructorId, and a notes-only edit of an existing
   // booking must still save even if its instructor has since left or its day
   // is already at the limit.
-  if (['instructor_id', 'start_time', 'end_time', 'status'].some(k => dbUpdates[k] !== undefined)) {
+  if (['instructor_id', 'student_id', 'start_time', 'end_time', 'status'].some(k => dbUpdates[k] !== undefined)) {
     const { data: current } = await supabaseAdmin.from('scheduled_flights')
-      .select('instructor_id, start_time, end_time, status').eq('id', id).maybeSingle();
+      .select('instructor_id, student_id, start_time, end_time, status').eq('id', id).maybeSingle();
     if (current) {
       const next = {
         instructor: String(dbUpdates.instructor_id ?? current.instructor_id ?? ''),
+        student: String(dbUpdates.student_id ?? current.student_id ?? ''),
         start: String(dbUpdates.start_time ?? current.start_time),
         end: String(dbUpdates.end_time ?? current.end_time),
         status: String(dbUpdates.status ?? current.status),
@@ -126,6 +128,19 @@ export async function PATCH(request: Request, context: RouteContext) {
         || new Date(next.start).getTime() !== new Date(current.start_time).getTime()
         || new Date(next.end).getTime() !== new Date(current.end_time).getTime()
         || (current.status === 'CANCELLED' && next.status !== 'CANCELLED');
+
+      // Approved leave — HARD block, every role (2026-09-23 operator
+      // decision). Same "only what changes" rule: a different person, new
+      // times, or a cancelled flight coming back.
+      const studentChanged = next.student !== String(current.student_id ?? '');
+      if ((addsHours || studentChanged) && next.status !== 'CANCELLED') {
+        if (next.instructor && await isOnApprovedLeave('instructor', next.instructor, next.start, next.end)) {
+          return NextResponse.json({ error: 'This instructor has approved leave at this time and can\'t be booked.' }, { status: 403 });
+        }
+        if (next.student && await isOnApprovedLeave('student', next.student, next.start, next.end)) {
+          return NextResponse.json({ error: 'This student has approved leave at this time and can\'t be booked.' }, { status: 403 });
+        }
+      }
       if (addsHours && next.instructor && next.status !== 'CANCELLED') {
         const refusal = await dailyLimitRefusal(next.instructor, next.start, next.end, id);
         if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
