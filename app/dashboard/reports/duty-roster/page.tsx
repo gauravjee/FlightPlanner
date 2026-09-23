@@ -7,6 +7,8 @@
 // one-off changes, school-closed days and hours already booked. PDF download
 // of the same table (lib/pdf.ts generateDutyRoster); lib/duty-roster-
 // report.ts builds the table once for both. Visible to ROSTER_VIEW_ROLES.
+// Detailed / Summary switch (2026-09-23): Summary = one row per instructor
+// with day counts, hours and flying-limit use (no colour coding).
 'use client';
 
 import { useMemo, useState } from 'react';
@@ -22,7 +24,9 @@ import { useHolidays } from '@/lib/hooks/useHolidays';
 import { useRoster } from '@/lib/hooks/useRoster';
 import {
   buildRosterReport, mondayOf, shiftDate, dayLabel, formatHours, daysInclusive, MAX_REPORT_DAYS, type RosterCell,
+  flyingLimitUse, summaryTotals,
 } from '@/lib/duty-roster-report';
+import { effectiveDailyLimit } from '@/lib/instructor-status';
 import { getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { toIST } from '@/lib/leave-window';
 import { generateDutyRoster } from '@/lib/pdf';
@@ -30,6 +34,8 @@ import { ROSTER_VIEW_ROLES } from '@/lib/permissions';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 
 type Period = 'weekly' | 'monthly' | 'custom';
+type View = 'detailed' | 'summary';
+const pct = (v: number | null) => (v === null ? '—' : `${v}%`);
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const btn = 'px-3 py-1.5 rounded-lg text-sm transition cursor-pointer';
 const muted = { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' };
@@ -56,6 +62,7 @@ export default function DutyRosterReportPage() {
   const [today] = useState(() => toIST(new Date().toISOString()).date);
   const thisMonday = mondayOf(today);
   const [period, setPeriod] = useState<Period>('weekly');
+  const [view, setView] = useState<View>('detailed');
   const [monday, setMonday] = useState(thisMonday);
   const [year, setYear] = useState(Number(today.slice(0, 4)));
   const [month0, setMonth0] = useState(Number(today.slice(5, 7)) - 1);
@@ -89,7 +96,9 @@ export default function DutyRosterReportPage() {
   const selected = useMemo(() => (picked === null ? candidates : candidates.filter(i => picked.includes(String(i.id)))), [picked, candidates]);
   const toggle = (id: string) => {
     const current = picked ?? candidates.map(i => String(i.id));
-    setPicked(current.includes(id) ? current.filter(x => x !== id) : [...current, id]);
+    const next = current.includes(id) ? current.filter(x => x !== id) : [...current, id];
+    // Everyone ticked again = "All instructors" (keeps the PDF heading honest).
+    setPicked(candidates.every(i => next.includes(String(i.id))) ? null : next);
   };
 
   const report = useMemo(() => {
@@ -97,7 +106,8 @@ export default function DutyRosterReportPage() {
     const weeklyOff = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
     const partial = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
     return buildRosterReport({
-      from, to, instructors: selected, weekly, exceptions,
+      from, to, weekly, exceptions,
+      instructors: selected.map(i => ({ ...i, dailyLimit: effectiveDailyLimit(i.maxDailyHours, ftoSettings['instructor_daily_limit_hours']) })),
       leaves: availabilityRecords
         .filter(l => l.status === 'APPROVED' && l.personType === 'instructor')
         .map(l => ({ personId: l.personId, start_date: l.startDate, end_date: l.endDate, start_time: l.startTime, end_time: l.endTime })),
@@ -115,9 +125,9 @@ export default function DutyRosterReportPage() {
     const now = toIST(new Date().toISOString());
     generateDutyRoster({
       ...report,
-      layout: period === 'weekly' ? 'week' : 'days',
-      title: period === 'weekly' ? 'Weekly Duty Roster'
-        : period === 'monthly' ? `Duty Roster — ${MONTHS[month0]} ${year}` : 'Duty Roster — Custom period',
+      layout: view === 'summary' ? 'summary' : period === 'weekly' ? 'week' : 'days',
+      title: `${view === 'summary' ? 'Duty Roster Summary' : period === 'weekly' ? 'Weekly Duty Roster' : 'Duty Roster'}${
+        period === 'monthly' ? ` — ${MONTHS[month0]} ${year}` : period === 'custom' ? ' — Custom period' : ''}`,
       periodLabel: `${period === 'weekly' ? 'Weekly' : period === 'monthly' ? 'Monthly' : 'Custom'} · ${periodText}`,
       instructorsLabel,
       ftoName: getFtoSetting(ftoSettings, 'school_name'),
@@ -141,6 +151,13 @@ export default function DutyRosterReportPage() {
                 {(['weekly', 'monthly', 'custom'] as Period[]).map(p => (
                   <button key={p} onClick={() => setPeriod(p)} aria-pressed={period === p}
                     className="px-3 py-1.5 text-sm cursor-pointer capitalize" style={period === p ? active : muted}>{p}</button>
+                ))}
+              </div>
+
+              <div className="flex rounded-lg overflow-hidden" role="group" aria-label="Report detail">
+                {(['detailed', 'summary'] as View[]).map(v => (
+                  <button key={v} onClick={() => setView(v)} aria-pressed={view === v}
+                    className="px-3 py-1.5 text-sm cursor-pointer capitalize" style={view === v ? active : muted}>{v}</button>
                 ))}
               </div>
 
@@ -204,7 +221,51 @@ export default function DutyRosterReportPage() {
               {isLoading ? <p className="text-secondary text-center py-8">Loading...</p>
                 : !report ? <p className="text-secondary text-center py-8">Fix the dates above to see the report.</p>
                 : report.rows.length === 0 ? <p className="text-secondary text-center py-8">No instructors selected.</p>
-                : period === 'weekly' ? (
+                : view === 'summary' ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm min-w-[900px]">
+                      <thead>
+                        <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
+                          {['Instructor', 'Daily flying limit', 'Days on duty', 'Rostered days off', 'Approved leave (days)', 'Closed days', 'Roster changes (days)', 'Rostered hours', 'Booked hours', 'Flying-limit use']
+                            .map(h => <th key={h} className="pb-2 pr-2 align-bottom">{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {report.rows.map(r => (
+                          <tr key={`${r.name}-${r.initials}`} className="border-b" style={{ borderColor: 'var(--border)' }}>
+                            <td className="py-2 pr-2 font-medium">{r.name} <span className="text-tertiary">({r.initials})</span></td>
+                            <td className="py-2 pr-2">{r.dailyLimit === null ? '—' : formatHours(r.dailyLimit)}</td>
+                            <td className="py-2 pr-2">{r.dutyDays}</td>
+                            <td className="py-2 pr-2">{r.daysOff}</td>
+                            <td className="py-2 pr-2">{r.leaveDays}</td>
+                            <td className="py-2 pr-2">{r.closedDays}</td>
+                            <td className="py-2 pr-2">{r.changedDays}</td>
+                            <td className="py-2 pr-2">{formatHours(r.rosteredHours)}</td>
+                            <td className="py-2 pr-2">{formatHours(r.bookedHours)}</td>
+                            <td className="py-2">{pct(flyingLimitUse(r.bookedHours, (r.dailyLimit ?? 0) * r.dutyDays))}</td>
+                          </tr>
+                        ))}
+                        {(() => {
+                          const t = summaryTotals(report.rows);
+                          return (
+                            <tr className="font-semibold" style={{ backgroundColor: 'var(--surface-muted)' }}>
+                              <td className="py-2 pr-2">Total ({report.rows.length} instructor{report.rows.length === 1 ? '' : 's'})</td>
+                              <td className="py-2 pr-2">—</td>
+                              <td className="py-2 pr-2">{t.dutyDays}</td>
+                              <td className="py-2 pr-2">{t.daysOff}</td>
+                              <td className="py-2 pr-2">{t.leaveDays}</td>
+                              <td className="py-2 pr-2">{t.closedDays}</td>
+                              <td className="py-2 pr-2">{t.changedDays}</td>
+                              <td className="py-2 pr-2">{formatHours(t.rosteredHours)}</td>
+                              <td className="py-2 pr-2">{formatHours(t.bookedHours)}</td>
+                              <td className="py-2">{pct(t.use)}</td>
+                            </tr>
+                          );
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : period === 'weekly' ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm min-w-[900px]">
                       <thead>
@@ -263,6 +324,10 @@ export default function DutyRosterReportPage() {
 
             {report && (
               <div className="text-xs text-tertiary space-y-1">
+                {view === 'summary' && (<>
+                  <p>Flying-limit use = booked hours ÷ (daily flying limit × days on duty); Total = all booked ÷ all possible. Daily flying limit = lower of the instructor&apos;s own Max Daily Hours and the school ceiling.</p>
+                  <p>Days on duty = rostered working days on which the school is open, not counting full-day leave (a part-day leave day still counts). Rostered days off = days the roster has them off (weekly pattern, a day-off change, or &quot;off duty today&quot;). Approved leave = leave applied for and approved on the Availability page; part-day = ½. Roster changes = days whose hours were changed on the Duty Roster calendar.</p>
+                </>)}
                 <p>Key: hours = on duty (IST) · Off = rostered off · <span style={{ color: 'var(--warning-text)' }}>Leave</span> = approved leave · Closed = school closed · <span style={{ color: 'var(--accent)' }}>*</span> = one-off change · &quot;booked&quot; = booked + flown hours that day, incl. pending requests (cancelled excluded).</p>
                 {report.days.some(d => d.closed) && (
                   <p>Closed: {report.days.filter(d => d.closed).map(d => `${dayLabel(d.date)} — ${d.closed}`).join('; ')}</p>

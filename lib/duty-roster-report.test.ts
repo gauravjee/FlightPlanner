@@ -2,7 +2,7 @@
 // Run: npx tsx lib/duty-roster-report.test.ts   (no test framework needed)
 
 import assert from 'node:assert/strict';
-import { buildRosterReport, mondayOf, dayLabel, formatHours, daysInclusive, MAX_REPORT_DAYS } from './duty-roster-report';
+import { buildRosterReport, mondayOf, dayLabel, formatHours, daysInclusive, MAX_REPORT_DAYS, flyingLimitUse, summaryTotals } from './duty-roster-report';
 
 assert.equal(mondayOf('2026-09-23'), '2026-09-21'); // Wed -> Mon
 assert.equal(mondayOf('2026-09-27'), '2026-09-21'); // Sun belongs to the week before
@@ -49,6 +49,11 @@ assert.equal(di[6].text, 'Closed');
 assert.equal(r.rows[0].rosteredHours, 32);
 assert.equal(r.rows[0].bookedHours, 3.5);
 assert.deepEqual(r.notes, ['Tue 29 Sep, Dummy Instructor: one-off change — Checkride']);
+// Summary counts for the same week: Mon, Tue*, Wed (part-day leave), Thu, Sat on duty;
+// Fri holiday + Sun closed; ½ leave day; 1 roster change. Every day counted once.
+const s0 = r.rows[0];
+assert.deepEqual([s0.dutyDays, s0.daysOff, s0.leaveDays, s0.closedDays, s0.changedDays], [5, 0, 0.5, 2, 1]);
+assert.equal(s0.dailyLimit, null);
 // No roster -> opening hours every open day.
 assert.equal(r.rows[1].cells[0].text, '06:00–20:00');
 assert.equal(r.rows[1].rosteredHours, 14 * 5);
@@ -69,5 +74,22 @@ const month = buildRosterReport({
 assert.equal(month.days.length, 31);
 assert.equal(month.rows[0].cells.length, 31);
 assert.equal(month.days[1].closed, 'Holiday');
+
+// Flying-limit use and totals.
+assert.equal(flyingLimitUse(40.5, 7 * 20), 29);
+assert.equal(flyingLimitUse(3, 0), null);
+const lim = buildRosterReport({
+  from: '2026-09-28', to: '2026-10-04', weekly, exceptions: [], leaves: [], closedReason: () => null,
+  instructors: [{ id: '6', name: 'A', initials: 'A', dailyLimit: 7 }, { id: '7', name: 'B', initials: 'B', dailyLimit: 6 }],
+  flights: [{ id: 1, instructorId: '6', startTime: '2026-09-28T03:30:00Z', endTime: '2026-09-28T10:30:00Z', status: 'COMPLETED' }], // 7h
+});
+// A: rostered Mon-Sat, Sun off -> 6 duty days, 1 off. B: no roster -> opening hours all 7 days.
+assert.deepEqual([lim.rows[0].dutyDays, lim.rows[0].daysOff], [6, 1]);
+assert.equal(lim.rows[1].dutyDays, 7);
+const t = summaryTotals(lim.rows);
+assert.equal(t.dutyDays, 13);
+assert.equal(t.bookedHours, 7);
+assert.equal(t.use, flyingLimitUse(7, 7 * 6 + 6 * 7)); // 7 / 84 = 8%
+assert.equal(t.use, 8);
 
 console.log('duty-roster-report: all checks passed');

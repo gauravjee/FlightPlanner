@@ -6,7 +6,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { FlightRecord, StudentRecord, BATest, MaintenanceRecord } from '@/types';
 import { totalPicHours, totalSoloHours } from '@/lib/flight-hours';
-import { dayLabel, formatHours, type RosterReport } from '@/lib/duty-roster-report';
+import { dayLabel, formatHours, flyingLimitUse, summaryTotals, type RosterReport } from '@/lib/duty-roster-report';
 
 // jspdf-autotable augments the jsPDF instance with `lastAutoTable` at
 // runtime, but its TS types don't declare that property — this local
@@ -754,10 +754,11 @@ export function generateAuditPack(pack: {
 // instructors down, the 7 days across (as before). layout 'days' (monthly /
 // custom, up to 90 days): one row per date, one column per instructor, then
 // Rostered / Booked total rows; headings repeat on every page. Closed days
-// shaded.
+// shaded. layout 'summary': one row per instructor with day counts, hours and
+// flying-limit use, plus a Total row (no colour coding — operator decision).
 // ---------------------------------------------------------------------------
 export function generateDutyRoster(report: RosterReport & {
-  layout: 'week' | 'days';
+  layout: 'week' | 'days' | 'summary';
   title: string;           // e.g. 'Weekly Duty Roster', 'Duty Roster — October 2026'
   periodLabel: string;     // e.g. 'Monthly · Thu 1 Oct to Sat 31 Oct 2026 (IST) · 31 days'
   instructorsLabel: string; // 'All instructors' or the names picked
@@ -796,7 +797,35 @@ export function generateDutyRoster(report: RosterReport & {
   };
   const none = report.rows.length === 0;
 
-  if (report.layout === 'week') {
+  if (report.layout === 'summary') {
+    const t = summaryTotals(report.rows);
+    const pct = (v: number | null) => (v === null ? '—' : `${v}%`);
+    const body = report.rows.map(r => [
+      `${r.name} (${r.initials})`, r.dailyLimit === null ? '—' : formatHours(r.dailyLimit),
+      String(r.dutyDays), String(r.daysOff), String(r.leaveDays), String(r.closedDays), String(r.changedDays),
+      formatHours(r.rosteredHours), formatHours(r.bookedHours),
+      pct(flyingLimitUse(r.bookedHours, (r.dailyLimit ?? 0) * r.dutyDays)),
+    ]);
+    body.push([`Total (${report.rows.length} instructor${report.rows.length === 1 ? '' : 's'})`, '—',
+      String(t.dutyDays), String(t.daysOff), String(t.leaveDays), String(t.closedDays), String(t.changedDays),
+      formatHours(t.rosteredHours), formatHours(t.bookedHours), pct(t.use)]);
+    autoTable(doc, {
+      startY: 38,
+      head: [['Instructor', 'Daily flying limit', 'Days on duty', 'Rostered days off', 'Approved leave (days)', 'Closed days', 'Roster changes (days)', 'Rostered hours', 'Booked hours', 'Flying-limit use']],
+      body: none ? [['No instructors selected.', '', '', '', '', '', '', '', '', '']] : body,
+      theme: 'grid',
+      styles: { fontSize: 8.5, cellPadding: 2.4, valign: 'middle' },
+      headStyles: { fillColor: [30, 41, 59], textColor: 255, fontSize: 8.5 },
+      columnStyles: { 0: { cellWidth: 62, fontStyle: 'bold' } },
+      didParseCell: data => {
+        if (data.section === 'body' && !none && data.row.index === report.rows.length) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [241, 245, 249];
+        }
+      },
+      didDrawPage: pageNo,
+    });
+  } else if (report.layout === 'week') {
     const closedCols = new Set(report.days.flatMap((d, i) => (d.closed ? [i + 1] : [])));
     autoTable(doc, {
       startY: 38,
@@ -848,6 +877,10 @@ export function generateDutyRoster(report: RosterReport & {
     }
   };
   doc.setFontSize(8);
+  if (report.layout === 'summary') {
+    line('Flying-limit use = booked hours ÷ (daily flying limit × days on duty); Total row = all booked ÷ all possible. Daily flying limit = lower of the instructor\'s own Max Daily Hours and the school ceiling.');
+    line('Days on duty = rostered working days on which the school is open, not counting full-day leave (a part-day leave day still counts). Rostered days off = days the roster has them off (weekly pattern, a day-off change, or "off duty today"). Approved leave = leave applied for and approved on the Availability page; part-day = ½. Roster changes = days whose hours were changed on the Duty Roster calendar.');
+  }
   line('Key: hours = on duty (IST) · Off = rostered off · Leave = approved leave · Closed = school closed · * = one-off change · "booked" = booked + flown hours that day, incl. pending requests (cancelled excluded).');
   const closed = report.days.filter(d => d.closed).map(d => `${dayLabel(d.date)} — ${d.closed}`);
   if (closed.length) line(`Closed: ${closed.join('; ')}`);
