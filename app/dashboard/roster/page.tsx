@@ -62,7 +62,10 @@ export default function RosterPage() {
   const active = useMemo(() => instructors.filter(i => i.employmentStatus !== 'INACTIVE'), [instructors]);
   const openStart = ftoSettings['time_slot_start'] || '06:00';
   const openEnd = ftoSettings['time_slot_end'] || '20:00';
-  const today = toIST(new Date().toISOString()).date;
+  // Clock read once per visit (React purity rule — no clock reads during
+  // render); reload the page to roll over past midnight.
+  const [nowMs] = useState(() => Date.now());
+  const today = toIST(new Date(nowMs).toISOString()).date;
   const windowFor = (instructorId: string, date: string) => dutyWindow({
     instructorId, date, weekly, exceptions, openStart, openEnd,
     offDutyDate: instructors.find(i => i.id === instructorId)?.offDutyDate,
@@ -145,15 +148,14 @@ export default function RosterPage() {
 
   // ---------- Bookings outside the roster ----------
   const outside = useMemo(() => {
-    const now = Date.now();
     return scheduledFlights
-      .filter(f => f.instructorId && new Date(f.endTime).getTime() > now && (f.status === 'SCHEDULED' || f.status === 'PENDING_APPROVAL'))
+      .filter(f => f.instructorId && new Date(f.endTime).getTime() > nowMs && (f.status === 'SCHEDULED' || f.status === 'PENDING_APPROVAL'))
       .map(f => ({ f, w: windowFor(String(f.instructorId), toIST(f.startTime).date).window }))
       .filter(({ f, w }) => !flightFitsDuty(w, f.startTime, f.endTime))
       .sort((a, b) => a.f.startTime.localeCompare(b.f.startTime));
     // windowFor reads weekly/exceptions/instructors/settings, all listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduledFlights, weekly, exceptions, instructors, openStart, openEnd]);
+  }, [scheduledFlights, weekly, exceptions, instructors, openStart, openEnd, nowMs]);
 
   const nameOf = (id: string) => instructors.find(i => i.id === id)?.name ?? `Instructor ${id}`;
   const initialsOf = (id: string) => instructors.find(i => i.id === id)?.initials ?? id;
