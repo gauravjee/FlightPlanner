@@ -13,6 +13,7 @@ import { mutate } from 'swr';
 import { ftoSettingsKey } from '@/lib/hooks/useFtoSettings';
 import { DEFAULT_SCHOOL_DAILY_LIMIT_HOURS } from '@/lib/instructor-status';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import EnrollmentSeriesSection from './EnrollmentSeriesSection';
 import {
   Settings, School, Image as ImageIcon, Upload, LoaderCircle, Plane, Trash2,
   Clock, Calendar, Save, ClipboardList, CircleCheck, CalendarOff,
@@ -956,6 +957,9 @@ export default function SettingsTab() {
               </span>
             )}
           </div>
+
+          {/* 2026-09-24: student enrollment numbers — saves on its own. */}
+          <EnrollmentSeriesSection />
 
           {/* ============================================================ */}
           {/* CURRENT CONFIGURATION SUMMARY */}

@@ -220,7 +220,7 @@ export default function DutyRosterReportPage() {
             <div className="surface-card p-4">
               {isLoading ? <p className="text-secondary text-center py-8">Loading...</p>
                 : !report ? <p className="text-secondary text-center py-8">Fix the dates above to see the report.</p>
-                : report.rows.length === 0 ? <p className="text-secondary text-center py-8">No instructors selected.</p>
+                : report.rows.length === 0 ? <p className="text-secondary text-center py-8">{candidates.length === 0 ? 'No instructors in this period.' : 'No instructors selected.'}</p>
                 : view === 'summary' ? (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm min-w-[900px]">

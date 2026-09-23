@@ -143,7 +143,7 @@ export async function POST(request: Request) {
   }
 
   const {
-    enrollmentId, name, initials, trainingStage, totalHours,
+    name, initials, trainingStage, totalHours,
     medicalExpiry, email, phone, dateOfBirth, joinedDate, status, splNumber,
     splExpiryDate, splIssueDate, medicalIssueDate,
   } = body as Record<string, unknown>;
@@ -188,6 +188,22 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: `A user with email ${trimmedEmail} already exists.` },
       { status: 409 }
+    );
+  }
+
+  // 2026-09-24: the enrollment number is issued here, never taken from the
+  // client (add-enrollment-series.sql, lib/enrollment.ts). Done after the
+  // checks above so a refused request doesn't use up a number.
+  // ponytail: a number is skipped if the insert below fails; a gap, never a duplicate.
+  const { data: enrollmentId, error: enrollmentError } = await supabaseAdmin.rpc('next_enrollment_id');
+  if (enrollmentError) {
+    console.error('Error issuing enrollment number:', enrollmentError);
+    return NextResponse.json({ error: 'Failed to issue an enrollment number.' }, { status: 500 });
+  }
+  if (!enrollmentId) {
+    return NextResponse.json(
+      { error: 'Set up enrollment numbers in Admin Setup → FTO Settings first.' },
+      { status: 400 }
     );
   }
 

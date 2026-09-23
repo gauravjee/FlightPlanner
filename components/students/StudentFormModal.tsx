@@ -21,6 +21,19 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
   const { students } = useStudents();
   const isEditing = !!student;
 
+  // 2026-09-24: enrollment numbers are issued by the server on save
+  // (app/api/students POST) — a new student only sees a preview of the next one.
+  const [nextEnrollment, setNextEnrollment] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (isEditing) return;
+    (async () => {
+      const res = await fetch('/api/enrollment-series');
+      const body = await res.json().catch(() => ({}));
+      const current = res.ok ? (body.series as { isCurrent: boolean; next: string }[]).find(s => s.isCurrent) : undefined;
+      setNextEnrollment(current?.next ?? null);
+    })();
+  }, [isEditing]);
+
   // The parent only ever renders this modal conditionally ({showForm &&
   // <StudentFormModal .../>}), so `student` is fixed for this instance's
   // whole lifetime — a fresh mount happens every time it's opened for a
@@ -343,9 +356,15 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm text-secondary mb-1">Enrollment ID *</label>
-              <input type="text" value={form.enrollmentId} onChange={e => handleChange('enrollmentId', e.target.value)} required
-                className={inputClass} />
+              <label htmlFor="enrollment-id" className="block text-sm text-secondary mb-1">Enrollment ID</label>
+              <input id="enrollment-id" type="text" readOnly disabled value={isEditing ? form.enrollmentId : ''}
+                placeholder={nextEnrollment === undefined ? 'Loading…' : nextEnrollment ? `Assigned on save — next: ${nextEnrollment}` : 'Not set up yet'}
+                className={`${inputClass} opacity-70`} />
+              {!isEditing && nextEnrollment === null && (
+                <p className="text-xs mt-1" style={{ color: 'var(--warning-text)' }}>
+                  Set up enrollment numbers in Admin Setup → FTO Settings first — saving will be refused until then.
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm text-secondary mb-1">Training Stage {!isEditing && '*'}</label>
