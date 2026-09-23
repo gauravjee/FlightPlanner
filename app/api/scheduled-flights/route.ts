@@ -26,6 +26,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 // self-booking student has no such override, so this is the real gate.
 import { isOnApprovedLeave } from '@/lib/leave';
 import { dailyLimitRefusal } from '@/lib/daily-limit';
+import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
 
 // GET added 2026-09-18 (RLS remediation Step 3 — see
 // claude/rls-remediation-progress-2026-09-18.md): reads used to be direct
@@ -94,6 +95,13 @@ export async function POST(request: Request) {
 
   if (!aircraftId || !startTime || !endTime) {
     return NextResponse.json({ error: 'aircraftId, startTime, and endTime are required.' }, { status: 400 });
+  }
+
+  // 2026-09-23: same minimum the booking form enforces — a direct request
+  // could otherwise save a zero-length, backwards or unparseable flight.
+  const durationMin = (new Date(String(endTime)).getTime() - new Date(String(startTime)).getTime()) / 60_000;
+  if (!(durationMin >= MIN_FLIGHT_DURATION_MIN)) {
+    return NextResponse.json({ error: `A flight must be at least ${MIN_FLIGHT_DURATION_MIN} minutes long.` }, { status: 400 });
   }
 
   // 2026-09-22 (student self-booking): everything the client sent for

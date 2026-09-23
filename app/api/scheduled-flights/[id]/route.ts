@@ -20,6 +20,7 @@ import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES } from '@/l
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { dailyLimitRefusal } from '@/lib/daily-limit';
 import { isOnApprovedLeave } from '@/lib/leave';
+import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -110,6 +111,15 @@ export async function PATCH(request: Request, context: RouteContext) {
         status: String(dbUpdates.status ?? current.status),
       };
       const instructorChanged = next.instructor !== String(current.instructor_id ?? '');
+
+      // 2026-09-23: same minimum the booking form enforces, only when the
+      // times change (an older short flight can still get a notes edit).
+      if (dbUpdates.start_time !== undefined || dbUpdates.end_time !== undefined) {
+        const durationMin = (new Date(next.end).getTime() - new Date(next.start).getTime()) / 60_000;
+        if (!(durationMin >= MIN_FLIGHT_DURATION_MIN)) {
+          return NextResponse.json({ error: `A flight must be at least ${MIN_FLIGHT_DURATION_MIN} minutes long.` }, { status: 400 });
+        }
+      }
 
       // Moving a booking onto an Inactive instructor is refused, same as
       // creating one (app/api/scheduled-flights/route.ts).
