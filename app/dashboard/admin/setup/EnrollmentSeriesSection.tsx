@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Hash, Save } from 'lucide-react';
 import { parseStartNumber, formatEnrollmentId, ENROLLMENT_PREFIX_RE } from '@/lib/enrollment';
 
@@ -20,15 +20,17 @@ export default function EnrollmentSeriesSection() {
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const load = useCallback(async () => {
-    const res = await fetch('/api/enrollment-series');
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) { setSeries([]); setMessage({ ok: false, text: body.error || 'Failed to load enrollment numbers.' }); return; }
-    setSeries(body.series);
-    const current = (body.series as Series[]).find(s => s.isCurrent);
-    if (current) { setPrefix(current.prefix); setStart(current.startNumber); }
-  }, []);
-  useEffect(() => { load(); }, [load]);
+  const [reloadKey, setReloadKey] = useState(0); // bumped after a save to reload
+  useEffect(() => {
+    (async () => {
+      const res = await fetch('/api/enrollment-series');
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { setSeries([]); setMessage({ ok: false, text: body.error || 'Failed to load enrollment numbers.' }); return; }
+      setSeries(body.series);
+      const current = (body.series as Series[]).find(s => s.isCurrent);
+      if (current) { setPrefix(current.prefix); setStart(current.startNumber); }
+    })();
+  }, [reloadKey]);
 
   const p = prefix.trim();
   const existing = series?.find(s => s.prefix === p);
@@ -50,7 +52,7 @@ export default function EnrollmentSeriesSection() {
     setSaving(false);
     if (!res.ok) { setMessage({ ok: false, text: body.error || 'Failed to save enrollment numbers.' }); return; }
     setMessage({ ok: true, text: `Saved — new students get numbers from ${p}.` });
-    await load();
+    setReloadKey(k => k + 1);
   };
 
   const inputClass = 'w-full surface-card rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)] disabled:opacity-60';
