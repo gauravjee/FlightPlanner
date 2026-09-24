@@ -8,7 +8,7 @@ const r = parseStaffBody({ name: ' A ', joiningDate: '2026-05-01', isSub: true, 
 assert.equal(r.error, null); assert.equal(r.data.name, 'A'); assert.equal(r.data.is_sub, true); assert.equal(r.data.designation, null);
 assert.match(r.data.id_documents_enc as string, /^v1:/);
 const row = toStaffMember({ id: 1, staff_id: 'TESTE2605000001', is_sub: false, name: 'A', joining_date: '2026-05-01', id_documents_enc: r.data.id_documents_enc, users: { role: 'admin' }, instructors: [{ id: 6 }], ames: [] });
-assert.deepEqual(row.documentsMasked, { pan: 'XXXXX1234F', aadhaar: 'XXXX-XXXX-9012', passport: false });
+assert.deepEqual(row.documentsMasked, { pan: 'XXXXXX234F', aadhaar: 'XXXX-XXXX-9012', passport: null });
 assert.equal(row.loginRole, 'admin'); assert.equal(row.instructorId, 6); assert.equal(row.ameId, null);
 assert.equal(parseStaffBody({ joiningDate: '2026-05-01' }, true).error, 'Name is required.');
 assert.equal(parseStaffBody({ name: 'A' }, true).error, 'Joining date is required.');

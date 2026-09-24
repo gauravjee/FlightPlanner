@@ -44,7 +44,10 @@ export function decryptIdDocuments(value: string): IdDocuments {
 export const isValidPan = (v: string) => /^[A-Z]{5}[0-9]{4}[A-Z]$/.test(v);
 export const isValidAadhaar = (v: string) => /^\d{12}$/.test(v);
 
-/** For lists: 'XXXX-XXXX-1234'. */
+// Masks show the last 4 characters only (operator 2026-09-24).
+/** 'XXXX-XXXX-1234'. */
 export const maskAadhaar = (v: string) => 'XXXX-XXXX-' + v.slice(-4);
-/** For lists: 'XXXXX1234X' style — first 5 hidden. */
-export const maskPan = (v: string) => 'XXXXX' + v.slice(5);
+/** 'XXXXXX234F'. */
+export const maskPan = (v: string) => 'XXXXXX' + v.slice(-4);
+/** 'XXXX4567' — same length as the number. */
+export const maskPassport = (v: string) => 'X'.repeat(Math.max(v.length - 4, 0)) + v.slice(-4);

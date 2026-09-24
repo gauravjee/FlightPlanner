@@ -3,13 +3,14 @@
 // admin only (STAFF_ROLES). GET lists every staff record with what it's linked
 // to (login role / instructor profile / AME) and its ID documents MASKED.
 // POST creates one; the database issues the staff ID (regular, or SUB for a
-// contract AME). ID documents are encrypted before they reach the database.
+// contract AME). ID documents are encrypted before they reach the database,
+// and entering them is logged as ADD in staff_document_views.
 // Full ID documents: GET /api/staff/[id] only.
 
 import { NextResponse } from 'next/server';
 import { requireRole, STAFF_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { parseStaffBody, toStaffMember, staffDbError, STAFF_SELECT } from '@/lib/staff-server';
+import { parseStaffBody, toStaffMember, staffDbError, logDocumentAction, STAFF_SELECT } from '@/lib/staff-server';
 
 export async function GET() {
   const { error } = await requireRole(STAFF_ROLES);
@@ -24,7 +25,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { error } = await requireRole(STAFF_ROLES);
+  const { session, error } = await requireRole(STAFF_ROLES);
   if (error) return error;
 
   let body: Record<string, unknown>;
@@ -47,6 +48,9 @@ export async function POST(request: Request) {
   if (dbError) {
     console.error('Error creating staff record:', dbError.code, dbError.message);
     return NextResponse.json({ error: staffDbError(dbError, 'Failed to save the staff record.') }, { status: 400 });
+  }
+  if (parsed.data.id_documents_enc && !(await logDocumentAction((data as Record<string, unknown>).id as number, session.user, 'ADD'))) {
+    return NextResponse.json({ error: 'Saved, but the ID documents could not be written to the ID-document log. Tell your super admin.' }, { status: 500 });
   }
   return NextResponse.json({ staff: toStaffMember(data as Record<string, unknown>) });
 }

@@ -31,6 +31,7 @@ assert.ok(!m.isValidPan('abcde1234f'));
 assert.ok(m.isValidAadhaar('123412341234'));
 assert.ok(!m.isValidAadhaar('1234 1234 1234'));
 assert.equal(m.maskAadhaar('123412345678'), 'XXXX-XXXX-5678');
-assert.equal(m.maskPan('ABCDE1234F'), 'XXXXX1234F');
+assert.equal(m.maskPan('ABCDE1234F'), 'XXXXXX234F');
+assert.equal(m.maskPassport('Z1234567'), 'XXXX4567');
 
 console.log('staff-crypto: all checks passed');

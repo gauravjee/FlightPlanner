@@ -2,8 +2,9 @@
 // Add / edit a staff record (B2, 2026-09-24). The staff ID is issued by the
 // database on save and never changes; "Contract AME (SUB ID)" is chosen on
 // add only. ID documents: on add they're typed straight in; on edit they
-// show masked until "Show / edit" fetches the full values (the server logs
-// every such view), and they're only sent back if they were opened.
+// show masked (last 4) until the "Show full ID numbers" switch fetches the
+// full values (the server logs every such view). Switching it off hides them
+// again; they're only sent back (and logged as a change) if they were changed.
 'use client';
 
 import { useState } from 'react';
@@ -48,20 +49,26 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
   });
   const [isSub, setIsSub] = useState(false);
   const [docs, setDocs] = useState<Docs | null>(isNew ? EMPTY_DOCS : null); // null = not opened
+  const [showDocs, setShowDocs] = useState(isNew);
+  const [loadedDocs, setLoadedDocs] = useState<Docs | null>(null); // as fetched, to send only real changes
   const [loadingDocs, setLoadingDocs] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }));
 
-  const openDocs = async () => {
+  const toggleDocs = async () => {
+    if (showDocs || docs) { setShowDocs(!showDocs); return; } // already loaded: just show/hide
     setLoadingDocs(true);
     setError('');
     const res = await fetch(`/api/staff/${member!.id}`);
     const body = await res.json().catch(() => ({}));
     setLoadingDocs(false);
     if (!res.ok) { setError(body.error || 'Failed to load ID documents.'); return; }
-    setDocs({ ...EMPTY_DOCS, ...body.idDocuments });
+    const fetched = { ...EMPTY_DOCS, ...body.idDocuments };
+    setDocs(fetched);
+    setLoadedDocs(fetched);
+    setShowDocs(true);
   };
 
   const save = async (e: React.FormEvent) => {
@@ -70,7 +77,8 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
     setError('');
     const payload: Record<string, unknown> = { ...form, employmentType: form.employmentType || null };
     if (isNew) { payload.isSub = isSub; delete payload.lastWorkingDate; }
-    if (docs) payload.idDocuments = docs;
+    // Only a real change is sent (and logged as EDIT); just viewing isn't.
+    if (docs && (isNew ? Object.values(docs).some(Boolean) : JSON.stringify(docs) !== JSON.stringify(loadedDocs))) payload.idDocuments = docs;
     const res = await fetch(isNew ? '/api/staff' : `/api/staff/${member!.id}`, {
       method: isNew ? 'POST' : 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -141,16 +149,19 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
 
         <fieldset className="surface-inner rounded-lg p-3 mt-4">
           <legend className="text-xs font-semibold px-1 flex items-center gap-1.5"><Lock className="w-3.5 h-3.5" /> ID documents (stored encrypted)</legend>
-          {docs === null ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          {!isNew && (
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm mb-2">
               <span className="text-secondary">
-                {m ? <>PAN {m.pan ?? '—'} · Aadhaar {m.aadhaar ?? '—'} · Passport {m.passport ? 'on file' : '—'}</> : 'None on file.'}
+                {showDocs ? 'Full ID numbers shown.'
+                  : m ? <>PAN {m.pan ?? '—'} · Aadhaar {m.aadhaar ?? '—'} · Passport {m.passport ?? '—'}</> : 'None on file.'}
               </span>
-              <button type="button" onClick={openDocs} disabled={loadingDocs} className="text-sm font-semibold cursor-pointer" style={{ color: 'var(--accent)' }}>
-                {loadingDocs ? 'Loading…' : 'Show / edit'}
-              </button>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" role="switch" checked={showDocs} disabled={loadingDocs} onChange={toggleDocs} />
+                {loadingDocs ? 'Loading…' : 'Show full ID numbers'}
+              </label>
             </div>
-          ) : (
+          )}
+          {showDocs && docs && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {([['pan', 'PAN', 'text'], ['aadhaar', 'Aadhaar (12 digits)', 'text'], ['passportNumber', 'Passport number', 'text'],
                 ['passportIssueDate', 'Passport date of issue', 'date'], ['passportIssuePlace', 'Passport place of issue', 'text']] as [keyof Docs, string, string][]).map(([k, text, type]) => (
@@ -160,7 +171,7 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
                     onChange={e => setDocs(d => ({ ...d!, [k]: e.target.value }))} className={`${inputClass} font-mono`} />
                 </div>
               ))}
-              <p className="sm:col-span-2 text-xs text-tertiary">Only admins and super admins can see these. Opening them is logged.</p>
+              <p className="sm:col-span-2 text-xs text-tertiary">Only admins and super admins can see these. Viewing and changing them is logged.</p>
             </div>
           )}
         </fieldset>
@@ -172,7 +183,8 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
               <input id="sf-lwd" type="date" value={form.lastWorkingDate} min={form.joiningDate} onChange={e => set('lastWorkingDate', e.target.value)} className={inputClass} />
             </div>
             <p className="text-xs text-tertiary self-end">
-              From 17:00 on this day their login is disabled and their instructor profile / AME entry become inactive. For a sudden exit, use &quot;deny login&quot; in User Management.
+              {/* TODO(B2 S3b): switch to the 17:00 wording once the leaving rule is live. */}
+              Recorded only for now: disabling the login and the instructor profile / AME entry on this day isn&apos;t switched on yet. For an exit today, use &quot;deny login&quot; in User Management.
             </p>
           </div>
         )}

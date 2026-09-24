@@ -49,6 +49,6 @@ export type StaffMember = {
   loginRole: string | null;
   instructorId: number | null;
   ameId: number | null;
-  /** e.g. { pan: 'XXXXX1234F', aadhaar: 'XXXX-XXXX-1234', passport: true }; null = none on file. */
-  documentsMasked: { pan: string | null; aadhaar: string | null; passport: boolean } | null;
+  /** Last 4 only, e.g. { pan: 'XXXXXX234F', aadhaar: 'XXXX-XXXX-1234', passport: 'XXXX4567' }; null = none on file. */
+  documentsMasked: { pan: string | null; aadhaar: string | null; passport: string | null } | null;
 };

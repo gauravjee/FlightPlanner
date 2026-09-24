@@ -5,7 +5,7 @@
 // encrypted and only ever come back masked here; the full values are served
 // only by GET /api/staff/[id] (which logs the view).
 
-import { encryptIdDocuments, decryptIdDocuments, isValidPan, isValidAadhaar, maskAadhaar, maskPan, type IdDocuments } from '@/lib/staff-crypto';
+import { encryptIdDocuments, decryptIdDocuments, isValidPan, isValidAadhaar, maskAadhaar, maskPan, maskPassport, type IdDocuments } from '@/lib/staff-crypto';
 import type { StaffMember } from '@/lib/staff-id';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -87,9 +87,9 @@ export function toStaffMember(r: Record<string, unknown>): StaffMember {
   if (r.id_documents_enc) {
     try {
       const d = decryptIdDocuments(r.id_documents_enc as string);
-      documentsMasked = { pan: d.pan ? maskPan(d.pan) : null, aadhaar: d.aadhaar ? maskAadhaar(d.aadhaar) : null, passport: !!d.passportNumber };
+      documentsMasked = { pan: d.pan ? maskPan(d.pan) : null, aadhaar: d.aadhaar ? maskAadhaar(d.aadhaar) : null, passport: d.passportNumber ? maskPassport(d.passportNumber) : null };
     } catch {
-      documentsMasked = { pan: 'unreadable', aadhaar: 'unreadable', passport: false }; // wrong/missing key
+      documentsMasked = { pan: 'unreadable', aadhaar: 'unreadable', passport: 'unreadable' }; // wrong/missing key
     }
   }
   return {
@@ -114,6 +114,25 @@ export function toStaffMember(r: Record<string, unknown>): StaffMember {
     ameId: one(r.ames as { id: number } | null)?.id ?? null,
     documentsMasked,
   };
+}
+
+/**
+ * Audit log for ID documents (add-staff-document-log-action.sql): who (user id
+ * + role at the time) viewed, added or changed whose documents. Returns false
+ * if the log row couldn't be written — callers must not show documents then.
+ */
+export async function logDocumentAction(
+  staffMemberId: number | string,
+  user: { email?: string | null; role?: string },
+  action: 'VIEW' | 'ADD' | 'EDIT',
+): Promise<boolean> {
+  const { supabaseAdmin } = await import('@/lib/supabase-admin'); // lazy: keeps this file's pure helpers testable without DB keys
+  const { data: actor } = await supabaseAdmin.from('users').select('id').eq('email', user.email ?? '').maybeSingle();
+  if (!actor) return false;
+  const { error } = await supabaseAdmin.from('staff_document_views')
+    .insert({ staff_member_id: staffMemberId, viewed_by: actor.id, actor_role: user.role ?? null, action });
+  if (error) console.error('Error logging ID document action:', error.code);
+  return !error;
 }
 
 /** Friendly text for errors raised by add-staff-master.sql's triggers/checks. */
