@@ -22,3 +22,33 @@ export function formatStaffId(prefix: string, joiningDate: string, n: number): s
   if (num.length > width) throw new Error(`Staff ID numbers for ${prefix} are used up.`);
   return prefix + 'E' + joiningDate.slice(2, 4) + joiningDate.slice(5, 7) + num.padStart(width, '0');
 }
+
+/** Leaving takes effect at 17:00 IST on the last working day (operator, 24 Sep). */
+export function hasLeft(lastWorkingDate: string | null | undefined, now: Date = new Date()): boolean {
+  return !!lastWorkingDate && now.getTime() >= new Date(`${lastWorkingDate}T17:00:00+05:30`).getTime();
+}
+
+/** One row of GET /api/staff. ID documents only ever arrive masked here. */
+export type StaffMember = {
+  id: number;
+  staffId: string;
+  isSub: boolean;
+  name: string;
+  joiningDate: string;
+  lastWorkingDate: string | null;
+  designation: string | null;
+  department: string | null;
+  employmentType: 'PERMANENT' | 'CONTRACT' | null;
+  mobile: string | null;
+  personalEmail: string | null;
+  dateOfBirth: string | null;
+  nationality: string | null;
+  address: string | null;
+  emergencyContactName: string | null;
+  emergencyContactPhone: string | null;
+  loginRole: string | null;
+  instructorId: number | null;
+  ameId: number | null;
+  /** e.g. { pan: 'XXXXX1234F', aadhaar: 'XXXX-XXXX-1234', passport: true }; null = none on file. */
+  documentsMasked: { pan: string | null; aadhaar: string | null; passport: boolean } | null;
+};

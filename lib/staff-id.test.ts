@@ -1,6 +1,6 @@
 // lib/staff-id.test.ts — run: npx tsx lib/staff-id.test.ts
 import assert from 'node:assert/strict';
-import { isValidStaffPrefix, formatStaffId } from './staff-id';
+import { isValidStaffPrefix, formatStaffId, hasLeft } from './staff-id';
 
 assert.equal(formatStaffId('HFA', '2026-09-15', 1), 'HFAE26090000001');
 assert.equal(formatStaffId('HF', '2026-09-01', 1), 'HFE260900000001');
@@ -18,5 +18,10 @@ assert.ok(!isValidStaffPrefix('hfa'));
 assert.ok(!isValidStaffPrefix('ABCDEF'));
 assert.ok(!isValidStaffPrefix('H-A'));
 assert.ok(!isValidStaffPrefix('SUB'));
+
+assert.ok(!hasLeft(null));
+assert.ok(!hasLeft('2026-10-31', new Date('2026-10-31T16:59:59+05:30')));
+assert.ok(hasLeft('2026-10-31', new Date('2026-10-31T17:00:00+05:30')));
+assert.ok(hasLeft('2026-10-31', new Date('2026-11-01T00:00:00+05:30')));
 
 console.log('staff-id: all checks passed');

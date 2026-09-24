@@ -38,7 +38,7 @@ import { useSession } from 'next-auth/react';
 import {
   LayoutDashboard, Calendar, Plane, Users, Fuel, FileText, Wrench,
   GraduationCap, UserRound, Umbrella, ChartColumnIncreasing, BookOpen,
-  Settings, ClipboardList, Wind, ShieldAlert, TriangleAlert, Hourglass, CalendarDays,
+  Settings, ClipboardList, Wind, ShieldAlert, TriangleAlert, Hourglass, CalendarDays, IdCard,
 } from 'lucide-react';
 import { canViewModule, type ModuleKey } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
@@ -72,6 +72,8 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard/aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'aircraft' },
   { href: '/dashboard/students', label: 'Students', icon: Users, roles: ['admin', 'instructor', 'super_admin', 'operations'], moduleKey: 'students' },
   { href: '/dashboard/instructors', label: 'Instructors', icon: GraduationCap, roles: ['admin', 'super_admin', 'operations', 'instructor'], moduleKey: 'instructors' },
+  // 2026-09-24: staff master (B2) — roles hand-synced to lib/permissions.ts's STAFF_ROLES.
+  { href: '/dashboard/staff', label: 'Staff', icon: IdCard, roles: ['admin', 'super_admin'] },
   // 2026-08-25: per explicit user request, scoped to 'instructor' only —
   // this is a personalized "my assigned students" view (see the page's own
   // instructorId-scoped filtering), not a general roster; admin/super_admin

@@ -14,6 +14,7 @@ import { ftoSettingsKey } from '@/lib/hooks/useFtoSettings';
 import { DEFAULT_SCHOOL_DAILY_LIMIT_HOURS } from '@/lib/instructor-status';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import EnrollmentSeriesSection from './EnrollmentSeriesSection';
+import StaffIdSection from './StaffIdSection';
 import {
   Settings, School, Image as ImageIcon, Upload, LoaderCircle, Plane, Trash2,
   Clock, Calendar, Save, ClipboardList, CircleCheck, CalendarOff,
@@ -960,6 +961,9 @@ export default function SettingsTab() {
 
           {/* 2026-09-24: student enrollment numbers — saves on its own. */}
           <EnrollmentSeriesSection />
+
+          {/* 2026-09-24: staff ID prefix (B2) — saves on its own. */}
+          <StaffIdSection />
 
           {/* ============================================================ */}
           {/* CURRENT CONFIGURATION SUMMARY */}

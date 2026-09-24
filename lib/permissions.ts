@@ -210,6 +210,12 @@ export const ROSTER_EDIT_ROLES = ['admin', 'super_admin', 'operations'];
 // "Override roster" tick box) — operator decision: admin + super admin only.
 export const ROSTER_OVERRIDE_ROLES = ['admin', 'super_admin'];
 
+// 2026-09-24: staff master (B2; claude/staff-master-design-2026-09-24.md).
+// Admin + super admin manage staff records, including the encrypted ID
+// documents (operator decision). The staff ID prefix itself stays in Admin
+// Setup (ADMIN_SETUP_WRITE_ROLES = super admin).
+export const STAFF_ROLES = ['admin', 'super_admin'];
+
 // ============================================================
 // STUDENT PROGRESS
 // ============================================================
