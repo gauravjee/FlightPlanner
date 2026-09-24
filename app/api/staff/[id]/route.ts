@@ -4,7 +4,8 @@
 // staff_document_views as VIEW (who + role, whose, when). PATCH: update a
 // staff record; idDocuments, when sent, replaces the whole encrypted set and
 // is logged as EDIT. The staff ID and the SUB/regular choice can never change
-// (database trigger).
+// (database trigger). With a last working day set, the response also lists the
+// person's instructor bookings after 17:00 IST that day (B2 S3b).
 
 import { NextResponse } from 'next/server';
 import { requireRole, STAFF_ROLES } from '@/lib/api-auth';
@@ -71,5 +72,16 @@ export async function PATCH(request: Request, context: RouteContext) {
   if ('id_documents_enc' in parsed.data && !(await logDocumentAction(id, session.user, 'EDIT'))) {
     return NextResponse.json({ error: 'Saved, but the change could not be written to the ID-document log. Tell your super admin.' }, { status: 500 });
   }
-  return NextResponse.json({ staff: toStaffMember(data as Record<string, unknown>) });
+  const staff = toStaffMember(data as Record<string, unknown>);
+
+  // B2 S3b: bookings aren't cancelled when a last working day is set — list
+  // this instructor's flights after 17:00 IST that day so someone can move them.
+  let bookingsAfterLastDay: { id: number; start: string }[] = [];
+  if (staff.lastWorkingDate && staff.instructorId !== null) {
+    const { data: flights } = await supabaseAdmin.from('scheduled_flights').select('id, start_time')
+      .eq('instructor_id', String(staff.instructorId)).neq('status', 'CANCELLED')
+      .gte('start_time', `${staff.lastWorkingDate}T17:00:00+05:30`).order('start_time');
+    bookingsAfterLastDay = (flights ?? []).map(f => ({ id: f.id as number, start: f.start_time as string }));
+  }
+  return NextResponse.json({ staff, bookingsAfterLastDay });
 }

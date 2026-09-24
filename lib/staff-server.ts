@@ -6,7 +6,7 @@
 // only by GET /api/staff/[id] (which logs the view).
 
 import { encryptIdDocuments, decryptIdDocuments, isValidPan, isValidAadhaar, maskAadhaar, maskPan, maskPassport, type IdDocuments } from '@/lib/staff-crypto';
-import type { StaffMember } from '@/lib/staff-id';
+import { hasLeft, type StaffMember } from '@/lib/staff-id';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -173,6 +173,19 @@ export async function removeNewStaff(id: number): Promise<void> {
   const { supabaseAdmin } = await import('@/lib/supabase-admin');
   const { error } = await supabaseAdmin.from('staff_members').delete().eq('id', id);
   if (error) console.error('Error removing unused staff record', id, error.code);
+}
+
+/**
+ * B2 S3b: an instructor can't be booked for a flight starting after their
+ * staff record's last working day (from 17:00 IST that day). Returns that
+ * day ('YYYY-MM-DD') when the flight is too late, else null.
+ */
+export async function instructorLeftBefore(instructorId: string, startIso: string): Promise<string | null> {
+  const { supabaseAdmin } = await import('@/lib/supabase-admin');
+  const { data } = await supabaseAdmin.from('instructors')
+    .select('staff:staff_members!instructors_staff_member_id_fkey(last_working_date)').eq('id', instructorId).maybeSingle();
+  const lwd = one(data?.staff as { last_working_date: string | null } | { last_working_date: string | null }[] | null)?.last_working_date ?? null;
+  return lwd && hasLeft(lwd, new Date(startIso)) ? lwd : null;
 }
 
 /** Friendly text for errors raised by add-staff-master.sql's triggers/checks. */

@@ -87,6 +87,12 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
     const body = await res.json().catch(() => ({}));
     setSaving(false);
     if (!res.ok) { setError(body.error || 'Failed to save.'); return; }
+    // B2 S3b: bookings after the last working day aren't cancelled — say which ones to move.
+    const later = (body.bookingsAfterLastDay ?? []) as { id: number; start: string }[];
+    if (later.length) {
+      const when = later.map(f => new Date(f.start).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }));
+      alert(`Saved. ${form.name} still has ${later.length} booking${later.length === 1 ? '' : 's'} after 17:00 on their last working day. Move or cancel ${later.length === 1 ? 'it' : 'them'} on the Schedule:\n\n${when.join('\n')}`);
+    }
     onSaved();
   };
 
@@ -183,8 +189,8 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
               <input id="sf-lwd" type="date" value={form.lastWorkingDate} min={form.joiningDate} onChange={e => set('lastWorkingDate', e.target.value)} className={inputClass} />
             </div>
             <p className="text-xs text-tertiary self-end">
-              {/* TODO(B2 S3b): switch to the 17:00 wording once the leaving rule is live. */}
-              Recorded only for now: disabling the login and the instructor profile / AME entry on this day isn&apos;t switched on yet. For an exit today, use &quot;deny login&quot; in User Management.
+              From 17:00 on this day their login is disabled, their instructor profile / AME entry become inactive and they can&apos;t be booked.
+              Existing bookings after it are listed when you save. For a sudden exit, use &quot;deny login&quot; in User Management.
             </p>
           </div>
         )}

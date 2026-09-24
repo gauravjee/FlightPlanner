@@ -22,6 +22,7 @@ import { dailyLimitRefusal } from '@/lib/daily-limit';
 import { isOnApprovedLeave } from '@/lib/leave';
 import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
 import { rosterRefusal } from '@/lib/roster-server';
+import { instructorLeftBefore } from '@/lib/staff-server';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -128,6 +129,14 @@ export async function PATCH(request: Request, context: RouteContext) {
         const { data: instr } = await supabaseAdmin.from('instructors').select('employment_status').eq('id', next.instructor).maybeSingle();
         if (instr?.employment_status === 'INACTIVE') {
           return NextResponse.json({ error: 'This instructor is no longer active and can\'t be booked.' }, { status: 403 });
+        }
+      }
+      // 2026-09-24 (B2 S3b): nor moved to after their last working day (17:00 IST that day).
+      if (next.instructor && next.status !== 'CANCELLED'
+        && (instructorChanged || new Date(next.start).getTime() !== new Date(current.start_time).getTime())) {
+        const lastDay = await instructorLeftBefore(next.instructor, next.start);
+        if (lastDay) {
+          return NextResponse.json({ error: `This instructor's last working day is ${lastDay} — they can't be booked after 17:00 that day.` }, { status: 403 });
         }
       }
 

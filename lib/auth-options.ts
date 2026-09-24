@@ -9,6 +9,7 @@ import type { AuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { verifyCredentials, isLockedOut, recordLoginAttempt } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasLeft } from '@/lib/staff-id';
 
 // How often a live session re-reads its users row (is_active, role). A
 // deactivated account or changed role takes effect within this window
@@ -98,14 +99,17 @@ export const authOptions: AuthOptions = {
         !token.deactivated &&
         Date.now() - (token.checkedAt ?? 0) > ACCOUNT_RECHECK_MS
       ) {
+        // 2026-09-24 (B2 S3b): + the staff record's last working day, so a
+        // session open at 17:00 on that day ends within ACCOUNT_RECHECK_MS.
         const { data, error } = await supabaseAdmin
           .from('users')
-          .select('is_active, role')
+          .select('is_active, role, staff:staff_members!users_staff_member_id_fkey(last_working_date)')
           .eq('email', token.email)
           .maybeSingle();
+        const staff = Array.isArray(data?.staff) ? data.staff[0] : data?.staff;
 
         if (!error) {
-          if (data?.is_active) {
+          if (data?.is_active && !hasLeft(staff?.last_working_date)) {
             token.role = data.role || token.role;
             token.checkedAt = Date.now();
           } else {

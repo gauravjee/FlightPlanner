@@ -17,17 +17,24 @@
 
 import { supabaseAdmin } from './supabase-admin';
 import bcrypt from 'bcryptjs';
+import { hasLeft } from './staff-id';
 
 export async function verifyCredentials(email: string, password: string) {
   // Fetch user by email (only active accounts)
   const { data, error } = await supabaseAdmin
     .from('users')
-    .select('*')
+    .select('*, staff:staff_members!users_staff_member_id_fkey(last_working_date)')
     .eq('email', email)
     .eq('is_active', true)
     .single();
 
   if (error || !data) return null;
+
+  // 2026-09-24 (B2 S3b): from 17:00 IST on the staff record's last working
+  // day, the login is refused — exact to the minute, even before the 17:00
+  // cron (app/api/cron/staff-leavers) switches users.is_active off.
+  const staff = Array.isArray(data.staff) ? data.staff[0] : data.staff;
+  if (hasLeft(staff?.last_working_date)) return null;
 
   // Compare the provided password with the stored hash
   const isValid = await bcrypt.compare(password, data.password_hash);

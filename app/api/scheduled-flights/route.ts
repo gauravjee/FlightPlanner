@@ -28,6 +28,7 @@ import { isOnApprovedLeave } from '@/lib/leave';
 import { dailyLimitRefusal } from '@/lib/daily-limit';
 import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
 import { rosterRefusal } from '@/lib/roster-server';
+import { instructorLeftBefore } from '@/lib/staff-server';
 
 // GET added 2026-09-18 (RLS remediation Step 3 — see
 // claude/rls-remediation-progress-2026-09-18.md): reads used to be direct
@@ -192,6 +193,11 @@ export async function POST(request: Request) {
           ? 'Your assigned instructor is no longer active — ask the office to reassign you.'
           : 'This instructor is no longer active and can\'t be booked.',
       }, { status: 403 });
+    }
+    // 2026-09-24 (B2 S3b): nor after their last working day (17:00 IST that day), by anyone.
+    const lastDay = await instructorLeftBefore(String(instructorId), String(startTime));
+    if (lastDay) {
+      return NextResponse.json({ error: `This instructor's last working day is ${lastDay} — they can't be booked after 17:00 that day.` }, { status: 403 });
     }
 
     // 2026-09-23: daily flying limit — HARD block for every role, no
