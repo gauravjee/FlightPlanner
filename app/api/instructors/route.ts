@@ -24,7 +24,7 @@
 // anon-key hole without narrowing who among logged-in users can see it.
 
 import { NextResponse } from 'next/server';
-import { requireModuleAccess, requireSession } from '@/lib/api-auth';
+import { requireModuleAccess, requireSession, STAFF_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { resolveStaffLink, removeNewStaff } from '@/lib/staff-server';
 
@@ -56,7 +56,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { error } = await requireModuleAccess('instructors', 'full');
+  const { session, error } = await requireModuleAccess('instructors', 'full');
   if (error) return error;
 
   let body: Record<string, unknown>;
@@ -78,7 +78,7 @@ export async function POST(request: Request) {
 
   // 2026-09-24 (B2 S3a): the instructor profile belongs to a staff record —
   // an existing one without an instructor profile, or a new one created here.
-  const link = await resolveStaffLink(body, String(name), 'instructors');
+  const link = await resolveStaffLink(body, String(name), 'instructors', STAFF_ROLES.includes(session.user.role ?? ''));
   if (link.error !== null) return NextResponse.json({ error: link.error }, { status: 400 });
 
   const { data, error: dbError } = await supabaseAdmin

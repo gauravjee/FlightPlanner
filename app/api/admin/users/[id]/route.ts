@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, MODULE_KEYS, OVERRIDE_ELIGIBLE_ROLES } from '@/lib/api-auth';
 import { VALID_USER_ROLES, type ModuleKey } from '@/lib/permissions';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasLeft } from '@/lib/staff-id';
 
 const ALLOWED_ROLES = ['super_admin'];
 const VALID_OVERRIDE_VALUES = ['view', 'full'];
@@ -29,6 +30,16 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   // action: 'toggleStatus' expects { isActive: boolean }
   if (typeof body.isActive === 'boolean') {
+    // 2026-09-24 (B2, operator): a staff member who has left can't be switched
+    // back on here — clear their last working day on the Staff page first.
+    if (body.isActive) {
+      const { data: target } = await supabaseAdmin.from('users')
+        .select('staff:staff_members!users_staff_member_id_fkey(last_working_date)').eq('id', id).maybeSingle();
+      const staff = Array.isArray(target?.staff) ? target.staff[0] : target?.staff;
+      if (hasLeft(staff?.last_working_date)) {
+        return NextResponse.json({ error: `This person left on ${staff!.last_working_date}. To bring them back, clear their last working day on the Staff page first.` }, { status: 400 });
+      }
+    }
     dbUpdates.is_active = body.isActive;
   }
   // action: 'forceReset' expects { forcePasswordReset: true }

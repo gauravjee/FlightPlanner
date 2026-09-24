@@ -140,12 +140,14 @@ export async function logDocumentAction(
  * to. body.staffMemberId = an existing staff record that has no `table` link
  * yet; otherwise body.newStaffJoiningDate creates one named `name` (the
  * database issues its staff ID). `created` tells the caller to undo it with
- * removeNewStaff() if its own insert then fails.
+ * removeNewStaff() if its own insert then fails. Only admin / super admin may
+ * create a new staff record this way (operator, 24 Sep) — pass canCreate.
  */
 export async function resolveStaffLink(
   body: Record<string, unknown>,
   name: string,
   table: 'users' | 'instructors' | 'ames',
+  canCreate: boolean,
 ): Promise<{ staffMemberId: number; created: boolean; error: null } | { error: string }> {
   const { supabaseAdmin } = await import('@/lib/supabase-admin');
   const picked = Number(body.staffMemberId);
@@ -157,6 +159,7 @@ export async function resolveStaffLink(
     if (taken) return { error: 'That staff member is already linked here. Pick someone else, or add a new staff member.' };
     return { staffMemberId: picked, created: false, error: null };
   }
+  if (!canCreate) return { error: 'Only an admin or super admin can add a new staff member. Pick an existing staff member instead.' };
   const jd = typeof body.newStaffJoiningDate === 'string' ? body.newStaffJoiningDate.trim() : '';
   if (!DATE_RE.test(jd)) return { error: 'Pick an existing staff member, or give a joining date for a new one.' };
   if (!name.trim()) return { error: 'Name is required.' };

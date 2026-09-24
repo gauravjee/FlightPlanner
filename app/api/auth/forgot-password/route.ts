@@ -14,6 +14,7 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import crypto from 'crypto';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { hasLeft } from '@/lib/staff-id';
 
 // This route already only ever runs server-side, but it used to build its
 // own anon-key Supabase client instead of reusing supabaseAdmin. Once Row
@@ -45,13 +46,20 @@ export async function POST(request: Request) {
     // ============================================================
     const { data: user, error: userError } = await supabaseAdmin
       .from('users')
-      .select('id, email, name')
+      .select('id, email, name, is_active, staff:staff_members!users_staff_member_id_fkey(last_working_date)')
       .eq('email', email)
       .single();
 
+    // 2026-09-24 (B2, operator): a disabled account or a staff member who has
+    // left (17:00 IST on their last working day) gets no reset link — a
+    // password reset must never be a way back in. Same generic reply as an
+    // unknown email, so it reveals nothing.
+    const staff = Array.isArray(user?.staff) ? user.staff[0] : user?.staff;
+    const cannotReset = !user?.is_active || hasLeft(staff?.last_working_date);
+
     // If user doesn't exist, still return success (security best practice)
     // This prevents attackers from knowing which emails are registered
-    if (userError || !user) {
+    if (userError || !user || cannotReset) {
       return NextResponse.json({
         success: true,
         message: 'If the email exists, a reset link has been sent.',

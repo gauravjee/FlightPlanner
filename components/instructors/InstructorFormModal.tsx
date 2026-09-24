@@ -237,11 +237,15 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
                     const picked = freeStaff.find(s => String(s.id) === e.target.value);
                     setForm(p => ({ ...p, staffMemberId: e.target.value, name: picked ? picked.name : p.name }));
                   }}>
-                  <option value="">— New staff member —</option>
+                  {/* Only admin / super admin may create a new staff record (operator, 24 Sep). */}
+                  <option value="">{canSetEmployment ? '— New staff member —' : '— Pick a staff member —'}</option>
                   {freeStaff.map(s => <option key={s.id} value={s.id}>{s.name} · {s.staffId}</option>)}
                 </select>
+                {!canSetEmployment && (
+                  <p className="text-xs text-tertiary mt-1">Only an admin or super admin can add a new staff member or see the staff list. Ask them to add this instructor.</p>
+                )}
               </div>
-              {form.staffMemberId === '' && (
+              {form.staffMemberId === '' && canSetEmployment && (
                 <div>
                   <label htmlFor="joining-date" className="block text-xs text-secondary mb-1">Joining date *</label>
                   <input id="joining-date" type="date" required value={form.newStaffJoiningDate}

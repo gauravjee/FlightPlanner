@@ -89,7 +89,7 @@ export async function POST(request: Request) {
   let staffMemberId: number | null = null;
   let createdStaff = false;
   if (role !== 'super_admin') {
-    const link = await resolveStaffLink(body, name, 'users');
+    const link = await resolveStaffLink(body, name, 'users', true); // this route is super admin only
     if (link.error !== null) return NextResponse.json({ error: link.error }, { status: 400 });
     staffMemberId = link.staffMemberId;
     createdStaff = link.created;

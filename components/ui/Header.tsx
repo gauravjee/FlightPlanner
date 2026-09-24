@@ -327,7 +327,12 @@ export default function Header(props: HeaderProps = {}) {
   if (status !== 'authenticated' || !session?.user) return null;
 
   return (
-    <header className="border-b divider backdrop-blur-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--surface) 85%, transparent)' }}>
+    // relative z-40 (2026-09-24): backdrop-blur makes the header its own
+    // stacking context, which trapped the account menu's z-30 inside it — any
+    // positioned element further down the page (e.g. the Staff table) painted
+    // over the open menu and swallowed clicks on Logout. Modals and the mobile
+    // drawer are z-50, so they still cover the header.
+    <header className="relative z-40 border-b divider backdrop-blur-sm" style={{ backgroundColor: 'color-mix(in srgb, var(--surface) 85%, transparent)' }}>
       <div className="max-w-7xl mx-auto px-4 py-3">
         <div className="flex items-center justify-between gap-3">
           {/* Left section */}
