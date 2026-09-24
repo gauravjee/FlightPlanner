@@ -97,7 +97,7 @@ export default function StaffPage() {
                             <td className="py-2.5 pr-3 whitespace-nowrap">{fmt(s.joiningDate)}</td>
                             <td className="py-2.5 pr-3">
                               {s.loginRole && <span className={badge} style={accent}>Login · {roleLabel(s.loginRole)}</span>}
-                              {s.instructorId !== null && <span className={badge} style={accent}>Instructor</span>}
+                              {s.instructorId !== null && <span className={badge} style={accent}>Instructor profile</span>}
                               {s.ameId !== null && <span className={badge} style={accent}>AME{s.isSub ? ' (contract)' : ''}</span>}
                               {!s.loginRole && s.instructorId === null && s.ameId === null && <span className="text-tertiary">—</span>}
                             </td>
