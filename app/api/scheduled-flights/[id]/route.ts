@@ -69,6 +69,24 @@ export async function PATCH(request: Request, context: RouteContext) {
       ? { status: 'SCHEDULED' }
       : { status: 'CANCELLED', cancellation_reason: 'REJECTED' };
 
+    // 2026-09-24 (B2 review fix): approving a request re-checks that the
+    // instructor is still active and not past their last working day — the
+    // request may have been made before either changed.
+    if (body.resolve === 'approve') {
+      const { data: req } = await supabaseAdmin.from('scheduled_flights')
+        .select('instructor_id, start_time').eq('id', id).maybeSingle();
+      if (req?.instructor_id) {
+        const { data: instr } = await supabaseAdmin.from('instructors').select('employment_status').eq('id', String(req.instructor_id)).maybeSingle();
+        if (instr?.employment_status === 'INACTIVE') {
+          return NextResponse.json({ error: 'This instructor is no longer active — reject the request or move it to another instructor.' }, { status: 403 });
+        }
+        const lastDay = await instructorLeftBefore(String(req.instructor_id), String(req.start_time));
+        if (lastDay) {
+          return NextResponse.json({ error: `This instructor's last working day is ${lastDay} — reject the request or move it to another instructor.` }, { status: 403 });
+        }
+      }
+    }
+
     const { data: rows, error: dbError } = await supabaseAdmin
       .from('scheduled_flights').update(resolved)
       .eq('id', id).eq('status', 'PENDING_APPROVAL').select('id');
@@ -131,15 +149,6 @@ export async function PATCH(request: Request, context: RouteContext) {
           return NextResponse.json({ error: 'This instructor is no longer active and can\'t be booked.' }, { status: 403 });
         }
       }
-      // 2026-09-24 (B2 S3b): nor moved to after their last working day (17:00 IST that day).
-      if (next.instructor && next.status !== 'CANCELLED'
-        && (instructorChanged || new Date(next.start).getTime() !== new Date(current.start_time).getTime())) {
-        const lastDay = await instructorLeftBefore(next.instructor, next.start);
-        if (lastDay) {
-          return NextResponse.json({ error: `This instructor's last working day is ${lastDay} — they can't be booked after 17:00 that day.` }, { status: 403 });
-        }
-      }
-
       // Daily flying limit — HARD block, every role (lib/daily-limit.ts).
       // Checked when hours move onto someone's day: a different instructor,
       // different times, or a cancelled flight coming back. The flight's own
@@ -148,6 +157,16 @@ export async function PATCH(request: Request, context: RouteContext) {
         || new Date(next.start).getTime() !== new Date(current.start_time).getTime()
         || new Date(next.end).getTime() !== new Date(current.end_time).getTime()
         || (current.status === 'CANCELLED' && next.status !== 'CANCELLED');
+
+      // 2026-09-24 (B2 S3b + review fix): nor put after their last working day
+      // (17:00 IST that day) — a move, a different instructor, or a cancelled
+      // flight coming back.
+      if (addsHours && next.instructor && next.status !== 'CANCELLED') {
+        const lastDay = await instructorLeftBefore(next.instructor, next.start);
+        if (lastDay) {
+          return NextResponse.json({ error: `This instructor's last working day is ${lastDay} — they can't be booked after 17:00 that day.` }, { status: 403 });
+        }
+      }
 
       // Approved leave — HARD block, every role (2026-09-23 operator
       // decision). Same "only what changes" rule: a different person, new
