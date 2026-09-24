@@ -118,6 +118,7 @@ begin
 
   if new.is_sub then
     update public.staff_id_settings set sub_next_number = sub_next_number + 1
+     where id  -- WHERE needed: Supabase refuses an UPDATE without one (fix-staff-sub-id.sql)
       returning 'SUB', sub_next_number - 1 into v_prefix, v_n;
   else
     update public.staff_id_settings set next_number = next_number + 1
