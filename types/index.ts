@@ -501,7 +501,14 @@ export interface Instructor {
   // null while Active. add-instructor-last-working-date.sql.
   lastWorkingDate?: string | null;
   // 2026-09-24: first working day (YYYY-MM-DD), optional. add-staff-joining-date.sql.
+  // B2 S3a: both dates are now read from the linked staff record (GET /api/instructors).
   joiningDate?: string | null;
+  // 2026-09-24 (B2 S3a): the linked staff record — its 15-character staff ID
+  // (display) and, when adding, which existing staff record to link
+  // (staffMemberId) or the joining date for a new one (newStaffJoiningDate).
+  staffId?: string | null;
+  staffMemberId?: number | string | null;
+  newStaffJoiningDate?: string;
   // Whether this instructor can create their own new Schedule bookings —
   // false by default, granted per instructor by a super_admin (Instructors
   // tab). See add-instructor-self-booking-permission.sql and

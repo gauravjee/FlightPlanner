@@ -135,6 +135,46 @@ export async function logDocumentAction(
   return !error;
 }
 
+/**
+ * B2 S3a: the staff record a new login / instructor profile / AME entry links
+ * to. body.staffMemberId = an existing staff record that has no `table` link
+ * yet; otherwise body.newStaffJoiningDate creates one named `name` (the
+ * database issues its staff ID). `created` tells the caller to undo it with
+ * removeNewStaff() if its own insert then fails.
+ */
+export async function resolveStaffLink(
+  body: Record<string, unknown>,
+  name: string,
+  table: 'users' | 'instructors' | 'ames',
+): Promise<{ staffMemberId: number; created: boolean; error: null } | { error: string }> {
+  const { supabaseAdmin } = await import('@/lib/supabase-admin');
+  const picked = Number(body.staffMemberId);
+  if (body.staffMemberId !== undefined && body.staffMemberId !== '' && body.staffMemberId !== null) {
+    if (!Number.isInteger(picked) || picked < 1) return { error: 'Pick a staff member.' };
+    const { data: staff } = await supabaseAdmin.from('staff_members').select('id').eq('id', picked).maybeSingle();
+    if (!staff) return { error: 'That staff member no longer exists.' };
+    const { data: taken } = await supabaseAdmin.from(table).select('id').eq('staff_member_id', picked).maybeSingle();
+    if (taken) return { error: 'That staff member is already linked here. Pick someone else, or add a new staff member.' };
+    return { staffMemberId: picked, created: false, error: null };
+  }
+  const jd = typeof body.newStaffJoiningDate === 'string' ? body.newStaffJoiningDate.trim() : '';
+  if (!DATE_RE.test(jd)) return { error: 'Pick an existing staff member, or give a joining date for a new one.' };
+  if (!name.trim()) return { error: 'Name is required.' };
+  const { data, error } = await supabaseAdmin.from('staff_members').insert({ name: name.trim(), joining_date: jd }).select('id').single();
+  if (error) {
+    console.error('Error creating staff record:', error.code, error.message);
+    return { error: staffDbError(error, 'Failed to create the staff record.') };
+  }
+  return { staffMemberId: data.id as number, created: true, error: null };
+}
+
+/** Undo a staff record resolveStaffLink() created in this same request (its ID number stays used). */
+export async function removeNewStaff(id: number): Promise<void> {
+  const { supabaseAdmin } = await import('@/lib/supabase-admin');
+  const { error } = await supabaseAdmin.from('staff_members').delete().eq('id', id);
+  if (error) console.error('Error removing unused staff record', id, error.code);
+}
+
 /** Friendly text for errors raised by add-staff-master.sql's triggers/checks. */
 export function staffDbError(e: { code?: string; message?: string }, fallback: string): string {
   if (e.code === 'P0001' && e.message) return e.message; // our own RAISE EXCEPTION text

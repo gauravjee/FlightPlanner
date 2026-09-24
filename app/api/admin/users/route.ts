@@ -20,6 +20,7 @@ import { VALID_USER_ROLES } from '@/lib/permissions';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { sendWelcomeEmailServer } from '@/lib/email';
 import { generatePassword } from '@/lib/password';
+import { resolveStaffLink, removeNewStaff } from '@/lib/staff-server';
 
 const ALLOWED_ROLES = ['super_admin'];
 
@@ -39,7 +40,8 @@ const ALLOWED_ROLES = ['super_admin'];
 // included so the table can show/pre-fill each eligible user's current
 // per-user grants — see lib/permissions.ts's MODULE_ACCESS and the "Edit
 // Permissions" action in UserManagementTab.tsx.
-const SAFE_COLUMNS = 'id, email, name, role, is_active, force_password_reset, last_login, created_at, permission_overrides, joining_date';
+// 2026-09-24 (B2 S3a): + the linked staff record's staff ID; the joining date now lives on the staff record.
+const SAFE_COLUMNS = 'id, email, name, role, is_active, force_password_reset, last_login, created_at, permission_overrides, staff_member_id, staff:staff_members!users_staff_member_id_fkey(staff_id)';
 
 export async function GET() {
   const { error } = await requireRole(ALLOWED_ROLES);
@@ -81,6 +83,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid role.' }, { status: 400 });
   }
 
+  // 2026-09-24 (B2 S3a): every login except super admin belongs to a staff
+  // record — an existing one, or a new one created here (staff ID issued by
+  // the database). The joining date lives on the staff record.
+  let staffMemberId: number | null = null;
+  let createdStaff = false;
+  if (role !== 'super_admin') {
+    const link = await resolveStaffLink(body, name, 'users');
+    if (link.error !== null) return NextResponse.json({ error: link.error }, { status: 400 });
+    staffMemberId = link.staffMemberId;
+    createdStaff = link.created;
+  }
+
   const password = generatePassword();
   const hash = await bcrypt.hash(password, 10);
 
@@ -91,12 +105,12 @@ export async function POST(request: Request) {
     role,
     is_active: true,
     force_password_reset: true, // must change password on first login
-    // 2026-09-24: staff joining date — not for super_admin or students (students keep theirs on the Students page).
-    joining_date: !['super_admin', 'student'].includes(role) && typeof body.joiningDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.joiningDate) ? body.joiningDate : null,
+    staff_member_id: staffMemberId,
   });
 
   if (insertError) {
     console.error('Error creating user:', insertError);
+    if (createdStaff) await removeNewStaff(staffMemberId!);
     return NextResponse.json({ error: insertError.message || 'Failed to create user.' }, { status: 500 });
   }
 

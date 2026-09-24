@@ -22,6 +22,7 @@ import { OVERRIDE_ELIGIBLE_ROLES, USER_ROLE_OPTIONS, type PermissionOverrides } 
 import UserPermissionsModal from '@/components/admin/UserPermissionsModal';
 import UserEditModal from '@/components/admin/UserEditModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import type { StaffMember } from '@/lib/staff-id';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -36,7 +37,7 @@ interface User {
   last_login: string | null;
   created_at: string;
   permission_overrides?: PermissionOverrides | null;
-  joining_date?: string | null;
+  staff?: { staff_id: string } | null; // 2026-09-24 (B2 S3a): linked staff record
 }
 
 // ============================================================
@@ -82,8 +83,21 @@ export default function UserManagementTab() {
     name: '',            // User's full name
     role: 'instructor',  // Default role
     sendEmail: true,     // Whether to send welcome email
-    joiningDate: '',     // 2026-09-24: staff joining date (optional; not for super admin)
+    // 2026-09-24 (B2 S3a): the staff record this login belongs to (not for
+    // super admin). '' = a new staff member, created with newStaffJoiningDate.
+    staffMemberId: '',
+    newStaffJoiningDate: '',
   });
+  // Staff with no login yet — the choices for "Staff member".
+  const [freeStaff, setFreeStaff] = useState<StaffMember[]>([]);
+  const [staffReloadKey, setStaffReloadKey] = useState(0);
+  useEffect(() => {
+    (async () => {
+      const res = await fetch('/api/staff');
+      const body = await res.json().catch(() => ({}));
+      setFreeStaff(res.ok ? (body.staff as StaffMember[]).filter(s => !s.loginRole) : []);
+    })();
+  }, [staffReloadKey]);
 
   /**
    * Load all users from the database
@@ -166,8 +180,9 @@ export default function UserManagementTab() {
       }
 
       // Reset form and reload user list
-      setForm({ email: '', name: '', role: 'instructor', sendEmail: true, joiningDate: '' });
+      setForm({ email: '', name: '', role: 'instructor', sendEmail: true, staffMemberId: '', newStaffJoiningDate: '' });
       loadUsers();
+      setStaffReloadKey(k => k + 1);
     } catch (err) {
       alert('❌ Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
@@ -341,11 +356,28 @@ export default function UserManagementTab() {
           </div>
         </div>
 
-        {!['super_admin', 'student'].includes(form.role) && (
-          <div className="mb-3 md:w-1/2">
-            <label htmlFor="new-user-joining-date" className="block text-xs text-tertiary mb-1">Joining Date</label>
-            <input id="new-user-joining-date" type="date" value={form.joiningDate}
-              onChange={e => setForm(p => ({ ...p, joiningDate: e.target.value }))} className={inputClass} />
+        {/* 2026-09-24 (B2 S3a): every login except super admin belongs to a staff record. */}
+        {form.role !== 'super_admin' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+            <div>
+              <label htmlFor="new-user-staff" className="block text-xs text-tertiary mb-1">Staff member *</label>
+              <select id="new-user-staff" value={form.staffMemberId} className={inputClass}
+                onChange={e => {
+                  const picked = freeStaff.find(s => String(s.id) === e.target.value);
+                  setForm(p => ({ ...p, staffMemberId: e.target.value, name: picked ? picked.name : p.name }));
+                }}>
+                <option value="">— New staff member —</option>
+                {freeStaff.map(s => <option key={s.id} value={s.id}>{s.name} · {s.staffId}</option>)}
+              </select>
+              <p className="text-xs text-tertiary mt-1">Only staff without a login are listed.</p>
+            </div>
+            {form.staffMemberId === '' && (
+              <div>
+                <label htmlFor="new-user-joining-date" className="block text-xs text-tertiary mb-1">Joining date * (new staff record, gets a staff ID)</label>
+                <input id="new-user-joining-date" type="date" value={form.newStaffJoiningDate}
+                  onChange={e => setForm(p => ({ ...p, newStaffJoiningDate: e.target.value }))} className={inputClass} />
+              </div>
+            )}
           </div>
         )}
 
@@ -371,6 +403,7 @@ export default function UserManagementTab() {
             <thead>
               <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                 <th className="pb-3">User</th>
+                <th className="pb-3">Staff ID</th>
                 <th className="pb-3">Role</th>
                 <th className="pb-3">Status</th>
                 <th className="pb-3">PW Reset</th>
@@ -387,6 +420,8 @@ export default function UserManagementTab() {
                     <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{user.name}</p>
                     <p className="text-xs text-tertiary">{user.email}</p>
                   </td>
+
+                  <td className="py-3 text-xs font-mono">{user.staff?.staff_id ?? '—'}</td>
 
                   {/* Role Badge */}
                   <td className="py-3">

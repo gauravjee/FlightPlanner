@@ -2,14 +2,14 @@
 // Modal form for adding/editing instructors
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { Instructor } from '@/types';
 import { Pencil, GraduationCap, Save, X, CalendarCheck } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { effectiveDailyLimit } from '@/lib/instructor-status';
-import { todayIST } from '@/lib/ist';
+import type { StaffMember } from '@/lib/staff-id';
 
 interface Props {
   instructor: Instructor | null;
@@ -30,7 +30,18 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
   // 2026-09-23: Active/Inactive is admin/super_admin only (server enforces
   // the same — see app/api/instructors/[id]/route.ts).
   const canSetEmployment = isSuperAdmin || session?.user?.role === 'admin';
-  const [today] = useState(todayIST); // max for the last working day (no future dates)
+  // 2026-09-24 (B2 S3a): a new instructor profile links to a staff record —
+  // one without an instructor profile yet, or a new one. (Needs the Staff
+  // list, i.e. admin / super admin; others can only add a new staff member.)
+  const [freeStaff, setFreeStaff] = useState<StaffMember[]>([]);
+  useEffect(() => {
+    if (instructor) return;
+    (async () => {
+      const res = await fetch('/api/staff');
+      const body = await res.json().catch(() => ({}));
+      if (res.ok) setFreeStaff((body.staff as StaffMember[]).filter(s => s.instructorId === null));
+    })();
+  }, [instructor]);
 
   // The parent only ever renders this modal conditionally ({showForm &&
   // <InstructorFormModal .../>}), so `instructor` is fixed for this
@@ -53,8 +64,8 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
           status: instructor.status,
           canSelfBook: !!instructor.canSelfBook,
           employmentStatus: instructor.employmentStatus ?? 'ACTIVE',
-          lastWorkingDate: instructor.lastWorkingDate || '',
-          joiningDate: instructor.joiningDate || '',
+          staffMemberId: String(instructor.staffMemberId ?? ''), // not sent as a change (PATCH ignores it)
+          newStaffJoiningDate: '',
         }
       : {
           name: '',
@@ -70,8 +81,8 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
           status: 'AVAILABLE' as Instructor['status'],
           canSelfBook: false,
           employmentStatus: 'ACTIVE' as NonNullable<Instructor['employmentStatus']>,
-          lastWorkingDate: '',
-          joiningDate: '',
+          staffMemberId: '',        // '' = a new staff member (B2 S3a)
+          newStaffJoiningDate: '',
         }
   );
 
@@ -208,11 +219,37 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
             </p>
           </div>
 
-          <div>
-            <label htmlFor="joining-date" className="block text-xs text-secondary mb-1">Joining Date</label>
-            <input id="joining-date" type="date" value={form.joiningDate}
-              onChange={e => setForm(p => ({ ...p, joiningDate: e.target.value }))} className={inputClass} />
-          </div>
+          {/* 2026-09-24 (B2 S3a): dates live on the staff record. */}
+          {instructor ? (
+            <p className="text-xs text-tertiary">
+              {instructor.staffId
+                ? <>Staff ID <span className="font-mono">{instructor.staffId}</span>{instructor.joiningDate ? ` · joined ${instructor.joiningDate}` : ''}. </>
+                : 'Not linked to a staff record. '}
+              Joining date and last working day are set on the{' '}
+              <a href="/dashboard/staff" className="hover:underline" style={{ color: 'var(--accent)' }}>Staff page</a>.
+            </p>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="instructor-staff" className="block text-xs text-secondary mb-1">Staff member *</label>
+                <select id="instructor-staff" value={form.staffMemberId} className={inputClass}
+                  onChange={e => {
+                    const picked = freeStaff.find(s => String(s.id) === e.target.value);
+                    setForm(p => ({ ...p, staffMemberId: e.target.value, name: picked ? picked.name : p.name }));
+                  }}>
+                  <option value="">— New staff member —</option>
+                  {freeStaff.map(s => <option key={s.id} value={s.id}>{s.name} · {s.staffId}</option>)}
+                </select>
+              </div>
+              {form.staffMemberId === '' && (
+                <div>
+                  <label htmlFor="joining-date" className="block text-xs text-secondary mb-1">Joining date *</label>
+                  <input id="joining-date" type="date" required value={form.newStaffJoiningDate}
+                    onChange={e => setForm(p => ({ ...p, newStaffJoiningDate: e.target.value }))} className={inputClass} />
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -236,23 +273,19 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
                 value={form.employmentStatus}
                 onChange={e => {
                   const v = e.target.value as NonNullable<Instructor['employmentStatus']>;
-                  // 2026-09-24: going Inactive pre-fills today as the last working day.
-                  setForm(p => ({ ...p, employmentStatus: v, lastWorkingDate: v === 'INACTIVE' ? (p.lastWorkingDate || todayIST()) : p.lastWorkingDate }));
+                  setForm(p => ({ ...p, employmentStatus: v }));
                 }}
                 className={inputClass}
               >
                 <option value="ACTIVE">Active — current instructor</option>
                 <option value="INACTIVE">Inactive — left / retired</option>
               </select>
-              {form.employmentStatus === 'INACTIVE' && (<>
-                <label htmlFor="last-working-date" className="block text-xs text-secondary mt-2 mb-1">Last working day</label>
-                <input id="last-working-date" type="date" required max={today} min={form.joiningDate || undefined} value={form.lastWorkingDate}
-                  onChange={e => setForm(p => ({ ...p, lastWorkingDate: e.target.value }))} className={inputClass} />
+              {form.employmentStatus === 'INACTIVE' && (
                 <p className="text-xs text-tertiary mt-1">
                   Hidden from the roster by default, can&apos;t be booked or assigned to students. Their login isn&apos;t
-                  affected — disable that separately in User Management if needed.
+                  affected. Leaving the school? Set the last working day on the Staff page instead.
                 </p>
-              </>)}
+              )}
             </div>
           )}
 

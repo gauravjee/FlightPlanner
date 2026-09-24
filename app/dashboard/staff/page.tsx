@@ -78,7 +78,8 @@ export default function StaffPage() {
               {isLoading ? <p className="text-secondary text-center py-8">Loading...</p>
                 : error ? <p className="text-center py-8" style={{ color: 'var(--danger)' }}>{(error as Error).message}</p>
                 : rows.length === 0 ? <p className="text-secondary text-center py-8">No staff to show.</p> : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto relative">
+                  {/* relative: keeps the sr-only "Actions" header inside this scroll box — it widened the whole page on narrow screens */}
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-left text-xs uppercase text-tertiary">

@@ -51,6 +51,8 @@ export async function fetchInstructors(): Promise<Instructor[]> {
     offDutyDate: (row.off_duty_date as string | null) ?? null,
     lastWorkingDate: (row.last_working_date as string | null) ?? null,
     joiningDate: (row.joining_date as string | null) ?? null,
+    staffId: (row.staff_id as string | null) ?? null, // 2026-09-24 (B2 S3a)
+    staffMemberId: (row.staff_member_id as number | null) ?? null,
     // Defaults to false if the migration hasn't been run yet in Supabase
     // (add-instructor-self-booking-permission.sql) — column missing/null
     // both read as "can't self-book," the safe side.
@@ -88,7 +90,7 @@ export function getInstructorById(instructors: Instructor[], id: string): Instru
 // existing fire-and-forget usage.
 // ---------------------------------------------------------------------------
 
-export async function addInstructor(instructor: Omit<Instructor, 'id'>): Promise<void> {
+export async function addInstructor(instructor: Omit<Instructor, 'id'>): Promise<string | null> {
   const res = await fetch('/api/instructors', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -96,11 +98,13 @@ export async function addInstructor(instructor: Omit<Instructor, 'id'>): Promise
   });
   const result = await res.json().catch(() => ({}));
   if (res.ok) {
-    const newInstructor: Instructor = { ...instructor, id: String(result.instructor.id) };
-    mutate<Instructor[]>(instructorsKey, (current = []) => [...current, newInstructor], { revalidate: false });
+    // 2026-09-24 (B2 S3a): the staff ID and dates are assigned server-side, so
+    // reload instead of splicing the form payload into the cache.
+    await mutate(instructorsKey);
   } else {
     console.error('Error adding instructor:', result.error);
   }
+  return res.ok ? null : result.error || 'Failed to add instructor.';
 }
 
 export async function updateInstructor(id: string, updates: Partial<Instructor>): Promise<void> {

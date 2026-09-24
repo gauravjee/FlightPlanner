@@ -114,7 +114,8 @@ export default function InstructorsPage() {
     if (editingInstructor) {
       updateInstructor(editingInstructor.id, instructor);
     } else {
-      addInstructor(instructor as Omit<Instructor, 'id'>);
+      // 2026-09-24 (B2 S3a): the server can now refuse (e.g. no staff member picked) — say so.
+      addInstructor(instructor as Omit<Instructor, 'id'>).then(err => { if (err) alert('Could not add instructor: ' + err); });
     }
     setShowForm(false);
     setEditingInstructor(null);

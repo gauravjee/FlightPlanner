@@ -131,7 +131,8 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
   // Admin Setup -> Certifying Engineers (AMEsTab.tsx).
   ames: {
     dbTable: 'ames',
-    columns: ['name', 'license_no', 'is_active'],
+    // 2026-09-24 (B2 S3a): + the staff record the engineer belongs to.
+    columns: ['name', 'license_no', 'is_active', 'staff_member_id'],
   },
 };
 
