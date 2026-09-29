@@ -1,8 +1,8 @@
 // app/api/cron/staff-leavers/route.ts
 // B2 S3b (operator decision 2026-09-24): at 17:00 IST on a staff member's last
 // working day, their instructor profile becomes Inactive, their AME entry
-// inactive, and their login disabled. vercel.json runs this daily at 11:30 UTC
-// (= 17:00 IST). The login check (lib/auth.ts) and booking checks
+// inactive, and their login disabled. cron-job.org calls this daily at 17:00
+// IST (?secret=CRON_SECRET). The login check (lib/auth.ts) and booking checks
 // (instructorLeftBefore in lib/staff-server.ts) already apply the cutoff to the
 // minute; this job updates the stored flags so every list shows the right
 // status. Safe to run any number of times — it only touches people who have

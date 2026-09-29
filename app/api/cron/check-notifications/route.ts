@@ -1,518 +1,141 @@
 // app/api/cron/check-notifications/route.ts
-// Automated Notification Checker (Cron Job Endpoint)
-// ============================================================
-// Purpose: This endpoint is called by a cron job (e.g., cron-job.org)
-// to check for various alerts and send email notifications.
+// Digest emails, called by cron-job.org at 06:00 and 18:00 IST
+// (?secret=CRON_SECRET or Authorization: Bearer). Rewritten 28 Sep 2026 to
+// replace the old one-email-per-alert-per-admin sends (operator item 14):
 //
-// Checks performed:
-//   1. Medical certificates expiring within 30 days → 🟡 Warning
-//   2. Medical certificates already expired → 🔴 Alert
-//   3. Maintenance due within 7 days → 🟡 Warning
-//   4. Maintenance overdue → 🔴 Alert
-//   5. Student SPL expiring within 30 days → 🟡 Warning
-//   6. Student SPL already expired → 🔴 Alert
-//   7. Instructor CPL expiring within 30 days → 🟡 Warning
-//   8. Instructor CPL already expired → 🔴 Alert
+// 1. MAINTENANCE DIGEST (every run): one email to each active admin, super
+//    admin and maintenance user — everyone gets the same email. Sections and
+//    flags are in lib/notification-digest.ts. The AME column shows
+//    maintenance_records.ame_name ("Unassigned" when blank).
+// 2. PEOPLE DIGEST (morning run only): student medical / SPL and instructor
+//    CPL expired or expiring within 30 days, one email to each active admin
+//    and super admin; each student / instructor listed also gets their own
+//    email at the address on their record.
 //
-// SPL/CPL checks added 2026-08-21, mirroring the medical-expiry checks
-// above exactly (same 30-day warning window, same expired/critical
-// framing) — SPL/CPL Issue Date auto-fills Expiry Date to +10 years in
-// the Student/Instructor forms (see StudentFormModal.tsx /
-// InstructorFormModal.tsx), but the expiry date itself is what's alerted
-// on here since it's directly editable and may not always be exactly
-// issue+10y.
-//
-// Each alert sends an email to all active admin/super_admin users
-// via Resend API and logs to the notification_log table.
-//
-// URL: /api/cron/check-notifications
-// Schedule: Daily at 6:00 AM (0 6 * * *)
-// ============================================================
+// "Morning" = before 12:00 IST. `?digest=maintenance|people|both` overrides
+// that (for testing). Each email sent is logged to notification_log.
+// Resend batch send: one API call per digest (≤100 emails per call).
 
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
 import { Resend } from 'resend';
-import { todayIST } from '@/lib/ist';
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { todayIST, IST_TIMEZONE } from '@/lib/ist';
+import {
+  addDays, classifyMaintenance, expiryItem, splitExpiry, maintenanceHtml, expiryHtml, wrapEmail,
+  type MxRow, type ExpiryItem,
+} from '@/lib/notification-digest';
 
-// ============================================================
-// INITIALIZE SERVICES
-// ============================================================
-// Supabase client for database queries — this must use the service-role
-// key (bypasses RLS). It used to silently fall back to the anon key when
-// SUPABASE_SERVICE_KEY was unset, which was a trap: RLS blocks anon access
-// to `users`/`students`, so the medical-expiry checks below would just
-// silently return zero rows — the cron would happily report "✅ All clear",
-// send no emails, and no one would know it was actually just failing
-// closed. See the explicit check at the top of GET() below, which fails
-// loudly (500 + a console.error) instead of running degraded.
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_KEY || ''
-);
+const FROM = 'FlightPro Manager <noreply@pushpak.mahesho.com>';
+const MX_COLUMNS = 'id, aircraft_id, maintenance_type, description, scheduled_date, completed_date, status, is_squawk, ticket_number, ame_name';
 
-// Resend client for sending emails (uses server-side API key)
-const resend = new Resend(process.env.RESEND_API_KEY || '');
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-// ============================================================
-// MAIN GET HANDLER
-// ============================================================
+type Mail ={ to: string; subject: string; html: string };
+
 export async function GET(request: Request) {
-  // ============================================================
-  // REQUIRE THE SERVICE-ROLE KEY
-  // ============================================================
-  // Must run before any query below. See the comment above the `supabase`
-  // client construction — a missing service key used to mean this endpoint
-  // would quietly report "all clear" instead of actually checking anything.
-  if (!process.env.SUPABASE_SERVICE_KEY) {
-    console.error(
-      '🚨 SUPABASE_SERVICE_KEY is not set — refusing to run /api/cron/check-notifications. ' +
-      'Running with the anon key instead would silently skip the medical-expiry checks ' +
-      '(RLS blocks anon access to users/students) and report "all clear" even with real ' +
-      'overdue maintenance or expired medicals in the database. Set SUPABASE_SERVICE_KEY ' +
-      'in your environment and retry.'
-    );
-    return NextResponse.json(
-      { error: 'Server misconfigured: SUPABASE_SERVICE_KEY is not set. See server logs.' },
-      { status: 500 }
-    );
-  }
-
-  // ============================================================
-  // AUTHENTICATE THE CRON CALLER
-  // ============================================================
-  // This endpoint has real side effects (emails every admin, uses the
-  // service-role key, writes to notification_log) and was previously
-  // reachable by anyone who found the URL. Require a shared secret,
-  // passed either as `Authorization: Bearer <secret>` or `?secret=`
-  // (cron-job.org and most schedulers can set either), matching the
-  // CRON_SECRET env var you configure alongside the scheduled job.
   const cronSecret = process.env.CRON_SECRET;
+  const url = new URL(request.url);
   if (cronSecret) {
-    const authHeader = request.headers.get('authorization') || '';
-    const headerSecret = authHeader.replace(/^Bearer\s+/i, '');
-    const querySecret = new URL(request.url).searchParams.get('secret');
-    if (headerSecret !== cronSecret && querySecret !== cronSecret) {
+    const headerSecret = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '');
+    if (headerSecret !== cronSecret && url.searchParams.get('secret') !== cronSecret) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
   } else {
-    // Fail loudly in the server logs rather than silently staying open.
-    console.warn(
-      '⚠️ CRON_SECRET is not set — /api/cron/check-notifications is unauthenticated ' +
-      'and can be triggered by anyone who finds the URL. Set CRON_SECRET.'
-    );
+    console.warn('⚠️ CRON_SECRET is not set — /api/cron/check-notifications is unauthenticated. Set CRON_SECRET.');
+  }
+  if (!process.env.RESEND_API_KEY) {
+    console.error('check-notifications: RESEND_API_KEY is not set.');
+    return NextResponse.json({ error: 'Email is not configured.' }, { status: 500 });
   }
 
-  // Array to collect all notification messages for the response
-  const notifications: string[] = [];
-
-  // Today's date for comparison — the current IST calendar date, held as
-  // that date's UTC midnight so every `today.toISOString().split('T')[0]`
-  // and day-count below reads back exactly the IST date. 2026-09-21 (P2):
-  // this was `new Date().setHours(0,0,0,0)`, which on Vercel (UTC) is the
-  // UTC date — the PREVIOUS day whenever the job runs between 00:00 and
-  // 05:30 IST, shifting every expiry window by a day.
-  const today = new Date(`${todayIST()}T00:00:00Z`);
-
-  // Get the request URL for building dynamic dashboard links
-  const requestUrl = request.url;
+  const hourIST = Number(new Date().toLocaleString('en-GB', { timeZone: IST_TIMEZONE, hour: '2-digit', hour12: false }));
+  const digest = url.searchParams.get('digest') ?? (hourIST < 12 ? 'both' : 'maintenance');
+  const today = todayIST();
+  const dashboardUrl = `${url.protocol}//${url.host}/dashboard`;
+  const stamp = new Date(`${today}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const mails: Mail[] = [];
+  const result: Record<string, unknown> = { today, digest };
 
   try {
-    // ============================================================
-    // PRE-LOAD AIRCRAFT DATA FOR REGISTRATION LOOKUP
-    // ============================================================
-    // Load all aircraft once so we can look up registration numbers
-    // for maintenance alerts (avoids foreign key join issues)
-    // ============================================================
-    const aircraftResult = await supabase
-      .from('aircraft')
-      .select('id, registration');
+    const recipients = async (roles: string[]) => {
+      const { data, error } = await supabaseAdmin.from('users').select('email').in('role', roles).eq('is_active', true);
+      if (error) throw error;
+      return [...new Set((data ?? []).map(u => (u.email as string).trim()).filter(Boolean))];
+    };
 
-    const aircraftMap: Record<string, string> = {};
-    if (aircraftResult.data) {
-      for (let a = 0; a < aircraftResult.data.length; a++) {
-        const ac = aircraftResult.data[a];
-        aircraftMap[String(ac.id)] = ac.registration;
+    if (digest === 'maintenance' || digest === 'both') {
+      const [open, closed, aircraft] = await Promise.all([
+        supabaseAdmin.from('maintenance_records').select(MX_COLUMNS).in('status', ['SCHEDULED', 'IN_PROGRESS']),
+        supabaseAdmin.from('maintenance_records').select(MX_COLUMNS).eq('status', 'COMPLETED').eq('is_baseline', false).gte('completed_date', addDays(today, -15)),
+        supabaseAdmin.from('aircraft').select('id, registration'),
+      ]);
+      const failed = [open, closed, aircraft].find(r => r.error);
+      if (failed) throw failed.error;
+      const reg = new Map((aircraft.data ?? []).map(a => [Number(a.id), a.registration as string]));
+      const sections = classifyMaintenance(open.data as MxRow[], closed.data as MxRow[], today);
+      const count = (i: number) => sections[i].rows.length;
+      result.maintenance = Object.fromEntries(sections.map(s => [s.title, s.rows.length]));
+      if (sections.some(s => s.rows.length)) {
+        const subject = `FlightPro Maintenance: ${count(0)} overdue · ${count(1)} due in 7 days · ${count(2)} open defects/records (${stamp})`;
+        const html = wrapEmail('Maintenance status', `As of ${stamp}.`, maintenanceHtml(sections, id => reg.get(id) ?? 'Unknown aircraft', today), dashboardUrl);
+        for (const to of await recipients(['admin', 'super_admin', 'maintenance'])) mails.push({ to, subject, html });
       }
     }
 
-    // ============================================================
-    // 1. CHECK MEDICAL EXPIRY (30 days warning)
-    // ============================================================
-    // Find all active students whose medical expires within 30 days
-    // ============================================================
-    const thirtyDaysFromNow = new Date(today);
-    thirtyDaysFromNow.setUTCDate(thirtyDaysFromNow.getUTCDate() + 30);
+    if (digest === 'people' || digest === 'both') {
+      const [students, instructors] = await Promise.all([
+        supabaseAdmin.from('students').select('name, initials, email, medical_expiry, spl_expiry_date').eq('status', 'ACTIVE'),
+        supabaseAdmin.from('instructors').select('name, initials, email, license_expiry_date').eq('employment_status', 'ACTIVE'),
+      ]);
+      const failed = [students, instructors].find(r => r.error);
+      if (failed) throw failed.error;
+      const items: ExpiryItem[] = [];
+      for (const s of students.data ?? []) {
+        const base = { person: `${s.name} (${s.initials})`, kind: 'Student' as const, email: (s.email as string)?.trim() || null };
+        items.push(...[expiryItem({ ...base, document: 'Medical' }, s.medical_expiry, today),
+          expiryItem({ ...base, document: 'SPL' }, s.spl_expiry_date, today)].filter((i): i is ExpiryItem => !!i));
+      }
+      for (const i of instructors.data ?? []) {
+        const item = expiryItem({ person: `${i.name} (${i.initials})`, kind: 'Instructor', document: 'CPL', email: (i.email as string)?.trim() || null }, i.license_expiry_date, today);
+        if (item) items.push(item);
+      }
+      const sections = splitExpiry(items);
+      result.people = { expired: sections[0].rows.length, expiring: sections[1].rows.length };
+      if (items.length) {
+        const subject = `FlightPro Licences & Medicals: ${sections[0].rows.length} expired · ${sections[1].rows.length} expiring in 30 days (${stamp})`;
+        const html = wrapEmail('Student and staff licences and medicals', `As of ${stamp}.`, expiryHtml(sections, true), dashboardUrl);
+        for (const to of await recipients(['admin', 'super_admin'])) mails.push({ to, subject, html });
 
-    const medicalResult = await supabase
-      .from('students')
-      .select('*')
-      .eq('status', 'ACTIVE')
-      .gte('medical_expiry', today.toISOString().split('T')[0])
-      .lte('medical_expiry', thirtyDaysFromNow.toISOString().split('T')[0]);
-
-    if (medicalResult.data) {
-      for (let i = 0; i < medicalResult.data.length; i++) {
-        const student = medicalResult.data[i];
-        const daysLeft = Math.ceil(
-          (new Date(student.medical_expiry).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        // Add to response notifications
-        notifications.push(
-          '🟡 ' + student.name + ': Medical expiring in ' + daysLeft + ' days (' + student.medical_expiry + ')'
-        );
-
-        // Send email to admins
-        await sendAdminAlert(
-          'Medical Certificate Expiring',
-          student.name + ' (' + student.initials + ') medical certificate expires in ' +
-          daysLeft + ' days on ' + student.medical_expiry + '. Please ensure renewal is scheduled.',
-          requestUrl
-        );
+        // One email per person, listing all of their own items.
+        const byPerson = new Map<string, ExpiryItem[]>();
+        // A malformed address would make Resend reject the whole batch, so skip it.
+        for (const i of items) if (i.email && EMAIL_RE.test(i.email)) byPerson.set(i.email, [...(byPerson.get(i.email) ?? []), i]);
+        for (const [to, own] of byPerson) {
+          const expired = own.some(i => i.days < 0);
+          mails.push({
+            to,
+            subject: expired ? 'Action needed: your licence or medical has expired' : 'Reminder: your licence or medical expires soon',
+            html: wrapEmail(`Hello ${own[0].person}`, 'Please arrange renewal and send the updated certificate to the office.', expiryHtml(splitExpiry(own), false), dashboardUrl),
+          });
+        }
       }
     }
 
-    // ============================================================
-    // 2. CHECK MEDICAL EXPIRED
-    // ============================================================
-    // Find all active students whose medical has already expired
-    // ============================================================
-    const expiredResult = await supabase
-      .from('students')
-      .select('*')
-      .eq('status', 'ACTIVE')
-      .lt('medical_expiry', today.toISOString().split('T')[0]);
-
-    if (expiredResult.data) {
-      for (let j = 0; j < expiredResult.data.length; j++) {
-        const expiredStudent = expiredResult.data[j];
-
-        notifications.push(
-          '🔴 ' + expiredStudent.name + ': Medical EXPIRED (' + expiredStudent.medical_expiry + ')'
-        );
-
-        await sendAdminAlert(
-          '🚨 Medical Certificate EXPIRED',
-          expiredStudent.name + ' (' + expiredStudent.initials + ') medical certificate EXPIRED on ' +
-          expiredStudent.medical_expiry + '. Student is GROUNDED until renewed.',
-          requestUrl
-        );
-      }
+    // ponytail: one batch call, Resend caps it at 100 emails; chunk if the school grows past that.
+    if (mails.length) {
+      const resend = new Resend(process.env.RESEND_API_KEY);
+      const { error } = await resend.batch.send(mails.slice(0, 100).map(m => ({ from: FROM, ...m })));
+      if (error) throw new Error(`Resend: ${error.message}`);
+      if (mails.length > 100) console.error(`check-notifications: ${mails.length - 100} emails not sent (over the 100 batch limit).`);
+      const { error: logError } = await supabaseAdmin.from('notification_log')
+        .insert(mails.slice(0, 100).map(m => ({ type: 'DIGEST', subject: m.subject, message: m.subject, sent_to: m.to })));
+      if (logError) console.error('check-notifications: failed to log emails:', logError.code);
     }
-
-    // ============================================================
-    // 3. CHECK STUDENT SPL EXPIRY (30 days warning)
-    // ============================================================
-    // Find all active students whose SPL expires within 30 days
-    // ============================================================
-    const splExpiringResult = await supabase
-      .from('students')
-      .select('*')
-      .eq('status', 'ACTIVE')
-      .not('spl_expiry_date', 'is', null)
-      .gte('spl_expiry_date', today.toISOString().split('T')[0])
-      .lte('spl_expiry_date', thirtyDaysFromNow.toISOString().split('T')[0]);
-
-    if (splExpiringResult.data) {
-      for (let s = 0; s < splExpiringResult.data.length; s++) {
-        const splStudent = splExpiringResult.data[s];
-        const splDaysLeft = Math.ceil(
-          (new Date(splStudent.spl_expiry_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        notifications.push(
-          '🟡 ' + splStudent.name + ': SPL expiring in ' + splDaysLeft + ' days (' + splStudent.spl_expiry_date + ')'
-        );
-
-        await sendAdminAlert(
-          'SPL Expiring',
-          splStudent.name + ' (' + splStudent.initials + ') Student Pilot License expires in ' +
-          splDaysLeft + ' days on ' + splStudent.spl_expiry_date + '. Please ensure renewal is scheduled.',
-          requestUrl
-        );
-      }
-    }
-
-    // ============================================================
-    // 4. CHECK STUDENT SPL EXPIRED
-    // ============================================================
-    const splExpiredResult = await supabase
-      .from('students')
-      .select('*')
-      .eq('status', 'ACTIVE')
-      .not('spl_expiry_date', 'is', null)
-      .lt('spl_expiry_date', today.toISOString().split('T')[0]);
-
-    if (splExpiredResult.data) {
-      for (let t = 0; t < splExpiredResult.data.length; t++) {
-        const expiredSplStudent = splExpiredResult.data[t];
-
-        notifications.push(
-          '🔴 ' + expiredSplStudent.name + ': SPL EXPIRED (' + expiredSplStudent.spl_expiry_date + ')'
-        );
-
-        await sendAdminAlert(
-          '🚨 SPL EXPIRED',
-          expiredSplStudent.name + ' (' + expiredSplStudent.initials + ') Student Pilot License EXPIRED on ' +
-          expiredSplStudent.spl_expiry_date + '. Please renew before further solo flying.',
-          requestUrl
-        );
-      }
-    }
-
-    // ============================================================
-    // 5. CHECK INSTRUCTOR CPL EXPIRY (30 days warning)
-    // ============================================================
-    const cplExpiringResult = await supabase
-      .from('instructors')
-      .select('*')
-      .not('license_expiry_date', 'is', null)
-      .gte('license_expiry_date', today.toISOString().split('T')[0])
-      .lte('license_expiry_date', thirtyDaysFromNow.toISOString().split('T')[0]);
-
-    if (cplExpiringResult.data) {
-      for (let u = 0; u < cplExpiringResult.data.length; u++) {
-        const cplInstructor = cplExpiringResult.data[u];
-        const cplDaysLeft = Math.ceil(
-          (new Date(cplInstructor.license_expiry_date).getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
-        );
-
-        notifications.push(
-          '🟡 ' + cplInstructor.name + ': CPL expiring in ' + cplDaysLeft + ' days (' + cplInstructor.license_expiry_date + ')'
-        );
-
-        await sendAdminAlert(
-          'CPL Expiring',
-          cplInstructor.name + ' (' + cplInstructor.initials + ') Commercial Pilot License expires in ' +
-          cplDaysLeft + ' days on ' + cplInstructor.license_expiry_date + '. Please ensure renewal is scheduled.',
-          requestUrl
-        );
-      }
-    }
-
-    // ============================================================
-    // 6. CHECK INSTRUCTOR CPL EXPIRED
-    // ============================================================
-    const cplExpiredResult = await supabase
-      .from('instructors')
-      .select('*')
-      .not('license_expiry_date', 'is', null)
-      .lt('license_expiry_date', today.toISOString().split('T')[0]);
-
-    if (cplExpiredResult.data) {
-      for (let v = 0; v < cplExpiredResult.data.length; v++) {
-        const expiredCplInstructor = cplExpiredResult.data[v];
-
-        notifications.push(
-          '🔴 ' + expiredCplInstructor.name + ': CPL EXPIRED (' + expiredCplInstructor.license_expiry_date + ')'
-        );
-
-        await sendAdminAlert(
-          '🚨 CPL EXPIRED',
-          expiredCplInstructor.name + ' (' + expiredCplInstructor.initials + ') Commercial Pilot License EXPIRED on ' +
-          expiredCplInstructor.license_expiry_date + '. Instructor should not fly/instruct until renewed.',
-          requestUrl
-        );
-      }
-    }
-
-    // ============================================================
-    // 7. CHECK MAINTENANCE DUE (7 days warning)
-    // ============================================================
-    // Find all scheduled maintenance due within the next 7 days
-    // ============================================================
-    const sevenDaysFromNow = new Date(today);
-    sevenDaysFromNow.setUTCDate(sevenDaysFromNow.getUTCDate() + 7);
-
-    const dueMxResult = await supabase
-      .from('maintenance_records')
-      .select('*')
-      .eq('status', 'SCHEDULED')
-      .gte('scheduled_date', today.toISOString().split('T')[0])
-      .lte('scheduled_date', sevenDaysFromNow.toISOString().split('T')[0]);
-
-    if (dueMxResult.data) {
-      for (let k = 0; k < dueMxResult.data.length; k++) {
-        const mxRecord = dueMxResult.data[k];
-        const dueAcReg = aircraftMap[String(mxRecord.aircraft_id)] || 'Unknown';
-
-        notifications.push(
-          '🟡 ' + dueAcReg + ': ' + mxRecord.maintenance_type + ' due on ' + mxRecord.scheduled_date
-        );
-
-        await sendAdminAlert(
-          'Maintenance Due Soon',
-          'Aircraft ' + dueAcReg + ': ' + mxRecord.maintenance_type +
-          ' is scheduled for ' + mxRecord.scheduled_date + ' (within 7 days). Please prepare for maintenance.',
-          requestUrl
-        );
-      }
-    }
-
-    // ============================================================
-    // 8. CHECK MAINTENANCE OVERDUE
-    // ============================================================
-    // Find all maintenance that was scheduled before today but not completed
-    // ============================================================
-    const overdueMxResult = await supabase
-      .from('maintenance_records')
-      .select('*')
-      .in('status', ['SCHEDULED', 'IN_PROGRESS'])
-      .lt('scheduled_date', today.toISOString().split('T')[0]);
-
-    if (overdueMxResult.data) {
-      for (let m = 0; m < overdueMxResult.data.length; m++) {
-        const overdueRecord = overdueMxResult.data[m];
-        const overdueAcReg = aircraftMap[String(overdueRecord.aircraft_id)] || 'Unknown';
-
-        notifications.push(
-          '🔴 ' + overdueAcReg + ': ' + overdueRecord.maintenance_type +
-          ' OVERDUE (was due ' + overdueRecord.scheduled_date + ')'
-        );
-
-        await sendAdminAlert(
-          '🚨 Maintenance OVERDUE',
-          'Aircraft ' + overdueAcReg + ': ' + overdueRecord.maintenance_type +
-          ' was scheduled for ' + overdueRecord.scheduled_date +
-          ' and is now OVERDUE. Immediate action required.',
-          requestUrl
-        );
-      }
-    }
-
-    // ============================================================
-    // LOG TO DATABASE
-    // ============================================================
-    // Record all notifications in the notification_log table for audit
-    // ============================================================
-    if (notifications.length > 0) {
-      for (let n = 0; n < notifications.length; n++) {
-        await supabase.from('notification_log').insert({
-          type: 'ALERT',
-          subject: 'Automated Alert',
-          message: notifications[n],
-          sent_to: 'admin@flightpro.com',
-        });
-      }
-    }
-
-    // ============================================================
-    // RETURN RESPONSE
-    // ============================================================
-    return NextResponse.json({
-      success: true,
-      checked: new Date().toISOString(),
-      notifications: notifications.length > 0 ? notifications : ['✅ All clear - no alerts found'],
-    });
-
+    result.emailsSent = Math.min(mails.length, 100);
+    console.log('check-notifications:', result);
+    return NextResponse.json(result);
   } catch (error) {
-    // Log the actual error to the server console for debugging
-    console.error('Notification check error:', error);
-
-    // Return a generic error to the client (don't expose internal details)
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
-    );
-  }
-}
-
-// ============================================================
-// SEND ADMIN ALERT EMAIL
-// ============================================================
-// Sends an email notification to all active admin and super_admin users
-// Includes a link to the dashboard for quick action
-// The dashboard URL is dynamically built from the request
-//
-// Parameters:
-//   subject    - Email subject line
-//   message    - Email body message
-//   requestUrl - The original request URL (used to build dashboard link)
-// ============================================================
-async function sendAdminAlert(subject: string, message: string, requestUrl?: string) {
-  try {
-    // ============================================================
-    // BUILD DYNAMIC DASHBOARD URL
-    // ============================================================
-    // Works for both localhost (http://localhost:3000) and
-    // production (https://flightplanner-xi.vercel.app)
-    // ============================================================
-    let dashboardUrl = 'http://localhost:3000/dashboard';
-    if (requestUrl) {
-      const url = new URL(requestUrl);
-      dashboardUrl = url.protocol + '//' + url.host + '/dashboard';
-    }
-
-    // ============================================================
-    // GET ADMIN EMAILS FROM DATABASE
-    // ============================================================
-    const result = await supabase
-      .from('users')
-      .select('email')
-      .in('role', ['admin', 'super_admin'])
-      .eq('is_active', true);
-
-    // If no admins found, skip sending
-    if (!result.data || result.data.length === 0) {
-      console.log('No admin users found to send alert to');
-      return;
-    }
-
-    // ============================================================
-    // SEND EMAIL TO EACH ADMIN
-    // ============================================================
-    for (let i = 0; i < result.data.length; i++) {
-      const admin = result.data[i];
-
-      // Build email subject line
-      const emailSubject = 'FlightPro Alert: ' + subject;
-
-      // Build clean HTML email body with inline styles
-      const emailHtml =
-        '<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">' +
-
-          // Header with logo
-          '<div style="text-align: center; margin-bottom: 20px;">' +
-            '<h1 style="color: #1e40af; margin: 0;">✈️ FlightPro Manager</h1>' +
-            '<p style="color: #64748b; font-size: 12px;">Automated Alert Notification</p>' +
-          '</div>' +
-
-          // Alert content box
-          '<div style="background: #f8fafc; border-radius: 8px; padding: 20px; margin-bottom: 20px;">' +
-            '<h2 style="color: #1e293b; margin-top: 0;">' + subject + '</h2>' +
-            '<p style="color: #334155; font-size: 16px; line-height: 1.5;">' + message + '</p>' +
-          '</div>' +
-
-          // Dashboard button
-          '<div style="text-align: center; margin: 25px 0;">' +
-            '<a href="' + dashboardUrl + '" style="background: #2563eb; color: white; padding: 12px 30px; ' +
-            'text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">' +
-              'Go to Dashboard →' +
-            '</a>' +
-          '</div>' +
-
-          // Footer
-          '<div style="border-top: 1px solid #e2e8f0; padding-top: 15px; margin-top: 20px;">' +
-            '<p style="color: #94a3b8; font-size: 12px; margin: 0;">' +
-              'This is an automated notification from FlightPro Manager. ' +
-              'Please do not reply to this email.' +
-            '</p>' +
-          '</div>' +
-
-        '</div>';
-
-      // Send via Resend API
-      await resend.emails.send({
-        from: 'FlightPro Manager <noreply@pushpak.mahesho.com>',
-        to: admin.email,
-        subject: emailSubject,
-        html: emailHtml,
-      });
-
-      console.log('✅ Alert email sent to:', admin.email);
-    }
-  } catch (err) {
-    // Log error but don't crash the entire notification check
-    console.error('Failed to send admin alert:', err);
+    console.error('check-notifications failed:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
