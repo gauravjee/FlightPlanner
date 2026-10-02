@@ -70,7 +70,9 @@ export default function LoginPage() {
       setError(
         result.error === 'TOO_MANY_ATTEMPTS'
           ? 'Too many failed login attempts. Please wait 15 minutes and try again.'
-          : 'Invalid email or password. Please try again.'
+          : result.error === 'LOGIN_DISABLED'
+            ? 'Your login has been disabled. Please contact the administrator.'
+            : 'Invalid email or password. Please try again.'
       );
     } else {
       // Login successful (both outcomes are audit-logged server-side, in authorize())

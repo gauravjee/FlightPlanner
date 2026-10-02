@@ -48,10 +48,13 @@ export const authOptions: AuthOptions = {
         const headers = req?.headers ?? {};
         await recordLoginAttempt(
           credentials.email,
-          user ? 'SUCCESS' : 'FAILED',
+          user && user !== 'DISABLED' ? 'SUCCESS' : 'FAILED',
           String(headers['x-forwarded-for'] ?? '').split(',')[0].trim(),
           String(headers['user-agent'] ?? '')
         );
+
+        // Right password, but the login is switched off or they have left.
+        if (user === 'DISABLED') throw new Error('LOGIN_DISABLED');
 
         if (user) {
           // Return user object – these fields will be stored in the JWT
