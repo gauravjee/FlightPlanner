@@ -3,20 +3,21 @@
 // (?secret=CRON_SECRET or Authorization: Bearer). Rewritten 28 Sep 2026 to
 // replace the old one-email-per-alert-per-admin sends (operator item 14):
 //
-// 1. MAINTENANCE DIGEST (every run): one email to each active admin, super
-//    admin and maintenance user — everyone gets the same email. Sections and
+// 1. MAINTENANCE DIGEST (every run): ONE shared email with every active admin,
+//    super admin and maintenance user together in To (operator, 3 Oct: the
+//    group sees who else got it and can reply-all). Sections and
 //    flags are in lib/notification-digest.ts. The AME column shows
 //    maintenance_records.ame_name ("Unassigned" when blank).
 // 2. PEOPLE DIGEST (morning run only): student medical / SPL and instructor
-//    CPL expired or expiring within 30 days, one email to each active admin,
-//    super admin and operations user; each student / instructor listed also gets their own
-//    email at the address on their record.
+//    CPL and staff medicals expired or expiring within 30 days: ONE shared
+//    email with every active admin, super admin and operations user in To;
+//    each person listed also gets their own separate email.
 //
 // "Morning" = before 12:00 IST. `?digest=maintenance|people|both` overrides
 // that (for testing). Each email sent is logged to notification_log.
 // Addresses ending in .test (the test logins) are skipped: that domain is
 // reserved and can never receive mail. For a live test, `?testTo=you@x.com`
-// sends every email to that one address instead, with the real recipient in
+// sends every email to that one address instead, with the real recipients in
 // the subject — nobody else gets anything.
 // Resend batch send: one API call per digest (≤100 emails per call).
 
@@ -35,7 +36,7 @@ const MX_COLUMNS = 'id, aircraft_id, maintenance_type, description, scheduled_da
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
-type Mail ={ to: string; subject: string; html: string };
+type Mail = { to: string[]; subject: string; html: string }; // ponytail: Resend allows 50 addresses per email; split the group if staff grows past that
 
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET;
@@ -94,7 +95,8 @@ export async function GET(request: Request) {
       if (sections.some(s => s.rows.length)) {
         const subject = `FlightPro Maintenance: ${count(0)} overdue · ${count(1)} due in 7 days · ${count(2)} open defects/records (${stamp})`;
         const html = wrapEmail('Maintenance status', `As of ${stamp}.`, maintenanceHtml(sections, id => reg.get(id) ?? 'Unknown aircraft', today), dashboardUrl);
-        for (const to of await recipients(['admin', 'super_admin', 'maintenance'])) mails.push({ to, subject, html });
+        const to = await recipients(['admin', 'super_admin', 'maintenance']);
+        if (to.length) mails.push({ to, subject, html });
       }
     }
 
@@ -131,16 +133,17 @@ export async function GET(request: Request) {
       if (items.length) {
         const subject = `FlightPro Licences & Medicals: ${sections[0].rows.length} expired · ${sections[1].rows.length} expiring in 30 days (${stamp})`;
         const html = wrapEmail('Student and staff licences and medicals', `As of ${stamp}.`, expiryHtml(sections, true), dashboardUrl);
-        for (const to of await recipients(['admin', 'super_admin', 'operations'])) mails.push({ to, subject, html });
+        const to = await recipients(['admin', 'super_admin', 'operations']);
+        if (to.length) mails.push({ to, subject, html });
 
         // One email per person, listing all of their own items.
         const byPerson = new Map<string, ExpiryItem[]>();
         // A malformed address would make Resend reject the whole batch, so skip it.
         for (const i of items) if (i.email && EMAIL_RE.test(i.email)) byPerson.set(i.email, [...(byPerson.get(i.email) ?? []), i]);
-        for (const [to, own] of byPerson) {
+        for (const [email, own] of byPerson) {
           const expired = own.some(i => i.days < 0);
           mails.push({
-            to,
+            to: [email],
             subject: expired ? 'Action needed: your licence or medical has expired' : 'Reminder: your licence or medical expires soon',
             html: wrapEmail(`Hello ${own[0].person.replace(/ \([^)]*\)$/, '')}`, 'Please arrange renewal and send the updated certificate to the office.', expiryHtml(splitExpiry(own), false), dashboardUrl),
           });
@@ -149,10 +152,11 @@ export async function GET(request: Request) {
     }
 
     // ponytail: one batch call, Resend caps it at 100 emails; chunk if the school grows past that.
+    const addresses = (list: Mail[]) => list.reduce((n, m) => n + m.to.length, 0);
     const outgoing = testTo
-      ? mails.map(m => ({ ...m, to: testTo, subject: `[TEST for ${m.to}] ${m.subject}` }))
-      : mails.filter(m => !/\.test$/i.test(m.to));
-    result.skippedTestAddresses = mails.length - outgoing.length;
+      ? mails.map(m => ({ ...m, to: [testTo], subject: `[TEST for ${m.to.join(', ')}] ${m.subject}` }))
+      : mails.map(m => ({ ...m, to: m.to.filter(a => !/\.test$/i.test(a)) })).filter(m => m.to.length);
+    result.skippedTestAddresses = testTo ? 0 : addresses(mails) - addresses(outgoing);
     if (outgoing.length > 100) console.error(`check-notifications: ${outgoing.length - 100} emails not sent (over the 100 batch limit).`);
     const batch = outgoing.slice(0, 100);
     if (batch.length) {
@@ -160,7 +164,7 @@ export async function GET(request: Request) {
       const { error } = await resend.batch.send(batch.map(m => ({ from: FROM, ...m })));
       if (error) throw new Error(`Resend: ${error.message}`);
       const { error: logError } = await supabaseAdmin.from('notification_log')
-        .insert(batch.map(m => ({ type: 'DIGEST', subject: m.subject, message: m.subject, sent_to: m.to })));
+        .insert(batch.map(m => ({ type: 'DIGEST', subject: m.subject, message: m.subject, sent_to: m.to.join(', ') })));
       if (logError) console.error('check-notifications: failed to log emails:', logError.code);
     }
     result.emailsSent = batch.length;
