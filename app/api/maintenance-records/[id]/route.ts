@@ -35,6 +35,8 @@ const FIELD_MAP: Record<string, string> = {
   ameName: 'ame_name',
   ameLicenseNo: 'ame_license_no',
   crsReference: 'crs_reference',
+  // 2026-10-03: see add-assigned-ame-and-staff-medical.sql (FK to ames).
+  assignedAmeId: 'assigned_ame_id',
 };
 
 export async function PATCH(request: Request, context: RouteContext) {

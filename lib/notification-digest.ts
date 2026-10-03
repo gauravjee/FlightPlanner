@@ -63,7 +63,7 @@ export function classifyMaintenance(open: MxRow[], closed: MxRow[], today: strin
 
 export type ExpiryItem = {
   person: string;       // "Name (INI)"
-  kind: 'Student' | 'Instructor';
+  kind: 'Student' | 'Instructor' | 'Staff';
   document: string;     // "Medical", "SPL", "CPL"
   expiry: string;       // 'YYYY-MM-DD'
   days: number;         // negative = expired

@@ -24,13 +24,14 @@ import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { todayIST, IST_TIMEZONE } from '@/lib/ist';
+import { hasLeft } from '@/lib/staff-id';
 import {
   addDays, classifyMaintenance, expiryItem, splitExpiry, maintenanceHtml, expiryHtml, wrapEmail,
   type MxRow, type ExpiryItem,
 } from '@/lib/notification-digest';
 
 const FROM = 'FlightPro Manager <noreply@pushpak.mahesho.com>';
-const MX_COLUMNS = 'id, aircraft_id, maintenance_type, description, scheduled_date, completed_date, status, is_squawk, ticket_number, ame_name';
+const MX_COLUMNS = 'id, aircraft_id, maintenance_type, description, scheduled_date, completed_date, status, is_squawk, ticket_number, ame_name, assigned_ame_id';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -70,15 +71,24 @@ export async function GET(request: Request) {
     };
 
     if (digest === 'maintenance' || digest === 'both') {
-      const [open, closed, aircraft] = await Promise.all([
+      const [open, closed, aircraft, ames] = await Promise.all([
         supabaseAdmin.from('maintenance_records').select(MX_COLUMNS).in('status', ['SCHEDULED', 'IN_PROGRESS']),
         supabaseAdmin.from('maintenance_records').select(MX_COLUMNS).eq('status', 'COMPLETED').eq('is_baseline', false).gte('completed_date', addDays(today, -15)),
         supabaseAdmin.from('aircraft').select('id, registration'),
+        supabaseAdmin.from('ames').select('id, name'),
       ]);
-      const failed = [open, closed, aircraft].find(r => r.error);
+      const failed = [open, closed, aircraft, ames].find(r => r.error);
       if (failed) throw failed.error;
       const reg = new Map((aircraft.data ?? []).map(a => [Number(a.id), a.registration as string]));
-      const sections = classifyMaintenance(open.data as MxRow[], closed.data as MxRow[], today);
+      // AME column: open tasks show who is assigned (else the certifying AME
+      // if one is already on file); closed tasks show who certified it.
+      const ameName = new Map((ames.data ?? []).map(a => [Number(a.id), a.name as string]));
+      type Row = MxRow & { assigned_ame_id: number | null };
+      const withAme = (rows: Row[], closedRows: boolean): MxRow[] => rows.map(r => {
+        const assigned = r.assigned_ame_id != null ? ameName.get(Number(r.assigned_ame_id)) ?? null : null;
+        return { ...r, ame_name: closedRows ? r.ame_name ?? assigned : assigned ?? r.ame_name };
+      });
+      const sections = classifyMaintenance(withAme(open.data as Row[], false), withAme(closed.data as Row[], true), today);
       const count = (i: number) => sections[i].rows.length;
       result.maintenance = Object.fromEntries(sections.map(s => [s.title, s.rows.length]));
       if (sections.some(s => s.rows.length)) {
@@ -89,11 +99,15 @@ export async function GET(request: Request) {
     }
 
     if (digest === 'people' || digest === 'both') {
-      const [students, instructors] = await Promise.all([
+      const [students, instructors, staff] = await Promise.all([
         supabaseAdmin.from('students').select('name, initials, email, medical_expiry, spl_expiry_date').eq('status', 'ACTIVE'),
         supabaseAdmin.from('instructors').select('name, initials, email, license_expiry_date').eq('employment_status', 'ACTIVE'),
+        // 2026-10-03: staff medicals (staff_members.medical_expiry). Their
+        // own email = their login's, else the personal email on the record.
+        supabaseAdmin.from('staff_members').select('name, personal_email, medical_expiry, last_working_date, users!users_staff_member_id_fkey(email)')
+          .not('medical_expiry', 'is', null),
       ]);
-      const failed = [students, instructors].find(r => r.error);
+      const failed = [students, instructors, staff].find(r => r.error);
       if (failed) throw failed.error;
       const items: ExpiryItem[] = [];
       for (const s of students.data ?? []) {
@@ -103,6 +117,13 @@ export async function GET(request: Request) {
       }
       for (const i of instructors.data ?? []) {
         const item = expiryItem({ person: `${i.name} (${i.initials})`, kind: 'Instructor', document: 'CPL', email: (i.email as string)?.trim() || null }, i.license_expiry_date, today);
+        if (item) items.push(item);
+      }
+      for (const m of staff.data ?? []) {
+        if (hasLeft(m.last_working_date as string | null)) continue;
+        const login = Array.isArray(m.users) ? m.users[0] : m.users;
+        const email = ((login as { email?: string } | null)?.email || (m.personal_email as string) || '').trim() || null;
+        const item = expiryItem({ person: m.name as string, kind: 'Staff', document: 'Medical', email }, m.medical_expiry as string, today);
         if (item) items.push(item);
       }
       const sections = splitExpiry(items);

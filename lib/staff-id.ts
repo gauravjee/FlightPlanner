@@ -46,6 +46,7 @@ export type StaffMember = {
   address: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
+  medicalExpiry: string | null;
   loginRole: string | null;
   instructorId: number | null;
   ameId: number | null;

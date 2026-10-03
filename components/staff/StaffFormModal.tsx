@@ -21,6 +21,7 @@ const TEXT_FIELDS: [keyof StaffMember, string, string?][] = [
   ['mobile', 'Mobile', 'tel'],
   ['personalEmail', 'Personal email', 'email'],
   ['dateOfBirth', 'Date of birth', 'date'],
+  ['medicalExpiry', 'Medical expiry', 'date'],
   ['nationality', 'Nationality'],
   ['address', 'Address'],
   ['emergencyContactName', 'Emergency contact name'],

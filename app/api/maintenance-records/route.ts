@@ -102,7 +102,7 @@ export async function POST(request: Request) {
   let {
     maintenanceType, scheduledDate, completedDate, status, cost, performedBy,
     maintenanceStart, maintenanceEnd, hobbsAtCompletion,
-    partsUsed, ameName, ameLicenseNo, crsReference, isBaseline,
+    partsUsed, ameName, ameLicenseNo, crsReference, isBaseline, assignedAmeId,
   } = body as Record<string, unknown>;
 
   if (!aircraftId) {
@@ -135,6 +135,7 @@ export async function POST(request: Request) {
     ameLicenseNo = null;
     crsReference = null;
     isBaseline = false;
+    assignedAmeId = null; // staff assign the AME, not the pilot reporting it
   } else if (!maintenanceType) {
     return NextResponse.json({ error: 'aircraftId and maintenanceType are required.' }, { status: 400 });
   }
@@ -189,6 +190,9 @@ export async function POST(request: Request) {
     ame_name: ameName ?? null,
     ame_license_no: ameLicenseNo ?? null,
     crs_reference: crsReference ?? null,
+    // 2026-10-03: who is doing the work (FK to ames) — see
+    // add-assigned-ame-and-staff-medical.sql.
+    assigned_ame_id: assignedAmeId ?? null,
   };
 
   const prefix: 'RMT' | 'IMT' = restricted ? 'IMT' : 'RMT';

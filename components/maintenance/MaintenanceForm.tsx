@@ -111,6 +111,9 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
     ameName: record?.ameName || '',
     ameLicenseNo: record?.ameLicenseNo || '',
     crsReference: record?.crsReference || '',
+    // 2026-10-03: who is doing the work — any status. Shown in the
+    // maintenance digest email. Separate from the certifying AME below.
+    assignedAmeId: record?.assignedAmeId != null ? String(record.assignedAmeId) : '',
     // Precise window — off by default (blocks the whole Scheduled Date, the
     // original/simple behavior). Turning it on reveals Start/End pickers.
     usePreciseWindow: !!record?.maintenanceStart,
@@ -236,6 +239,7 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
       ameName: form.ameName.trim() || null,
       ameLicenseNo: form.ameLicenseNo.trim() || null,
       crsReference: form.crsReference.trim() || null,
+      assignedAmeId: form.assignedAmeId ? Number(form.assignedAmeId) : null,
     });
     if (result.success) {
       onClose();
@@ -295,6 +299,18 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
                 <option value="CANCELLED">Cancelled</option>
               </select>
             </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-secondary mb-1">Assigned AME</label>
+            <select value={form.assignedAmeId} onChange={e => setForm(p => ({ ...p, assignedAmeId: e.target.value }))}
+              className={inputClass}>
+              <option value="">Unassigned</option>
+              {form.assignedAmeId && !ames.some(a => String(a.id) === form.assignedAmeId) && (
+                <option value={form.assignedAmeId}>(AME no longer active)</option>
+              )}
+              {ames.map(a => <option key={a.id} value={a.id}>{a.name} — {a.license_no}</option>)}
+            </select>
           </div>
 
           <div className="grid grid-cols-2 gap-3">

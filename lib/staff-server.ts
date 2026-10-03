@@ -24,6 +24,7 @@ const FIELDS: Record<string, [string, 'text' | 'date']> = {
   address: ['address', 'text'],
   emergencyContactName: ['emergency_contact_name', 'text'],
   emergencyContactPhone: ['emergency_contact_phone', 'text'],
+  medicalExpiry: ['medical_expiry', 'date'], // 2026-10-03, add-assigned-ame-and-staff-medical.sql
 };
 
 /**
@@ -109,6 +110,7 @@ export function toStaffMember(r: Record<string, unknown>): StaffMember {
     address: (r.address as string) ?? null,
     emergencyContactName: (r.emergency_contact_name as string) ?? null,
     emergencyContactPhone: (r.emergency_contact_phone as string) ?? null,
+    medicalExpiry: (r.medical_expiry as string) ?? null,
     loginRole: one(r.users as { role: string } | null)?.role ?? null,
     instructorId: one(r.instructors as { id: number } | null)?.id ?? null,
     ameId: one(r.ames as { id: number } | null)?.id ?? null,

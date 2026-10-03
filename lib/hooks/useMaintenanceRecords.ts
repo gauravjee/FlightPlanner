@@ -93,6 +93,7 @@ export async function fetchMaintenanceRecords(): Promise<MaintenanceRecord[]> {
       ameName: (row.ame_name as string) || null,
       ameLicenseNo: (row.ame_license_no as string) || null,
       crsReference: (row.crs_reference as string) || null,
+      assignedAmeId: (row.assigned_ame_id as number) ?? null,
       // Deliberately NOT resolved here — see the file header above.
       // withMaintenanceRecordNames() below fills these in at render time.
       aircraftReg: undefined, aircraftType: undefined,

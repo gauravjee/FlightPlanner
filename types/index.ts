@@ -423,6 +423,11 @@ export interface MaintenanceRecord {
   ameName?: string | null;
   ameLicenseNo?: string | null;
   crsReference?: string | null;
+  // 2026-10-03: the AME this task is assigned to (ames.id) — who is doing
+  // the work, set any time. Different from ameName above, which is who
+  // CERTIFIED it at completion. Shown in the maintenance digest email.
+  // See add-assigned-ame-and-staff-medical.sql.
+  assignedAmeId?: number | null;
   // 2026-09-03: year-scoped ticket number assigned on insert — RMT-<year>-NNN
   // for a staff-logged record, IMT-<year>-NNN for a pilot-filed squawk
   // (isSquawk). See add-maintenance-ticket-numbering.sql and
