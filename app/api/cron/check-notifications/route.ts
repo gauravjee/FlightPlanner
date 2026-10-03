@@ -8,12 +8,16 @@
 //    flags are in lib/notification-digest.ts. The AME column shows
 //    maintenance_records.ame_name ("Unassigned" when blank).
 // 2. PEOPLE DIGEST (morning run only): student medical / SPL and instructor
-//    CPL expired or expiring within 30 days, one email to each active admin
-//    and super admin; each student / instructor listed also gets their own
+//    CPL expired or expiring within 30 days, one email to each active admin,
+//    super admin and operations user; each student / instructor listed also gets their own
 //    email at the address on their record.
 //
 // "Morning" = before 12:00 IST. `?digest=maintenance|people|both` overrides
 // that (for testing). Each email sent is logged to notification_log.
+// Addresses ending in .test (the test logins) are skipped: that domain is
+// reserved and can never receive mail. For a live test, `?testTo=you@x.com`
+// sends every email to that one address instead, with the real recipient in
+// the subject — nobody else gets anything.
 // Resend batch send: one API call per digest (≤100 emails per call).
 
 import { NextResponse } from 'next/server';
@@ -50,6 +54,8 @@ export async function GET(request: Request) {
 
   const hourIST = Number(new Date().toLocaleString('en-GB', { timeZone: IST_TIMEZONE, hour: '2-digit', hour12: false }));
   const digest = url.searchParams.get('digest') ?? (hourIST < 12 ? 'both' : 'maintenance');
+  const testTo = url.searchParams.get('testTo');
+  if (testTo !== null && !EMAIL_RE.test(testTo)) return NextResponse.json({ error: 'testTo is not a valid email address.' }, { status: 400 });
   const today = todayIST();
   const dashboardUrl = `${url.protocol}//${url.host}/dashboard`;
   const stamp = new Date(`${today}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
@@ -104,7 +110,7 @@ export async function GET(request: Request) {
       if (items.length) {
         const subject = `FlightPro Licences & Medicals: ${sections[0].rows.length} expired · ${sections[1].rows.length} expiring in 30 days (${stamp})`;
         const html = wrapEmail('Student and staff licences and medicals', `As of ${stamp}.`, expiryHtml(sections, true), dashboardUrl);
-        for (const to of await recipients(['admin', 'super_admin'])) mails.push({ to, subject, html });
+        for (const to of await recipients(['admin', 'super_admin', 'operations'])) mails.push({ to, subject, html });
 
         // One email per person, listing all of their own items.
         const byPerson = new Map<string, ExpiryItem[]>();
@@ -115,23 +121,28 @@ export async function GET(request: Request) {
           mails.push({
             to,
             subject: expired ? 'Action needed: your licence or medical has expired' : 'Reminder: your licence or medical expires soon',
-            html: wrapEmail(`Hello ${own[0].person}`, 'Please arrange renewal and send the updated certificate to the office.', expiryHtml(splitExpiry(own), false), dashboardUrl),
+            html: wrapEmail(`Hello ${own[0].person.replace(/ \([^)]*\)$/, '')}`, 'Please arrange renewal and send the updated certificate to the office.', expiryHtml(splitExpiry(own), false), dashboardUrl),
           });
         }
       }
     }
 
     // ponytail: one batch call, Resend caps it at 100 emails; chunk if the school grows past that.
-    if (mails.length) {
+    const outgoing = testTo
+      ? mails.map(m => ({ ...m, to: testTo, subject: `[TEST for ${m.to}] ${m.subject}` }))
+      : mails.filter(m => !/\.test$/i.test(m.to));
+    result.skippedTestAddresses = mails.length - outgoing.length;
+    if (outgoing.length > 100) console.error(`check-notifications: ${outgoing.length - 100} emails not sent (over the 100 batch limit).`);
+    const batch = outgoing.slice(0, 100);
+    if (batch.length) {
       const resend = new Resend(process.env.RESEND_API_KEY);
-      const { error } = await resend.batch.send(mails.slice(0, 100).map(m => ({ from: FROM, ...m })));
+      const { error } = await resend.batch.send(batch.map(m => ({ from: FROM, ...m })));
       if (error) throw new Error(`Resend: ${error.message}`);
-      if (mails.length > 100) console.error(`check-notifications: ${mails.length - 100} emails not sent (over the 100 batch limit).`);
       const { error: logError } = await supabaseAdmin.from('notification_log')
-        .insert(mails.slice(0, 100).map(m => ({ type: 'DIGEST', subject: m.subject, message: m.subject, sent_to: m.to })));
+        .insert(batch.map(m => ({ type: 'DIGEST', subject: m.subject, message: m.subject, sent_to: m.to })));
       if (logError) console.error('check-notifications: failed to log emails:', logError.code);
     }
-    result.emailsSent = Math.min(mails.length, 100);
+    result.emailsSent = batch.length;
     console.log('check-notifications:', result);
     return NextResponse.json(result);
   } catch (error) {
