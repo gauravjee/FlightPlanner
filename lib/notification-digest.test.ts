@@ -1,6 +1,6 @@
 // lib/notification-digest.test.ts — run: npx tsx lib/notification-digest.test.ts
 import assert from 'node:assert/strict';
-import { classifyMaintenance, expiryItem, splitExpiry, maintenanceHtml, esc, addDays, type MxRow } from './notification-digest';
+import { classifyMaintenance, expiryItem, splitExpiry, maintenanceHtml, esc, addDays, remindToday, type MxRow } from './notification-digest';
 
 const T = '2026-09-28';
 const mx = (id: number, scheduled: string, extra: Partial<MxRow> = {}): MxRow => ({
@@ -43,5 +43,9 @@ assert.equal(expiryItem(base, '2026-10-28', T)?.days, 30);
 assert.equal(expiryItem(base, '2026-09-27', T)?.days, -1);
 const split = splitExpiry([expiryItem(base, '2026-10-01', T)!, expiryItem(base, '2026-09-01', T)!, expiryItem(base, T, T)!]);
 assert.deepEqual(split.map(x => x.rows.map(r => r.days)), [[-27], [0, 3]]);
+
+// personal reminders: 30, 15, then daily from 7 days out, and daily once expired
+assert.deepEqual([31, 30, 29, 16, 15, 14, 8, 7, 1, 0, -1, -40].map(remindToday),
+  [false, true, false, false, true, false, false, true, true, true, true, true]);
 
 console.log('notification-digest: all checks passed');

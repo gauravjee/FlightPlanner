@@ -77,6 +77,14 @@ export function expiryItem(base: Omit<ExpiryItem, 'expiry' | 'days'>, expiry: st
   return days <= 30 ? { ...base, expiry, days } : null;
 }
 
+// Personal reminder schedule (operator, 4 Oct): 30 and 15 days before
+// expiry, then every day from 7 days before until it is renewed — including
+// every day after it has expired. The admin digest still lists everything
+// within 30 days, every morning.
+export function remindToday(days: number): boolean {
+  return days === 30 || days === 15 || days <= 7;
+}
+
 export function splitExpiry(items: ExpiryItem[]): Section<ExpiryItem>[] {
   const sorted = [...items].sort((a, b) => a.days - b.days);
   return [

@@ -11,7 +11,8 @@
 // 2. PEOPLE DIGEST (morning run only): student medical / SPL and instructor
 //    CPL and staff medicals expired or expiring within 30 days: ONE shared
 //    email with every active admin, super admin and operations user in To;
-//    each person listed also gets their own separate email.
+//    each person listed also gets their own separate email on reminder days
+//    (30, 15, then daily from 7 days before expiry until renewed — remindToday).
 //
 // "Morning" = before 12:00 IST. `?digest=maintenance|people|both` overrides
 // that (for testing). Each email sent is logged to notification_log.
@@ -27,7 +28,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { todayIST, IST_TIMEZONE } from '@/lib/ist';
 import { hasLeft } from '@/lib/staff-id';
 import {
-  addDays, classifyMaintenance, expiryItem, splitExpiry, maintenanceHtml, expiryHtml, wrapEmail,
+  addDays, classifyMaintenance, remindToday, expiryItem, splitExpiry, maintenanceHtml, expiryHtml, wrapEmail,
   type MxRow, type ExpiryItem,
 } from '@/lib/notification-digest';
 
@@ -141,6 +142,8 @@ export async function GET(request: Request) {
         // A malformed address would make Resend reject the whole batch, so skip it.
         for (const i of items) if (i.email && EMAIL_RE.test(i.email)) byPerson.set(i.email, [...(byPerson.get(i.email) ?? []), i]);
         for (const [email, own] of byPerson) {
+          // Only on reminder days (30, 15, then daily from 7 out); the email still lists all their items.
+          if (!own.some(i => remindToday(i.days))) continue;
           const expired = own.some(i => i.days < 0);
           mails.push({
             to: [email],
