@@ -136,6 +136,22 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
   },
 };
 
+// 2026-10-07 (S4 review): every AME belongs to a staff record (B2). The AMEs
+// tab already requires one; this makes the server require it too, so a
+// direct request or a future UI bug can't create an AME with no staff ID.
+// Returns an error message, or null when the link is fine. ameId = the row
+// being edited (it may keep its own staff link).
+async function ameStaffError(row: Record<string, unknown>, ameId?: string | number): Promise<string | null> {
+  const staffId = Number(row.staff_member_id);
+  if (row.staff_member_id == null || !Number.isInteger(staffId) || staffId < 1) return 'Pick a staff member for this AME.';
+  const { data: staff } = await supabaseAdmin.from('staff_members').select('id').eq('id', staffId).maybeSingle();
+  if (!staff) return 'That staff member no longer exists.';
+  let taken = supabaseAdmin.from('ames').select('id').eq('staff_member_id', staffId);
+  if (ameId !== undefined) taken = taken.neq('id', ameId);
+  const { data } = await taken.limit(1);
+  return data?.length ? 'That staff member is already an AME.' : null;
+}
+
 function pickAllowed(body: Record<string, unknown>, columns: string[]): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const col of columns) {
@@ -209,6 +225,7 @@ export async function POST(request: Request, context: RouteContext) {
   // Bulk insert (e.g. the Exercises tab's CSV import, or Holiday Calendar's
   // recurring-holiday bulk add) — body is an array of row objects.
   if (Array.isArray(body)) {
+    if (table === 'ames') return NextResponse.json({ error: 'Add AMEs one at a time.' }, { status: 400 });
     const rows = body.map((row) => pickAllowed(row as Record<string, unknown>, config.columns));
     const { data, error: dbError } = await supabaseAdmin.from(config.dbTable).insert(rows).select();
     if (dbError) {
@@ -219,6 +236,10 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   const insertBody = pickAllowed(body as Record<string, unknown>, config.columns);
+  if (table === 'ames') {
+    const ameError = await ameStaffError(insertBody);
+    if (ameError) return NextResponse.json({ error: ameError }, { status: 400 });
+  }
   const { data, error: dbError } = await supabaseAdmin
     .from(config.dbTable)
     .insert(insertBody)
@@ -258,6 +279,10 @@ export async function PATCH(request: Request, context: RouteContext) {
   const updates = pickAllowed(body, config.columns);
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
+  }
+  if (table === 'ames' && 'staff_member_id' in updates) {
+    const ameError = await ameStaffError(updates, id);
+    if (ameError) return NextResponse.json({ error: ameError }, { status: 400 });
   }
 
   const { data, error: dbError } = await supabaseAdmin
