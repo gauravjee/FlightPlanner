@@ -21,6 +21,7 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { sendWelcomeEmailServer } from '@/lib/email';
 import { generatePassword } from '@/lib/password';
 import { resolveStaffLink, removeNewStaff } from '@/lib/staff-server';
+import { exactIlike } from '@/lib/user-id';
 
 const ALLOWED_ROLES = ['super_admin'];
 
@@ -41,7 +42,7 @@ const ALLOWED_ROLES = ['super_admin'];
 // per-user grants — see lib/permissions.ts's MODULE_ACCESS and the "Edit
 // Permissions" action in UserManagementTab.tsx.
 // 2026-09-24 (B2 S3a): + the linked staff record's staff ID; the joining date now lives on the staff record.
-const SAFE_COLUMNS = 'id, email, name, role, is_active, force_password_reset, last_login, created_at, permission_overrides, staff_member_id, staff:staff_members!users_staff_member_id_fkey(staff_id)';
+const SAFE_COLUMNS = 'id, email, name, role, is_active, force_password_reset, last_login, created_at, permission_overrides, staff_member_id, user_id, user_id_changed_at, staff:staff_members!users_staff_member_id_fkey(staff_id)';
 
 export async function GET() {
   const { error } = await requireRole(ALLOWED_ROLES);
@@ -82,6 +83,12 @@ export async function POST(request: Request) {
   if (!VALID_USER_ROLES.includes(role)) {
     return NextResponse.json({ error: 'Invalid role.' }, { status: 400 });
   }
+  // B1 (2026-10-08): login by email is case-insensitive, so emails must be
+  // unique regardless of case (the DB's own unique check is case-sensitive).
+  const { data: sameEmail } = await supabaseAdmin.from('users').select('id').ilike('email', exactIlike(email)).limit(1);
+  if (sameEmail?.length) {
+    return NextResponse.json({ error: 'That email address is already in use by another account.' }, { status: 409 });
+  }
 
   // 2026-09-24 (B2 S3a): every login except super admin belongs to a staff
   // record — an existing one, or a new one created here (staff ID issued by
@@ -95,6 +102,14 @@ export async function POST(request: Request) {
     createdStaff = link.created;
   }
 
+  // B1 (2026-10-08): a staff login's temporary user ID is the staff ID. Super
+  // admins have none until they choose one (Account page).
+  let userId: string | null = null;
+  if (staffMemberId !== null) {
+    const { data: staff } = await supabaseAdmin.from('staff_members').select('staff_id').eq('id', staffMemberId).maybeSingle();
+    userId = (staff?.staff_id as string | undefined) ?? null;
+  }
+
   const password = generatePassword();
   const hash = await bcrypt.hash(password, 10);
 
@@ -106,6 +121,7 @@ export async function POST(request: Request) {
     is_active: true,
     force_password_reset: true, // must change password on first login
     staff_member_id: staffMemberId,
+    user_id: userId,
   });
 
   if (insertError) {
@@ -120,7 +136,7 @@ export async function POST(request: Request) {
   };
 
   if (sendEmail) {
-    emailResult = await sendWelcomeEmailServer(email, name, password, role);
+    emailResult = await sendWelcomeEmailServer(email, name, password, role, userId);
   }
 
   return NextResponse.json({

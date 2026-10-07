@@ -7,6 +7,7 @@ import { requireRole, MODULE_KEYS, OVERRIDE_ELIGIBLE_ROLES } from '@/lib/api-aut
 import { VALID_USER_ROLES, type ModuleKey } from '@/lib/permissions';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasLeft } from '@/lib/staff-id';
+import { exactIlike } from '@/lib/user-id';
 
 const ALLOWED_ROLES = ['super_admin'];
 const VALID_OVERRIDE_VALUES = ['view', 'full'];
@@ -64,6 +65,11 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (!email) {
       return NextResponse.json({ error: 'Email cannot be blank.' }, { status: 400 });
     }
+    // B1: login by email is case-insensitive, so no case-only duplicates.
+    const { data: sameEmail } = await supabaseAdmin.from('users').select('id').ilike('email', exactIlike(email)).neq('id', id).limit(1);
+    if (sameEmail?.length) {
+      return NextResponse.json({ error: 'That email address is already in use by another account.' }, { status: 409 });
+    }
     dbUpdates.email = email;
   }
   if (body.role !== undefined) {
@@ -92,6 +98,12 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   // 2026-09-24 (B2 S3a): the joining date moved to the staff record (Staff
   // page); users.joining_date is no longer written.
+
+  // action: 'allowUserIdChange' (B1, 2026-10-08) expects { allowUserIdChange: true }
+  // — gives the person one more change of their user ID (Account page).
+  if (body.allowUserIdChange === true) {
+    dbUpdates.user_id_changed_at = null;
+  }
 
   // action: 'setPermissionOverrides' expects
   // { permissionOverrides: Record<ModuleKey, 'view' | 'full'> } — replaces

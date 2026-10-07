@@ -57,7 +57,8 @@ export async function sendWelcomeEmailServer(
   email: string,
   name: string,
   password: string,
-  role: string
+  role: string,
+  userId?: string | null, // B1: shown so they can sign in with it
 ): Promise<{ success: boolean; message: string }> {
   const resend = getResend();
 
@@ -81,6 +82,7 @@ export async function sendWelcomeEmailServer(
           <div style="background: #f1f5f9; padding: 20px; border-radius: 8px; margin: 20px 0;">
             <p><strong>🔗 Login URL:</strong> <a href="https://flightplanner-xi.vercel.app/login">FlightPro Login</a></p>
             <p><strong>📧 Email:</strong> ${email}</p>
+            ${userId ? `<p><strong>🪪 User ID:</strong> ${userId} <span style="color:#64748b">(sign in with this or your email; you can change it once from the Account page)</span></p>` : ''}
             <p><strong>🔑 Password:</strong> ${password}</p>
           </div>
           <div style="background: #fef3c7; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">

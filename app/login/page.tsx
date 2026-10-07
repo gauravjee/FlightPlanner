@@ -91,7 +91,8 @@ export default function LoginPage() {
 
       if (needsReset) {
         // Redirect to password reset page with email pre-filled
-        router.push(`/reset-password?email=${encodeURIComponent(email)}`);
+        // The account's own email (B1: what was typed may be a user ID).
+        router.push(`/reset-password?email=${encodeURIComponent(sessionUser?.email ?? email)}`);
       } else if (role === 'student') {
         router.push('/dashboard/student');  // Students see their own dashboard
       } else {
@@ -184,16 +185,17 @@ export default function LoginPage() {
         {!showForgotPassword ? (
           <form onSubmit={handleSubmit} className="space-y-4">
 
-            {/* ----- Email Field ----- */}
+            {/* ----- Email or User ID Field (B1, 2026-10-08) ----- */}
             <div>
-              <label className="block text-sm text-secondary mb-1">Email</label>
+              <label className="block text-sm text-secondary mb-1">Email or User ID</label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-tertiary absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
-                  type="email"
+                  type="text"
+                  autoComplete="username"
                   value={email}
                   onChange={e => setEmail(e.target.value)}
-                  placeholder="admin@flightpro.com"
+                  placeholder="you@school.in or your user ID"
                   required
                   className="w-full surface-inner rounded-lg pl-10 pr-4 py-3 focus:outline-none focus:border-[var(--accent)]"
                   style={{ color: 'var(--text-primary)' }}
@@ -267,16 +269,17 @@ export default function LoginPage() {
           /* ============================================================ */
           <form onSubmit={handleForgotPassword} className="space-y-4">
             <p className="text-sm text-secondary text-center">
-              Enter your email address and we&apos;ll send you a link to reset your password.
+              Enter your email or user ID and we&apos;ll email you a link to reset your password.
             </p>
 
             {/* ----- Email Field ----- */}
             <div>
-              <label className="block text-sm text-secondary mb-1">Email Address</label>
+              <label className="block text-sm text-secondary mb-1">Email or User ID</label>
               <div className="relative">
                 <Mail className="w-4 h-4 text-tertiary absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
-                  type="email"
+                  type="text"
+                  autoComplete="username"
                   value={resetEmail}
                   onChange={e => setResetEmail(e.target.value)}
                   placeholder="your@email.com"

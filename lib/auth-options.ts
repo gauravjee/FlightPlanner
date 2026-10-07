@@ -7,7 +7,7 @@
 // having to import from a route.ts file.
 import type { AuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { verifyCredentials, isLockedOut, recordLoginAttempt } from '@/lib/auth';
+import { verifyCredentials, isLockedOut, recordLoginAttempt, loginAuditKey } from '@/lib/auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasLeft } from '@/lib/staff-id';
 
@@ -21,7 +21,8 @@ export const authOptions: AuthOptions = {
     CredentialsProvider({
       name: 'credentials',
       credentials: {
-        email: { label: 'Email', type: 'email' },
+        // B1: holds an email OR a user ID (the field keeps its old name).
+        email: { label: 'Email or User ID', type: 'text' },
         password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials, req) {
@@ -31,10 +32,13 @@ export const authOptions: AuthOptions = {
         // junk; reject before it reaches the DB or gets stored in login_audit.
         if (credentials.email.length > 254) return null;
 
-        // Brute-force guard: 5 failures per email per 15 minutes. Thrown
-        // (not `return null`) so the login page can show a distinct message
-        // — NextAuth surfaces the message as signIn()'s `error`.
-        if (await isLockedOut(credentials.email)) {
+        // Brute-force guard: 5 failures per account per 15 minutes. Counted
+        // under the account's email (lower case) whether the email or the
+        // user ID was typed, so switching between them doesn't buy extra
+        // tries. Thrown (not `return null`) so the login page can show a
+        // distinct message — NextAuth surfaces it as signIn()'s `error`.
+        const auditKey = await loginAuditKey(credentials.email);
+        if (await isLockedOut(auditKey)) {
           throw new Error('TOO_MANY_ATTEMPTS');
         }
 
@@ -47,7 +51,7 @@ export const authOptions: AuthOptions = {
         // Server-authoritative audit trail (replaces the browser-side write).
         const headers = req?.headers ?? {};
         await recordLoginAttempt(
-          credentials.email,
+          auditKey,
           user && user !== 'DISABLED' ? 'SUCCESS' : 'FAILED',
           String(headers['x-forwarded-for'] ?? '').split(',')[0].trim(),
           String(headers['user-agent'] ?? '')

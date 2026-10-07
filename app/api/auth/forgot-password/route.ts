@@ -15,6 +15,7 @@ import { Resend } from 'resend';
 import crypto from 'crypto';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { hasLeft } from '@/lib/staff-id';
+import { isEmailIdentifier, exactIlike } from '@/lib/user-id';
 
 // This route already only ever runs server-side, but it used to build its
 // own anon-key Supabase client instead of reusing supabaseAdmin. Once Row
@@ -30,11 +31,12 @@ import { hasLeft } from '@/lib/staff-id';
  */
 export async function POST(request: Request) {
   try {
-    // Parse the email from the request body
-    const { email } = await request.json();
+    // Parse the email from the request body. B1 (2026-10-08): it may also be
+    // a user ID; either way the link goes to the account's own email.
+    const { email: identifier } = await request.json();
 
     // Validate email is provided
-    if (!email) {
+    if (typeof identifier !== 'string' || !identifier.trim()) {
       return NextResponse.json(
         { error: 'Email is required' },
         { status: 400 }
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
     const { data: user, error: userError } = await supabaseAdmin
       .from('users')
       .select('id, email, name, is_active, staff:staff_members!users_staff_member_id_fkey(last_working_date)')
-      .eq('email', email)
+      .ilike(isEmailIdentifier(identifier) ? 'email' : 'user_id', exactIlike(identifier.trim()))
       .single();
 
     // 2026-09-24 (B2, operator): a disabled account or a staff member who has
@@ -65,6 +67,7 @@ export async function POST(request: Request) {
         message: 'If the email exists, a reset link has been sent.',
       });
     }
+    const email = user.email as string; // the account's address, never what was typed
 
     // ============================================================
     // GENERATE RESET TOKEN

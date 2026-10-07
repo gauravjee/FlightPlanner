@@ -1,4 +1,6 @@
 // app/change-password/page.tsx
+// Account page (2026-10-08, B1: was "Change Password"): your user ID
+// (components/account/UserIdSection.tsx) and changing your password.
 // Change Password While Logged In
 // ============================================================
 // Features:
@@ -16,6 +18,7 @@ import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import Header from '@/components/ui/Header';
+import UserIdSection from '@/components/account/UserIdSection';
 import { Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 export default function ChangePasswordPage() {
@@ -108,9 +111,10 @@ export default function ChangePasswordPage() {
   return (
     <ProtectedRoute>
       <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-        <Header title="Change Password" backUrl="/dashboard" />
+        <Header title="Account" backUrl="/dashboard" />
 
         <div className="max-w-md mx-auto px-4 py-12">
+          <UserIdSection />
           <div className="surface-card backdrop-blur-sm p-8">
 
             {/* Header */}

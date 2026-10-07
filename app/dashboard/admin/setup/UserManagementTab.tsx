@@ -38,6 +38,8 @@ interface User {
   created_at: string;
   permission_overrides?: PermissionOverrides | null;
   staff?: { staff_id: string } | null; // 2026-09-24 (B2 S3a): linked staff record
+  user_id?: string | null;             // 2026-10-08 (B1): login user ID
+  user_id_changed_at?: string | null;  // set once the person has used their one change
 }
 
 // ============================================================
@@ -403,6 +405,7 @@ export default function UserManagementTab() {
             <thead>
               <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                 <th className="pb-3">User</th>
+                <th className="pb-3">User ID</th>
                 <th className="pb-3">Staff ID</th>
                 <th className="pb-3">Role</th>
                 <th className="pb-3">Status</th>
@@ -421,6 +424,10 @@ export default function UserManagementTab() {
                     <p className="text-xs text-tertiary">{user.email}</p>
                   </td>
 
+                  <td className="py-3 text-xs font-mono whitespace-nowrap">
+                    {user.user_id ?? '—'}
+                    {user.user_id_changed_at && <span title="Changed once — locked" aria-label="locked"> 🔒</span>}
+                  </td>
                   <td className="py-3 text-xs font-mono">{user.staff?.staff_id ?? '—'}</td>
 
                   {/* Role Badge */}

@@ -262,7 +262,7 @@ function UserMenu() {
               onClick={() => setOpen(false)}
               className="flex items-center gap-2 px-3 py-2.5 text-sm text-secondary hover:bg-[var(--surface-muted)] transition"
             >
-              <KeyRound className="w-3.5 h-3.5" /> Change Password
+              <KeyRound className="w-3.5 h-3.5" /> Account (user ID &amp; password)
             </Link>
             <button
               onClick={() => signOut({ callbackUrl: '/login' })}

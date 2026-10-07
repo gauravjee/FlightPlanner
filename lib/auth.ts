@@ -18,17 +18,39 @@
 import { supabaseAdmin } from './supabase-admin';
 import bcrypt from 'bcryptjs';
 import { hasLeft } from './staff-id';
+import { isEmailIdentifier, exactIlike } from './user-id';
 
-// Returns the user, null (wrong email or password), or 'DISABLED' (right
-// password, but the login is switched off or the person has left).
-export async function verifyCredentials(email: string, password: string) {
-  const { data, error } = await supabaseAdmin
-    .from('users')
-    .select('*, staff:staff_members!users_staff_member_id_fkey(last_working_date)')
-    .eq('email', email)
-    .maybeSingle();
+// B1 (2026-10-08): what was typed at login is an email or a user ID, either
+// in any letter case. An @ means email. Two accounts can't match: user IDs
+// are unique regardless of case (add-user-ids.sql), and emails were checked
+// for case-only duplicates before this went in.
+async function findLogin<T>(identifier: string, columns: string): Promise<T | null> {
+  const id = identifier.trim();
+  const query = supabaseAdmin.from('users').select(columns);
+  const { data, error } = await (isEmailIdentifier(id)
+    ? query.ilike('email', exactIlike(id))
+    : query.ilike('user_id', exactIlike(id))).maybeSingle();
+  return error ? null : (data as T | null);
+}
 
-  if (error || !data) return null;
+/** The key failed logins are counted under: the account's email, whichever identifier was typed. */
+export async function loginAuditKey(identifier: string): Promise<string> {
+  const row = await findLogin<{ email: string }>(identifier, 'email');
+  return (row?.email ?? identifier.trim()).toLowerCase();
+}
+
+type LoginRow = {
+  id: string; email: string; name: string; role: string; student_id: string | null;
+  password_hash: string; is_active: boolean; force_password_reset: boolean;
+  staff: { last_working_date: string | null } | { last_working_date: string | null }[] | null;
+};
+
+// Returns the user, null (wrong email / user ID or password), or 'DISABLED'
+// (right password, but the login is switched off or the person has left).
+export async function verifyCredentials(identifier: string, password: string) {
+  const data = await findLogin<LoginRow>(identifier, '*, staff:staff_members!users_staff_member_id_fkey(last_working_date)');
+
+  if (!data) return null;
 
   // Compare the provided password with the stored hash
   const isValid = await bcrypt.compare(password, data.password_hash);

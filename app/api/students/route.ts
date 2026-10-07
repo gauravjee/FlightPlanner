@@ -43,6 +43,7 @@ import { requireSession, requireRole, STUDENT_STAFF_ROLES, STUDENT_CREATION_ROLE
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { generatePassword } from '@/lib/password';
 import { sendWelcomeEmailServer } from '@/lib/email';
+import { exactIlike } from '@/lib/user-id';
 import { provisionRequirementsForStudent } from '@/lib/requirements-provisioning';
 
 export async function GET() {
@@ -175,8 +176,8 @@ export async function POST(request: Request) {
   // instead of bouncing the admin with a false-positive conflict.
   const { data: existingUser } = await supabaseAdmin
     .from('users')
-    .select('id, role, is_active, student_id')
-    .eq('email', trimmedEmail)
+    .select('id, role, is_active, student_id, user_id')
+    .ilike('email', exactIlike(trimmedEmail)) // B1: emails are unique regardless of case
     .maybeSingle();
 
   const reactivatingUserId =
@@ -257,6 +258,8 @@ export async function POST(request: Request) {
           student_id: student.id,
           is_active: true,
           force_password_reset: true,
+          // B1: keep the user ID they already had; give one only if they had none.
+          ...(existingUser?.user_id ? {} : { user_id: enrollmentId }),
         })
         .eq('id', reactivatingUserId)
     : await supabaseAdmin.from('users').insert({
@@ -267,6 +270,7 @@ export async function POST(request: Request) {
         student_id: student.id,
         is_active: true,
         force_password_reset: true,
+        user_id: enrollmentId, // B1: a student's temporary user ID is their enrollment number
       });
 
   if (userError) {
@@ -280,7 +284,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const emailResult = await sendWelcomeEmailServer(trimmedEmail, name as string, password, 'student');
+  const emailResult = await sendWelcomeEmailServer(trimmedEmail, name as string, password, 'student', existingUser?.user_id ?? enrollmentId);
 
   // 3. Provision this student's per-row training requirements by copying
   //    the template rows (student_id IS NULL, Admin Setup -> Requirements)

@@ -22,6 +22,8 @@ interface UserLike {
   email: string;
   role: string;
   staff?: { staff_id: string } | null;
+  user_id?: string | null;            // B1 (2026-10-08)
+  user_id_changed_at?: string | null;
 }
 
 interface Props {
@@ -66,6 +68,25 @@ export default function UserEditModal({ user, onClose, onSaved }: Props) {
       setErrorMessage(err instanceof Error ? err.message : 'Failed to save user.');
       setSaving(false);
     }
+  };
+
+  // B1: give the person one more change of their user ID (Account page).
+  const allowUserIdChange = async () => {
+    setSaving(true);
+    setErrorMessage('');
+    const res = await fetch(`/api/admin/users/${user.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allowUserIdChange: true }),
+    });
+    setSaving(false);
+    if (!res.ok) {
+      const { error } = await res.json().catch(() => ({ error: 'Unknown error' }));
+      setErrorMessage(error || 'Failed to allow the change.');
+      return;
+    }
+    onSaved();
+    onClose();
   };
 
   const inputClass = "w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]";
@@ -113,6 +134,20 @@ export default function UserEditModal({ user, onClose, onSaved }: Props) {
               Changing this immediately changes what this user can access — it doesn&apos;t affect any
               per-user permission overrides already granted to them separately.
             </p>
+          </div>
+
+          {/* B1 (2026-10-08): user ID; the person changes it themselves, once. */}
+          <div className="text-xs text-tertiary">
+            User ID <span className="font-mono">{user.user_id ?? 'not set'}</span>
+            {user.user_id_changed_at ? (
+              <>
+                {' '}🔒 changed once.{' '}
+                <button type="button" onClick={allowUserIdChange} disabled={saving}
+                  className="font-semibold cursor-pointer hover:underline disabled:opacity-50" style={{ color: 'var(--accent)' }}>
+                  Allow one more change
+                </button>
+              </>
+            ) : ' (they can still change it once, from their Account page).'}
           </div>
 
           {/* 2026-09-24 (B2 S3a): joining date and other staff details live on the Staff page. */}
