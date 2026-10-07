@@ -188,7 +188,13 @@ export async function GET(request: Request) {
     if (!testTo && sentKeys.length) {
       const { error: sendsError } = await supabaseAdmin.from('digest_sends')
         .upsert(sentKeys.map(key => ({ key, sent_on: today })), { onConflict: 'key,sent_on', ignoreDuplicates: true });
-      if (sendsError) console.error('check-notifications: failed to record digest_sends:', sendsError.code);
+      // Loud on purpose: the emails have gone, but without this record the next
+      // run would send the same reminders again. A 500 makes cron-job.org show
+      // the run as failed, so someone looks.
+      if (sendsError) {
+        console.error('check-notifications: emails SENT but failed to record digest_sends:', sendsError.code, sendsError.message);
+        return NextResponse.json({ error: 'Emails were sent, but recording them failed — reminders may repeat on the next run. See server logs.', emailsSent: batch.length }, { status: 500 });
+      }
     }
     result.emailsSent = batch.length;
     console.log('check-notifications:', result);
