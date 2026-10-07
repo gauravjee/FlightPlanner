@@ -3,32 +3,37 @@
 // (?secret=CRON_SECRET or Authorization: Bearer). Rewritten 28 Sep 2026 to
 // replace the old one-email-per-alert-per-admin sends (operator item 14):
 //
-// 1. MAINTENANCE DIGEST (every run): ONE shared email with every active admin,
+// 1. MAINTENANCE DIGEST (every run, also when there is nothing to report:
+//    "Nothing due", operator 7 Oct): ONE shared email with every active admin,
 //    super admin and maintenance user together in To (operator, 3 Oct: the
 //    group sees who else got it and can reply-all). Sections and
 //    flags are in lib/notification-digest.ts. The AME column shows
 //    maintenance_records.ame_name ("Unassigned" when blank).
-// 2. PEOPLE DIGEST (morning run only): student medical / SPL and instructor
-//    CPL and staff medicals expired or expiring within 30 days: ONE shared
-//    email with every active admin, super admin and operations user in To;
-//    each person listed also gets their own separate email on reminder days
-//    (30, 15, then daily from 7 days before expiry until renewed — remindToday).
+// 2. PEOPLE DIGEST (once a day, on the first run that day — 06:00, or 18:00 if
+//    06:00 didn't run): student medical / SPL and instructor CPL and staff
+//    medicals expired or expiring within 30 days: ONE shared email with every
+//    active admin, super admin and operations user in To; each person listed
+//    also gets their own separate email on reminder days (30, 15, then daily
+//    from 7 days before expiry until renewed). A missed run is caught up on
+//    the next run (operator 7 Oct): what was sent, and when, is kept in
+//    digest_sends (add-digest-sends.sql) — see reminderDue().
 //
-// "Morning" = before 12:00 IST. `?digest=maintenance|people|both` overrides
-// that (for testing). Each email sent is logged to notification_log.
+// `?digest=maintenance|people` runs just one (for testing). Each email sent
+// is logged to notification_log.
 // Addresses ending in .test (the test logins) are skipped: that domain is
 // reserved and can never receive mail. For a live test, `?testTo=you@x.com`
 // sends every email to that one address instead, with the real recipients in
-// the subject — nobody else gets anything.
+// the subject — nobody else gets anything. Test runs ignore and don't update
+// digest_sends, so they never hold back a real reminder.
 // Resend batch send: one API call per digest (≤100 emails per call).
 
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { todayIST, IST_TIMEZONE } from '@/lib/ist';
+import { todayIST } from '@/lib/ist';
 import { hasLeft } from '@/lib/staff-id';
 import {
-  addDays, classifyMaintenance, remindToday, expiryItem, splitExpiry, maintenanceHtml, expiryHtml, wrapEmail,
+  addDays, classifyMaintenance, reminderDue, expiryItem, splitExpiry, maintenanceHtml, expiryHtml, wrapEmail,
   type MxRow, type ExpiryItem,
 } from '@/lib/notification-digest';
 
@@ -55,14 +60,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Email is not configured.' }, { status: 500 });
   }
 
-  const hourIST = Number(new Date().toLocaleString('en-GB', { timeZone: IST_TIMEZONE, hour: '2-digit', hour12: false }));
-  const digest = url.searchParams.get('digest') ?? (hourIST < 12 ? 'both' : 'maintenance');
+  const digest = url.searchParams.get('digest') ?? 'both';
   const testTo = url.searchParams.get('testTo');
   if (testTo !== null && !EMAIL_RE.test(testTo)) return NextResponse.json({ error: 'testTo is not a valid email address.' }, { status: 400 });
   const today = todayIST();
   const dashboardUrl = `${url.protocol}//${url.host}/dashboard`;
   const stamp = new Date(`${today}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
   const mails: Mail[] = [];
+  const sentKeys: string[] = []; // digest_sends rows to write once the emails have gone
   const result: Record<string, unknown> = { today, digest };
 
   try {
@@ -93,12 +98,14 @@ export async function GET(request: Request) {
       const sections = classifyMaintenance(withAme(open.data as Row[], false), withAme(closed.data as Row[], true), today);
       const count = (i: number) => sections[i].rows.length;
       result.maintenance = Object.fromEntries(sections.map(s => [s.title, s.rows.length]));
-      if (sections.some(s => s.rows.length)) {
-        const subject = `FlightPro Maintenance: ${count(0)} overdue · ${count(1)} due in 7 days · ${count(2)} open defects/records (${stamp})`;
-        const html = wrapEmail('Maintenance status', `As of ${stamp}.`, maintenanceHtml(sections, id => reg.get(id) ?? 'Unknown aircraft', today), dashboardUrl);
-        const to = await recipients(['admin', 'super_admin', 'maintenance']);
-        if (to.length) mails.push({ to, subject, html });
-      }
+      const nothing = !sections.some(s => s.rows.length);
+      const subject = nothing
+        ? `FlightPro Maintenance: Nothing due (${stamp})`
+        : `FlightPro Maintenance: ${count(0)} overdue · ${count(1)} due in 7 days · ${count(2)} open defects/records (${stamp})`;
+      const intro = nothing ? `As of ${stamp}: Nothing due — nothing overdue, due, open or upcoming, and nothing closed in the last 15 days.` : `As of ${stamp}.`;
+      const html = wrapEmail('Maintenance status', intro, maintenanceHtml(sections, id => reg.get(id) ?? 'Unknown aircraft', today), dashboardUrl);
+      const to = await recipients(['admin', 'super_admin', 'maintenance']);
+      if (to.length) mails.push({ to, subject, html });
     }
 
     if (digest === 'people' || digest === 'both') {
@@ -110,8 +117,12 @@ export async function GET(request: Request) {
         supabaseAdmin.from('staff_members').select('name, personal_email, medical_expiry, last_working_date, users!users_staff_member_id_fkey(email)')
           .not('medical_expiry', 'is', null),
       ]);
-      const failed = [students, instructors, staff].find(r => r.error);
+      const sends = await supabaseAdmin.from('digest_sends').select('key, sent_on').gte('sent_on', addDays(today, -31));
+      const failed = [students, instructors, staff, sends].find(r => r.error);
       if (failed) throw failed.error;
+      // Latest send per key. Test runs (testTo) start from nothing, so they show what a fresh run sends.
+      const lastSent = new Map<string, string>();
+      if (!testTo) for (const r of sends.data ?? []) if ((lastSent.get(r.key) ?? '') < r.sent_on) lastSent.set(r.key, r.sent_on);
       const items: ExpiryItem[] = [];
       for (const s of students.data ?? []) {
         const base = { person: `${s.name} (${s.initials})`, kind: 'Student' as const, email: (s.email as string)?.trim() || null };
@@ -131,19 +142,22 @@ export async function GET(request: Request) {
       }
       const sections = splitExpiry(items);
       result.people = { expired: sections[0].rows.length, expiring: sections[1].rows.length };
-      if (items.length) {
+      if (items.length && lastSent.get('people-digest') !== today) { // the group email: once a day
         const subject = `FlightPro Licences & Medicals: ${sections[0].rows.length} expired · ${sections[1].rows.length} expiring in 30 days (${stamp})`;
         const html = wrapEmail('Student and staff licences and medicals', `As of ${stamp}.`, expiryHtml(sections, true), dashboardUrl);
         const to = await recipients(['admin', 'super_admin', 'operations']);
-        if (to.length) mails.push({ to, subject, html });
-
+        if (to.length) { mails.push({ to, subject, html }); sentKeys.push('people-digest'); }
+      }
+      if (items.length) {
         // One email per person, listing all of their own items.
         const byPerson = new Map<string, ExpiryItem[]>();
         // A malformed address would make Resend reject the whole batch, so skip it.
         for (const i of items) if (i.email && EMAIL_RE.test(i.email)) byPerson.set(i.email, [...(byPerson.get(i.email) ?? []), i]);
         for (const [email, own] of byPerson) {
-          // Only on reminder days (30, 15, then daily from 7 out); the email still lists all their items.
-          if (!own.some(i => remindToday(i.days))) continue;
+          // Only when a reminder is due (or was missed); the email still lists all their items.
+          const key = (i: ExpiryItem) => `remind|${email}|${i.document}|${i.expiry}`;
+          if (!own.some(i => reminderDue(i.expiry, today, lastSent.get(key(i))))) continue;
+          sentKeys.push(...own.map(key));
           const expired = own.some(i => i.days < 0);
           mails.push({
             to: [email],
@@ -169,6 +183,12 @@ export async function GET(request: Request) {
       const { error: logError } = await supabaseAdmin.from('notification_log')
         .insert(batch.map(m => ({ type: 'DIGEST', subject: m.subject, message: m.subject, sent_to: m.to.join(', ') })));
       if (logError) console.error('check-notifications: failed to log emails:', logError.code);
+    }
+    // Record what went out today, so the next run neither repeats nor misses it.
+    if (!testTo && sentKeys.length) {
+      const { error: sendsError } = await supabaseAdmin.from('digest_sends')
+        .upsert(sentKeys.map(key => ({ key, sent_on: today })), { onConflict: 'key,sent_on', ignoreDuplicates: true });
+      if (sendsError) console.error('check-notifications: failed to record digest_sends:', sendsError.code);
     }
     result.emailsSent = batch.length;
     console.log('check-notifications:', result);
