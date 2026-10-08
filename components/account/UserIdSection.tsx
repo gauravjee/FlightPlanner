@@ -16,6 +16,8 @@ export default function UserIdSection() {
   const [next, setNext] = useState('');
   const [check, setCheck] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // Inline confirm: window.confirm is silently blocked in some embedded browsers.
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -36,8 +38,7 @@ export default function UserIdSection() {
   };
 
   const change = async () => {
-    if (!window.confirm(`Change your user ID to "${next.trim()}"? You can only do this once.`)) return;
-    setBusy(true); setError('');
+    setConfirming(false); setBusy(true); setError('');
     const res = await fetch('/api/me/user-id', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: next.trim() }),
     });
@@ -71,18 +72,37 @@ export default function UserIdSection() {
               </label>
               <div className="flex gap-2">
                 <input id="new-user-id" value={next} maxLength={20} autoComplete="off"
-                  onChange={e => { setNext(e.target.value); setCheck(null); }} className={inputClass} />
+                  onChange={e => { setNext(e.target.value); setCheck(null); setConfirming(false); }} className={inputClass} />
                 <button type="button" onClick={checkIt} disabled={busy || next.trim().length < 4}
                   className="px-4 rounded-lg text-sm font-semibold whitespace-nowrap cursor-pointer disabled:opacity-50" style={{ backgroundColor: 'var(--surface-muted)' }}>
                   Check availability
                 </button>
               </div>
               {check && <p className="text-sm mt-2" role="status" style={{ color: check.ok ? 'var(--success)' : 'var(--danger)' }}>{check.ok ? '✓ ' : '✗ '}{check.text}</p>}
-              <button type="button" onClick={change} disabled={busy || !check?.ok}
-                className="w-full mt-4 py-3 rounded-lg font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>
-                <Check className="w-4 h-4" /> Change user ID
-              </button>
+              {confirming ? (
+                <div className="mt-4 p-3 rounded-lg surface-inner" role="alert">
+                  <p className="text-sm mb-3" style={{ color: 'var(--text-primary)' }}>
+                    Change your user ID to <strong className="font-mono">{next.trim()}</strong>? You can only do this once.
+                  </p>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={change} disabled={busy}
+                      className="flex-1 py-2 rounded-lg font-bold cursor-pointer disabled:opacity-50"
+                      style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>
+                      Yes, change it
+                    </button>
+                    <button type="button" onClick={() => setConfirming(false)} disabled={busy}
+                      className="flex-1 py-2 rounded-lg font-semibold cursor-pointer disabled:opacity-50" style={{ backgroundColor: 'var(--surface-muted)' }}>
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" onClick={() => setConfirming(true)} disabled={busy || !check?.ok}
+                  className="w-full mt-4 py-3 rounded-lg font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>
+                  <Check className="w-4 h-4" /> Change user ID
+                </button>
+              )}
               <p className="text-xs mt-3 px-3 py-2 rounded-lg" style={{ backgroundColor: 'var(--warning-soft)', color: 'var(--warning-text)' }}>
                 You can change your user ID <strong>once</strong>. After that it&apos;s locked; only a super admin can unlock it.
               </p>
