@@ -1,5 +1,6 @@
 // app/dashboard/students/page.tsx
 'use client';
+import { notify } from '@/lib/notify';
 
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
@@ -89,7 +90,7 @@ export default function StudentsPage() {
       // as User Management's "create user" success message.
       const result = await addStudent(student as Omit<StudentRecord, 'id'>);
       if (!result.success) {
-        alert('Error creating student: ' + (result.error || 'Unknown error'));
+        notify('Error creating student: ' + (result.error || 'Unknown error'));
         return;
       }
       if (result.emailSent) {

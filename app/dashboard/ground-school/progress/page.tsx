@@ -29,6 +29,7 @@
 // ---------------------------------------------------------------------------
 
 'use client';
+import { notify } from '@/lib/notify';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
@@ -381,7 +382,7 @@ export default function StudentProgressPage() {
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      alert('Error: ' + (data.error || 'Failed to record exam.'));
+      notify('Error: ' + (data.error || 'Failed to record exam.'));
       return;
     }
 

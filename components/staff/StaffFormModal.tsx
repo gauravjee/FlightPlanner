@@ -6,6 +6,7 @@
 // full values (the server logs every such view). Switching it off hides them
 // again; they're only sent back (and logged as a change) if they were changed.
 'use client';
+import { notify } from '@/lib/notify';
 
 import { useState } from 'react';
 import { X, Save, Lock } from 'lucide-react';
@@ -92,7 +93,7 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
     const later = (body.bookingsAfterLastDay ?? []) as { id: number; start: string }[];
     if (later.length) {
       const when = later.map(f => new Date(f.start).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }));
-      alert(`Saved. ${form.name} still has ${later.length} booking${later.length === 1 ? '' : 's'} after 17:00 on their last working day. Move or cancel ${later.length === 1 ? 'it' : 'them'} on the Schedule:\n\n${when.join('\n')}`);
+      notify(`Saved. ${form.name} still has ${later.length} booking${later.length === 1 ? '' : 's'} after 17:00 on their last working day. Move or cancel ${later.length === 1 ? 'it' : 'them'} on the Schedule:\n\n${when.join('\n')}`, 'warning');
     }
     onSaved();
   };

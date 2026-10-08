@@ -3,6 +3,7 @@
 // Add multiple aircraft with registration, type, fuel capacity
 
 'use client';
+import { notify } from '@/lib/notify';
 
 import { useEffect, useState, useCallback } from 'react';
 import { Plane, Pencil, Plus, Save, Trash2, CircleCheck, Fuel, Wrench } from 'lucide-react';
@@ -151,7 +152,7 @@ export default function AircraftSetupTab() {
   // Add or update aircraft
   const handleSave = async () => {
     if (!form.registration) {
-      alert('Please enter a registration number.');
+      notify('Please enter a registration number.');
       return;
     }
 
@@ -162,7 +163,7 @@ export default function AircraftSetupTab() {
     // AircraftFormModal.tsx, since this tab's Save is a plain onClick
     // handler rather than a real <form> submit.
     if (useCustomModel && modelOptions.length > 0) {
-      alert("This custom Model isn't in the Aircraft Maintenance Schedule yet. Add it via Admin Setup → Aircraft Maintenance Schedule first, then come back and pick it from the dropdown.");
+      notify("This custom Model isn't in the Aircraft Maintenance Schedule yet. Add it via Admin Setup → Aircraft Maintenance Schedule first, then come back and pick it from the dropdown.");
       return;
     }
 
@@ -172,7 +173,7 @@ export default function AircraftSetupTab() {
       (editing ? a.id !== editing.id : true)
     );
     if (exists) {
-      alert('An aircraft with this registration already exists!');
+      notify('An aircraft with this registration already exists!');
       return;
     }
 

@@ -1,6 +1,7 @@
 // app/dashboard/maintenance/page.tsx
 // Maintenance tracking page - view, add, complete maintenance records
 'use client';
+import { notify } from '@/lib/notify';
 
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
@@ -91,7 +92,7 @@ export default function MaintenancePage() {
     // when the record has no AME/CRS on file yet. Edit the record instead
     // to add them.
     if (!result.success) {
-      alert(`❌ ${result.error || 'Failed to complete maintenance record.'}`);
+      notify(`❌ ${result.error || 'Failed to complete maintenance record.'}`);
     }
   };
 
@@ -111,7 +112,7 @@ export default function MaintenancePage() {
     const newEnd = new Date(new Date(record.maintenanceEnd).getTime() + addMs);
     const result = await updateMaintenanceRecord(record.id, { maintenanceEnd: newEnd.toISOString() });
     if (!result.success) {
-      alert(`❌ ${result.error || 'Failed to extend maintenance window.'}`);
+      notify(`❌ ${result.error || 'Failed to extend maintenance window.'}`);
     }
   };
 

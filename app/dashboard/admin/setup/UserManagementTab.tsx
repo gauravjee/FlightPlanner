@@ -14,6 +14,7 @@
 // ============================================================
 
 'use client';
+import { notify } from '@/lib/notify';
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
@@ -152,7 +153,7 @@ export default function UserManagementTab() {
   const handleCreateUser = async () => {
     // Validate required fields
     if (!form.email || !form.name) {
-      alert('❌ Please fill in all fields.');
+      notify('❌ Please fill in all fields.');
       return;
     }
 
@@ -168,7 +169,7 @@ export default function UserManagementTab() {
       const result = await res.json();
 
       if (!res.ok) {
-        alert('❌ Error creating user: ' + (result.error || 'Unknown error'));
+        notify('❌ Error creating user: ' + (result.error || 'Unknown error'));
         setSending(false);
         return;
       }
@@ -186,7 +187,7 @@ export default function UserManagementTab() {
       loadUsers();
       setStaffReloadKey(k => k + 1);
     } catch (err) {
-      alert('❌ Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      notify('❌ Error: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setSending(false);
       // Auto-hide success message after 5 seconds
@@ -210,7 +211,7 @@ export default function UserManagementTab() {
     });
     if (!res.ok) {
       const { error } = await res.json().catch(() => ({ error: 'Unknown error' }));
-      alert('❌ Error updating status: ' + error);
+      notify('❌ Error updating status: ' + error);
       return;
     }
     loadUsers();
@@ -229,11 +230,11 @@ export default function UserManagementTab() {
       });
       if (!res.ok) {
         const { error } = await res.json().catch(() => ({ error: 'Unknown error' }));
-        alert('❌ Error: ' + error);
+        notify('❌ Error: ' + error);
         return;
       }
       loadUsers();
-      alert('✅ User will be forced to reset password on next login.');
+      notify('✅ User will be forced to reset password on next login.', 'success');
     };
 
   /*****************************************************
@@ -247,7 +248,7 @@ export default function UserManagementTab() {
         const currentUserEmail = session?.user?.email;
 
         if (userEmail === currentUserEmail) {
-          alert('❌ You cannot delete your own account.');
+          notify('❌ You cannot delete your own account.');
           return;
         }
 
@@ -262,7 +263,7 @@ export default function UserManagementTab() {
 
         if (!res.ok) {
           const { error } = await res.json().catch(() => ({ error: 'Unknown error' }));
-          alert('❌ Error deleting user: ' + error);
+          notify('❌ Error deleting user: ' + error);
         } else {
           loadUsers();
           setSuccessMessage(`User ${userEmail} deleted successfully.`);

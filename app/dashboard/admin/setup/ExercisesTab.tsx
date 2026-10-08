@@ -3,6 +3,7 @@
 // These appear on the Gantt chart flight blocks
 
 'use client';
+import { notify } from '@/lib/notify';
 
 import { useState, useEffect, useRef } from 'react';
 import { mutate } from 'swr';
@@ -119,7 +120,7 @@ export default function ExercisesTab() {
         e.short_code === form.short_code && true
       );
       if (exists) {
-        alert('An exercise with this short code already exists!');
+        notify('An exercise with this short code already exists!');
         return;
       }
       await fetch('/api/admin/config/exercises', {

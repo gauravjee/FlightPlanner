@@ -1,6 +1,7 @@
 // app/dashboard/instructors/page.tsx
 // Instructor management page - view, add, edit, delete instructors
 'use client';
+import { notify } from '@/lib/notify';
 
 import { useEffect, useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
@@ -115,7 +116,7 @@ export default function InstructorsPage() {
       updateInstructor(editingInstructor.id, instructor);
     } else {
       // 2026-09-24 (B2 S3a): the server can now refuse (e.g. no staff member picked) — say so.
-      addInstructor(instructor as Omit<Instructor, 'id'>).then(err => { if (err) alert('Could not add instructor: ' + err); });
+      addInstructor(instructor as Omit<Instructor, 'id'>).then(err => { if (err) notify('Could not add instructor: ' + err); });
     }
     setShowForm(false);
     setEditingInstructor(null);

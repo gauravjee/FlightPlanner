@@ -1,6 +1,7 @@
 // app/dashboard/flights/page.tsx
 // Flight Records & Digital Logbook page
 'use client';
+import { notify } from '@/lib/notify';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 
 import { generateStudentLogbook } from '@/lib/pdf';
@@ -105,7 +106,7 @@ export default function FlightsPage() {
                 generateStudentLogbook(student, studentFlights);
               }
             } catch {
-              alert('❌ Failed to load flight records for export.');
+              notify('❌ Failed to load flight records for export.');
             }
           }}
           className="px-3 py-2 rounded-lg text-xs transition cursor-pointer flex items-center gap-1.5"

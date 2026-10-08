@@ -4,6 +4,7 @@
 // Logo is uploaded to Supabase Storage bucket 'fto-logos'
 
 'use client';
+import { notify } from '@/lib/notify';
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
@@ -297,14 +298,14 @@ export default function SettingsTab() {
     // ----- Client-side validation (backup to bucket-level restrictions) -----
     // Check file size (max 500KB)
     if (file.size > 500 * 1024) {
-      alert('❌ File size must be less than 500KB. Please resize your logo.');
+      notify('❌ File size must be less than 500KB. Please resize your logo.');
       return;
     }
 
     // Check file type
     const allowedTypes = ['image/png', 'image/jpeg', 'image/svg+xml'];
     if (!allowedTypes.includes(file.type)) {
-      alert('❌ Only PNG, JPG, and SVG files are allowed.');
+      notify('❌ Only PNG, JPG, and SVG files are allowed.');
       return;
     }
 
@@ -328,7 +329,7 @@ export default function SettingsTab() {
 
       if (error) {
         console.error('❌ Upload error:', error.message);
-        alert('❌ Failed to upload logo: ' + error.message);
+        notify('❌ Failed to upload logo: ' + error.message);
         setUploading(false);
         return;
       }
@@ -363,7 +364,7 @@ export default function SettingsTab() {
 
     } catch (err) {
       console.error('❌ Unexpected upload error:', err);
-      alert('❌ An unexpected error occurred. Please try again.');
+      notify('❌ An unexpected error occurred. Please try again.');
       // Resync the form with whatever's actually saved — setValue('logo_url'/
       // 'show_logo', ...) above already applied optimistically, so on a
       // saveSetting() failure the form would otherwise keep showing the new
@@ -395,7 +396,7 @@ export default function SettingsTab() {
       await saveSetting('show_logo', 'false', settings.find(s => s.setting_key === 'show_logo')?.id);
     } catch (err) {
       console.error('❌ Error removing logo:', err);
-      alert('❌ Failed to remove logo. Please try again.');
+      notify('❌ Failed to remove logo. Please try again.');
       // Same resync as handleLogoUpload's catch — the setValue calls above
       // already cleared the form optimistically.
       loadSettings();

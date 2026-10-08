@@ -57,6 +57,7 @@
 // ---------------------------------------------------------------------------
 
 'use client';
+import { notify } from '@/lib/notify';
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { getSchedulingBlockReason, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
@@ -447,7 +448,7 @@ export default function GroundSchoolCalendar() {
     // if the FTO is closed (holiday or weekly off day) on this date.
     const blockReason = getSchedulingBlockReason(date, holidays, weeklyOffDays, partialWeeklyOffRule);
     if (blockReason) {
-      alert(`FTO is closed on this date (${blockReason.label}) — ground school classes cannot be scheduled.`);
+      notify(`FTO is closed on this date (${blockReason.label}) — ground school classes cannot be scheduled.`);
       return;
     }
     setEditingClass(null);  // we are creating, not editing
@@ -488,12 +489,12 @@ export default function GroundSchoolCalendar() {
   const handleSave = async () => {
     // Basic validation
     if (!form.subject_id || !form.instructor_id || !form.class_date) {
-      alert('Please fill Subject, Instructor, and Date.');
+      notify('Please fill Subject, Instructor, and Date.');
       return;
     }
     // End time must be after start time
     if (form.end_time <= form.start_time) {
-      alert('End time must be after start time.');
+      notify('End time must be after start time.');
       return;
     }
     // Defense-in-depth: openNewClass already blocks the initial date choice,
@@ -502,7 +503,7 @@ export default function GroundSchoolCalendar() {
     // Save is clicked.
     const blockReason = getSchedulingBlockReason(form.class_date, holidays, weeklyOffDays, partialWeeklyOffRule);
     if (blockReason) {
-      alert(`FTO is closed on ${form.class_date} (${blockReason.label}) — ground school classes cannot be scheduled on this date.`);
+      notify(`FTO is closed on ${form.class_date} (${blockReason.label}) — ground school classes cannot be scheduled on this date.`);
       return;
     }
 
