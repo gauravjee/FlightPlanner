@@ -11,6 +11,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, STUDENT_CREATION_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { ENROLLMENT_PREFIX_RE, parseStartNumber, formatEnrollmentId } from '@/lib/enrollment';
+import { exactIlike } from '@/lib/user-id';
 
 const SETUP_ROLES = ['admin', 'super_admin'];
 
@@ -65,6 +66,12 @@ export async function PUT(request: Request) {
   if (!existing) {
     if (!parsed) {
       return NextResponse.json({ error: 'Enter a starting number for the new prefix, e.g. 0001 or 1001.' }, { status: 400 });
+    }
+    // B1: a new prefix must not cover a user ID someone already has, or a
+    // number it issues could clash with that ID (user IDs are unique).
+    const { data: clash } = await supabaseAdmin.from('users').select('user_id').ilike('user_id', `${exactIlike(prefix)}%`).limit(1);
+    if (clash?.length) {
+      return NextResponse.json({ error: `The user ID "${clash[0].user_id}" already starts with ${prefix}. Choose a different prefix.` }, { status: 400 });
     }
     const { error: insertError } = await supabaseAdmin.from('enrollment_series').insert({
       prefix, start_number: parsed.start, width: parsed.width, next_number: parsed.start, is_current: false,

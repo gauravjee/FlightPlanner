@@ -15,16 +15,17 @@ export const exactIlike = (s: string): string => s.replace(/[\\%_]/g, c => '\\' 
 /**
  * Why a user ID someone chose can't be used, or null when its shape is fine.
  * Being free is checked separately (the database has the final say).
- * enrollmentPrefixes = every enrollment series prefix, so a chosen ID can
- * never clash with an enrollment number issued later; staff IDs likewise.
+ * enrollmentPrefixes = every enrollment series prefix: any ID starting with
+ * one is refused, so it can never clash with an enrollment number issued
+ * later (new prefixes are checked against existing IDs in
+ * app/api/enrollment-series). Staff-ID shapes are refused likewise.
  */
 export function chosenUserIdProblem(id: string, enrollmentPrefixes: string[]): string | null {
   if (id.includes('@')) return "That's an email address, not a user ID.";
   if (!USER_ID_RE.test(id)) return 'Use 4 to 20 characters: letters, digits, dot, underscore or hyphen.';
   if (id.length === 15 && /^[a-z0-9]{1,5}e\d{9,13}$/i.test(id)) return 'That looks like a staff ID. Those are reserved.';
   const lower = id.toLowerCase();
-  if (enrollmentPrefixes.some(p => p && lower.startsWith(p.toLowerCase()) && /^\d+$/.test(id.slice(p.length)))) {
-    return 'That looks like an enrollment number. Those are reserved.';
-  }
+  const prefix = enrollmentPrefixes.find(p => p && lower.startsWith(p.toLowerCase()));
+  if (prefix) return `IDs starting with the enrollment prefix "${prefix}" are reserved.`;
   return null;
 }

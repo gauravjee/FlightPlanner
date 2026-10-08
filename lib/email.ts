@@ -99,3 +99,33 @@ export async function sendWelcomeEmailServer(
     return { success: false, message };
   }
 }
+
+// B1 (2026-10-08): sent to the account's email after the person changes their user ID.
+export async function sendUserIdChangedEmailServer(email: string, name: string, userId: string): Promise<void> {
+  const resend = getResend();
+  if (!resend) return;
+  try {
+    await resend.emails.send({
+      from: 'FlightPro Manager <noreply@pushpak.mahesho.com>',
+      to: email,
+      subject: 'FlightPro - Your user ID has been changed',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h1 style="color: #1e40af; text-align: center;">✈️ FlightPro Manager</h1>
+          <h2 style="color: #1e293b;">Hello ${name},</h2>
+          <p>Your FlightPro user ID has been changed.</p>
+          <div style="background: #f1f5f9; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p><strong>🪪 New user ID:</strong> ${userId}</p>
+            <p><strong>🔗 Login URL:</strong> <a href="https://flightplanner-xi.vercel.app/login">FlightPro Login</a></p>
+          </div>
+          <p>Sign in with this user ID or your email. Your password has not changed.</p>
+          <div style="background: #fef3c7; padding: 15px; border-radius: 8px; border-left: 4px solid #f59e0b;">
+            <p style="color: #92400e; margin: 0;">⚠️ If you did not make this change, contact your administrator immediately.</p>
+          </div>
+        </div>
+      `,
+    });
+  } catch (error) {
+    console.error('❌ User ID changed email send error:', error);
+  }
+}

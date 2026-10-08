@@ -16,9 +16,10 @@ assert.match(chosenUserIdProblem('HFAE26090000001', P)!, /staff ID/);     // sta
 assert.match(chosenUserIdProblem('hfe260900000001', P)!, /staff ID/);
 assert.match(chosenUserIdProblem('SUBE26100000002', P)!, /staff ID/);
 assert.equal(chosenUserIdProblem('HFAE2609000001', P), null);             // 14 chars: not a staff ID
-assert.match(chosenUserIdProblem('hfa2026-270001', P)!, /enrollment/);    // enrollment shapes, any case
+assert.match(chosenUserIdProblem('hfa2026-270001', P)!, /enrollment/);    // enrollment prefix, any case
 assert.match(chosenUserIdProblem('TEST2027-281001', P)!, /enrollment/);
-assert.equal(chosenUserIdProblem('HFA2026-27x', P), null);                // prefix + non-digits is fine
+assert.match(chosenUserIdProblem('HFA2026-27x', P)!, /enrollment/);       // any suffix after a prefix
+assert.equal(chosenUserIdProblem('HFA2026-2', P), null);                  // only part of a prefix is fine
 
 assert.ok(isEmailIdentifier('a@b.c') && !isEmailIdentifier('ravi.k'));
 assert.equal(exactIlike('ravi_k%\\'), 'ravi\\_k\\%\\\\');

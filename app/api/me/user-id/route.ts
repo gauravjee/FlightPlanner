@@ -12,9 +12,10 @@ import { NextResponse } from 'next/server';
 import { requireSession } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { chosenUserIdProblem, exactIlike } from '@/lib/user-id';
+import { sendUserIdChangedEmailServer } from '@/lib/email';
 
 async function me(email: string) {
-  const { data } = await supabaseAdmin.from('users').select('id, user_id, user_id_changed_at').eq('email', email).maybeSingle();
+  const { data } = await supabaseAdmin.from('users').select('id, name, email, user_id, user_id_changed_at').eq('email', email).maybeSingle();
   return data;
 }
 
@@ -68,5 +69,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to change your user ID.' }, { status: 500 });
   }
   if (!data) return NextResponse.json({ error: 'Your user ID has already been changed once.' }, { status: 400 });
+  // A failed email must not undo the change; the sender logs its own errors.
+  await sendUserIdChangedEmailServer(self.email, self.name, data.user_id);
   return NextResponse.json({ userId: data.user_id, changedAt: data.user_id_changed_at });
 }

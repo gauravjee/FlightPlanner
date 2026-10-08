@@ -102,6 +102,11 @@ export async function PATCH(request: Request, context: RouteContext) {
   // action: 'allowUserIdChange' (B1, 2026-10-08) expects { allowUserIdChange: true }
   // — gives the person one more change of their user ID (Account page).
   if (body.allowUserIdChange === true) {
+    // Not for their own account: the one-change rule must bind super admins too.
+    const { data: target } = await supabaseAdmin.from('users').select('email').eq('id', id).maybeSingle();
+    if (target?.email === session.user.email) {
+      return NextResponse.json({ error: 'You cannot allow another user ID change on your own account. Ask another super admin.' }, { status: 400 });
+    }
     dbUpdates.user_id_changed_at = null;
   }
 
