@@ -32,10 +32,10 @@ const REPORT_CARDS = [
     status: 'live' as const,
   },
   {
-    href: '/dashboard/reports/daily-flying',
+    href: '/dashboard/safety',
     icon: TriangleAlert,
     title: 'Safety Incident Log',
-    description: 'Log a safety incident from the Daily Flying Report page — feeds this report\'s incident count today; the full DGCA-format Incident Report is a separate, larger piece not yet built.',
+    description: 'Every reported incident with its 5×5 risk rating, assignee, corrective action and status. New incidents are logged from the Daily Flying Report page; the full DGCA-format Incident Report is not yet built.',
     status: 'live' as const,
   },
   {
