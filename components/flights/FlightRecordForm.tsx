@@ -116,10 +116,12 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
   // for the whole flight by definition and the hours are derived, so
   // offering the field there would invite double-counting.
   const isDual = derivedFlightType === 'DUAL';
+  // A solo (or other no-instructor) sortie logs no instructor (9 Oct; the field was always required).
+  const needsInstructor = selectedSortie ? selectedSortie.requires_instructor : true;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.studentId || !form.aircraftId || !form.instructorId || !form.sortieType) return;
+    if (!form.studentId || !form.aircraftId || (needsInstructor && !form.instructorId) || !form.sortieType) return;
 
     // 2026-09-18 (P0 #3, hobbs integrity — audit finding C2): Hobbs End
     // used to default to 0, wasn't required, and nothing here checked it —
@@ -149,7 +151,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
     const result = await addFlightRecord({
       studentId: form.studentId,
       aircraftId: form.aircraftId,
-      instructorId: form.instructorId,
+      instructorId: needsInstructor ? form.instructorId : '',
       flightDate: form.flightDate,
       departureTime: form.departureTime,
       arrivalTime: form.arrivalTime,
@@ -259,10 +261,11 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
               </select>
             </div>
             <div>
-              <label className="block text-xs text-tertiary mb-1">Instructor *</label>
-              <select value={form.instructorId} onChange={e => setForm(p => ({ ...p, instructorId: e.target.value }))} required
-                className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]">
-                <option value="">Select</option>
+              <label className="block text-xs text-tertiary mb-1">Instructor{needsInstructor ? ' *' : ''}</label>
+              <select value={needsInstructor ? form.instructorId : ''} onChange={e => setForm(p => ({ ...p, instructorId: e.target.value }))}
+                required={needsInstructor} disabled={!needsInstructor}
+                className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)] disabled:opacity-60">
+                <option value="">{needsInstructor ? 'Select' : 'Not needed for this sortie'}</option>
                 {instructors.map(i => (
                   <option key={i.id} value={i.id}>{i.name} ({i.initials})</option>
                 ))}
