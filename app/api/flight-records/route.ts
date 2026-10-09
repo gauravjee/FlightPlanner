@@ -150,7 +150,7 @@ export async function POST(request: Request) {
   const { error: dbError } = await supabaseAdmin.from('flight_records').insert({
     student_id: studentId,
     aircraft_id: aircraftId,
-    instructor_id: instructorId,
+    instructor_id: instructorId || null, // solo: never '' (the column becomes bigint, fk-design-2026-10-08)
     flight_date: flightDate,
     departure_time: departureTime,
     arrival_time: arrivalTime,
