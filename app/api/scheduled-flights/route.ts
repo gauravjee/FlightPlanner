@@ -222,7 +222,7 @@ export async function POST(request: Request) {
 
   const { error: dbError } = await supabaseAdmin.from('scheduled_flights').insert({
     aircraft_id: aircraftId,
-    instructor_id: instructorId,
+    instructor_id: instructorId || null, // never '' (the column becomes bigint, fk-design-2026-10-08)
     student_id: studentId || null,
     start_time: startTime,
     end_time: endTime,

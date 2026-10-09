@@ -106,7 +106,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Failed to load classes.' }, { status: 500 });
   }
 
-  return NextResponse.json({ classes: data });
+  // IDs stay strings for the client even after instructor_id becomes bigint (fk-design-2026-10-08).
+  const classes = ((data ?? []) as unknown as Record<string, unknown>[]).map(r =>
+    r.instructor_id == null ? r : { ...r, instructor_id: String(r.instructor_id) });
+  return NextResponse.json({ classes });
 }
 
 /**

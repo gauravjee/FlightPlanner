@@ -144,6 +144,10 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   const { data: rows, error: dbError } = await supabaseAdmin.from('aircraft').delete().eq('id', id).select('id');
 
+  if (dbError?.code === '23503') {
+    // FK (fk-design-2026-10-08): history still points here, so the database refuses the delete.
+    return NextResponse.json({ error: "This aircraft has flights, fuel or maintenance records, so it can't be deleted. Change its status instead." }, { status: 409 });
+  }
   if (dbError) {
     console.error('Error deleting aircraft:', dbError);
     return NextResponse.json({ error: 'Failed to delete aircraft.' }, { status: 500 });

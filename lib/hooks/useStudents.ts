@@ -32,6 +32,7 @@
 
 import useSWR, { mutate } from 'swr';
 import type { Instructor, StudentRecord } from '@/types';
+import { notify } from '@/lib/notify';
 
 export const studentsKey = ['students'] as const;
 
@@ -93,7 +94,7 @@ async function fetchStudentsUncached(): Promise<StudentRecord[]> {
     joinedDate: (row.joined_date as string) || '',
     status: row.status as string,
     firstSoloDate: (row.first_solo_date as string) || undefined,
-    assignedInstructorId: (row.assigned_instructor_id as string) || undefined,
+    assignedInstructorId: row.assigned_instructor_id ? String(row.assigned_instructor_id) : undefined,
     // Deliberately NOT resolved here — see the file header above. Left
     // undefined; withInstructorNames() below fills these in at render time
     // for call sites that display them.
@@ -223,7 +224,8 @@ export async function removeStudent(id: string): Promise<void> {
   if (res.ok) {
     mutate<StudentRecord[]>(studentsKey, (current = []) => current.filter(s => s.id !== id), { revalidate: false });
   } else {
-    console.error('Error removing student:', await res.text());
+    // e.g. 409 "has history" (fk-design-2026-10-08): tell the user, don't fail silently.
+    notify((await res.json().catch(() => ({}))).error || 'Failed to delete student.');
   }
 }
 

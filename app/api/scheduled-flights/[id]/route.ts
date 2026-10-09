@@ -109,6 +109,7 @@ export async function PATCH(request: Request, context: RouteContext) {
       dbUpdates[dbKey] = body[clientKey];
     }
   }
+  if (dbUpdates.instructor_id === '') dbUpdates.instructor_id = null; // solo; never '' (fk-design-2026-10-08)
 
   if (Object.keys(dbUpdates).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });

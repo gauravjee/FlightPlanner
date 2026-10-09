@@ -21,7 +21,7 @@ function mapRow(row: Record<string, unknown>) {
   return {
     id: String(row.id),
     testDate: row.test_date as string,
-    aircraftId: (row.aircraft_id as string) || undefined,
+    aircraftId: row.aircraft_id ? String(row.aircraft_id) : undefined,
     aircraftReg: (row.aircraft_reg as string) || undefined,
     safetyOfficerId: (row.safety_officer_id as string) || undefined,
     safetyOfficerName: row.safety_officer_name as string,

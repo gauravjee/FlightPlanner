@@ -15,6 +15,7 @@
 
 import useSWR, { mutate } from 'swr';
 import type { Instructor } from '@/types';
+import { notify } from '@/lib/notify';
 
 export const instructorsKey = ['instructors'] as const;
 
@@ -129,7 +130,8 @@ export async function removeInstructor(id: string): Promise<void> {
   if (res.ok) {
     mutate<Instructor[]>(instructorsKey, (current = []) => current.filter(i => i.id !== id), { revalidate: false });
   } else {
-    console.error('Error removing instructor:', await res.text());
+    // e.g. 409 "has history" (fk-design-2026-10-08): tell the user, don't fail silently.
+    notify((await res.json().catch(() => ({}))).error || 'Failed to delete instructor.');
   }
 }
 

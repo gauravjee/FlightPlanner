@@ -118,6 +118,9 @@ export async function DELETE(_request: Request, context: RouteContext) {
   // fixes. Clearing student_id is what actually satisfies the constraint;
   // is_active=false on top of that makes sure the login can't be used
   // again even though its link to a training profile is now gone.
+  // Remember the login(s) first so a refused delete can put them back
+  // exactly as they were (fk-design-2026-10-08).
+  const { data: linked } = await supabaseAdmin.from('users').select('id, is_active').eq('student_id', id);
   const { error: userDeactivateError } = await supabaseAdmin
     .from('users')
     .update({ is_active: false, student_id: null })
@@ -134,6 +137,14 @@ export async function DELETE(_request: Request, context: RouteContext) {
     .eq('id', id).select('id');
 
   if (dbError) {
+    // The delete failed, so put the login(s) back exactly as they were.
+    for (const u of linked ?? []) {
+      await supabaseAdmin.from('users').update({ student_id: id, is_active: u.is_active }).eq('id', u.id);
+    }
+    // FK (fk-design-2026-10-08): history still points here, so the database refuses the delete.
+    if (dbError.code === '23503') {
+      return NextResponse.json({ error: "This student has flights or training records, so they can't be deleted. Change their status instead." }, { status: 409 });
+    }
     console.error('Error deleting student:', dbError);
     return NextResponse.json({ error: 'Failed to delete student.' }, { status: 500 });
   }

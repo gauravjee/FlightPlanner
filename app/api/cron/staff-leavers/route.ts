@@ -46,7 +46,13 @@ export async function GET(request: Request) {
     console.error('staff-leavers: update failed:', failed.error!.code);
     return NextResponse.json({ error: 'Failed to update leavers.' }, { status: 500 });
   }
-  const result = { left: ids.length, instructorsInactive: instr.data!.length, amesInactive: ames.data!.length, loginsDisabled: users.data!.length };
+  // Operator, 8 Oct: students of an instructor who has just left are unassigned (flights keep the link).
+  const leftInstructors = instr.data!.map(r => String(r.id));
+  const unassigned = leftInstructors.length
+    ? await supabaseAdmin.from('students').update({ assigned_instructor_id: null }).in('assigned_instructor_id', leftInstructors).select('id')
+    : { data: [], error: null };
+  if (unassigned.error) console.error('staff-leavers: unassigning students failed:', unassigned.error.code);
+  const result = { left: ids.length, instructorsInactive: instr.data!.length, amesInactive: ames.data!.length, loginsDisabled: users.data!.length, studentsUnassigned: unassigned.data?.length ?? 0 };
   console.log('staff-leavers:', result);
   return NextResponse.json(result);
 }

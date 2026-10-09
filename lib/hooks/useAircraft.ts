@@ -21,6 +21,7 @@
 
 import useSWR, { mutate } from 'swr';
 import type { Aircraft } from '@/types';
+import { notify } from '@/lib/notify';
 
 export const aircraftKey = ['aircraft'] as const;
 
@@ -151,6 +152,7 @@ export async function removeAircraft(id: string): Promise<void> {
   if (res.ok) {
     mutate<Aircraft[]>(aircraftKey, (current = []) => current.filter(a => a.id !== id), { revalidate: false });
   } else {
-    console.error('Error removing aircraft:', await res.text());
+    // e.g. 409 "has history" (fk-design-2026-10-08): tell the user, don't fail silently.
+    notify((await res.json().catch(() => ({}))).error || 'Failed to delete aircraft.');
   }
 }

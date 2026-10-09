@@ -98,6 +98,13 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'Failed to update instructor.' }, { status: 500 });
   }
 
+  // Operator, 8 Oct: an Inactive instructor is no longer anyone's assigned
+  // instructor. Their flights and records keep the link (history).
+  if (dbUpdates.employment_status === 'INACTIVE' && rows?.length) {
+    const { error: unassignError } = await supabaseAdmin.from('students').update({ assigned_instructor_id: null }).eq('assigned_instructor_id', String(id));
+    if (unassignError) console.error('Error unassigning students from inactive instructor:', unassignError.code);
+  }
+
   if (!rows?.length) {
     return NextResponse.json({ error: 'Instructor not found.' }, { status: 404 });
   }
@@ -113,6 +120,10 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   const { data: rows, error: dbError } = await supabaseAdmin.from('instructors').delete().eq('id', id).select('id');
 
+  if (dbError?.code === '23503') {
+    // FK (fk-design-2026-10-08): history still points here, so the database refuses the delete.
+    return NextResponse.json({ error: "This instructor has flights or classes on record, so they can't be deleted. Set their employment status to Inactive instead." }, { status: 409 });
+  }
   if (dbError) {
     console.error('Error deleting instructor:', dbError);
     return NextResponse.json({ error: 'Failed to delete instructor.' }, { status: 500 });
