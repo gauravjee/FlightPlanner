@@ -23,6 +23,7 @@
    ============================================================ */
 @layer base {
   :root {
+    color-scheme: dark; /* native date/time pickers match the theme (icon was black on dark) */
     --background: 222 47% 11%;
     --foreground: 210 40% 98%;
 
@@ -50,6 +51,7 @@
   }
 
   [data-theme="light"] {
+    color-scheme: light;
     --bg: #eef1f6;
     --surface: #ffffff;
     --surface-muted: #f3f5f9;
