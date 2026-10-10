@@ -111,7 +111,7 @@ export async function POST(request: Request) {
     studentId, aircraftId, instructorId, flightDate, departureTime, arrivalTime,
     hobbsStart, hobbsEnd, landings, flightType, sortieType, exercise, maneuvers,
     instructorNotes, studentPerformance, weatherConditions,
-    picusHours,
+    picusHours, scheduledFlightId,
   } = body as Record<string, unknown>;
 
   if (!studentId || !aircraftId) {
@@ -136,7 +136,20 @@ export async function POST(request: Request) {
   // Operator, 9 Oct: Hobbs Start may not be below the aircraft's current reading
   // (overlapping hours were counted twice). Only an admin may correct it.
   const startOverride = body.hobbsStartOverride === true && ['admin', 'super_admin'].includes(session.user.role ?? '');
-  if (!startOverride) {
+
+  // Operator, 10 Oct: one logbook entry per booking. Completing a pending entry
+  // uses the debrief's readings, and checkout already advanced the aircraft, so
+  // its start may legitimately sit below the aircraft's current reading.
+  let completingPending = false;
+  if (scheduledFlightId) {
+    const { data: booking } = await supabaseAdmin.from('scheduled_flights').select('logbook_pending').eq('id', scheduledFlightId).maybeSingle();
+    if (!booking) return NextResponse.json({ error: 'That flight no longer exists.' }, { status: 400 });
+    const { data: existing } = await supabaseAdmin.from('flight_records').select('id').eq('scheduled_flight_id', scheduledFlightId).limit(1);
+    if (existing?.length) return NextResponse.json({ error: 'This flight already has a logbook entry.' }, { status: 409 });
+    completingPending = booking.logbook_pending === true;
+  }
+
+  if (!startOverride && !completingPending) {
     const { data: ac } = await supabaseAdmin.from('aircraft').select('registration, hobbs_time').eq('id', aircraftId).maybeSingle();
     if (ac && hobbsStartNum < Number(ac.hobbs_time)) {
       return NextResponse.json({ error: `Hobbs Start (${hobbsStartNum}) can't be below ${ac.registration}'s current reading (${ac.hobbs_time}).` }, { status: 400 });
@@ -175,6 +188,7 @@ export async function POST(request: Request) {
     student_performance: studentPerformance,
     weather_conditions: weatherConditions,
     total_hours: totalHours,
+    scheduled_flight_id: scheduledFlightId || null,
     // 2026-09-10: DGCA PICUS on a dual sortie. `?? null` rather than
     // `|| null` so a deliberate 0 is stored as 0 — see add-picus-hours.sql
     // for why NULL and 0 are different facts here. Only ever set on DUAL;
@@ -189,9 +203,17 @@ export async function POST(request: Request) {
     picus_hours: flightType === 'SOLO' ? null : (picusHours != null ? Math.max(0, Math.min(Number(picusHours), totalHours)) : null),
   });
 
+  if (dbError?.code === '23505') {
+    return NextResponse.json({ error: 'This flight already has a logbook entry.' }, { status: 409 });
+  }
   if (dbError) {
     console.error('Error creating flight record:', dbError);
     return NextResponse.json({ error: 'Failed to save flight record.' }, { status: 500 });
+  }
+  if (scheduledFlightId) {
+    // The booking is logged now, so it leaves the Pending Logbook Entries list.
+    const { error: pendingError } = await supabaseAdmin.from('scheduled_flights').update({ logbook_pending: false, pending_debrief: null }).eq('id', scheduledFlightId);
+    if (pendingError) console.error('Error clearing logbook_pending after flight record:', pendingError.code);
   }
 
   // Credit the student: total hours always, first-solo date only the first

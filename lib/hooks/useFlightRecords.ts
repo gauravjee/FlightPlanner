@@ -213,7 +213,7 @@ export function useFlightRecordsForStudents(studentIds: string[]) {
 // mapFlightRecordRows() above.
 // ---------------------------------------------------------------------------
 export async function addFlightRecord(
-  record: Omit<FlightRecord, 'id' | 'studentName' | 'aircraftReg' | 'instructorName'> & { hobbsStartOverride?: boolean }
+  record: Omit<FlightRecord, 'id' | 'studentName' | 'aircraftReg' | 'instructorName'> & { hobbsStartOverride?: boolean; scheduledFlightId?: string }
 ): Promise<{ success: boolean; error?: string }> {
   const res = await fetch('/api/flight-records', {
     method: 'POST',

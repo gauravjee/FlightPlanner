@@ -124,7 +124,10 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
   // offering the field there would invite double-counting.
   const isDual = derivedFlightType === 'DUAL';
   const currentHobbs = aircraft.find(a => a.id === form.aircraftId)?.hobbsTime ?? 0;
-  const hobbsStart = startOverride ? form.hobbsStart : currentHobbs;
+  // Completing a pending entry: checkout already advanced the aircraft, so the
+  // debrief's own reading is the true start (operator, 10 Oct).
+  const completingPending = !!scheduledFlightId && prefill?.hobbsStart != null;
+  const hobbsStart = startOverride ? form.hobbsStart : completingPending ? prefill!.hobbsStart! : currentHobbs;
   const suggestedEnd = Math.round((hobbsStart + totalHours) * 10) / 10;
   const hobbsEnd = endTouched ? form.hobbsEnd : suggestedEnd;
   // A solo (or other no-instructor) sortie logs no instructor (9 Oct; the field was always required).
@@ -169,6 +172,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
       hobbsStart,
       hobbsEnd,
       hobbsStartOverride: startOverride,
+      scheduledFlightId,
       totalHours: totalHours,
       landings: form.landings,
       flightType: derivedFlightType,
@@ -316,7 +320,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
               <input type="number" value={hobbsStart || ''} readOnly={!startOverride}
                 onChange={e => setForm(p => ({ ...p, hobbsStart: parseFloat(e.target.value) || 0 }))}
                 step="0.1" className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)] read-only:opacity-70" />
-              <p className="text-[10px] text-tertiary mt-0.5">The aircraft&apos;s current Hobbs reading.</p>
+              <p className="text-[10px] text-tertiary mt-0.5">{completingPending ? 'Reading recorded at checkout.' : 'The aircraft\u2019s current Hobbs reading.'}</p>
               {isAdmin && (
                 <label className="flex items-center gap-1 text-[10px] text-tertiary mt-0.5 cursor-pointer">
                   <input type="checkbox" checked={startOverride}

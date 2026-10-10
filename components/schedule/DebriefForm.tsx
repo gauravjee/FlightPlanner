@@ -134,6 +134,7 @@ export default function DebriefForm({ flight, onClose, onComplete, onError }: Pr
       // "✅ ..." toast.
       if (form.createLogbook) {
         const recordResult = await addFlightRecord({
+          scheduledFlightId: String(flight.id), // one logbook entry per booking (10 Oct)
           studentId: flight.studentId || '',
           aircraftId: flight.aircraftId,
           instructorId: flight.instructorId,
