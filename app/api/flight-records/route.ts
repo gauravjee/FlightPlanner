@@ -97,7 +97,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { error } = await requireModuleAccess('flightRecords', 'full');
+  const { session, error } = await requireModuleAccess('flightRecords', 'full');
   if (error) return error;
 
   let body: Record<string, unknown>;
@@ -131,6 +131,16 @@ export async function POST(request: Request) {
   const hobbsEndNum = Number(hobbsEnd);
   if (!Number.isFinite(hobbsStartNum) || hobbsStartNum < 0 || !Number.isFinite(hobbsEndNum) || hobbsEndNum <= hobbsStartNum) {
     return NextResponse.json({ error: 'Hobbs Start and Hobbs End must be valid numbers, with Hobbs End greater than Hobbs Start.' }, { status: 400 });
+  }
+
+  // Operator, 9 Oct: Hobbs Start may not be below the aircraft's current reading
+  // (overlapping hours were counted twice). Only an admin may correct it.
+  const startOverride = body.hobbsStartOverride === true && ['admin', 'super_admin'].includes(session.user.role ?? '');
+  if (!startOverride) {
+    const { data: ac } = await supabaseAdmin.from('aircraft').select('registration, hobbs_time').eq('id', aircraftId).maybeSingle();
+    if (ac && hobbsStartNum < Number(ac.hobbs_time)) {
+      return NextResponse.json({ error: `Hobbs Start (${hobbsStartNum}) can't be below ${ac.registration}'s current reading (${ac.hobbs_time}).` }, { status: 400 });
+    }
   }
 
   // 2026-09-18 (P0 #1, flight-hours integrity): computed here, server-side,
@@ -214,7 +224,8 @@ export async function POST(request: Request) {
   const { error: aircraftError } = await supabaseAdmin
     .from('aircraft')
     .update({ hobbs_time: hobbsEndNum })
-    .eq('id', aircraftId);
+    .eq('id', aircraftId)
+    .lt('hobbs_time', hobbsEndNum); // only ever forward: an older back-filled flight must not wind the meter back
   if (aircraftError) {
     console.error('Error advancing aircraft hobbs time after flight record:', aircraftError);
   }

@@ -3,6 +3,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSession } from 'next-auth/react';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
@@ -57,11 +58,17 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
   const { exercises } = useExercises();
 
   const today = todayIST();
+  const { data: session } = useSession();
+  const isAdmin = ['admin', 'super_admin'].includes(session?.user?.role ?? '');
 
   // Blocks a second click/Enter while the first save is still in flight.
   const [submitting, setSubmitting] = useState(false);
   // Themed replacement for window.alert(): one-button notice, see ConfirmDialog.
   const [notice, setNotice] = useState<{ title: string; message: string; danger?: boolean } | null>(null);
+  // Operator, 9 Oct: Hobbs Start comes from the aircraft (admins may correct it);
+  // Hobbs End is suggested from the flight time until someone types one.
+  const [startOverride, setStartOverride] = useState(false);
+  const [endTouched, setEndTouched] = useState(prefill?.hobbsEnd != null);
   const [form, setForm] = useState({
     studentId: studentId || '',
     aircraftId: prefill?.aircraftId || '',
@@ -116,6 +123,10 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
   // for the whole flight by definition and the hours are derived, so
   // offering the field there would invite double-counting.
   const isDual = derivedFlightType === 'DUAL';
+  const currentHobbs = aircraft.find(a => a.id === form.aircraftId)?.hobbsTime ?? 0;
+  const hobbsStart = startOverride ? form.hobbsStart : currentHobbs;
+  const suggestedEnd = Math.round((hobbsStart + totalHours) * 10) / 10;
+  const hobbsEnd = endTouched ? form.hobbsEnd : suggestedEnd;
   // A solo (or other no-instructor) sortie logs no instructor (9 Oct; the field was always required).
   const needsInstructor = selectedSortie ? selectedSortie.requires_instructor : true;
 
@@ -130,7 +141,7 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
     // interval from then on. The server (app/api/flight-records/route.ts)
     // now rejects this too and is the real gate; this is a courtesy so the
     // instructor sees it before submitting rather than as a failed-save alert.
-    if (!form.hobbsEnd || form.hobbsEnd <= form.hobbsStart) {
+    if (!hobbsEnd || hobbsEnd <= hobbsStart) {
       setNotice({ title: 'Check the Hobbs reading', message: 'Hobbs End must be greater than Hobbs Start.' });
       return;
     }
@@ -155,8 +166,9 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
       flightDate: form.flightDate,
       departureTime: form.departureTime,
       arrivalTime: form.arrivalTime,
-      hobbsStart: form.hobbsStart,
-      hobbsEnd: form.hobbsEnd,
+      hobbsStart,
+      hobbsEnd,
+      hobbsStartOverride: startOverride,
       totalHours: totalHours,
       landings: form.landings,
       flightType: derivedFlightType,
@@ -301,14 +313,24 @@ export default function FlightRecordForm({ onClose, studentId, scheduledFlightId
           <div className="grid grid-cols-3 gap-3">
             <div>
               <label className="block text-xs text-tertiary mb-1">Hobbs Start</label>
-              <input type="number" value={form.hobbsStart || ''} onChange={e => setForm(p => ({ ...p, hobbsStart: parseFloat(e.target.value) || 0 }))}
-                step="0.1" className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
-              <p className="text-[10px] text-tertiary mt-0.5">Auto-filled from the aircraft&apos;s current Hobbs — edit if needed.</p>
+              <input type="number" value={hobbsStart || ''} readOnly={!startOverride}
+                onChange={e => setForm(p => ({ ...p, hobbsStart: parseFloat(e.target.value) || 0 }))}
+                step="0.1" className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)] read-only:opacity-70" />
+              <p className="text-[10px] text-tertiary mt-0.5">The aircraft&apos;s current Hobbs reading.</p>
+              {isAdmin && (
+                <label className="flex items-center gap-1 text-[10px] text-tertiary mt-0.5 cursor-pointer">
+                  <input type="checkbox" checked={startOverride}
+                    onChange={e => { const on = e.target.checked; setStartOverride(on); if (on) setForm(p => ({ ...p, hobbsStart: currentHobbs })); }} />
+                  Correct start reading (admin)
+                </label>
+              )}
             </div>
             <div>
               <label className="block text-xs text-tertiary mb-1">Hobbs End *</label>
-              <input type="number" value={form.hobbsEnd || ''} onChange={e => setForm(p => ({ ...p, hobbsEnd: parseFloat(e.target.value) || 0 }))}
-                required min={form.hobbsStart || 0} step="0.1" className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
+              <input type="number" value={hobbsEnd || ''}
+                onChange={e => { setEndTouched(true); setForm(p => ({ ...p, hobbsEnd: parseFloat(e.target.value) || 0 })); }}
+                required min={hobbsStart || 0} step="0.1" className="w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]" />
+              <p className="text-[10px] text-tertiary mt-0.5">Suggested: start + flight time ({totalHours} h). Check it against the meter.</p>
             </div>
             <div>
               <label className="block text-xs text-tertiary mb-1">Landings</label>
