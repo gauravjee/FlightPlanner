@@ -86,13 +86,21 @@ export async function PATCH(request: Request, context: RouteContext) {
     // debrief reaches this write directly with nothing else validating it —
     // the flight-records POST route's own Hobbs End check never runs for
     // that case. So this path specifically also requires the new reading to
-    // be strictly greater than what's already on file. A full aircraft edit
-    // (AIRCRAFT_WRITE_ROLES) is unaffected and may still correct the value
-    // downward — that's a deliberate admin action, not a cleared field.
+    // be strictly greater than what's already on file.
     if (isDebriefFuelUpdate) {
       const { data: current } = await supabaseAdmin.from('aircraft').select('hobbs_time').eq('id', id).single();
       if (current && n <= Number(current.hobbs_time)) {
         return NextResponse.json({ error: 'Hobbs Time must be greater than the aircraft\'s current reading.' }, { status: 400 });
+      }
+    } else {
+      // Operator, 10 Oct: once an aircraft has logged flights, its Hobbs is the end of the flight chain,
+      // so a full edit may not change it; Correct Hobbs (flight-records/[id]) shifts the chain and keeps an audit row.
+      const [{ data: current }, { count }] = await Promise.all([
+        supabaseAdmin.from('aircraft').select('hobbs_time, registration').eq('id', id).single(),
+        supabaseAdmin.from('flight_records').select('id', { count: 'exact', head: true }).eq('aircraft_id', id),
+      ]);
+      if (current && count && Math.round(n * 10) !== Math.round(Number(current.hobbs_time) * 10)) {
+        return NextResponse.json({ error: `${current.registration} has logged flights, so its Hobbs can't be changed here. Use the pencil next to the reading in Flights → Flight Log.` }, { status: 409 });
       }
     }
     body.hobbsTime = n;

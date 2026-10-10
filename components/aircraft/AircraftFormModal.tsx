@@ -384,6 +384,7 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
               step="0.1"
               className={inputClass}
               />
+              {isEditing && <p className="text-[10px] text-tertiary mt-1">Once flights are logged, correct Hobbs from the Flight Log.</p>}
             </div>
             <div>
               <label className="block text-sm text-secondary mb-1">Fuel Capacity (L)</label>

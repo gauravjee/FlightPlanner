@@ -130,7 +130,7 @@ export async function addAircraft(aircraft: Omit<Aircraft, 'id'>): Promise<void>
   }
 }
 
-export async function updateAircraft(id: string, updates: Partial<Aircraft>): Promise<void> {
+export async function updateAircraft(id: string, updates: Partial<Aircraft>): Promise<boolean> {
   const res = await fetch(`/api/aircraft/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -142,9 +142,11 @@ export async function updateAircraft(id: string, updates: Partial<Aircraft>): Pr
       (current = []) => current.map(a => (a.id === id ? { ...a, ...updates } : a)),
       { revalidate: false }
     );
-  } else {
-    console.error('Error updating aircraft:', await res.text());
+    return true;
   }
+  // e.g. 409 "has logged flights, use Correct Hobbs": tell the user, don't fail silently.
+  notify((await res.json().catch(() => ({}))).error || 'Failed to update aircraft.');
+  return false;
 }
 
 export async function removeAircraft(id: string): Promise<void> {

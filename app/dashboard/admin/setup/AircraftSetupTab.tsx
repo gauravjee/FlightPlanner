@@ -202,7 +202,7 @@ export default function AircraftSetupTab() {
     };
 
     if (editing) {
-      await updateAircraftRemote(String(editing.id), payload);
+      if (!(await updateAircraftRemote(String(editing.id), payload))) return; // error already shown; keep the form open
       setSuccessMessage('Aircraft updated!');
     } else {
       await addAircraftRemote(payload as Omit<SharedAircraft, 'id'>);
@@ -470,6 +470,7 @@ export default function AircraftSetupTab() {
               onChange={e => setForm(p => ({ ...p, hobbs_time: parseFloat(e.target.value) || 0 }))}
               className={inputClass}
             />
+            {editing && <p className="text-[10px] text-tertiary mt-1">Once flights are logged, correct Hobbs from the Flight Log.</p>}
           </div>
           <div>
             <label className="block text-xs text-tertiary mb-1">Status</label>
