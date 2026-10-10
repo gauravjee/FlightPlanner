@@ -233,3 +233,30 @@ export async function addFlightRecord(
 
   return { success: true };
 }
+
+export type HobbsCorrectionResult = {
+  registration: string; oldEnd: number; newEnd: number; delta: number;
+  flightsShifted: number; maintenanceShifted: number;
+  aircraftBefore: number; aircraftAfter: number; dryRun: boolean;
+};
+
+// Admin-only Hobbs End correction with cascade (PATCH /api/flight-records/[id]).
+// dryRun previews without changing anything. Revalidates every cache a real
+// correction can move: records, aircraft Hobbs, maintenance due readings,
+// and the per-student / multi-student record caches.
+export async function correctHobbsEnd(
+  id: string, hobbsEnd: number, reason: string, dryRun: boolean
+): Promise<{ result?: HobbsCorrectionResult; error?: string }> {
+  const res = await fetch(`/api/flight-records/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hobbsEnd, reason, dryRun }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: json.error || 'Failed to correct Hobbs End.' };
+  if (!dryRun) {
+    await mutate(aircraftKey);
+    await mutate(key => Array.isArray(key) && (key[0] === 'flightRecords' || key[0] === 'maintenanceRecords'));
+  }
+  return { result: json.result };
+}

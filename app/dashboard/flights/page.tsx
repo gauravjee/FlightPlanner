@@ -16,12 +16,13 @@ import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useSc
 import { useSortieTypes } from '@/lib/hooks/useSortieTypes';
 import { useExercises } from '@/lib/hooks/useExercises';
 import FlightRecordForm from '@/components/flights/FlightRecordForm';
+import HobbsCorrectionModal from '@/components/flights/HobbsCorrectionModal';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { FLIGHT_RECORDS_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
-import { FileText, NotebookPen, ClipboardList, PartyPopper, Star, ClipboardCheck, Eye } from 'lucide-react';
-import { ScheduledFlight } from '@/types';
+import { FileText, NotebookPen, ClipboardList, PartyPopper, Star, ClipboardCheck, Eye, Pencil } from 'lucide-react';
+import { ScheduledFlight, FlightRecord } from '@/types';
 
 export default function FlightsPage() {
   const { data: session } = useSession();
@@ -53,6 +54,9 @@ export default function FlightsPage() {
   // the Pending Logbook Entries panel below. null when the form is closed
   // or was opened via the plain "Log Flight" button instead.
   const [resolvingFlight, setResolvingFlight] = useState<ScheduledFlight | null>(null);
+  // Hobbs End correction is admin-only (operator, 10 Oct); the API enforces it too.
+  const isAdmin = ['admin', 'super_admin'].includes(session?.user?.role ?? '');
+  const [correcting, setCorrecting] = useState<FlightRecord | null>(null);
 
   // Flight records are migrated (SWR, Stage 4) and now fetch themselves via
   // useFlightRecords() above, no manual load needed — its own fetcher
@@ -217,6 +221,7 @@ export default function FlightsPage() {
                     <th className="pb-3">Aircraft</th>
                     <th className="pb-3">Time</th>
                     <th className="pb-3">Hrs</th>
+                    <th className="pb-3">Hobbs</th>
                     <th className="pb-3">Type</th>
                     <th className="pb-3">Sortie</th>
                     <th className="pb-3">Exercise</th>
@@ -234,6 +239,15 @@ export default function FlightsPage() {
                       <td className="py-3 text-xs">{record.aircraftReg}</td>
                       <td className="py-3 text-xs">{record.departureTime?.slice(0,5)}-{record.arrivalTime?.slice(0,5)}</td>
                       <td className="py-3 font-medium" style={{ color: 'var(--success)' }}>{record.totalHours}</td>
+                      <td className="py-3 text-xs whitespace-nowrap">
+                        {record.hobbsStart}–{record.hobbsEnd}
+                        {isAdmin && (
+                          <button onClick={() => setCorrecting(record)} className="ml-1 p-1 rounded hover:bg-[var(--surface-muted)] cursor-pointer align-middle"
+                            title="Correct Hobbs End" aria-label={`Correct Hobbs End for ${record.aircraftReg} on ${record.flightDate}`}>
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                        )}
+                      </td>
                       <td className="py-3">
                         <span className={`badge ${
                           record.flightType === 'SOLO' ? 'badge-success' :
@@ -276,6 +290,8 @@ export default function FlightsPage() {
           )}
         </div>
       </div>
+
+      {correcting && <HobbsCorrectionModal record={correcting} onClose={() => setCorrecting(null)} />}
 
       {showForm && (
         <FlightRecordForm
