@@ -17,6 +17,7 @@ import {
 import type { Aircraft as SharedAircraft } from '@/types';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { daysFromTodayIST } from '@/lib/ist';
+import AircraftReadingCorrection from '@/components/aircraft/AircraftReadingCorrection';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -202,10 +203,14 @@ export default function AircraftSetupTab() {
     };
 
     if (editing) {
+      // Send Hobbs / fuel only if changed: the form holds the values from when Edit was clicked, and a
+      // debrief or logged flight may have moved them since (stale values would be refused or roll fuel back).
+      if (payload.hobbsTime === editing.hobbs_time) delete payload.hobbsTime;
+      if (payload.currentFuel === editing.current_fuel) delete payload.currentFuel;
       if (!(await updateAircraftRemote(String(editing.id), payload))) return; // error already shown; keep the form open
       setSuccessMessage('Aircraft updated!');
     } else {
-      await addAircraftRemote(payload as Omit<SharedAircraft, 'id'>);
+      if (!(await addAircraftRemote(payload as Omit<SharedAircraft, 'id'>))) return;
       setSuccessMessage('Aircraft added!');
     }
 
@@ -471,6 +476,8 @@ export default function AircraftSetupTab() {
               className={inputClass}
             />
             {editing && <p className="text-[10px] text-tertiary mt-1">Once flights are logged, correct Hobbs from the Flight Log.</p>}
+            {editing && <AircraftReadingCorrection aircraftId={String(editing.id)} current={editing.hobbs_time}
+              onCorrected={reading => { setForm(p => ({ ...p, hobbs_time: reading })); setEditing(e => e && { ...e, hobbs_time: reading }); }} />}
           </div>
           <div>
             <label className="block text-xs text-tertiary mb-1">Status</label>

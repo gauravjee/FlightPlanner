@@ -115,7 +115,7 @@ export function getAircraftById(aircraft: Aircraft[], id: string): Aircraft | un
 // changed to actually handle write errors.
 // ---------------------------------------------------------------------------
 
-export async function addAircraft(aircraft: Omit<Aircraft, 'id'>): Promise<void> {
+export async function addAircraft(aircraft: Omit<Aircraft, 'id'>): Promise<boolean> {
   const res = await fetch('/api/aircraft', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -125,9 +125,10 @@ export async function addAircraft(aircraft: Omit<Aircraft, 'id'>): Promise<void>
   if (res.ok) {
     const newAircraft: Aircraft = { ...aircraft, id: String(result.aircraft.id) };
     mutate<Aircraft[]>(aircraftKey, (current = []) => [...current, newAircraft], { revalidate: false });
-  } else {
-    console.error('Error adding aircraft:', result.error);
+    return true;
   }
+  notify(result.error || 'Failed to add aircraft.');
+  return false;
 }
 
 export async function updateAircraft(id: string, updates: Partial<Aircraft>): Promise<boolean> {
@@ -147,6 +148,21 @@ export async function updateAircraft(id: string, updates: Partial<Aircraft>): Pr
   // e.g. 409 "has logged flights, use Correct Hobbs": tell the user, don't fail silently.
   notify((await res.json().catch(() => ({}))).error || 'Failed to update aircraft.');
   return false;
+}
+
+// Admin-only: correct the aircraft's Hobbs reading alone (POST /api/aircraft/[id]/hobbs); flights unchanged.
+export async function correctAircraftHobbs(
+  id: string, hobbsTime: number, reason: string
+): Promise<{ result?: { registration: string; before: number; after: number }; error?: string }> {
+  const res = await fetch(`/api/aircraft/${encodeURIComponent(id)}/hobbs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hobbsTime, reason }),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) return { error: json.error || 'Failed to correct the Hobbs reading.' };
+  await mutate(aircraftKey);
+  return { result: json.result };
 }
 
 export async function removeAircraft(id: string): Promise<void> {

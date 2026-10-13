@@ -59,14 +59,25 @@ export default function AircraftPage() {
     setShowForm(true);
   };
 
-  const handleSave = (ac: Aircraft) => {
+  const handleSave = async (ac: Aircraft) => {
+    let ok: boolean;
     if (editingAircraft) {
-      updateAircraft(ac.id, ac);
+      // Send Hobbs / fuel only if the admin changed them: the form holds the values from when it opened,
+      // and a debrief or logged flight may have moved them since (stale values would be refused or roll fuel back).
+      const { hobbsTime, currentFuel, ...rest } = ac;
+      ok = await updateAircraft(ac.id, {
+        ...rest,
+        ...(hobbsTime !== editingAircraft.hobbsTime && { hobbsTime }),
+        ...(currentFuel !== editingAircraft.currentFuel && { currentFuel }),
+      });
     } else {
-      addAircraft(ac);
+      ok = await addAircraft(ac);
     }
-    setShowForm(false);
-    setEditingAircraft(null);
+    if (ok) {
+      setShowForm(false);
+      setEditingAircraft(null);
+    }
+    return ok;
   };
 
   const handleDelete = (id: string) => {

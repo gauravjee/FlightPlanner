@@ -7,6 +7,7 @@ import { Pencil, Plus, Save, X } from 'lucide-react';
 import { FUEL_BURN_RATE_BY_TYPE_LPH, DEFAULT_FUEL_BURN_RATE_LPH, deriveModelEngineTypeMap } from '@/lib/store';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { daysFromTodayIST } from '@/lib/ist';
+import AircraftReadingCorrection from '@/components/aircraft/AircraftReadingCorrection';
 
 // 2026-08-26: sentinel value for the "Other" option in the Model dropdown
 // below — never written to form.model itself, only used to decide whether
@@ -31,7 +32,7 @@ const ENGINE_TYPES = ['Single Engine', 'Multi Engine'];
 
 interface Props {
   aircraft: Aircraft | null;
-  onSave: (aircraft: Aircraft) => void;
+  onSave: (aircraft: Aircraft) => Promise<boolean>; // false = server refused; keep the form open
   onClose: () => void;
 }
 
@@ -135,10 +136,9 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
     ? modelOptions.filter(m => !modelEngineType[m] || modelEngineType[m] === form.type)
     : modelOptions;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSave(form);
-    onClose();
+    if (await onSave(form)) onClose();
   };
 
 const handleChange = (field: keyof Aircraft, value: string | number) => {
@@ -385,6 +385,8 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
               className={inputClass}
               />
               {isEditing && <p className="text-[10px] text-tertiary mt-1">Once flights are logged, correct Hobbs from the Flight Log.</p>}
+              {isEditing && <AircraftReadingCorrection aircraftId={aircraft.id} current={aircraft.hobbsTime}
+                onCorrected={reading => setForm(prev => ({ ...prev, hobbsTime: reading }))} />}
             </div>
             <div>
               <label className="block text-sm text-secondary mb-1">Fuel Capacity (L)</label>
