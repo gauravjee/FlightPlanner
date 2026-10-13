@@ -122,7 +122,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
 
   if (dbError?.code === '23503') {
     // FK (fk-design-2026-10-08): history still points here, so the database refuses the delete.
-    return NextResponse.json({ error: "This instructor has flights or classes on record, so they can't be deleted. Set their employment status to Inactive instead." }, { status: 409 });
+    return NextResponse.json({ error: "This instructor has flights, classes, leave or breath-test records, so they can't be deleted. Set their employment status to Inactive instead." }, { status: 409 });
   }
   if (dbError) {
     console.error('Error deleting instructor:', dbError);

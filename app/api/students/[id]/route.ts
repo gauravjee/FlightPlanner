@@ -189,7 +189,7 @@ export async function DELETE(_request: Request, context: RouteContext) {
     }
     // FK (fk-design-2026-10-08): history still points here, so the database refuses the delete.
     if (dbError.code === '23503') {
-      return NextResponse.json({ error: "This student has flights or training records, so they can't be deleted. Change their status instead." }, { status: 409 });
+      return NextResponse.json({ error: "This student has flights, training, leave or breath-test records, so they can't be deleted. Change their status instead." }, { status: 409 });
     }
     console.error('Error deleting student:', dbError);
     return NextResponse.json({ error: 'Failed to delete student.' }, { status: 500 });
