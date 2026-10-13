@@ -44,7 +44,9 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { generatePassword } from '@/lib/password';
 import { sendWelcomeEmailServer } from '@/lib/email';
 import { exactIlike } from '@/lib/user-id';
-import { provisionRequirementsForStudent } from '@/lib/requirements-provisioning';
+import { provisionRequirementsForStudent, resolveProgramCode } from '@/lib/requirements-provisioning';
+import { todayIST } from '@/lib/ist';
+import { publicStudentRow, parseStudentDocs, logStudentDocumentAction, BLOOD_GROUPS, STUDENT_ADMIN_ROLES } from '@/lib/student-server';
 
 export async function GET() {
   const { session, error } = await requireSession();
@@ -64,7 +66,8 @@ export async function GET() {
       console.error('Error loading students:', dbError);
       return NextResponse.json({ error: 'Failed to load students.' }, { status: 500 });
     }
-    return NextResponse.json({ students: data || [] });
+    // B3: the encrypted ID documents never leave the server; admins get last-4 masks.
+    return NextResponse.json({ students: (data || []).map(r => publicStudentRow(r, STUDENT_ADMIN_ROLES.includes(role))) });
   }
 
   // 'safety_officer' and 'maintenance': the same scoped, non-PII projection
@@ -108,7 +111,7 @@ export async function GET() {
       console.error('Error loading own student record:', dbError);
       return NextResponse.json({ error: 'Failed to load student record.' }, { status: 500 });
     }
-    return NextResponse.json({ students: data || [] });
+    return NextResponse.json({ students: (data || []).map(r => publicStudentRow(r, false)) });
   }
 
   // Any other role (e.g. maintenance) has no legitimate reason to read
@@ -133,7 +136,7 @@ export async function GET() {
 // scoped to admin/super_admin even though STUDENT_STAFF_ROLES (broader) can
 // still view/edit existing students.
 export async function POST(request: Request) {
-  const { error } = await requireRole(STUDENT_CREATION_ROLES);
+  const { session, error } = await requireRole(STUDENT_CREATION_ROLES);
   if (error) return error;
 
   let body: Record<string, unknown>;
@@ -145,13 +148,25 @@ export async function POST(request: Request) {
 
   const {
     name, initials, trainingStage, totalHours,
-    medicalExpiry, email, phone, dateOfBirth, joinedDate, status, splNumber,
+    medicalExpiry, email, phone, dateOfBirth, joinedDate, splNumber,
     splExpiryDate, splIssueDate, medicalIssueDate,
+    address, nationality, emergencyContactName, emergencyContactRelation, emergencyContactPhone, bloodGroup,
   } = body as Record<string, unknown>;
 
   if (!name || !initials) {
     return NextResponse.json({ error: 'name and initials are required.' }, { status: 400 });
   }
+  if (bloodGroup && !BLOOD_GROUPS.includes(bloodGroup as string)) {
+    return NextResponse.json({ error: 'Blood group must be one of ' + BLOOD_GROUPS.join(', ') + '.' }, { status: 400 });
+  }
+  let docs: { enc: string | null; error: string | null } = { enc: null, error: null };
+  try {
+    if (body.idDocuments !== undefined) docs = parseStudentDocs(body.idDocuments);
+  } catch (e) {
+    console.error('Error encrypting student ID documents:', (e as Error).message);
+    return NextResponse.json({ error: 'ID documents could not be encrypted. Check STAFF_DATA_KEY on the server.' }, { status: 500 });
+  }
+  if (docs.error) return NextResponse.json({ error: docs.error }, { status: 400 });
 
   const trimmedEmail = typeof email === 'string' ? email.trim() : '';
   if (!trimmedEmail) {
@@ -226,8 +241,15 @@ export async function POST(request: Request) {
       email: trimmedEmail,
       phone,
       date_of_birth: dateOfBirth || null,
-      joined_date: joinedDate,
-      status,
+      joined_date: joinedDate || null,
+      status: 'ACTIVE', // B4: status changes only through /api/students/[id]/status
+      address: (address as string)?.trim() || null,
+      nationality: (nationality as string)?.trim() || null,
+      emergency_contact_name: (emergencyContactName as string)?.trim() || null,
+      emergency_contact_relation: (emergencyContactRelation as string)?.trim() || null,
+      emergency_contact_phone: (emergencyContactPhone as string)?.trim() || null,
+      blood_group: bloodGroup || null,
+      id_documents_enc: docs.enc,
       spl_number: splNumber || null,
       spl_expiry_date: splExpiryDate || null,
       spl_issue_date: splIssueDate || null,
@@ -284,6 +306,22 @@ export async function POST(request: Request) {
     );
   }
 
+  if (docs.enc && !(await logStudentDocumentAction(student.id, session.user, 'ADD'))) {
+    console.error(`Student ${student.id} was created with ID documents but the ADD could not be logged.`);
+  }
+
+  // B3: the student's first course in their course history (student_courses).
+  // Best-effort like requirements below: a missing program is fixable from the Courses section.
+  const programCode = resolveProgramCode(trainingStage as string | undefined);
+  const { data: program } = programCode
+    ? await supabaseAdmin.from('training_programs').select('id').eq('program_code', programCode).maybeSingle()
+    : { data: null };
+  if (program) {
+    const startDate = (joinedDate as string) || todayIST();
+    const { error: courseError } = await supabaseAdmin.from('student_courses').insert({ student_id: student.id, program_id: program.id, start_date: startDate });
+    if (courseError) console.error(`Course history not started for new student ${student.id}:`, courseError.code);
+  }
+
   const emailResult = await sendWelcomeEmailServer(trimmedEmail, name as string, password, 'student', existingUser?.user_id ?? enrollmentId);
 
   // 3. Provision this student's per-row training requirements by copying
@@ -303,7 +341,7 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({
-    student,
+    student: publicStudentRow(student, true),
     emailSent: emailResult.success,
     emailMessage: emailResult.message,
     // Only returned so the admin can copy it if the email failed — same

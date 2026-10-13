@@ -19,6 +19,7 @@
 import { NextResponse } from 'next/server';
 import { requireScheduleCreateAccess, requireSession, ROSTER_OVERRIDE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { studentBookingRefusal } from '@/lib/student-server';
 // 2026-09-23 (leave/vacation enforcement): only used in the student
 // self-booking branch below — every other caller here is staff booking
 // someone else, and BookingForm.tsx's leave check is advisory for staff
@@ -180,6 +181,12 @@ export async function POST(request: Request) {
     if (studentId && await isOnApprovedLeave('student', String(studentId), String(startTime), String(endTime))) {
       return NextResponse.json({ error: 'This student has approved leave at this time and can\'t be booked.' }, { status: 403 });
     }
+  }
+
+  // B4 (13 Oct): only an Active student can be booked, by anyone (including self-booking).
+  if (studentId) {
+    const refusal = await studentBookingRefusal(String(studentId));
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
   }
 
   // 2026-09-23: an Inactive (left/retired) instructor can't be booked, by

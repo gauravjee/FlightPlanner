@@ -110,7 +110,7 @@ export async function GET(request: Request) {
 
     if (digest === 'people' || digest === 'both') {
       const [students, instructors, staff] = await Promise.all([
-        supabaseAdmin.from('students').select('name, initials, email, medical_expiry, spl_expiry_date').eq('status', 'ACTIVE'),
+        supabaseAdmin.from('students').select('name, initials, email, medical_expiry, spl_expiry_date').in('status', ['ACTIVE', 'SUSPENDED']), // B4: a suspended student still needs reminders
         supabaseAdmin.from('instructors').select('name, initials, email, license_expiry_date').eq('employment_status', 'ACTIVE'),
         // 2026-10-03: staff medicals (staff_members.medical_expiry). Their
         // own email = their login's, else the personal email on the record.

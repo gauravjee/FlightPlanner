@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES, ROSTER_OVERRIDE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { studentBookingRefusal } from '@/lib/student-server';
 import { flightHoursFromTimes } from '@/lib/flight-classification';
 import { dailyLimitRefusal } from '@/lib/daily-limit';
 import { isOnApprovedLeave } from '@/lib/leave';
@@ -181,6 +182,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         if (next.student && await isOnApprovedLeave('student', next.student, next.start, next.end)) {
           return NextResponse.json({ error: 'This student has approved leave at this time and can\'t be booked.' }, { status: 403 });
         }
+        // B4: only an Active student can be booked or moved.
+        const refusal = next.student ? await studentBookingRefusal(next.student) : null;
+        if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
       }
       if (addsHours && next.instructor && next.status !== 'CANCELLED') {
         const refusal = await dailyLimitRefusal(next.instructor, next.start, next.end, id);
