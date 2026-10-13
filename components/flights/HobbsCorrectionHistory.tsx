@@ -20,7 +20,7 @@ export default function HobbsCorrectionHistory({ corrections }: { corrections: H
         <p className="text-secondary text-sm mt-4">No Hobbs corrections yet.</p>
       ) : (
         <div className="overflow-x-auto mt-4">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm [&_th]:pr-3 [&_td]:pr-3">
             <thead>
               <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                 <th className="pb-3">When (IST)</th>

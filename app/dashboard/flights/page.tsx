@@ -216,7 +216,7 @@ export default function FlightsPage() {
             <p className="text-secondary text-center py-8">No flight records found</p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm [&_th]:pr-3 [&_td]:pr-3">
                 <thead>
                   <tr className="text-left text-tertiary border-b" style={{ borderColor: 'var(--border)' }}>
                     <th className="pb-3">Date</th>
