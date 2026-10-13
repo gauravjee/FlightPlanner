@@ -1085,13 +1085,15 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
               required={!isMaintenance}
               className={`w-full surface-inner rounded-lg px-3 py-2 ${(isMaintenance || selfBookingStudentId) ? 'opacity-50 cursor-not-allowed' : ''}`}>
               <option value="">{isMaintenance ? 'N/A – Maintenance Flight' : 'Select Student'}</option>
-              {!isMaintenance && students.filter(s => s.status === 'ACTIVE' || s.id === selfBookingStudentId).map(s => {
+              {/* B4 (14 Oct): a grounded student is listed too, bookable only after the grounding (the server checks the same). */}
+              {!isMaintenance && students.filter(s => s.status === 'ACTIVE' || s.status === 'GROUNDED' || s.id === selfBookingStudentId).map(s => {
                 const medicalDate = s.medicalExpiry ? new Date(s.medicalExpiry) : null;
                 const today = new Date(); today.setHours(0, 0, 0, 0);
                 const isExpired = medicalDate && medicalDate < today;
+                const grounded = s.status === 'GROUNDED' && (!s.groundedUntil || form.date <= s.groundedUntil);
                 return (
-                  <option key={s.id} value={s.id} disabled={!!isExpired}>
-                    {s.name} ({s.initials}) — {s.trainingStage} | {s.totalHours}h{isExpired ? ' ⚠️ MEDICAL EXPIRED' : ''}
+                  <option key={s.id} value={s.id} disabled={!!isExpired || grounded}>
+                    {s.name} ({s.initials}) — {s.trainingStage} | {s.totalHours}h{isExpired ? ' ⚠️ MEDICAL EXPIRED' : ''}{s.status === 'GROUNDED' ? ` · grounded until ${s.groundedUntil}` : ''}
                   </option>
                 );
               })}

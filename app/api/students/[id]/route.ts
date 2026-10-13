@@ -19,6 +19,8 @@
 import { NextResponse } from 'next/server';
 import { requireModuleAccess } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { studentAgeRefusal } from '@/lib/student-age';
+import { todayIST } from '@/lib/ist';
 import { parseStudentDocs, logStudentDocumentAction, BLOOD_GROUPS, STUDENT_ADMIN_ROLES } from '@/lib/student-server';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -94,6 +96,18 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
   if (dbUpdates.blood_group && !BLOOD_GROUPS.includes(dbUpdates.blood_group as string)) {
     return NextResponse.json({ error: 'Blood group must be one of ' + BLOOD_GROUPS.join(', ') + '.' }, { status: 400 });
+  }
+  // DGCA minimum age (14 Oct): checked whenever the date of birth or joining date is sent, against the stored other one.
+  if (dbUpdates.date_of_birth !== undefined || dbUpdates.joined_date !== undefined) {
+    let dob = dbUpdates.date_of_birth as string | null | undefined;
+    let joined = dbUpdates.joined_date as string | null | undefined;
+    if (dob === undefined || joined === undefined) {
+      const { data: current } = await supabaseAdmin.from('students').select('date_of_birth, joined_date').eq('id', id).maybeSingle();
+      dob = dob === undefined ? current?.date_of_birth : dob;
+      joined = joined === undefined ? current?.joined_date : joined;
+    }
+    const ageError = studentAgeRefusal(dob, joined || todayIST());
+    if (ageError) return NextResponse.json({ error: ageError }, { status: 400 });
   }
 
   // B3: ID documents (Aadhaar + passport), admin / super admin only; replaces the whole set, logged as EDIT.

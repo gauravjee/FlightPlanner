@@ -12,6 +12,7 @@ import { useState } from 'react';
 import { X, Save, Lock } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import type { StaffMember } from '@/lib/staff-id';
+import PhoneInput from '@/components/ui/PhoneInput';
 
 type Docs = { pan: string; aadhaar: string; passportNumber: string; passportIssueDate: string; passportIssuePlace: string };
 const EMPTY_DOCS: Docs = { pan: '', aadhaar: '', passportNumber: '', passportIssueDate: '', passportIssuePlace: '' };
@@ -138,7 +139,9 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
           {TEXT_FIELDS.map(([k, text, type]) => (
             <div key={k} className={k === 'address' ? 'sm:col-span-2' : ''}>
               <label htmlFor={`sf-${k}`} className={label}>{text}</label>
-              <input id={`sf-${k}`} type={type ?? 'text'} value={form[k] ?? ''} onChange={e => set(k, e.target.value)} className={inputClass} />
+              {type === 'tel'
+                ? <PhoneInput id={`sf-${k}`} value={form[k] ?? ''} onChange={v => set(k, v)} className={inputClass} />
+                : <input id={`sf-${k}`} type={type ?? 'text'} value={form[k] ?? ''} onChange={e => set(k, e.target.value)} className={inputClass} />}
             </div>
           ))}
           {isNew && (

@@ -63,7 +63,7 @@ const istDate = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { tim
 /** Grounded (operator, 14 Oct): no flying up to and including `until`; a flight on a later IST day is allowed. */
 export function groundedRefusal(until: string | null, startTime?: string): string | null {
   if (until && startTime && istDate(startTime) > until) return null;
-  return `This student is grounded${until ? ` until ${until}` : ''} and can't be booked before then.`;
+  return until ? `This student is grounded until ${until} and can't be booked on or before that date.` : 'This student is grounded and can\'t be booked.';
 }
 
 /** Bookings starting before this instant (the IST midnight after `until`) fall inside a grounding. */

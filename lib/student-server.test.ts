@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { decryptIdDocuments } from './staff-crypto';
 import { parseStudentDocs, maskStudentDocs, publicStudentRow, groundedRefusal, groundedCancelBefore } from './student-server';
+import { studentAgeRefusal, latestStudentDob } from './student-age';
 
 process.env.STAFF_DATA_KEY = randomBytes(32).toString('base64');
 
@@ -29,5 +30,12 @@ assert.match(groundedRefusal('2026-10-20', '2026-10-20T12:00:00Z')!, /grounded u
 assert.equal(groundedRefusal('2026-10-20', '2026-10-20T18:30:00Z'), null);
 assert.match(groundedRefusal('2026-10-20')!, /grounded/); // no start time: refuse
 assert.equal(groundedCancelBefore('2026-10-20'), '2026-10-20T18:30:00.000Z');
+
+// DGCA minimum age 17 on the joining date.
+assert.equal(studentAgeRefusal('2009-10-14', '2026-10-14'), null); // 17 today
+assert.match(studentAgeRefusal('2009-10-15', '2026-10-14')!, /at least 17/); // 17 tomorrow
+assert.equal(studentAgeRefusal('', '2026-10-14'), null);
+assert.equal(studentAgeRefusal('14/10/2009', '2026-10-14'), 'Date of birth must be a date.');
+assert.equal(latestStudentDob('2028-02-29'), '2011-02-28');
 
 console.log('student-server: all checks passed');

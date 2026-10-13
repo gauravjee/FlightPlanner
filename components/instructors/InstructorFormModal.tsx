@@ -10,6 +10,7 @@ import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { effectiveDailyLimit } from '@/lib/instructor-status';
 import type { StaffMember } from '@/lib/staff-id';
+import PhoneInput from '@/components/ui/PhoneInput';
 
 interface Props {
   instructor: Instructor | null;
@@ -262,9 +263,8 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
                   className={inputClass} />
             </div>
             <div>
-              <label className="block text-xs text-secondary mb-1">Phone</label>
-              <input type="text" value={form.phone} onChange={e => setForm(p => ({ ...p, phone: e.target.value }))}
-                className={inputClass} />
+              <label htmlFor="if-phone" className="block text-xs text-secondary mb-1">Phone</label>
+              <PhoneInput id="if-phone" value={form.phone} onChange={v => setForm(p => ({ ...p, phone: v }))} className={inputClass} />
             </div>
           </div>
 

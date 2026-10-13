@@ -12,6 +12,7 @@ import StudentRecordPanels from '@/components/students/StudentRecordPanels';
 import type { StudentIdDocuments } from '@/lib/hooks/useStudents';
 import PhoneInput from '@/components/ui/PhoneInput';
 import { COUNTRIES, DEFAULT_COUNTRY } from '@/lib/countries';
+import { latestStudentDob, MIN_STUDENT_AGE } from '@/lib/student-age';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
@@ -441,9 +442,9 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
             <div>
               <label className="block text-sm text-secondary mb-1">
                 Date of Birth
-                <span className="text-xs text-tertiary ml-1">(for medical validity)</span>
+                <span className="text-xs text-tertiary ml-1">(min. {MIN_STUDENT_AGE} on joining · sets medical validity)</span>
               </label>
-              <input type="date" value={form.dateOfBirth} onChange={e => {
+              <input type="date" max={latestStudentDob(form.joinedDate || todayIST())} value={form.dateOfBirth} onChange={e => {
                   const dob = e.target.value;
                   handleChange('dateOfBirth', dob);
                   if (!medicalExpiryManuallyEdited && form.medicalIssueDate) {

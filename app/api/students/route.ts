@@ -46,6 +46,7 @@ import { sendWelcomeEmailServer } from '@/lib/email';
 import { exactIlike } from '@/lib/user-id';
 import { provisionRequirementsForStudent, resolveProgramCode } from '@/lib/requirements-provisioning';
 import { todayIST } from '@/lib/ist';
+import { studentAgeRefusal } from '@/lib/student-age';
 import { publicStudentRow, parseStudentDocs, logStudentDocumentAction, BLOOD_GROUPS, STUDENT_ADMIN_ROLES } from '@/lib/student-server';
 
 export async function GET() {
@@ -160,6 +161,8 @@ export async function POST(request: Request) {
   if (bloodGroup && !BLOOD_GROUPS.includes(bloodGroup as string)) {
     return NextResponse.json({ error: 'Blood group must be one of ' + BLOOD_GROUPS.join(', ') + '.' }, { status: 400 });
   }
+  const ageError = studentAgeRefusal(dateOfBirth as string, (joinedDate as string) || todayIST());
+  if (ageError) return NextResponse.json({ error: ageError }, { status: 400 });
   let docs: { enc: string | null; error: string | null } = { enc: null, error: null };
   try {
     if (body.idDocuments !== undefined) docs = parseStudentDocs(body.idDocuments);
