@@ -74,7 +74,7 @@ export async function fetchScheduledFlights(): Promise<ScheduledFlight[]> {
     return {
       id: String(row.id),
       aircraftId: String(row.aircraft_id),
-      instructorId: String(row.instructor_id),
+      instructorId: row.instructor_id != null ? String(row.instructor_id) : '', // solo: '' not "null" (String(null) reached the logbook insert, 13 Oct)
       studentId: row.student_id ? String(row.student_id) : undefined,
       startTime: row.start_time as string,
       endTime: row.end_time as string,
@@ -191,7 +191,7 @@ export async function checkConflicts(
   return {
     hasConflict: conflicts.length > 0,
     conflictingFlights: conflicts.map((row: Record<string, unknown>) => ({
-      id: String(row.id), aircraftId: String(row.aircraft_id), instructorId: String(row.instructor_id),
+      id: String(row.id), aircraftId: String(row.aircraft_id), instructorId: row.instructor_id != null ? String(row.instructor_id) : '',
       startTime: row.start_time as string, endTime: row.end_time as string,
       sortieType: row.sortie_type as string, status: row.status as string,
       weatherBriefed: false, notamBriefed: false, notes: '', exercise: '',
