@@ -162,6 +162,7 @@ export async function correctAircraftHobbs(
   const json = await res.json().catch(() => ({}));
   if (!res.ok) return { error: json.error || 'Failed to correct the Hobbs reading.' };
   await mutate(aircraftKey);
+  await mutate(['flightRecords', 'hobbsCorrections']); // hobbsCorrectionsKey (not imported: useFlightRecords imports this file)
   return { result: json.result };
 }
 

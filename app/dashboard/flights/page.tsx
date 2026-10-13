@@ -11,12 +11,13 @@ import { useSession } from 'next-auth/react';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
-import { useFlightRecords, fetchStudentFlightRecords } from '@/lib/hooks/useFlightRecords';
+import { useFlightRecords, fetchStudentFlightRecords, useHobbsCorrections } from '@/lib/hooks/useFlightRecords';
 import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
 import { useSortieTypes } from '@/lib/hooks/useSortieTypes';
 import { useExercises } from '@/lib/hooks/useExercises';
 import FlightRecordForm from '@/components/flights/FlightRecordForm';
 import HobbsCorrectionModal from '@/components/flights/HobbsCorrectionModal';
+import HobbsCorrectionHistory from '@/components/flights/HobbsCorrectionHistory';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { FLIGHT_RECORDS_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
@@ -57,6 +58,8 @@ export default function FlightsPage() {
   // Hobbs End correction is admin-only (operator, 10 Oct); the API enforces it too.
   const isAdmin = ['admin', 'super_admin'].includes(session?.user?.role ?? '');
   const [correcting, setCorrecting] = useState<FlightRecord | null>(null);
+  const hobbsCorrections = useHobbsCorrections(isAdmin);
+  const correctedIds = new Set(hobbsCorrections.map(c => c.flight_record_id));
 
   // Flight records are migrated (SWR, Stage 4) and now fetch themselves via
   // useFlightRecords() above, no manual load needed — its own fetcher
@@ -241,6 +244,9 @@ export default function FlightsPage() {
                       <td className="py-3 font-medium" style={{ color: 'var(--success)' }}>{record.totalHours}</td>
                       <td className="py-3 text-xs whitespace-nowrap">
                         {record.hobbsStart}–{record.hobbsEnd}
+                        {correctedIds.has(record.id) && (
+                          <span className="ml-1 badge badge-warning" title="See Hobbs correction history below">Corrected</span>
+                        )}
                         {isAdmin && (
                           <button onClick={() => setCorrecting(record)} className="ml-1 p-1 rounded hover:bg-[var(--surface-muted)] cursor-pointer align-middle"
                             title="Correct Hobbs End" aria-label={`Correct Hobbs End for ${record.aircraftReg} on ${record.flightDate}`}>
@@ -289,6 +295,7 @@ export default function FlightsPage() {
             </div>
           )}
         </div>
+        {isAdmin && <HobbsCorrectionHistory corrections={hobbsCorrections} />}
       </div>
 
       {correcting && <HobbsCorrectionModal record={correcting} onClose={() => setCorrecting(null)} />}

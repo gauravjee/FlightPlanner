@@ -234,6 +234,25 @@ export async function addFlightRecord(
   return { success: true };
 }
 
+export type HobbsCorrection = {
+  id: number; flight_record_id: string | null; aircraft_id: number; aircraft: { registration: string } | null;
+  old_end: number; new_end: number; delta: number; flights_shifted: number; maintenance_shifted: number;
+  reason: string; corrected_by: string; corrected_at: string;
+};
+
+// Under 'flightRecords' so correctHobbsEnd's revalidation below picks it up too.
+export const hobbsCorrectionsKey = ['flightRecords', 'hobbsCorrections'] as const;
+
+// Admin-only (GET /api/hobbs-corrections); pass enabled=false for everyone else so no request is made.
+export function useHobbsCorrections(enabled: boolean) {
+  const { data } = useSWR<HobbsCorrection[]>(enabled ? hobbsCorrectionsKey : null, async () => {
+    const res = await fetch('/api/hobbs-corrections');
+    if (!res.ok) throw new Error('Failed to load Hobbs corrections.');
+    return (await res.json()).corrections;
+  });
+  return data ?? [];
+}
+
 export type HobbsCorrectionResult = {
   registration: string; oldEnd: number; newEnd: number; delta: number;
   flightsShifted: number; maintenanceShifted: number;
