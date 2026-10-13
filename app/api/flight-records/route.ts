@@ -170,6 +170,11 @@ export async function POST(request: Request) {
   // number the client happened to send.
   const totalHours = flightHoursFromTimes(departureTime as string, arrivalTime as string);
 
+  // Operator, 10 Oct: sanity cap so a typo (91 for 9.1) can't advance the meter. Admin override skips it.
+  if (!startOverride && hobbsEndNum - hobbsStartNum > totalHours + 1) {
+    return NextResponse.json({ error: `Hobbs shows ${(hobbsEndNum - hobbsStartNum).toFixed(1)} h but the flight times give ${totalHours} h. Check the readings.` }, { status: 400 });
+  }
+
   const { error: dbError } = await supabaseAdmin.from('flight_records').insert({
     student_id: studentId,
     aircraft_id: aircraftId,

@@ -18,6 +18,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES, ROSTER_OVERRIDE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { flightHoursFromTimes } from '@/lib/flight-classification';
 import { dailyLimitRefusal } from '@/lib/daily-limit';
 import { isOnApprovedLeave } from '@/lib/leave';
 import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
@@ -202,6 +203,30 @@ export async function PATCH(request: Request, context: RouteContext) {
     }
   }
 
+  // Operator, 10 Oct: a checkout with the logbook left pending moves the aircraft's Hobbs here, server-side,
+  // from this booking's own debrief; the client no longer sends a reading to the aircraft.
+  let advanceTo: { aircraftId: string; end: number } | null = null;
+  if (body.logbookPending === true) {
+    const pd = (body.pendingDebrief ?? {}) as Record<string, unknown>;
+    const start = Number(pd.hobbsStart);
+    const end = Number(pd.hobbsEnd);
+    const { data: bk } = await supabaseAdmin.from('scheduled_flights').select('aircraft_id, status').eq('id', id).maybeSingle();
+    if (!bk) return NextResponse.json({ error: 'Scheduled flight not found.' }, { status: 404 });
+    if (bk.status === 'COMPLETED') return NextResponse.json({ error: 'This flight is already checked out.' }, { status: 409 });
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      return NextResponse.json({ error: 'Hobbs End must be greater than Hobbs Start.' }, { status: 400 });
+    }
+    const { data: ac } = await supabaseAdmin.from('aircraft').select('registration, hobbs_time').eq('id', bk.aircraft_id).maybeSingle();
+    if (ac && Math.round(start * 10) < Math.round(Number(ac.hobbs_time) * 10)) {
+      return NextResponse.json({ error: `Hobbs Start (${start}) can't be below ${ac.registration}'s current reading (${ac.hobbs_time}).` }, { status: 400 });
+    }
+    const flown = flightHoursFromTimes(pd.departureTime as string, pd.arrivalTime as string);
+    if (end - start > flown + 1) {
+      return NextResponse.json({ error: `Hobbs shows ${(end - start).toFixed(1)} h but the flight times give ${flown} h. Check the readings.` }, { status: 400 });
+    }
+    advanceTo = { aircraftId: String(bk.aircraft_id), end };
+  }
+
   const { data: rows, error: dbError } = await supabaseAdmin.from('scheduled_flights').update(dbUpdates).eq('id', id).select('id');
 
   if (dbError) {
@@ -211,6 +236,12 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   if (!rows?.length) {
     return NextResponse.json({ error: 'Scheduled flight not found.' }, { status: 404 });
+  }
+
+  if (advanceTo) {
+    const { error: acError } = await supabaseAdmin.from('aircraft').update({ hobbs_time: advanceTo.end })
+      .eq('id', advanceTo.aircraftId).lt('hobbs_time', advanceTo.end); // only ever forward
+    if (acError) console.error('Error advancing aircraft Hobbs at checkout:', acError);
   }
 
   return NextResponse.json({ success: true });

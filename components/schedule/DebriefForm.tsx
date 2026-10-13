@@ -217,8 +217,9 @@ export default function DebriefForm({ flight, onClose, onComplete, onError }: Pr
         // Only the logbookPending branch still needs hobbsTime sent here —
         // for that branch flight-records/route.ts never runs, so this
         // route is the only place that ever writes it.
+        // 10 Oct: fuel only. Hobbs is now advanced server-side (flight-records POST for the
+        // auto-logbook branch, scheduled-flights PATCH for the pending branch).
         const fuelBody: Record<string, unknown> = { currentFuel: form.fuelAfter };
-        if (!form.createLogbook) fuelBody.hobbsTime = form.hobbsEnd;
         const fuelRes = await fetch(`/api/aircraft/${flight.aircraftId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -244,7 +245,8 @@ export default function DebriefForm({ flight, onClose, onComplete, onError }: Pr
         }
       }
 
-      // Cache already fresh — updateScheduledFlight local-splices.
+      // Cache already fresh — updateScheduledFlight local-splices. Aircraft Hobbs moved server-side.
+      await mutate(aircraftKey);
       onComplete(
         form.createLogbook
           ? '✅ Flight completed & logbook updated!'

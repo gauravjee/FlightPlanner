@@ -50,11 +50,13 @@ export async function PATCH(request: Request, context: RouteContext) {
   // lib/permissions.ts). So this route accepts EITHER full aircraft access
   // (any field in FIELD_MAP) OR flight-records-write access
   // (FLIGHT_RECORDS_WRITE_ROLES), the latter scoped to ONLY
-  // currentFuel/hobbsTime — checked against the raw body keys, before
+  // currentFuel — checked against the raw body keys, before
   // FIELD_MAP filtering, so a request smuggling any other field never
-  // reaches the narrower path.
+  // reaches the narrower path. (10 Oct: hobbsTime left this path; a checkout
+  // now advances the meter server-side from the booking's own debrief, see
+  // scheduled-flights/[id]/route.ts.)
   const bodyKeys = Object.keys(body);
-  const isDebriefFuelUpdate = bodyKeys.length > 0 && bodyKeys.every(k => k === 'currentFuel' || k === 'hobbsTime');
+  const isDebriefFuelUpdate = bodyKeys.length > 0 && bodyKeys.every(k => k === 'currentFuel');
 
   const fullAccess = await requireModuleAccess('aircraft', 'full');
   if (fullAccess.error) {
@@ -78,30 +80,14 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (!Number.isFinite(n) || n < 0) {
       return NextResponse.json({ error: 'Hobbs Time must be a valid, non-negative number.' }, { status: 400 });
     }
-    // The narrow debrief path (DebriefForm.tsx) can only ever advance the
-    // meter — a flight burns Hobbs time, it doesn't reduce it. DebriefForm's
-    // own Hobbs End field has the exact same "clear it, save without
-    // retyping" failure mode FlightRecordForm's did (parseFloat('') || 0),
-    // and unlike a logged flight, an unchecked "auto-create logbook entry"
-    // debrief reaches this write directly with nothing else validating it —
-    // the flight-records POST route's own Hobbs End check never runs for
-    // that case. So this path specifically also requires the new reading to
-    // be strictly greater than what's already on file.
-    if (isDebriefFuelUpdate) {
-      const { data: current } = await supabaseAdmin.from('aircraft').select('hobbs_time').eq('id', id).single();
-      if (current && n <= Number(current.hobbs_time)) {
-        return NextResponse.json({ error: 'Hobbs Time must be greater than the aircraft\'s current reading.' }, { status: 400 });
-      }
-    } else {
-      // Operator, 10 Oct: once an aircraft has logged flights, its Hobbs is the end of the flight chain,
-      // so a full edit may not change it; Correct Hobbs (flight-records/[id]) shifts the chain and keeps an audit row.
-      const [{ data: current }, { count }] = await Promise.all([
-        supabaseAdmin.from('aircraft').select('hobbs_time, registration').eq('id', id).single(),
-        supabaseAdmin.from('flight_records').select('id', { count: 'exact', head: true }).eq('aircraft_id', id),
-      ]);
-      if (current && count && Math.round(n * 10) !== Math.round(Number(current.hobbs_time) * 10)) {
-        return NextResponse.json({ error: `${current.registration} has logged flights, so its Hobbs can't be changed here. Use the pencil next to the reading in Flights → Flight Log.` }, { status: 409 });
-      }
+    // Operator, 10 Oct: once an aircraft has logged flights, its Hobbs is the end of the flight chain, so a
+    // plain edit may not change it; the audited corrections are flight-records/[id] and aircraft/[id]/hobbs.
+    const [{ data: current }, { count }] = await Promise.all([
+      supabaseAdmin.from('aircraft').select('hobbs_time, registration').eq('id', id).single(),
+      supabaseAdmin.from('flight_records').select('id', { count: 'exact', head: true }).eq('aircraft_id', id),
+    ]);
+    if (current && count && Math.round(n * 10) !== Math.round(Number(current.hobbs_time) * 10)) {
+      return NextResponse.json({ error: `${current.registration} has logged flights, so its Hobbs can't be changed here. Use "Correct reading only" under the Hobbs field, or the pencil in Flights → Flight Log.` }, { status: 409 });
     }
     body.hobbsTime = n;
   }
