@@ -19,7 +19,7 @@ const field = 'w-full surface-inner rounded-lg px-2 py-1.5 text-sm focus:outline
 const noEnter = (e: React.KeyboardEvent) => { if (e.key === 'Enter') e.preventDefault(); };
 const ADMIN_ROLES = ['admin', 'super_admin'];
 const OUTCOME_LABEL = { IN_PROGRESS: 'In progress', COMPLETED: 'Completed', DISCONTINUED: 'Discontinued' } as const;
-export const STATUS_LABEL: Record<string, string> = { ACTIVE: 'Active', SUSPENDED: 'Suspended', GRADUATED: 'Graduated', LEFT: 'Left' };
+export const STATUS_LABEL: Record<string, string> = { ACTIVE: 'Active', GROUNDED: 'Grounded', SUSPENDED: 'Suspended', GRADUATED: 'Graduated', LEFT: 'Left' };
 const fmt = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
@@ -52,7 +52,7 @@ function CoursesSection({ student }: { student: StudentRecord }) {
     const r = await startNextCourse(student.id, { programId: Number(next.programId), startDate: next.startDate, endDate: current ? next.endDate : undefined, outcome: current ? next.outcome : undefined });
     setBusy(false);
     if (r.error) return notify(r.error);
-    notify(r.requirementsWarning ? `Next course started. Requirements: ${r.requirementsWarning}` : '✅ Next course started.');
+    notify(r.requirementsWarning ? `Next course started. Requirements: ${r.requirementsWarning}` : '✅ Next course started.', r.requirementsWarning ? 'warning' : 'success');
     setNext(null);
   };
 
@@ -143,24 +143,31 @@ function StatusSection({ student }: { student: StudentRecord }) {
   const [status, setStatus] = useState(student.status);
   const [reason, setReason] = useState('');
   const [disableLogin, setDisableLogin] = useState(true);
+  const [savedUntil, setSavedUntil] = useState(student.groundedUntil ?? '');
+  const [until, setUntil] = useState(student.groundedUntil ?? '');
   const [busy, setBusy] = useState(false);
   const [blocked, setBlocked] = useState<{ id: number; start: string }[]>([]);
-  const changed = status !== saved;
+  // A grounded student can be re-grounded with a new end date.
+  const changed = status !== saved || (status === 'GROUNDED' && until !== savedUntil);
+  const needsReason = status === 'GROUNDED' || status === 'SUSPENDED' || status === 'LEFT';
 
   const apply = async () => {
     setBusy(true);
     setBlocked([]);
-    const r = await changeStudentStatus(student.id, { status, reason, disableLogin: status === 'LEFT' ? disableLogin : undefined });
+    const r = await changeStudentStatus(student.id, {
+      status, reason, disableLogin: status === 'LEFT' ? disableLogin : undefined, groundedUntil: status === 'GROUNDED' ? until : undefined,
+    });
     setBusy(false);
     if (r.error) {
       setBlocked(r.bookings ?? []);
       return notify(r.error);
     }
-    const parts = [`✅ Status changed to ${STATUS_LABEL[status]}.`];
-    if (r.cancelled?.length) parts.push(`${r.cancelled.length} future booking(s) cancelled.`);
+    const parts = [status === 'GROUNDED' ? `✅ Grounded until ${until}.` : `✅ Status changed to ${STATUS_LABEL[status]}.`];
+    if (r.cancelled?.length) parts.push(`${r.cancelled.length} booking(s) cancelled.`);
     if (r.loginDisabled) parts.push('Login disabled.');
-    notify(parts.join(' '));
+    notify(parts.join(' '), 'success');
     setSaved(status);
+    setSavedUntil(status === 'GROUNDED' ? until : '');
     setReason('');
   };
 
@@ -177,18 +184,23 @@ function StatusSection({ student }: { student: StudentRecord }) {
       </div>
       {changed && (
         <>
-          <div><label className="block text-xs text-tertiary mb-1" htmlFor="st-reason">Reason{status === 'SUSPENDED' || status === 'LEFT' ? ' *' : ''}</label>
+          {status === 'GROUNDED' && (
+            <div><label className="block text-xs text-tertiary mb-1" htmlFor="st-until">Grounded until (last day) *</label>
+              <input id="st-until" type="date" min={todayIST()} className={field} value={until} onKeyDown={noEnter} onChange={e => setUntil(e.target.value)} /></div>
+          )}
+          <div><label className="block text-xs text-tertiary mb-1" htmlFor="st-reason">Reason{needsReason ? ' *' : ''}</label>
             <input id="st-reason" className={field} value={reason} onKeyDown={noEnter} onChange={e => setReason(e.target.value)} placeholder="e.g. Medical lapsed, awaiting renewal" /></div>
           {status === 'SUSPENDED' && <p className="text-xs text-tertiary">Their future bookings will be cancelled.</p>}
+          {status === 'GROUNDED' && <p className="text-xs text-tertiary">Bookings up to that date will be cancelled; later ones stay. They return to Active automatically the next day.</p>}
           {(status === 'GRADUATED' || status === 'LEFT') && <p className="text-xs text-tertiary">Refused while they still have future bookings.</p>}
           {status === 'LEFT' && (
             <label className="flex items-center gap-2 text-xs cursor-pointer">
               <input type="checkbox" checked={disableLogin} onChange={e => setDisableLogin(e.target.checked)} /> Also disable login
             </label>
           )}
-          <button type="button" disabled={busy || ((status === 'SUSPENDED' || status === 'LEFT') && !reason.trim())} onClick={apply}
+          <button type="button" disabled={busy || (needsReason && !reason.trim()) || (status === 'GROUNDED' && !until)} onClick={apply}
             className="text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer disabled:opacity-60" style={{ backgroundColor: 'var(--warning)', color: '#04141a' }}>
-            Change status to {STATUS_LABEL[status]}
+            {status === 'GROUNDED' && saved === 'GROUNDED' ? 'Change grounding' : `Change status to ${STATUS_LABEL[status]}`}
           </button>
         </>
       )}
@@ -198,7 +210,7 @@ function StatusSection({ student }: { student: StudentRecord }) {
         </ul>
       )}
       {student.statusChangedAt && (
-        <p className="text-xs text-tertiary">Last changed {fmt(student.statusChangedAt)}{student.statusReason ? ` · ${student.statusReason}` : ''}.</p>
+        <p className="text-xs text-tertiary">Last changed {fmt(student.statusChangedAt)}{student.statusReason ? ` · ${student.statusReason}` : ''}{savedUntil && saved === 'GROUNDED' ? ` · grounded until ${savedUntil}` : ''}.</p>
       )}
     </Section>
   );
@@ -222,7 +234,7 @@ function DocumentsSection({ student }: { student: StudentRecord }) {
     const r = await saveStudentDocuments(student.id, docs);
     setBusy(false);
     if (r.error) return notify(r.error);
-    notify('✅ ID documents saved.');
+    notify('✅ ID documents saved.', 'success');
     setDocs(null);
   };
 

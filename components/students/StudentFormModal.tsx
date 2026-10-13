@@ -10,6 +10,8 @@ import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { todayIST } from '@/lib/ist';
 import StudentRecordPanels from '@/components/students/StudentRecordPanels';
 import type { StudentIdDocuments } from '@/lib/hooks/useStudents';
+import PhoneInput from '@/components/ui/PhoneInput';
+import { COUNTRIES, DEFAULT_COUNTRY } from '@/lib/countries';
 
 const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
@@ -104,7 +106,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
           // medicalExpiry above.
           medicalIssueDate: '',
           address: '',
-          nationality: '',
+          nationality: DEFAULT_COUNTRY,
           emergencyContactName: '',
           emergencyContactRelation: '',
           emergencyContactPhone: '',
@@ -557,9 +559,8 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
               )}
             </div>
             <div>
-              <label className="block text-sm text-secondary mb-1">Phone</label>
-              <input type="text" value={form.phone} onChange={e => handleChange('phone', e.target.value)}
-                className={inputClass} />
+              <label htmlFor="student-phone" className="block text-sm text-secondary mb-1">Phone</label>
+              <PhoneInput id="student-phone" value={form.phone} onChange={v => handleChange('phone', v)} className={inputClass} />
             </div>
           </div>
 
@@ -573,7 +574,12 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label htmlFor="student-nationality" className="block text-sm text-secondary mb-1">Nationality</label>
-                <input id="student-nationality" type="text" value={form.nationality} onChange={e => handleChange('nationality', e.target.value)} className={inputClass} />
+                <select id="student-nationality" value={form.nationality} onChange={e => handleChange('nationality', e.target.value)} className={inputClass}>
+                  <option value="">Not recorded</option>
+                  {/* A value typed before the list existed (e.g. "Indian") stays selectable until it's changed. */}
+                  {form.nationality && !COUNTRIES.some(c => c.name === form.nationality) && <option value={form.nationality}>{form.nationality}</option>}
+                  {COUNTRIES.map(c => <option key={c.code} value={c.name}>{c.name}</option>)}
+                </select>
               </div>
               <div>
                 <label htmlFor="student-blood" className="block text-sm text-secondary mb-1">Blood group</label>
@@ -596,7 +602,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
             </div>
             <div>
               <label htmlFor="student-ec-phone" className="block text-sm text-secondary mb-1">Phone</label>
-              <input id="student-ec-phone" type="text" value={form.emergencyContactPhone} onChange={e => handleChange('emergencyContactPhone', e.target.value)} className={inputClass} />
+              <PhoneInput id="student-ec-phone" value={form.emergencyContactPhone} onChange={v => handleChange('emergencyContactPhone', v)} className={inputClass} />
             </div>
           </div>
 

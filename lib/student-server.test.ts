@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { decryptIdDocuments } from './staff-crypto';
-import { parseStudentDocs, maskStudentDocs, publicStudentRow } from './student-server';
+import { parseStudentDocs, maskStudentDocs, publicStudentRow, groundedRefusal, groundedCancelBefore } from './student-server';
 
 process.env.STAFF_DATA_KEY = randomBytes(32).toString('base64');
 
@@ -23,5 +23,11 @@ assert.deepEqual(maskStudentDocs('v1:bad:bad:bad'), { aadhaar: 'unreadable', pas
 const row = { id: 's1', name: 'A', id_documents_enc: ok.enc };
 assert.deepEqual(publicStudentRow(row, false), { id: 's1', name: 'A' });
 assert.deepEqual(publicStudentRow(row, true), { id: 's1', name: 'A', documents_masked: { aadhaar: 'XXXX-XXXX-9012', passport: 'XXXX4567' } });
+
+// Grounded until 20 Oct: flights on 20 Oct IST are refused, 21 Oct IST allowed (UTC 18:30 on the 20th is 00:00 IST on the 21st).
+assert.match(groundedRefusal('2026-10-20', '2026-10-20T12:00:00Z')!, /grounded until 2026-10-20/);
+assert.equal(groundedRefusal('2026-10-20', '2026-10-20T18:30:00Z'), null);
+assert.match(groundedRefusal('2026-10-20')!, /grounded/); // no start time: refuse
+assert.equal(groundedCancelBefore('2026-10-20'), '2026-10-20T18:30:00.000Z');
 
 console.log('student-server: all checks passed');

@@ -183,7 +183,7 @@ export async function PATCH(request: Request, context: RouteContext) {
           return NextResponse.json({ error: 'This student has approved leave at this time and can\'t be booked.' }, { status: 403 });
         }
         // B4: only an Active student can be booked or moved.
-        const refusal = next.student ? await studentBookingRefusal(next.student) : null;
+        const refusal = next.student ? await studentBookingRefusal(next.student, next.start) : null;
         if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
       }
       if (addsHours && next.instructor && next.status !== 'CANCELLED') {

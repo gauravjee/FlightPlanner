@@ -614,6 +614,7 @@ export interface StudentRecord {
   bloodGroup?: string;
   statusChangedAt?: string;
   statusReason?: string;
+  groundedUntil?: string; // GROUNDED only: the last grounded day (inclusive)
   // Last-4 masks, sent to admins only; the full numbers come from /api/students/[id]/documents.
   documentsMasked?: { aadhaar: string | null; passport: string | null } | null;
 }

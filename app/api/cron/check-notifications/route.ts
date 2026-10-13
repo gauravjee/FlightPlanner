@@ -70,6 +70,13 @@ export async function GET(request: Request) {
   const sentKeys: string[] = []; // digest_sends rows to write once the emails have gone
   const result: Record<string, unknown> = { today, digest };
 
+  // B4 Grounded (operator, 14 Oct): a grounding covers its end date; the first run after it returns the student to Active.
+  const { data: ended, error: groundError } = await supabaseAdmin.from('students')
+    .update({ status: 'ACTIVE', status_reason: 'Grounding ended', status_changed_at: new Date().toISOString(), status_changed_by: null, grounded_until: null })
+    .eq('status', 'GROUNDED').lt('grounded_until', today).select('id');
+  if (groundError) console.error('check-notifications: ending groundings failed:', groundError.code);
+  result.groundingsEnded = ended?.length ?? 0;
+
   try {
     const recipients = async (roles: string[]) => {
       const { data, error } = await supabaseAdmin.from('users').select('email').in('role', roles).eq('is_active', true);
@@ -110,7 +117,7 @@ export async function GET(request: Request) {
 
     if (digest === 'people' || digest === 'both') {
       const [students, instructors, staff] = await Promise.all([
-        supabaseAdmin.from('students').select('name, initials, email, medical_expiry, spl_expiry_date').in('status', ['ACTIVE', 'SUSPENDED']), // B4: a suspended student still needs reminders
+        supabaseAdmin.from('students').select('name, initials, email, medical_expiry, spl_expiry_date').in('status', ['ACTIVE', 'GROUNDED', 'SUSPENDED']), // B4: a grounded or suspended student still needs reminders
         supabaseAdmin.from('instructors').select('name, initials, email, license_expiry_date').eq('employment_status', 'ACTIVE'),
         // 2026-10-03: staff medicals (staff_members.medical_expiry). Their
         // own email = their login's, else the personal email on the record.

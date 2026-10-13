@@ -183,9 +183,9 @@ export async function POST(request: Request) {
     }
   }
 
-  // B4 (13 Oct): only an Active student can be booked, by anyone (including self-booking).
+  // B4 (13 Oct): only an Active student can be booked, by anyone (including self-booking); a grounded one after the grounding.
   if (studentId) {
-    const refusal = await studentBookingRefusal(String(studentId));
+    const refusal = await studentBookingRefusal(String(studentId), String(startTime));
     if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
   }
 

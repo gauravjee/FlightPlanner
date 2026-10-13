@@ -112,6 +112,7 @@ async function fetchStudentsUncached(): Promise<StudentRecord[]> {
     bloodGroup: (row.blood_group as string) || '',
     statusChangedAt: (row.status_changed_at as string) || undefined,
     statusReason: (row.status_reason as string) || undefined,
+    groundedUntil: (row.grounded_until as string) || undefined,
     documentsMasked: (row.documents_masked as StudentRecord['documentsMasked']) ?? null,
   }));
 }
@@ -186,14 +187,10 @@ export async function addStudent(student: Omit<StudentRecord, 'id'>): Promise<{
   });
   const result = await res.json().catch(() => ({}));
   if (res.ok) {
-    const created = result.student;
-    // The payload sent IS the new record, except for what the server adds:
-    // the id and (2026-09-24) the enrollment number, issued server-side by
-    // next_enrollment_id() — the form sends none. A local splice is still
-    // correct per the migration plan's cache-update rule.
-    const newStudent: StudentRecord = { ...student, id: String(created.id), enrollmentId: String(created.enrollment_id ?? '') };
-    delete (newStudent as unknown as Record<string, unknown>).idDocuments; // B3: never keep typed ID numbers in the client cache
-    mutate<StudentRecord[]>(studentsKey, (current = []) => [...current, newStudent], { revalidate: false });
+    // 14 Oct: re-read the list rather than splice the form's payload in. The server sets
+    // more than the id and enrollment number now (status, ID masks, null dates), and the
+    // splice showed a new student's ID documents as "None on file" until a reload.
+    await mutate(studentsKey);
     return {
       success: true,
       emailSent: result.emailSent,
@@ -278,7 +275,7 @@ export async function editStudentCourse(studentId: string, body: { courseId: num
   return r;
 }
 
-export async function changeStudentStatus(studentId: string, body: { status: string; reason?: string; disableLogin?: boolean }) {
+export async function changeStudentStatus(studentId: string, body: { status: string; reason?: string; disableLogin?: boolean; groundedUntil?: string }) {
   const r = await send<{ cancelled: { id: number; start: string }[]; loginDisabled: boolean; bookings: { id: number; start: string }[] }>(`/api/students/${studentId}/status`, 'POST', body);
   if (!r.error || r.bookings) await mutate(studentsKey);
   return r;

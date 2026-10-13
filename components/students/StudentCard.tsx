@@ -128,7 +128,7 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
             <p className="text-xs text-tertiary">
               {student.enrollmentId}
               {student.status && student.status !== 'ACTIVE' && (
-                <span className="ml-1 font-semibold" style={{ color: 'var(--warning-text)' }}>· {student.status.charAt(0) + student.status.slice(1).toLowerCase()}</span>
+                <span className="ml-1 font-semibold" style={{ color: 'var(--warning-text)' }}>· {student.status.charAt(0) + student.status.slice(1).toLowerCase()}{student.status === 'GROUNDED' && student.groundedUntil ? ` until ${student.groundedUntil}` : ''}</span>
               )}
             </p>
           </div>

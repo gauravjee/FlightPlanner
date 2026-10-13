@@ -5,7 +5,7 @@
 
 import { encryptIdDocuments, decryptIdDocuments, isValidAadhaar, maskAadhaar, maskPassport, type IdDocuments } from '@/lib/staff-crypto';
 
-export const STUDENT_STATUSES = ['ACTIVE', 'SUSPENDED', 'GRADUATED', 'LEFT'] as const;
+export const STUDENT_STATUSES = ['ACTIVE', 'GROUNDED', 'SUSPENDED', 'GRADUATED', 'LEFT'] as const;
 export const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 // Only admin / super admin see or change ID numbers and status (operator, 13 Oct).
 export const STUDENT_ADMIN_ROLES = ['admin', 'super_admin'];
@@ -57,11 +57,26 @@ export async function logStudentDocumentAction(
   return !error;
 }
 
-/** B4: only an Active student can be booked. Returns the refusal message, or null. */
-export async function studentBookingRefusal(studentId: string): Promise<string | null> {
+/** IST calendar date of an ISO timestamp. */
+const istDate = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+/** Grounded (operator, 14 Oct): no flying up to and including `until`; a flight on a later IST day is allowed. */
+export function groundedRefusal(until: string | null, startTime?: string): string | null {
+  if (until && startTime && istDate(startTime) > until) return null;
+  return `This student is grounded${until ? ` until ${until}` : ''} and can't be booked before then.`;
+}
+
+/** Bookings starting before this instant (the IST midnight after `until`) fall inside a grounding. */
+export function groundedCancelBefore(until: string): string {
+  return new Date(new Date(`${until}T00:00:00+05:30`).getTime() + 86_400_000).toISOString();
+}
+
+/** B4: only an Active student can be booked (a grounded one after the grounding). Returns the refusal message, or null. */
+export async function studentBookingRefusal(studentId: string, startTime?: string): Promise<string | null> {
   const { supabaseAdmin } = await import('@/lib/supabase-admin');
-  const { data } = await supabaseAdmin.from('students').select('status, status_reason').eq('id', studentId).maybeSingle();
+  const { data } = await supabaseAdmin.from('students').select('status, status_reason, grounded_until').eq('id', studentId).maybeSingle();
   if (!data || !data.status || data.status === 'ACTIVE') return null;
+  if (data.status === 'GROUNDED') return groundedRefusal(data.grounded_until as string | null, startTime);
   if (data.status === 'SUSPENDED') return `This student is suspended${data.status_reason ? ` (${data.status_reason})` : ''} and can't be booked.`;
   return `This student is marked ${data.status === 'GRADUATED' ? 'Graduated' : 'Left'} and can't be booked.`;
 }
