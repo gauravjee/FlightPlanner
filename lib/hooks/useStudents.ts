@@ -31,7 +31,7 @@
 'use client';
 
 import useSWR, { mutate } from 'swr';
-import type { Instructor, StudentRecord } from '@/types';
+import type { Instructor, StudentRecord, StudentCourse } from '@/types';
 import { notify } from '@/lib/notify';
 
 export const studentsKey = ['students'] as const;
@@ -104,6 +104,15 @@ async function fetchStudentsUncached(): Promise<StudentRecord[]> {
     splExpiryDate: (row.spl_expiry_date as string) || undefined,
     splIssueDate: (row.spl_issue_date as string) || undefined,
     medicalIssueDate: (row.medical_issue_date as string) || undefined,
+    address: (row.address as string) || '',
+    nationality: (row.nationality as string) || '',
+    emergencyContactName: (row.emergency_contact_name as string) || '',
+    emergencyContactRelation: (row.emergency_contact_relation as string) || '',
+    emergencyContactPhone: (row.emergency_contact_phone as string) || '',
+    bloodGroup: (row.blood_group as string) || '',
+    statusChangedAt: (row.status_changed_at as string) || undefined,
+    statusReason: (row.status_reason as string) || undefined,
+    documentsMasked: (row.documents_masked as StudentRecord['documentsMasked']) ?? null,
   }));
 }
 
@@ -183,6 +192,7 @@ export async function addStudent(student: Omit<StudentRecord, 'id'>): Promise<{
     // next_enrollment_id() — the form sends none. A local splice is still
     // correct per the migration plan's cache-update rule.
     const newStudent: StudentRecord = { ...student, id: String(created.id), enrollmentId: String(created.enrollment_id ?? '') };
+    delete (newStudent as unknown as Record<string, unknown>).idDocuments; // B3: never keep typed ID numbers in the client cache
     mutate<StudentRecord[]>(studentsKey, (current = []) => [...current, newStudent], { revalidate: false });
     return {
       success: true,
@@ -215,8 +225,76 @@ export async function updateStudent(id: string, updates: Partial<StudentRecord>)
     );
     return true;
   }
-  console.error('Error updating student:', await res.text());
+  // 13 Oct: show the server's reason instead of failing silently.
+  notify((await res.json().catch(() => ({}))).error || 'Failed to update student.');
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// B3/B4 (13 Oct): course history, status and ID documents. Each goes to its own
+// endpoint under /api/students/[id]; failures return the server's message.
+// ---------------------------------------------------------------------------
+type Result<T = Record<string, unknown>> = { error?: string } & Partial<T>;
+
+async function send<T>(url: string, method: string, body?: unknown): Promise<Result<T>> {
+  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+  const json = await res.json().catch(() => ({}));
+  return res.ok ? json : { ...json, error: json.error || 'Something went wrong.' };
+}
+
+export const studentCoursesKey = (studentId: string) => ['students', 'courses', studentId] as const;
+
+export function useStudentCourses(studentId: string | null) {
+  const { data } = useSWR<StudentCourse[]>(studentId ? studentCoursesKey(studentId) : null, async () => {
+    const json = await send<{ courses: Record<string, unknown>[] }>(`/api/students/${studentId}/courses`, 'GET');
+    if (json.error) throw new Error(json.error);
+    return (json.courses ?? []).map(c => {
+      const tp = (Array.isArray(c.training_programs) ? c.training_programs[0] : c.training_programs) as { program_code?: string; program_name?: string } | null;
+      return {
+        id: c.id as number, programId: c.program_id as number,
+        programCode: tp?.program_code ?? '', programName: tp?.program_name ?? '',
+        startDate: c.start_date as string, endDate: (c.end_date as string) ?? null,
+        outcome: c.outcome as StudentCourse['outcome'], note: (c.note as string) ?? null,
+      };
+    });
+  });
+  return data ?? [];
+}
+
+async function refreshStudent(studentId: string) {
+  await mutate(studentsKey);
+  await mutate(studentCoursesKey(studentId));
+}
+
+export async function startNextCourse(studentId: string, body: { programId: number; startDate: string; endDate?: string; outcome?: string; note?: string }) {
+  const r = await send<{ requirementsWarning?: string }>(`/api/students/${studentId}/courses`, 'POST', body);
+  if (!r.error) await refreshStudent(studentId);
+  return r;
+}
+
+export async function editStudentCourse(studentId: string, body: { courseId: number; startDate?: string; endDate?: string; outcome?: string }) {
+  const r = await send(`/api/students/${studentId}/courses`, 'PATCH', body);
+  if (!r.error) await refreshStudent(studentId);
+  return r;
+}
+
+export async function changeStudentStatus(studentId: string, body: { status: string; reason?: string; disableLogin?: boolean }) {
+  const r = await send<{ cancelled: { id: number; start: string }[]; loginDisabled: boolean; bookings: { id: number; start: string }[] }>(`/api/students/${studentId}/status`, 'POST', body);
+  if (!r.error || r.bookings) await mutate(studentsKey);
+  return r;
+}
+
+export type StudentIdDocuments = { aadhaar?: string; passportNumber?: string; passportIssueDate?: string; passportIssuePlace?: string };
+
+/** Full ID numbers; the server logs every call as a VIEW. */
+export async function fetchStudentDocuments(studentId: string) {
+  return send<{ idDocuments: StudentIdDocuments }>(`/api/students/${studentId}/documents`, 'GET');
+}
+
+export async function saveStudentDocuments(studentId: string, idDocuments: StudentIdDocuments) {
+  const r = await send(`/api/students/${studentId}`, 'PATCH', { idDocuments });
+  if (!r.error) await mutate(studentsKey);
+  return r;
 }
 
 export async function removeStudent(id: string): Promise<void> {

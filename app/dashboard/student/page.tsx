@@ -217,6 +217,27 @@ export default function StudentDashboardPage() {
               </div>
             )}
 
+            {/* B3 (13 Oct): the student's own personal details, read-only (no ID numbers). */}
+            {student && (
+              <details className="surface-card p-4 mb-6">
+                <summary className="text-sm font-semibold cursor-pointer">My details</summary>
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 text-sm mt-3">
+                  {([
+                    ['Address', student.address],
+                    ['Nationality', student.nationality],
+                    ['Blood group', student.bloodGroup],
+                    ['Emergency contact', [student.emergencyContactName, student.emergencyContactRelation && `(${student.emergencyContactRelation})`, student.emergencyContactPhone].filter(Boolean).join(' ')],
+                  ] as [string, string | undefined][]).map(([label, value]) => (
+                    <div key={label}>
+                      <dt className="text-xs text-tertiary">{label}</dt>
+                      <dd className="text-secondary">{value || 'Not recorded'}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="text-xs text-tertiary mt-3">Something wrong? Ask the office to correct it.</p>
+              </details>
+            )}
+
             {/* ===== FIRST SOLO CELEBRATION BANNER ===== */}
             {student?.firstSoloDate && (
               <div className="rounded-xl p-6 mb-6 text-center" style={{ backgroundImage: 'linear-gradient(90deg, color-mix(in srgb, var(--warning) 20%, transparent), color-mix(in srgb, var(--warning) 10%, transparent), color-mix(in srgb, var(--warning) 20%, transparent))', border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)' }}>

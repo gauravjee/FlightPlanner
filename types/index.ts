@@ -605,6 +605,29 @@ export interface StudentRecord {
   // issue date — same convention as splExpiryDate/licenseExpiryDate). See
   // add-medical-issue-date.sql.
   medicalIssueDate?: string;
+  // B3/B4 student master (2026-10-13, claude/student-master-design-2026-10-13.md).
+  address?: string;
+  nationality?: string;
+  emergencyContactName?: string;
+  emergencyContactRelation?: string;
+  emergencyContactPhone?: string;
+  bloodGroup?: string;
+  statusChangedAt?: string;
+  statusReason?: string;
+  // Last-4 masks, sent to admins only; the full numbers come from /api/students/[id]/documents.
+  documentsMasked?: { aadhaar: string | null; passport: string | null } | null;
+}
+
+/** One entry in a student's course history (student_courses). */
+export interface StudentCourse {
+  id: number;
+  programId: number;
+  programCode: string;
+  programName: string;
+  startDate: string;
+  endDate: string | null;
+  outcome: 'IN_PROGRESS' | 'COMPLETED' | 'DISCONTINUED';
+  note: string | null;
 }
 
 // Availability / Leave record

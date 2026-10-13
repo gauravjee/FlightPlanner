@@ -8,6 +8,10 @@ import { useStudents } from '@/lib/hooks/useStudents';
 import { Pencil, GraduationCap, Save, Plus, X, CircleCheck } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { todayIST } from '@/lib/ist';
+import StudentRecordPanels from '@/components/students/StudentRecordPanels';
+import type { StudentIdDocuments } from '@/lib/hooks/useStudents';
+
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 interface Props {
   student: StudentRecord | null;
@@ -65,6 +69,12 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
           splIssueDate: student.splIssueDate || '',
           splExpiryDate: student.splExpiryDate || '',
           medicalIssueDate: student.medicalIssueDate || '',
+          address: student.address || '',
+          nationality: student.nationality || '',
+          emergencyContactName: student.emergencyContactName || '',
+          emergencyContactRelation: student.emergencyContactRelation || '',
+          emergencyContactPhone: student.emergencyContactPhone || '',
+          bloodGroup: student.bloodGroup || '',
         }
       : {
           enrollmentId: '',
@@ -93,8 +103,17 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
           // Medical (DGCA Class 1) issue date (2026-08-25), paired with
           // medicalExpiry above.
           medicalIssueDate: '',
+          address: '',
+          nationality: '',
+          emergencyContactName: '',
+          emergencyContactRelation: '',
+          emergencyContactPhone: '',
+          bloodGroup: '',
         }
   );
+  // B3: a new student's ID documents go with the create (admin-only form); an existing
+  // student's are shown and changed in StudentRecordPanels, where every view is logged.
+  const [newDocs, setNewDocs] = useState<StudentIdDocuments>({ aadhaar: '', passportNumber: '', passportIssueDate: '', passportIssuePlace: '' });
 
   // Training-stage options come entirely from Admin Setup -> Training
   // Programs — no hardcoded fallback list. This used to start from a fixed
@@ -285,10 +304,15 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
-      ...form,
-      assignedInstructorId: form.assignedInstructorId || undefined,
-    } as StudentRecord);
+    const payload: Record<string, unknown> = { ...form, assignedInstructorId: form.assignedInstructorId || undefined };
+    if (isEditing) {
+      // B3/B4: the course and status change through their own sections below, never through Save.
+      delete payload.trainingStage;
+      delete payload.status;
+    } else if (Object.values(newDocs).some(v => v?.trim())) {
+      payload.idDocuments = newDocs;
+    }
+    onSave(payload as unknown as StudentRecord);
     onClose();
   };
 
@@ -374,13 +398,14 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
                 </p>
               ) : (
                 <select value={form.trainingStage} onChange={e => handleChange('trainingStage', e.target.value)}
-                  required={!isEditing} className={inputClass}>
+                  required={!isEditing} disabled={isEditing} className={`${inputClass} disabled:opacity-70`}>
                   {!form.trainingStage && <option value="" disabled>Select a stage...</option>}
                   {visibleStageOptions.map(stage => (
                     <option key={stage} value={stage}>{stage}</option>
                   ))}
                 </select>
               )}
+              {isEditing && <p className="text-xs text-tertiary mt-1">Current course. Change it under Courses below.</p>}
             </div>
           </div>
           {/* Assigned Instructor */}
@@ -537,6 +562,60 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
                 className={inputClass} />
             </div>
           </div>
+
+          {/* B3 (13 Oct): personal details and emergency contact. */}
+          <div className="pt-4 border-t space-y-3" style={{ borderColor: 'var(--border)' }}>
+            <h4 className="text-sm font-semibold">Personal</h4>
+            <div>
+              <label htmlFor="student-address" className="block text-sm text-secondary mb-1">Address</label>
+              <textarea id="student-address" rows={2} value={form.address} onChange={e => handleChange('address', e.target.value)} className={inputClass} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="student-nationality" className="block text-sm text-secondary mb-1">Nationality</label>
+                <input id="student-nationality" type="text" value={form.nationality} onChange={e => handleChange('nationality', e.target.value)} className={inputClass} />
+              </div>
+              <div>
+                <label htmlFor="student-blood" className="block text-sm text-secondary mb-1">Blood group</label>
+                <select id="student-blood" value={form.bloodGroup} onChange={e => handleChange('bloodGroup', e.target.value)} className={inputClass}>
+                  <option value="">Not recorded</option>
+                  {BLOOD_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
+            </div>
+            <h4 className="text-sm font-semibold pt-1">Emergency contact</h4>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="student-ec-name" className="block text-sm text-secondary mb-1">Name</label>
+                <input id="student-ec-name" type="text" value={form.emergencyContactName} onChange={e => handleChange('emergencyContactName', e.target.value)} className={inputClass} />
+              </div>
+              <div>
+                <label htmlFor="student-ec-relation" className="block text-sm text-secondary mb-1">Relation</label>
+                <input id="student-ec-relation" type="text" value={form.emergencyContactRelation} onChange={e => handleChange('emergencyContactRelation', e.target.value)} placeholder="e.g. Father" className={inputClass} />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="student-ec-phone" className="block text-sm text-secondary mb-1">Phone</label>
+              <input id="student-ec-phone" type="text" value={form.emergencyContactPhone} onChange={e => handleChange('emergencyContactPhone', e.target.value)} className={inputClass} />
+            </div>
+          </div>
+
+          {!isEditing && (
+            <div className="pt-4 border-t space-y-3" style={{ borderColor: 'var(--border)' }}>
+              <h4 className="text-sm font-semibold">ID documents <span className="text-xs text-tertiary font-normal">· optional, stored encrypted</span></h4>
+              <div className="grid grid-cols-2 gap-3">
+                {([['aadhaar', 'Aadhaar (12 digits)', 'text'], ['passportNumber', 'Passport number', 'text'],
+                  ['passportIssueDate', 'Passport date of issue', 'date'], ['passportIssuePlace', 'Passport place of issue', 'text']] as [keyof StudentIdDocuments, string, string][]).map(([k, label, type]) => (
+                  <div key={k}>
+                    <label htmlFor={`new-doc-${k}`} className="block text-sm text-secondary mb-1">{label}</label>
+                    <input id={`new-doc-${k}`} type={type} value={newDocs[k] ?? ''} onChange={e => setNewDocs(d => ({ ...d, [k]: e.target.value }))} className={inputClass} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {isEditing && student && <StudentRecordPanels student={student} />}
 
           <div className="flex space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <button type="button" onClick={onClose}

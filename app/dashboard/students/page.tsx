@@ -15,6 +15,7 @@ import StudentFormModal from '@/components/students/StudentFormModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RoleGate from '@/components/ui/RoleGate';
 import { Plus, Search, GraduationCap } from 'lucide-react';
+import { STATUS_LABEL } from '@/components/students/StudentRecordPanels';
 
 // Creating a student also creates their login (POST /api/students), which
 // is scoped server-side to admin/super_admin only — see
@@ -38,6 +39,9 @@ export default function StudentsPage() {
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [stageFilter, setStageFilter] = useState('ALL');
+  // B4 (13 Oct): status tabs; Active is the default view.
+  const [statusTab, setStatusTab] = useState('ACTIVE');
+  const statusCounts = (s: string) => (s === 'ALL' ? students.length : students.filter(x => (x.status || 'ACTIVE') === s).length);
   const [successMessage, setSuccessMessage] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
@@ -45,7 +49,8 @@ export default function StudentsPage() {
     const matchesSearch = s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           s.enrollmentId.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesStage = stageFilter === 'ALL' || s.trainingStage === stageFilter;
-    return matchesSearch && matchesStage;
+    const matchesStatus = statusTab === 'ALL' || (s.status || 'ACTIVE') === statusTab;
+    return matchesSearch && matchesStage && matchesStatus;
   });
 
   // 2026-08-19: this Training Stage filter used to be a hardcoded 6-value
@@ -151,6 +156,16 @@ export default function StudentsPage() {
                   <p className="text-xs text-tertiary">{stat.label}</p>
                   <p className="text-lg font-bold" style={{ color: stat.color }}>{stat.value}</p>
                 </div>
+              ))}
+            </div>
+
+            <div className="flex gap-1 flex-wrap mb-4" role="tablist" aria-label="Student status">
+              {[...Object.keys(STATUS_LABEL), 'ALL'].map(s => (
+                <button key={s} type="button" role="tab" aria-selected={statusTab === s} onClick={() => setStatusTab(s)}
+                  className="px-3 py-1.5 rounded-full text-sm cursor-pointer"
+                  style={statusTab === s ? { backgroundColor: 'var(--accent)', color: '#04141a' } : { border: '1px solid var(--border)' }}>
+                  {STATUS_LABEL[s] ?? 'All'} ({statusCounts(s)})
+                </button>
               ))}
             </div>
 
