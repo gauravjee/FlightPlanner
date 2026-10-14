@@ -18,6 +18,7 @@
 
 import { useState, useEffect, type ReactNode } from 'react';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
+import { notify } from '@/lib/notify';
 import { Pencil, Plus, Save, Trash2 } from 'lucide-react';
 
 export type FormValue = string | number | boolean | null;
@@ -144,11 +145,13 @@ export default function ConfigTable<T extends { id: number }>({
 
     const url = `/api/admin/config/${endpoint}`;
     const body = editing ? { id: editing.id, ...form } : form;
-    await fetch(url, {
+    const res = await fetch(url, {
       method: editing ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
+    // Keep the form filled on a refusal so nothing typed is lost.
+    if (!res.ok) return notify((await res.json().catch(() => ({}))).error || `Failed to save the ${singular.toLowerCase()}.`);
 
     reset();
     reload();
@@ -162,8 +165,9 @@ export default function ConfigTable<T extends { id: number }>({
 
   const handleDeleteConfirm = async () => {
     if (deleteTarget == null) return;
-    await fetch(`/api/admin/config/${endpoint}?id=${deleteTarget}`, { method: 'DELETE' });
+    const res = await fetch(`/api/admin/config/${endpoint}?id=${deleteTarget}`, { method: 'DELETE' });
     setDeleteTarget(null);
+    if (!res.ok) return notify((await res.json().catch(() => ({}))).error || `Failed to delete the ${singular.toLowerCase()}.`);
     reload();
   };
 

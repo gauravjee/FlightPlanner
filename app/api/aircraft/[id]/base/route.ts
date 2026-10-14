@@ -32,21 +32,18 @@ export async function POST(request: Request, context: RouteContext) {
   if (!base || !base.is_active) return NextResponse.json({ error: 'That base does not exist or is inactive.' }, { status: 400 });
   if (aircraft.current_base_id === toBaseId) return NextResponse.json({ error: `${aircraft.registration} is already at ${base.name}.` }, { status: 400 });
 
+  // One transaction (add-move-aircraft-base-fn.sql): the move and its log row save together or not at all.
   // Guarded on the base we read, so two people moving the same aircraft at once can't both succeed.
-  const { data: moved, error: moveError } = await supabaseAdmin.from('aircraft')
-    .update({ current_base_id: toBaseId }).eq('id', id).eq('current_base_id', aircraft.current_base_id).select('id');
+  const { data: actor } = await supabaseAdmin.from('users').select('id').eq('email', session.user.email ?? '').maybeSingle();
+  const { data: moved, error: moveError } = await supabaseAdmin.rpc('move_aircraft_base', {
+    p_aircraft_id: aircraft.id, p_from_base_id: aircraft.current_base_id, p_to_base_id: toBaseId,
+    p_moved_by: actor?.id ?? null, p_note: note,
+  });
   if (moveError) {
     console.error('Error moving aircraft:', moveError.code);
     return NextResponse.json({ error: 'Failed to move the aircraft.' }, { status: 500 });
   }
-  if (!moved?.length) return NextResponse.json({ error: 'The aircraft was just moved by someone else. Reload and try again.' }, { status: 409 });
-
-  // shortcut: the log row is written after the move (not one transaction); a failed insert is logged on the server only.
-  const { data: actor } = await supabaseAdmin.from('users').select('id').eq('email', session.user.email ?? '').maybeSingle();
-  const { error: logError } = await supabaseAdmin.from('aircraft_base_moves').insert({
-    aircraft_id: aircraft.id, from_base_id: aircraft.current_base_id, to_base_id: toBaseId, moved_by: actor?.id ?? null, note,
-  });
-  if (logError) console.error('Aircraft moved but the move log failed:', logError.code);
+  if (!moved) return NextResponse.json({ error: 'The aircraft was just moved by someone else. Reload and try again.' }, { status: 409 });
 
   return NextResponse.json({ success: true, registration: aircraft.registration, base: base.name });
 }
