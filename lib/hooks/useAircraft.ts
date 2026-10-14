@@ -62,6 +62,7 @@ export async function fetchAircraft(): Promise<Aircraft[]> {
     fuelBurnRateLph: row.fuel_burn_rate_lph != null ? (row.fuel_burn_rate_lph as number) : undefined,
     isSimulator: !!row.is_simulator,
     logBookSerialNo: (row.log_book_serial_no as string) || undefined,
+    currentBaseId: row.current_base_id != null ? String(row.current_base_id) : undefined,
   }));
 }
 
@@ -164,6 +165,18 @@ export async function correctAircraftHobbs(
   await mutate(aircraftKey);
   await mutate(['flightRecords', 'hobbsCorrections']); // hobbsCorrectionsKey (not imported: useFlightRecords imports this file)
   return { result: json.result };
+}
+
+// Multi-base M2: move to another base (POST /api/aircraft/[id]/base; logged). Returns an error message or null.
+export async function moveAircraftToBase(id: string, toBaseId: number, note: string): Promise<string | null> {
+  const res = await fetch(`/api/aircraft/${encodeURIComponent(id)}/base`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ toBaseId, note }),
+  });
+  if (!res.ok) return (await res.json().catch(() => ({}))).error || 'Failed to move the aircraft.';
+  await mutate(aircraftKey);
+  return null;
 }
 
 export async function removeAircraft(id: string): Promise<void> {

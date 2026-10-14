@@ -69,6 +69,8 @@ export const STUDENT_ROSTER_VIEW_ROLES = [...STUDENT_STAFF_ROLES, 'safety_office
 // view-only on this tab.
 export const AIRCRAFT_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'];
 export const AIRCRAFT_WRITE_ROLES = ['admin', 'super_admin'];
+// Multi-base M2 (operator, 15 Oct): moving an aircraft to another base.
+export const AIRCRAFT_MOVE_ROLES = ['admin', 'super_admin', 'operations'];
 
 // ============================================================
 // FUEL RECORDS

@@ -26,10 +26,11 @@ import GroundSchoolTab from './GroundSchoolTab';
 import HolidaysTab from './HolidaysTab';
 import AircraftMaintenanceScheduleTab from './AircraftMaintenanceScheduleTab';
 import AMEsTab from './AMEsTab';
+import BasesTab from './BasesTab';
 import {
   BookOpen, Plane, Target, ClipboardList, CircleCheck,
   GraduationCap, Users, Settings, School, CalendarDays,
-  ChevronLeft, ChevronRight, BarChart3, Wrench, UserCheck,
+  ChevronLeft, ChevronRight, BarChart3, Wrench, UserCheck, MapPin,
 } from 'lucide-react';
 
 // ============================================================
@@ -46,6 +47,7 @@ const TABS = [
   // rules, etc.) reads off settings this tab defines, so it's the natural
   // starting point for a fresh setup and the one an admin returns to most.
   { id: 'settings', label: 'FTO Settings', shortLabel: 'FTO', icon: Settings, component: SettingsTab },
+  { id: 'bases', label: 'Bases', shortLabel: 'Bases', icon: MapPin, component: BasesTab },
   { id: 'programs', label: 'Training Programs', shortLabel: 'Training', icon: BookOpen, component: TrainingProgramsTab },
   { id: 'aircraft', label: 'Aircraft Fleet', shortLabel: 'Aircraft', icon: Plane, component: AircraftSetupTab },
   // 2026-08-26, Phase 1: recurring maintenance schedule per aircraft model

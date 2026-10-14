@@ -6,6 +6,7 @@ import { Aircraft } from '@/types';
 import { canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Pencil, Trash2, Eye } from 'lucide-react';
+import AircraftBaseLine from '@/components/aircraft/AircraftBaseLine';
 
 interface Props {
   aircraft: Aircraft;
@@ -75,6 +76,8 @@ export default function AircraftCard({ aircraft, onEdit, onDelete }: Props) {
           </p>
         </div>
       </div>
+
+      <AircraftBaseLine aircraft={aircraft} />
 
       {/* Fuel Bar */}
       <div className="mb-4">

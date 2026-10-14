@@ -11,6 +11,7 @@ import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { effectiveDailyLimit } from '@/lib/instructor-status';
 import type { StaffMember } from '@/lib/staff-id';
 import PhoneInput from '@/components/ui/PhoneInput';
+import HomeBaseSelect from '@/components/ui/HomeBaseSelect';
 
 interface Props {
   instructor: Instructor | null;
@@ -62,6 +63,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
           maxDailyHours: instructor.maxDailyHours,
           email: instructor.email || '',
           phone: instructor.phone || '',
+          homeBaseId: instructor.homeBaseId ?? '',
           status: instructor.status,
           canSelfBook: !!instructor.canSelfBook,
           employmentStatus: instructor.employmentStatus ?? 'ACTIVE',
@@ -79,6 +81,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
           maxDailyHours: 8,
           email: '',
           phone: '',
+          homeBaseId: '',
           status: 'AVAILABLE' as Instructor['status'],
           canSelfBook: false,
           employmentStatus: 'ACTIVE' as NonNullable<Instructor['employmentStatus']>,
@@ -266,6 +269,8 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
               <label htmlFor="if-phone" className="block text-xs text-secondary mb-1">Phone</label>
               <PhoneInput id="if-phone" value={form.phone} onChange={v => setForm(p => ({ ...p, phone: v }))} className={inputClass} />
             </div>
+            <HomeBaseSelect id="if-home-base" value={form.homeBaseId} onChange={v => setForm(p => ({ ...p, homeBaseId: v }))}
+              className={inputClass} labelClassName="block text-xs text-secondary mb-1" />
           </div>
 
           {/* 2026-09-23: employment status — only for an existing instructor

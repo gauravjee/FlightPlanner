@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
 
-  const { name, initials, licenseNumber, licenseExpiryDate, licenseIssueDate, ratings, maxDailyHours, email, phone, status } =
+  const { name, initials, licenseNumber, licenseExpiryDate, licenseIssueDate, ratings, maxDailyHours, email, phone, status, homeBaseId } =
     body as Record<string, unknown>;
 
   if (!name || !initials) {
@@ -96,6 +96,7 @@ export async function POST(request: Request) {
       ratings,
       max_daily_hours: maxDailyHours,
       email, phone, status,
+      ...(homeBaseId ? { home_base_id: Number(homeBaseId) } : {}), // multi-base; else the DB default (Base 1)
       // can_self_book intentionally omitted — defaults to false (see
       // add-instructor-self-booking-permission.sql). Granted afterward by
       // a super_admin via PATCH, never at creation time.

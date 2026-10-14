@@ -52,6 +52,7 @@ const FIELD_MAP: Record<string, string> = {
   emergencyContactRelation: 'emergency_contact_relation',
   emergencyContactPhone: 'emergency_contact_phone',
   bloodGroup: 'blood_group',
+  homeBaseId: 'home_base_id', // multi-base M2
 };
 
 export async function PATCH(request: Request, context: RouteContext) {

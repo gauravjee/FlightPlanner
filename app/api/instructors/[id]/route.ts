@@ -24,6 +24,7 @@ const FIELD_MAP: Record<string, string> = {
   status: 'status',
   canSelfBook: 'can_self_book',
   employmentStatus: 'employment_status', // 2026-09-23, add-instructor-employment-status.sql
+  homeBaseId: 'home_base_id', // multi-base M2
   // 2026-09-24 (B2 S3a): joining date and last working day are no longer
   // written here — they live on the staff record (Staff page).
 };

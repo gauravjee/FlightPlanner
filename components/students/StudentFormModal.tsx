@@ -11,6 +11,7 @@ import { todayIST } from '@/lib/ist';
 import StudentRecordPanels from '@/components/students/StudentRecordPanels';
 import type { StudentIdDocuments } from '@/lib/hooks/useStudents';
 import PhoneInput from '@/components/ui/PhoneInput';
+import HomeBaseSelect from '@/components/ui/HomeBaseSelect';
 import { COUNTRIES, DEFAULT_COUNTRY } from '@/lib/countries';
 import { latestStudentDob, MIN_STUDENT_AGE } from '@/lib/student-age';
 
@@ -78,6 +79,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
           emergencyContactRelation: student.emergencyContactRelation || '',
           emergencyContactPhone: student.emergencyContactPhone || '',
           bloodGroup: student.bloodGroup || '',
+          homeBaseId: student.homeBaseId || '',
         }
       : {
           enrollmentId: '',
@@ -112,6 +114,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
           emergencyContactRelation: '',
           emergencyContactPhone: '',
           bloodGroup: '',
+          homeBaseId: '',
         }
   );
   // B3: a new student's ID documents go with the create (admin-only form); an existing
@@ -307,7 +310,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const payload: Record<string, unknown> = { ...form, assignedInstructorId: form.assignedInstructorId || undefined };
+    const payload: Record<string, unknown> = { ...form, assignedInstructorId: form.assignedInstructorId || undefined, homeBaseId: form.homeBaseId || undefined };
     if (isEditing) {
       // B3/B4: the course and status change through their own sections below, never through Save.
       delete payload.trainingStage;
@@ -589,6 +592,8 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
                   {BLOOD_GROUPS.map(g => <option key={g} value={g}>{g}</option>)}
                 </select>
               </div>
+              <HomeBaseSelect id="student-home-base" value={form.homeBaseId} onChange={v => handleChange('homeBaseId', v)}
+                className={inputClass} labelClassName="block text-sm text-secondary mb-1" />
             </div>
             <h4 className="text-sm font-semibold pt-1">Emergency contact</h4>
             <div className="grid grid-cols-2 gap-3">

@@ -152,7 +152,7 @@ export async function POST(request: Request) {
     medicalExpiry, email, phone, dateOfBirth, joinedDate, splNumber,
     splExpiryDate, splIssueDate, medicalIssueDate,
     address, nationality, emergencyContactName, emergencyContactRelation, emergencyContactPhone, bloodGroup,
-    assignedInstructorId,
+    assignedInstructorId, homeBaseId,
   } = body as Record<string, unknown>;
 
   if (!name || !initials) {
@@ -247,6 +247,7 @@ export async function POST(request: Request) {
       date_of_birth: dateOfBirth || null,
       joined_date: joinedDate || null,
       assigned_instructor_id: assignedInstructorId ? String(assignedInstructorId) : null, // was never saved on create (found 14 Oct)
+      ...(homeBaseId ? { home_base_id: Number(homeBaseId) } : {}), // multi-base; else the DB default (Base 1)
       status: 'ACTIVE', // B4: status changes only through /api/students/[id]/status
       address: (address as string)?.trim() || null,
       nationality: (nationality as string)?.trim() || null,

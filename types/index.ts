@@ -43,6 +43,7 @@ export interface Aircraft {
   // maintenance-log report omits its header line when this is unset rather
   // than printing an empty field. See add-logbook-and-camo-refs.sql.
   logBookSerialNo?: string;
+  currentBaseId?: string; // multi-base: where it is now; changes only via a logged move
 }
 
 
@@ -490,6 +491,7 @@ export interface Instructor {
   maxDailyHours: number;
   email: string;
   phone: string;
+  homeBaseId?: string; // multi-base: default view only
   // LEGACY hand-set label — no longer shown anywhere (2026-09-23): the status
   // is now computed (lib/instructor-status.ts). Kept only because dropping a
   // column is a separate, approval-gated clean-up.
@@ -612,6 +614,7 @@ export interface StudentRecord {
   emergencyContactRelation?: string;
   emergencyContactPhone?: string;
   bloodGroup?: string;
+  homeBaseId?: string; // multi-base: default view only
   statusChangedAt?: string;
   statusReason?: string;
   groundedUntil?: string; // GROUNDED only: the last grounded day (inclusive)

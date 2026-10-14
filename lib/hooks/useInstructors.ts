@@ -47,6 +47,7 @@ export async function fetchInstructors(): Promise<Instructor[]> {
     licenseNumber: row.license_number as string, ratings: row.ratings as string,
     maxDailyHours: row.max_daily_hours as number, email: (row.email as string) || '',
     phone: (row.phone as string) || '', status: row.status as Instructor['status'],
+    homeBaseId: row.home_base_id != null ? String(row.home_base_id) : undefined,
     // 2026-09-23: missing/unknown reads as ACTIVE — never hides anyone by accident.
     employmentStatus: row.employment_status === 'INACTIVE' ? 'INACTIVE' : 'ACTIVE',
     offDutyDate: (row.off_duty_date as string | null) ?? null,

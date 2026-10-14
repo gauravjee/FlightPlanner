@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabase-client';
 import { DAY_NAMES, parseWeeklyOffDays, parsePartialWeeklyOffRule } from '@/lib/store';
 import { mutate } from 'swr';
 import { ftoSettingsKey } from '@/lib/hooks/useFtoSettings';
+import { basesKey } from '@/lib/hooks/useBases';
 import { DEFAULT_SCHOOL_DAILY_LIMIT_HOURS } from '@/lib/instructor-status';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import EnrollmentSeriesSection from './EnrollmentSeriesSection';
@@ -274,6 +275,7 @@ export default function SettingsTab() {
       setTimeout(() => setSuccessMessage(''), 3000);
       loadSettings(); // Reload this tab's own local state to reflect changes
       mutate(ftoSettingsKey); // Refresh the shared cache too — see the note above
+      mutate(basesKey); // multi-base M2: the server copies these values into Base 1
     } catch (err) {
       console.error('❌ Error saving settings:', err);
       setSuccessMessage('❌ Error saving settings. Please try again.');

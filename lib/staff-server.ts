@@ -48,6 +48,13 @@ export function parseStaffBody(body: Record<string, unknown>, isCreate: boolean)
     data.employment_type = v;
   }
 
+  // Multi-base M2: '' / absent = leave as is (a new record gets the DB default, Base 1).
+  if (body.homeBaseId !== undefined && body.homeBaseId !== null && body.homeBaseId !== '') {
+    const baseId = Number(body.homeBaseId);
+    if (!Number.isInteger(baseId) || baseId < 1) return { data, error: 'Home base is invalid.' };
+    data.home_base_id = baseId;
+  }
+
   if ('name' in data && !data.name) return { data, error: 'Name is required.' };
   if ('joining_date' in data && !data.joining_date) return { data, error: 'Joining date is required.' };
   if (isCreate) {
@@ -111,6 +118,7 @@ export function toStaffMember(r: Record<string, unknown>): StaffMember {
     emergencyContactName: (r.emergency_contact_name as string) ?? null,
     emergencyContactPhone: (r.emergency_contact_phone as string) ?? null,
     medicalExpiry: (r.medical_expiry as string) ?? null,
+    homeBaseId: r.home_base_id != null ? Number(r.home_base_id) : null,
     loginRole: one(r.users as { role: string } | null)?.role ?? null,
     instructorId: one(r.instructors as { id: number } | null)?.id ?? null,
     ameId: one(r.ames as { id: number } | null)?.id ?? null,

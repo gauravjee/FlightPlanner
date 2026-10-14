@@ -56,6 +56,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, requireSession, ADMIN_SETUP_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
+import { BASE1_ID, baseRowError, isBaseSettingKey, settingToBaseValue, baseToSettingValue } from '@/lib/bases';
 
 // Maps the URL's `table` segment to { the real Postgres table, the columns
 // this route is allowed to write }. Adding a new Admin Setup config tab
@@ -134,7 +135,37 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
     // 2026-09-24 (B2 S3a): + the staff record the engineer belongs to.
     columns: ['name', 'license_no', 'is_active', 'staff_member_id'],
   },
+  // Bases (multi-base M2, 2026-10-15; claude/multi-base-design-2026-10-15.md). Never deleted
+  // (history points at them); deactivated instead. Base 1 stays in step with fto_settings below.
+  bases: {
+    dbTable: 'bases',
+    columns: [
+      'name', 'code', 'airport_code', 'location_name', 'latitude', 'longitude',
+      'time_slot_start', 'time_slot_end', 'time_slot_interval', 'weekly_off_days', 'partial_weekly_off_days', 'is_active',
+    ],
+  },
 };
+
+// Multi-base M2: until the app reads bases (M3), Base 1 and the matching fto_settings keys must hold the
+// same values, so a write to either is copied to the other. A failed copy is logged, not fatal: the save
+// the user asked for has already happened.
+async function syncSettingToBase1(row: Record<string, unknown> | null) {
+  if (!row || !isBaseSettingKey(row.setting_key)) return;
+  const key = row.setting_key as string;
+  const { error } = await supabaseAdmin.from('bases')
+    .update({ [key]: settingToBaseValue(key, row.setting_value as string) }).eq('id', BASE1_ID);
+  if (error) console.error('Base 1 sync from fto_settings failed:', error.code);
+}
+
+async function syncBase1ToSettings(updates: Record<string, unknown>) {
+  for (const [key, value] of Object.entries(updates)) {
+    if (!isBaseSettingKey(key)) continue;
+    const settingValue = baseToSettingValue(value);
+    const { data, error } = await supabaseAdmin.from('fto_settings').update({ setting_value: settingValue }).eq('setting_key', key).select('id');
+    if (!error && !data?.length) await supabaseAdmin.from('fto_settings').insert({ setting_key: key, setting_value: settingValue });
+    if (error) console.error(`fto_settings sync from Base 1 failed (${key}):`, error.code);
+  }
+}
 
 // 2026-10-07 (S4 review): every AME belongs to a staff record (B2). The AMEs
 // tab already requires one; this makes the server require it too, so a
@@ -225,7 +256,7 @@ export async function POST(request: Request, context: RouteContext) {
   // Bulk insert (e.g. the Exercises tab's CSV import, or Holiday Calendar's
   // recurring-holiday bulk add) — body is an array of row objects.
   if (Array.isArray(body)) {
-    if (table === 'ames') return NextResponse.json({ error: 'Add AMEs one at a time.' }, { status: 400 });
+    if (table === 'ames' || table === 'bases') return NextResponse.json({ error: 'Add these one at a time.' }, { status: 400 });
     const rows = body.map((row) => pickAllowed(row as Record<string, unknown>, config.columns));
     const { data, error: dbError } = await supabaseAdmin.from(config.dbTable).insert(rows).select();
     if (dbError) {
@@ -240,6 +271,10 @@ export async function POST(request: Request, context: RouteContext) {
     const ameError = await ameStaffError(insertBody);
     if (ameError) return NextResponse.json({ error: ameError }, { status: 400 });
   }
+  if (table === 'bases') {
+    const baseError = baseRowError(insertBody, true);
+    if (baseError) return NextResponse.json({ error: baseError }, { status: 400 });
+  }
   const { data, error: dbError } = await supabaseAdmin
     .from(config.dbTable)
     .insert(insertBody)
@@ -248,9 +283,11 @@ export async function POST(request: Request, context: RouteContext) {
 
   if (dbError) {
     console.error(`Error inserting into ${config.dbTable}:`, dbError);
+    if (table === 'bases' && dbError.code === '23505') return NextResponse.json({ error: 'Another base already has that name or code.' }, { status: 409 });
     return NextResponse.json({ error: 'Failed to save.' }, { status: 500 });
   }
 
+  if (table === 'fto-settings') await syncSettingToBase1(data);
   return NextResponse.json({ row: data });
 }
 
@@ -284,6 +321,17 @@ export async function PATCH(request: Request, context: RouteContext) {
     const ameError = await ameStaffError(updates, id);
     if (ameError) return NextResponse.json({ error: ameError }, { status: 400 });
   }
+  if (table === 'bases') {
+    const baseError = baseRowError(updates, false);
+    if (baseError) return NextResponse.json({ error: baseError }, { status: 400 });
+    if (Number(id) === BASE1_ID && updates.is_active === false) {
+      return NextResponse.json({ error: "Base 1 can't be deactivated: every record from before multi-base belongs to it." }, { status: 400 });
+    }
+    if (updates.is_active === false) {
+      const { count } = await supabaseAdmin.from('aircraft').select('id', { count: 'exact', head: true }).eq('current_base_id', id);
+      if (count) return NextResponse.json({ error: `Move this base's ${count} aircraft to another base first.` }, { status: 409 });
+    }
+  }
 
   const { data, error: dbError } = await supabaseAdmin
     .from(config.dbTable)
@@ -294,6 +342,7 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   if (dbError) {
     console.error(`Error updating ${config.dbTable}:`, dbError);
+    if (table === 'bases' && dbError.code === '23505') return NextResponse.json({ error: 'Another base already has that name or code.' }, { status: 409 });
     return NextResponse.json({ error: 'Failed to save.' }, { status: 500 });
   }
 
@@ -301,6 +350,8 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'Record not found.' }, { status: 404 });
   }
 
+  if (table === 'fto-settings') await syncSettingToBase1(data);
+  if (table === 'bases' && Number(id) === BASE1_ID) await syncBase1ToSettings(updates);
   return NextResponse.json({ row: data });
 }
 
@@ -312,6 +363,10 @@ export async function DELETE(request: Request, context: RouteContext) {
   const config = TABLES[table];
   if (!config) {
     return NextResponse.json({ error: 'Unknown config resource.' }, { status: 404 });
+  }
+
+  if (table === 'bases') {
+    return NextResponse.json({ error: 'Bases are never deleted (history points at them). Deactivate it instead.' }, { status: 400 });
   }
 
   const url = new URL(request.url);

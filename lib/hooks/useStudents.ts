@@ -110,6 +110,7 @@ async function fetchStudentsUncached(): Promise<StudentRecord[]> {
     emergencyContactRelation: (row.emergency_contact_relation as string) || '',
     emergencyContactPhone: (row.emergency_contact_phone as string) || '',
     bloodGroup: (row.blood_group as string) || '',
+    homeBaseId: row.home_base_id != null ? String(row.home_base_id) : undefined,
     statusChangedAt: (row.status_changed_at as string) || undefined,
     statusReason: (row.status_reason as string) || undefined,
     groundedUntil: (row.grounded_until as string) || undefined,

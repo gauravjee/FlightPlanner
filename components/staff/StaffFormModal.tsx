@@ -13,6 +13,7 @@ import { X, Save, Lock } from 'lucide-react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import type { StaffMember } from '@/lib/staff-id';
 import PhoneInput from '@/components/ui/PhoneInput';
+import HomeBaseSelect from '@/components/ui/HomeBaseSelect';
 
 type Docs = { pan: string; aadhaar: string; passportNumber: string; passportIssueDate: string; passportIssuePlace: string };
 const EMPTY_DOCS: Docs = { pan: '', aadhaar: '', passportNumber: '', passportIssueDate: '', passportIssuePlace: '' };
@@ -46,6 +47,7 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
       lastWorkingDate: member?.lastWorkingDate ?? '',
       employmentType: member?.employmentType ?? '',
       nationality: isNew ? 'Indian' : '',
+      homeBaseId: member?.homeBaseId != null ? String(member.homeBaseId) : '',
     };
     for (const [k] of TEXT_FIELDS) if (member) f[k] = (member[k] as string | null) ?? '';
     return f;
@@ -144,6 +146,7 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
                 : <input id={`sf-${k}`} type={type ?? 'text'} value={form[k] ?? ''} onChange={e => set(k, e.target.value)} className={inputClass} />}
             </div>
           ))}
+          <HomeBaseSelect id="sf-home-base" value={form.homeBaseId} onChange={v => set('homeBaseId', v)} className={inputClass} labelClassName={label} />
           {isNew && (
             <label className="sm:col-span-2 flex items-center gap-2 text-sm">
               <input type="checkbox" checked={isSub} onChange={e => setIsSub(e.target.checked)} />
