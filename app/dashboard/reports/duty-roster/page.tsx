@@ -32,6 +32,9 @@ import { toIST } from '@/lib/leave-window';
 import { generateDutyRoster } from '@/lib/pdf';
 import { ROSTER_VIEW_ROLES } from '@/lib/permissions';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { ALL_BASES } from '@/lib/bases';
+import { rowBase } from '@/lib/roster';
 
 type Period = 'weekly' | 'monthly' | 'custom';
 type View = 'detailed' | 'summary';
@@ -55,6 +58,9 @@ export default function DutyRosterReportPage() {
   const { ftoSettings } = useFtoSettings();
   const { holidays } = useHolidays();
   const { weekly, exceptions, isLoading } = useRoster();
+  // Multi-base M4a: a picked base shows that base's roster for its instructors (home base there, or rostered
+  // there); "All bases" shows each instructor at their home base.
+  const { selected: selectedBase } = useSelectedBase();
 
   useSetHeader({ title: 'Duty Roster Report', subtitle: 'Instructor duty hours, leave and bookings (IST)' });
 
@@ -87,12 +93,14 @@ export default function DutyRosterReportPage() {
   // Inactive with no last working day recorded -> not shown. Anyone whose
   // joining date is after the period's last day -> not shown.
   const candidates = useMemo(() => instructors
+    .filter(i => selectedBase === ALL_BASES || Number(i.homeBaseId ?? 1) === selectedBase
+      || [...weekly, ...exceptions].some(r => r.instructorId === String(i.id) && rowBase(r) === selectedBase))
     .filter(i => !i.joiningDate || i.joiningDate <= to)
     .filter(i => i.employmentStatus !== 'INACTIVE' || (!!i.lastWorkingDate && i.lastWorkingDate >= from))
     .map(i => (i.employmentStatus === 'INACTIVE'
       ? { ...i, name: `${i.name} (last day ${dayLabel(i.lastWorkingDate!)} ${i.lastWorkingDate!.slice(0, 4)})` }
       : { ...i, lastWorkingDate: null })),
-  [instructors, from, to]);
+  [instructors, from, to, selectedBase, weekly, exceptions]);
   const selected = useMemo(() => (picked === null ? candidates : candidates.filter(i => picked.includes(String(i.id)))), [picked, candidates]);
   const toggle = (id: string) => {
     const current = picked ?? candidates.map(i => String(i.id));
@@ -107,7 +115,10 @@ export default function DutyRosterReportPage() {
     const partial = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
     return buildRosterReport({
       from, to, weekly, exceptions,
-      instructors: selected.map(i => ({ ...i, dailyLimit: effectiveDailyLimit(i.maxDailyHours, ftoSettings['instructor_daily_limit_hours']) })),
+      instructors: selected.map(i => ({
+        ...i, dailyLimit: effectiveDailyLimit(i.maxDailyHours, ftoSettings['instructor_daily_limit_hours']),
+        baseId: selectedBase === ALL_BASES ? Number(i.homeBaseId ?? 1) : selectedBase,
+      })),
       leaves: availabilityRecords
         .filter(l => l.status === 'APPROVED' && l.personType === 'instructor')
         .map(l => ({ personId: l.personId, start_date: l.startDate, end_date: l.endDate, start_time: l.startTime, end_time: l.endTime })),
@@ -115,7 +126,7 @@ export default function DutyRosterReportPage() {
       openStart: ftoSettings['time_slot_start'], openEnd: ftoSettings['time_slot_end'],
       closedReason: date => getSchedulingBlockReason(date, holidays, weeklyOff, partial)?.label ?? null,
     });
-  }, [rangeError, from, to, selected, weekly, exceptions, availabilityRecords, scheduledFlights, ftoSettings, holidays]);
+  }, [rangeError, from, to, selected, weekly, exceptions, availabilityRecords, scheduledFlights, ftoSettings, holidays, selectedBase]);
 
   const periodText = `${dayLabel(from)} ${from.slice(0, 4)} to ${dayLabel(to)} ${to.slice(0, 4)} (IST) · ${dayCount} day${dayCount === 1 ? '' : 's'}`;
   const instructorsLabel = picked === null ? 'All instructors' : selected.map(i => i.name).join(', ') || 'No instructors selected';

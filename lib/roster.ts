@@ -10,12 +10,19 @@
 //   3. a weekly pattern (any rows at all) -> that weekday's hours, or off
 //   4. no roster at all -> the FTO's opening hours (as before the roster)
 // Times are IST wall-clock 'HH:MM', compared as strings; '24:00' = midnight.
+//
+// Multi-base M4a (15 Oct): the roster is per base. Steps 2-3 read only the
+// asked base's rows (a row with no baseId is Base 1, the column default).
+// Rostered at another base but not this one -> off here ('other-base').
 
 import { toIST } from './leave-window';
 
-export type WeeklyRow = { instructorId: string; weekday: number; startTime: string | null; endTime: string | null };
-export type RosterException = { instructorId: string; date: string; startTime: string | null; endTime: string | null };
-export type DutySource = 'off-duty-today' | 'exception' | 'weekly' | 'opening-hours';
+export type WeeklyRow = { instructorId: string; weekday: number; startTime: string | null; endTime: string | null; baseId?: number };
+export type RosterException = { instructorId: string; date: string; startTime: string | null; endTime: string | null; baseId?: number };
+export type DutySource = 'off-duty-today' | 'exception' | 'weekly' | 'other-base' | 'opening-hours';
+
+/** A roster row's base; rows saved before multi-base have none and are Base 1. */
+export const rowBase = (r: { baseId?: number | null }): number => Number(r.baseId ?? 1);
 export type DutyWindow = { start: string; end: string } | null; // null = off
 export type DutyResult = { window: DutyWindow; source: DutySource };
 
@@ -46,18 +53,24 @@ export function dutyWindow(args: {
   offDutyDate?: string | null;
   openStart?: string;
   openEnd?: string;
+  baseId?: number; // the base asked about; missing = Base 1
 }): DutyResult {
   const id = String(args.instructorId);
+  const base = args.baseId ?? 1;
   if (args.offDutyDate === args.date) return { window: null, source: 'off-duty-today' };
 
-  const ex = args.exceptions.find(e => String(e.instructorId) === id && e.date === args.date);
+  const sameDay = args.exceptions.filter(e => String(e.instructorId) === id && e.date === args.date);
+  const ex = sameDay.find(e => rowBase(e) === base);
   if (ex) return { window: span(ex.startTime, ex.endTime), source: 'exception' };
 
   const mine = args.weekly.filter(w => String(w.instructorId) === id);
-  if (mine.length) {
-    const w = mine.find(r => Number(r.weekday) === weekdayOf(args.date));
+  const here = mine.filter(w => rowBase(w) === base);
+  if (here.length) {
+    const w = here.find(r => Number(r.weekday) === weekdayOf(args.date));
     return { window: w ? span(w.startTime, w.endTime) : null, source: 'weekly' };
   }
+  // Rostered elsewhere (a weekly pattern, or a change that day) but not here.
+  if (mine.length || sameDay.length) return { window: null, source: 'other-base' };
 
   // No roster: opening hours; if those aren't set either, the whole day —
   // the roster must never block anyone who hasn't been rostered.
@@ -81,10 +94,57 @@ export function onDutyAt(window: DutyWindow, time: string): boolean {
 
 /** Plain-words reason a duty window applies, for refusal messages. */
 export function dutySourceNote(source: DutySource): string {
-  return source === 'off-duty-today' ? ' (marked off duty today)' : source === 'exception' ? ' (one-off change)' : '';
+  return source === 'off-duty-today' ? ' (marked off duty today)' : source === 'exception' ? ' (one-off change)'
+    : source === 'other-base' ? ' (rostered at another base)' : '';
 }
 
 /** 'Off' or '06:00–14:00' — for messages and the calendar. */
 export function describeWindow(window: DutyWindow): string {
   return window ? `${window.start}–${window.end}` : 'Off';
+}
+
+/**
+ * Q9 (operator, 15 Oct): one instructor's duty at two bases may not overlap on the same day.
+ * Checks the weekly patterns weekday by weekday, then every date from `fromDate` on that has a
+ * one-off change, using the hours that actually apply that day. Returns a refusal or null.
+ */
+export function rosterOverlap(args: {
+  instructorId: string;
+  weekly: WeeklyRow[];
+  exceptions: RosterException[];
+  fromDate: string;
+  baseName?: (baseId: number) => string;
+}): string | null {
+  const id = String(args.instructorId);
+  const weekly = args.weekly.filter(w => String(w.instructorId) === id);
+  const exceptions = args.exceptions.filter(e => String(e.instructorId) === id);
+  const bases = [...new Set([...weekly, ...exceptions].map(rowBase))].sort((a, b) => a - b);
+  if (bases.length < 2) return null;
+  const name = args.baseName ?? (b => `Base ${b}`);
+
+  const clash = (label: string, windows: [number, DutyWindow][]) => {
+    for (let i = 0; i < windows.length; i++) {
+      for (let j = i + 1; j < windows.length; j++) {
+        const [b1, w1] = windows[i], [b2, w2] = windows[j];
+        if (w1 && w2 && w1.start < w2.end && w2.start < w1.end) {
+          return `${label}: ${name(b1)} ${describeWindow(w1)} overlaps ${name(b2)} ${describeWindow(w2)}. An instructor can't be on duty at two bases at once.`;
+        }
+      }
+    }
+    return null;
+  };
+
+  for (let day = 0; day < 7; day++) {
+    const msg = clash(WEEKDAY_NAMES[day], bases.map(b => {
+      const r = weekly.find(w => rowBase(w) === b && Number(w.weekday) === day);
+      return [b, r ? span(r.startTime, r.endTime) : null];
+    }));
+    if (msg) return msg;
+  }
+  const dates = [...new Set(exceptions.filter(e => e.date >= args.fromDate).map(e => e.date))].sort();
+  for (const date of dates) {
+    const msg = clash(date, bases.map(b => [b, dutyWindow({ instructorId: id, date, weekly, exceptions, baseId: b }).window]));
+    if (msg) return msg;
+  }
+  return null;
 }

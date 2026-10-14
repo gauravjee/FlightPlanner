@@ -6,7 +6,7 @@
 // cancelled — the same count the daily limit uses). Operator decisions
 // 2026-09-23: show booked hours per day; school-closed days read "Closed".
 
-import { dutyWindow, type WeeklyRow, type RosterException } from './roster';
+import { dutyWindow, rowBase, type WeeklyRow, type RosterException } from './roster';
 import { dayHours, type FlightLike } from './instructor-status';
 import { leaveCovers, type LeaveWindow } from './leave-window';
 
@@ -81,7 +81,8 @@ export function buildRosterReport(args: {
 
   // 2026-09-24: days before joiningDate read "Not joined", days after an
   // Inactive instructor's lastWorkingDate read "Left"; both count toward nothing.
-  instructors: { id: string; name: string; initials: string; offDutyDate?: string | null; dailyLimit?: number; joiningDate?: string | null; lastWorkingDate?: string | null }[];
+  // baseId (multi-base M4a): whose roster to read for that instructor; missing = Base 1.
+  instructors: { id: string; name: string; initials: string; offDutyDate?: string | null; dailyLimit?: number; joiningDate?: string | null; lastWorkingDate?: string | null; baseId?: number }[];
   weekly: WeeklyRow[];
   exceptions: (RosterException & { note?: string })[];
   leaves: (LeaveWindow & { personId: string })[]; // approved instructor leave only
@@ -110,13 +111,13 @@ export function buildRosterReport(args: {
       if (leave && !leave.start_time) { leaveDays++; return { kind: 'leave', text: `Leave${bookedText}`, changed: false, booked }; }
 
       const r = dutyWindow({
-        instructorId: instr.id, date, weekly: args.weekly, exceptions: args.exceptions,
+        instructorId: instr.id, date, weekly: args.weekly, exceptions: args.exceptions, baseId: instr.baseId,
         offDutyDate: instr.offDutyDate, openStart: args.openStart, openEnd: args.openEnd,
       });
       const changed = r.source === 'exception' || r.source === 'off-duty-today';
       if (changed) {
         changedDays++;
-        const ex = args.exceptions.find(e => String(e.instructorId) === String(instr.id) && e.date === date);
+        const ex = args.exceptions.find(e => String(e.instructorId) === String(instr.id) && e.date === date && rowBase(e) === (instr.baseId ?? 1));
         const what = r.source === 'off-duty-today' ? 'marked off duty that day' : 'one-off change';
         notes.push(`${dayLabel(date)}, ${instr.name}: ${what}${ex?.note ? ` — ${ex.note}` : ''}`);
       }

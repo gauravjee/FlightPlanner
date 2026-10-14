@@ -24,11 +24,11 @@ export async function fetchRoster(): Promise<RosterData> {
   if (!res.ok) throw new Error(body.error || 'Failed to load the duty roster.');
   return {
     weekly: (body.weekly ?? []).map((r: Record<string, unknown>) => ({
-      instructorId: String(r.instructor_id), weekday: Number(r.weekday),
+      instructorId: String(r.instructor_id), baseId: Number(r.base_id ?? 1), weekday: Number(r.weekday),
       startTime: hhmm(r.start_time), endTime: hhmm(r.end_time),
     })),
     exceptions: (body.exceptions ?? []).map((r: Record<string, unknown>) => ({
-      instructorId: String(r.instructor_id), date: String(r.date),
+      instructorId: String(r.instructor_id), baseId: Number(r.base_id ?? 1), date: String(r.date),
       startTime: hhmm(r.start_time), endTime: hhmm(r.end_time),
       note: (r.note as string) || '', createdBy: (r.created_by as string) || '',
     })),
@@ -56,14 +56,15 @@ async function write(url: string, method: string, body?: unknown): Promise<strin
   return null;
 }
 
-export function saveWeeklyRoster(instructorId: string, days: { weekday: number; startTime: string | null; endTime: string | null }[]) {
-  return write('/api/roster', 'PUT', { instructorId, days });
+// baseId: which base's roster (multi-base M4a).
+export function saveWeeklyRoster(instructorId: string, baseId: number, days: { weekday: number; startTime: string | null; endTime: string | null }[]) {
+  return write('/api/roster', 'PUT', { instructorId, baseId, days });
 }
 
-export function setRosterException(e: { instructorId: string; date: string; startTime: string | null; endTime: string | null; note: string }) {
+export function setRosterException(e: { instructorId: string; baseId: number; date: string; startTime: string | null; endTime: string | null; note: string }) {
   return write('/api/roster', 'POST', e);
 }
 
-export function removeRosterException(instructorId: string, date: string) {
-  return write(`/api/roster?instructorId=${encodeURIComponent(instructorId)}&date=${encodeURIComponent(date)}`, 'DELETE');
+export function removeRosterException(instructorId: string, baseId: number, date: string) {
+  return write(`/api/roster?instructorId=${encodeURIComponent(instructorId)}&baseId=${baseId}&date=${encodeURIComponent(date)}`, 'DELETE');
 }

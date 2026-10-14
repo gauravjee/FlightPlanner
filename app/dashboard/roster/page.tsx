@@ -24,6 +24,9 @@ import { leaveCovers, toIST } from '@/lib/leave-window';
 import { parseWeeklyOffDays } from '@/lib/store';
 import { ROSTER_VIEW_ROLES, ROSTER_EDIT_ROLES } from '@/lib/permissions';
 import { ChevronLeft, ChevronRight, TriangleAlert } from 'lucide-react';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { ALL_BASES, BASE1_ID, overlayBaseSettings } from '@/lib/bases';
+import { rowBase } from '@/lib/roster';
 
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday first
 type DayDraft = { on: boolean; start: string; end: string };
@@ -54,8 +57,13 @@ export default function RosterPage() {
   const { instructors } = useInstructors();
   const { scheduledFlights } = useScheduledFlights();
   const { availabilityRecords } = useAvailability();
-  const { ftoSettings } = useFtoSettings();
+  const { ftoSettings: schoolSettings } = useFtoSettings();
   const { weekly, exceptions, isLoading } = useRoster();
+  // Multi-base M4a: the roster shown and edited is one base's — the header base, or picked here on "All bases".
+  const { selected, activeBases, multiBase } = useSelectedBase();
+  const [pickedBase, setPickedBase] = useState(BASE1_ID);
+  const rosterBase = selected === ALL_BASES ? pickedBase : selected;
+  const ftoSettings = overlayBaseSettings(schoolSettings, activeBases.find(b => b.id === rosterBase));
 
   useSetHeader({ title: 'Duty Roster', subtitle: 'Weekly duty pattern and one-off changes per instructor (IST)' });
 
@@ -66,8 +74,8 @@ export default function RosterPage() {
   // render); reload the page to roll over past midnight.
   const [nowMs] = useState(() => Date.now());
   const today = toIST(new Date(nowMs).toISOString()).date;
-  const windowFor = (instructorId: string, date: string) => dutyWindow({
-    instructorId, date, weekly, exceptions, openStart, openEnd,
+  const windowFor = (instructorId: string, date: string, baseId = rosterBase) => dutyWindow({
+    instructorId, date, weekly, exceptions, openStart, openEnd, baseId,
     offDutyDate: instructors.find(i => i.id === instructorId)?.offDutyDate,
   });
 
@@ -77,9 +85,9 @@ export default function RosterPage() {
   const [drafts, setDrafts] = useState<Record<string, Record<number, DayDraft>>>({});
   const [weeklyMsg, setWeeklyMsg] = useState<{ text: string; error: boolean } | null>(null);
   const [saving, setSaving] = useState(false);
-  const hasRoster = weekly.some(w => w.instructorId === instructorId);
+  const hasRoster = weekly.some(w => w.instructorId === instructorId && rowBase(w) === rosterBase);
   const fromRoster = (id: string): Record<number, DayDraft> => {
-    const rows = weekly.filter(w => w.instructorId === id);
+    const rows = weekly.filter(w => w.instructorId === id && rowBase(w) === rosterBase);
     const closed = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
     return Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(day => {
       const r = rows.find(x => x.weekday === day);
@@ -88,19 +96,20 @@ export default function RosterPage() {
       return [day, r?.startTime && r.endTime ? { on: true, start: r.startTime, end: r.endTime } : { on: false, start: openStart, end: openEnd }];
     }));
   };
-  const draft = drafts[instructorId] ?? fromRoster(instructorId);
+  const draftKey = `${instructorId}:${rosterBase}`; // unsaved edits are per instructor and base
+  const draft = drafts[draftKey] ?? fromRoster(instructorId);
   const setDay = (day: number, patch: Partial<DayDraft>) =>
-    setDrafts(prev => ({ ...prev, [instructorId]: { ...draft, [day]: { ...draft[day], ...patch } } }));
+    setDrafts(prev => ({ ...prev, [draftKey]: { ...draft, [day]: { ...draft[day], ...patch } } }));
   const badDay = DAY_ORDER.find(d => draft[d].on && !(draft[d].start && draft[d].end && draft[d].end > draft[d].start));
 
   const saveWeekly = async () => {
     setSaving(true);
-    const err = await saveWeeklyRoster(instructorId, [0, 1, 2, 3, 4, 5, 6].map(d => ({
+    const err = await saveWeeklyRoster(instructorId, rosterBase, [0, 1, 2, 3, 4, 5, 6].map(d => ({
       weekday: d, startTime: draft[d].on ? draft[d].start : null, endTime: draft[d].on ? draft[d].end : null,
     })));
     setSaving(false);
     if (err) return setWeeklyMsg({ text: err, error: true });
-    setDrafts(prev => { const next = { ...prev }; delete next[instructorId]; return next; });
+    setDrafts(prev => { const next = { ...prev }; delete next[draftKey]; return next; });
     setWeeklyMsg({ text: 'Weekly roster saved.', error: false });
   };
 
@@ -122,9 +131,9 @@ export default function RosterPage() {
   const [dayForm, setDayForm] = useState<{ off: boolean; start: string; end: string; note: string }>({ off: true, start: openStart, end: openEnd, note: '' });
   const [dayMsg, setDayMsg] = useState<{ text: string; error: boolean } | null>(null);
   const dayId = dayInstructor || active[0]?.id || '';
-  const existing = exceptions.find(e => e.instructorId === dayId && e.date === dayDate);
+  const existing = exceptions.find(e => e.instructorId === dayId && e.date === dayDate && rowBase(e) === rosterBase);
   const openDay = (date: string, id = dayId) => {
-    const ex = exceptions.find(e => e.instructorId === id && e.date === date);
+    const ex = exceptions.find(e => e.instructorId === id && e.date === date && rowBase(e) === rosterBase);
     const w = windowFor(id, date).window;
     setDayDate(date);
     setDayInstructor(id);
@@ -136,13 +145,13 @@ export default function RosterPage() {
   const dayBad = !dayForm.off && !(dayForm.start && dayForm.end && dayForm.end > dayForm.start);
   const saveDay = async () => {
     const err = await setRosterException({
-      instructorId: dayId, date: dayDate, note: dayForm.note,
+      instructorId: dayId, baseId: rosterBase, date: dayDate, note: dayForm.note,
       startTime: dayForm.off ? null : dayForm.start, endTime: dayForm.off ? null : dayForm.end,
     });
     setDayMsg(err ? { text: err, error: true } : { text: 'Change saved for this day.', error: false });
   };
   const removeDay = async () => {
-    const err = await removeRosterException(dayId, dayDate);
+    const err = await removeRosterException(dayId, rosterBase, dayDate);
     setDayMsg(err ? { text: err, error: true } : { text: 'Change removed — the weekly pattern applies again.', error: false });
   };
 
@@ -150,12 +159,13 @@ export default function RosterPage() {
   const outside = useMemo(() => {
     return scheduledFlights
       .filter(f => f.instructorId && !f.rosterOverride && new Date(f.endTime).getTime() > nowMs && (f.status === 'SCHEDULED' || f.status === 'PENDING_APPROVAL'))
-      .map(f => ({ f, w: windowFor(String(f.instructorId), toIST(f.startTime).date).window }))
+      // shortcut: bookings don't carry a base until M4b, so they're checked against Base 1's roster (the booking default).
+      .map(f => ({ f, w: windowFor(String(f.instructorId), toIST(f.startTime).date, BASE1_ID).window }))
       .filter(({ f, w }) => !flightFitsDuty(w, f.startTime, f.endTime))
       .sort((a, b) => a.f.startTime.localeCompare(b.f.startTime));
     // windowFor reads weekly/exceptions/instructors/settings, all listed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduledFlights, weekly, exceptions, instructors, openStart, openEnd, nowMs]);
+  }, [scheduledFlights, weekly, exceptions, instructors, openStart, openEnd, nowMs, rosterBase]);
 
   const nameOf = (id: string) => instructors.find(i => i.id === id)?.name ?? `Instructor ${id}`;
   const initialsOf = (id: string) => instructors.find(i => i.id === id)?.initials ?? id;
@@ -169,6 +179,22 @@ export default function RosterPage() {
               <p className="text-secondary text-center py-8">No active instructors.</p>
             ) : (<>
 
+            {multiBase && (
+              <section className="surface-card p-4 flex flex-wrap items-center gap-3 text-sm">
+                <span className="font-medium">Roster for</span>
+                {selected === ALL_BASES ? (
+                  <select value={rosterBase} onChange={e => { setPickedBase(Number(e.target.value)); setDayDate(''); setWeeklyMsg(null); }}
+                    aria-label="Base" className="surface-inner rounded-lg px-3 py-1.5">
+                    {activeBases.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                  </select>
+                ) : <strong>{activeBases.find(b => b.id === rosterBase)?.name}</strong>}
+                <span className="text-xs text-tertiary">
+                  Each base has its own roster. An instructor&apos;s hours at two bases can&apos;t overlap on the same day.
+                  {selected === ALL_BASES ? '' : ' Change the base in the header.'}
+                </span>
+              </section>
+            )}
+
             {/* ---------- Weekly pattern ---------- */}
             <section className="surface-card p-5">
               <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -180,8 +206,10 @@ export default function RosterPage() {
               </div>
               {!hasRoster && (
                 <p className="text-xs text-tertiary mb-3">
-                  No roster set yet — {nameOf(instructorId)} is on duty during opening hours ({openStart}–{openEnd}).
-                  The days below start from those hours; saving makes this the weekly roster.
+                  {weekly.some(w => w.instructorId === instructorId)
+                    ? <>No roster at this base — {nameOf(instructorId)} is rostered at another base, so is off here.</>
+                    : <>No roster set yet — {nameOf(instructorId)} is on duty during opening hours ({openStart}–{openEnd}).</>}
+                  {' '}The days below start from those hours; saving makes this the weekly roster{multiBase ? ' at this base' : ''}.
                 </p>
               )}
               <div className="space-y-2">
@@ -213,8 +241,8 @@ export default function RosterPage() {
                   <button onClick={saveWeekly} disabled={saving || badDay !== undefined} className={btn} style={primary}>
                     {saving ? 'Saving…' : 'Save weekly roster'}
                   </button>
-                  {drafts[instructorId] && (
-                    <button onClick={() => setDrafts(prev => { const n = { ...prev }; delete n[instructorId]; return n; })} className={btn} style={muted}>
+                  {drafts[draftKey] && (
+                    <button onClick={() => setDrafts(prev => { const n = { ...prev }; delete n[draftKey]; return n; })} className={btn} style={muted}>
                       Undo changes
                     </button>
                   )}
@@ -262,6 +290,7 @@ export default function RosterPage() {
                           const r = windowFor(i.id, date);
                           const leave = onLeave(i.id, date);
                           const changed = r.source === 'exception' || r.source === 'off-duty-today';
+                          if (r.source === 'other-base' && !leave) return null; // rostered at another base, not this one
                           return (
                             <div key={i.id} className="text-[11px] leading-tight truncate"
                               style={{ color: leave ? 'var(--warning-text)' : changed ? 'var(--accent)' : r.window ? 'var(--text-secondary)' : 'var(--text-tertiary)' }}>

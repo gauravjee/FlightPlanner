@@ -4,7 +4,7 @@
 // Covers the duty-roster rule: which window applies, and whether a flight fits.
 
 import assert from 'node:assert/strict';
-import { dutyWindow, flightFitsDuty, onDutyAt, describeWindow, weekdayOf, type WeeklyRow, type RosterException } from './roster';
+import { dutyWindow, flightFitsDuty, onDutyAt, describeWindow, weekdayOf, rosterOverlap, type WeeklyRow, type RosterException } from './roster';
 
 // 27 Sep 2026 is a Sunday, 28 Sep a Monday.
 assert.equal(weekdayOf('2026-09-27'), 0);
@@ -58,5 +58,35 @@ assert.equal(onDutyAt(mon, '14:00'), false);
 assert.equal(onDutyAt(null, '10:00'), false);
 assert.equal(describeWindow(mon), '06:00–14:00');
 assert.equal(describeWindow(null), 'Off');
+
+// Multi-base M4a: rows without a base are Base 1, so everything above is unchanged.
+const mb: WeeklyRow[] = [
+  { instructorId: '8', weekday: 1, startTime: '06:00', endTime: '12:00', baseId: 1 }, // Mon B1
+  { instructorId: '8', weekday: 1, startTime: '13:00', endTime: '18:00', baseId: 2 }, // Mon B2
+];
+const mbEx: RosterException[] = [{ instructorId: '8', date: '2026-09-29', startTime: '09:00', endTime: '11:00', baseId: 2 }]; // Tue at B2
+const at = (baseId: number, date: string) => dutyWindow({ instructorId: '8', date, weekly: mb, exceptions: mbEx, baseId, openStart: '06:00', openEnd: '20:00' });
+assert.deepEqual(at(1, '2026-09-28'), { window: { start: '06:00', end: '12:00' }, source: 'weekly' });
+assert.deepEqual(at(2, '2026-09-28'), { window: { start: '13:00', end: '18:00' }, source: 'weekly' });
+assert.deepEqual(at(3, '2026-09-28'), { window: null, source: 'other-base' });          // not rostered at base 3
+assert.deepEqual(at(2, '2026-09-29'), { window: { start: '09:00', end: '11:00' }, source: 'exception' });
+assert.equal(dutyWindow({ instructorId: '6', date: '2026-09-28', weekly, exceptions, baseId: 2 }).source, 'other-base');
+// No weekly anywhere, a change at base 2 that day -> off at base 1 that day, opening hours other days.
+const only2: RosterException[] = [{ instructorId: '9', date: '2026-09-28', startTime: '09:00', endTime: '11:00', baseId: 2 }];
+assert.equal(dutyWindow({ instructorId: '9', date: '2026-09-28', weekly: [], exceptions: only2 }).source, 'other-base');
+assert.equal(dutyWindow({ instructorId: '9', date: '2026-09-29', weekly: [], exceptions: only2 }).source, 'opening-hours');
+
+// Q9 no-overlap.
+const ov = (w: WeeklyRow[], e: RosterException[] = []) => rosterOverlap({ instructorId: '8', weekly: w, exceptions: e, fromDate: '2026-09-01' });
+assert.equal(ov(mb), null);                                            // 06-12 and 13-18: fine
+assert.equal(ov([mb[0], { ...mb[1], startTime: '12:00' }]), null);     // touching is fine
+assert.match(ov([mb[0], { ...mb[1], startTime: '11:00' }]) ?? '', /^Mon: Base 1 06:00–12:00 overlaps Base 2 11:00–18:00/);
+assert.equal(ov(weekly), null);                                        // one base: never an overlap
+// A one-off change that day clashes with the other base's weekly hours (29 Sep is a Tue; make B1 Tue 08-12).
+const tue: WeeklyRow = { instructorId: '8', weekday: 2, startTime: '08:00', endTime: '12:00', baseId: 1 };
+assert.match(ov([...mb, tue], mbEx) ?? '', /^2026-09-29: Base 1 08:00–12:00 overlaps Base 2 09:00–11:00/);
+assert.equal(ov([...mb, tue], [...mbEx, { instructorId: '8', date: '2026-09-29', startTime: null, endTime: null, baseId: 1 }]), null); // B1 off that day
+assert.equal(rosterOverlap({ instructorId: '8', weekly: [...mb, tue], exceptions: mbEx, fromDate: '2026-09-30' }), null); // past dates ignored
+assert.match(rosterOverlap({ instructorId: '8', weekly: [mb[0], { ...mb[1], startTime: '11:00' }], exceptions: [], fromDate: '2026-09-01', baseName: b => (b === 1 ? 'Shirpur' : 'B2') }) ?? '', /^Mon: Shirpur .* overlaps B2 /);
 
 console.log('roster: all checks passed');

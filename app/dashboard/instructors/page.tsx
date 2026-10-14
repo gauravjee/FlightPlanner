@@ -75,8 +75,9 @@ export default function InstructorsPage() {
       return [i.id, {
         status: computeInstructorStatus({
           instructorId: i.id, now, flights: scheduledFlights, leaves, limit,
+          // shortcut: status reads the home base's roster (M4a); an instructor visiting another base shows Off duty here.
           duty: dutyWindow({
-            instructorId: i.id, date: today, weekly, exceptions, offDutyDate: i.offDutyDate,
+            instructorId: i.id, date: today, weekly, exceptions, offDutyDate: i.offDutyDate, baseId: Number(i.homeBaseId ?? 1),
             openStart: ftoSettings['time_slot_start'], openEnd: ftoSettings['time_slot_end'],
           }).window,
         }),
