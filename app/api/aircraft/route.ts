@@ -52,7 +52,7 @@ export async function POST(request: Request) {
   const {
     registration, type, model, year, hobbsTime, fuelCapacity,
     currentFuel, status, nextMaintenance, fuelBurnRateLph, isSimulator,
-    logBookSerialNo,
+    logBookSerialNo, currentBaseId,
   } = body as Record<string, unknown>;
 
   if (!registration || !type || !model) {
@@ -72,6 +72,7 @@ export async function POST(request: Request) {
       is_simulator: isSimulator ?? false,
       // Optional placeholder — see add-logbook-and-camo-refs.sql.
       log_book_serial_no: logBookSerialNo || null,
+      ...(currentBaseId ? { current_base_id: Number(currentBaseId) } : {}), // multi-base; else the DB default (Base 1)
     })
     .select()
     .single();

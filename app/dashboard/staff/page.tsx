@@ -15,6 +15,8 @@ import StaffFormModal from '@/components/staff/StaffFormModal';
 import { STAFF_ROLES, USER_ROLE_OPTIONS } from '@/lib/permissions';
 import { hasLeft, type StaffMember } from '@/lib/staff-id';
 import { Plus } from 'lucide-react';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { inSelectedBase } from '@/lib/bases';
 
 type Filter = 'active' | 'left' | 'all';
 
@@ -36,16 +38,18 @@ export default function StaffPage() {
   const [editing, setEditing] = useState<StaffMember | 'new' | null>(null);
   const [nowMs] = useState(() => Date.now()); // fixed at load (no clock reads in render)
 
+  const { selected: selectedBase } = useSelectedBase(); // multi-base M3: header base
   const rows = useMemo(() => {
     const now = new Date(nowMs);
     const q = search.trim().toLowerCase();
     return (staff ?? []).filter(s => {
+      if (!inSelectedBase(selectedBase, s.homeBaseId)) return false;
       const left = hasLeft(s.lastWorkingDate, now);
       if (filter === 'active' && left) return false;
       if (filter === 'left' && !left) return false;
       return !q || s.name.toLowerCase().includes(q) || s.staffId.toLowerCase().includes(q);
     });
-  }, [staff, filter, search, nowMs]);
+  }, [staff, filter, search, nowMs, selectedBase]);
 
   const badge = 'inline-block text-xs font-semibold px-2 py-0.5 rounded-full mr-1 whitespace-nowrap';
   const accent = { backgroundColor: 'var(--accent-soft)', color: 'var(--accent)' };

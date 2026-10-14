@@ -2,7 +2,7 @@
 'use client';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import { useSetHeader } from '@/components/ui/HeaderContext';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { useAircraft, addAircraft, updateAircraft, removeAircraft } from '@/lib/hooks/useAircraft';
 import { Aircraft } from '@/types';
@@ -13,6 +13,8 @@ import RoleGate from '@/components/ui/RoleGate';
 import { AIRCRAFT_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Plus, Search, Plane } from 'lucide-react';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { inSelectedBase, newRecordBaseId } from '@/lib/bases';
 
 export default function AircraftPage() {
   const { data: session } = useSession();
@@ -25,7 +27,9 @@ export default function AircraftPage() {
   // 2026-08-28 (SWR migration, Stage 1): fetch-on-mount, cross-page cache
   // sharing, and dedup are now all handled by useAircraft() itself — no
   // more manual useEffect(() => { loadAircraft() }, [loadAircraft]).
-  const { aircraft, isLoading: loadingAircraft } = useAircraft();
+  const { aircraft: allAircraft, isLoading: loadingAircraft } = useAircraft();
+  const { selected: selectedBase } = useSelectedBase(); // multi-base M3: header base
+  const aircraft = useMemo(() => allAircraft.filter(a => inSelectedBase(selectedBase, a.currentBaseId)), [allAircraft, selectedBase]);
   const [showForm, setShowForm] = useState(false);
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -71,7 +75,7 @@ export default function AircraftPage() {
         ...(currentFuel !== editingAircraft.currentFuel && { currentFuel }),
       });
     } else {
-      ok = await addAircraft(ac);
+      ok = await addAircraft({ ...ac, currentBaseId: newRecordBaseId(selectedBase) });
     }
     if (ok) {
       setShowForm(false);

@@ -14,6 +14,8 @@ import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import type { StaffMember } from '@/lib/staff-id';
 import PhoneInput from '@/components/ui/PhoneInput';
 import HomeBaseSelect from '@/components/ui/HomeBaseSelect';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { newRecordBaseId } from '@/lib/bases';
 
 type Docs = { pan: string; aadhaar: string; passportNumber: string; passportIssueDate: string; passportIssuePlace: string };
 const EMPTY_DOCS: Docs = { pan: '', aadhaar: '', passportNumber: '', passportIssueDate: '', passportIssuePlace: '' };
@@ -38,6 +40,7 @@ interface Props {
 }
 
 export default function StaffFormModal({ member, onClose, onSaved }: Props) {
+  const newBaseId = newRecordBaseId(useSelectedBase().selected) ?? ''; // multi-base M3: a new record starts at the header's base
   useEscapeToClose(onClose);
   const isNew = member === null;
   const [form, setForm] = useState<Record<string, string>>(() => {
@@ -47,7 +50,7 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
       lastWorkingDate: member?.lastWorkingDate ?? '',
       employmentType: member?.employmentType ?? '',
       nationality: isNew ? 'Indian' : '',
-      homeBaseId: member?.homeBaseId != null ? String(member.homeBaseId) : '',
+      homeBaseId: member?.homeBaseId != null ? String(member.homeBaseId) : newBaseId,
     };
     for (const [k] of TEXT_FIELDS) if (member) f[k] = (member[k] as string | null) ?? '';
     return f;

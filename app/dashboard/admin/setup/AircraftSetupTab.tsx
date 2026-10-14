@@ -18,6 +18,8 @@ import type { Aircraft as SharedAircraft } from '@/types';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { daysFromTodayIST } from '@/lib/ist';
 import AircraftReadingCorrection from '@/components/aircraft/AircraftReadingCorrection';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { newRecordBaseId } from '@/lib/bases';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -75,6 +77,7 @@ const getDefaultForm = () => ({
 });
 
 export default function AircraftSetupTab() {
+  const { selected: selectedBase } = useSelectedBase(); // multi-base M3: new aircraft start at the header's base
   // 2026-08-28 (SWR migration, Stage 1): this tab used to run its own
   // independent `supabase.from('aircraft').select('*')` fetch here — a
   // second read path for the same table as app/dashboard/aircraft/page.tsx,
@@ -210,7 +213,7 @@ export default function AircraftSetupTab() {
       if (!(await updateAircraftRemote(String(editing.id), payload))) return; // error already shown; keep the form open
       setSuccessMessage('Aircraft updated!');
     } else {
-      if (!(await addAircraftRemote(payload as Omit<SharedAircraft, 'id'>))) return;
+      if (!(await addAircraftRemote({ ...payload, currentBaseId: newRecordBaseId(selectedBase) } as Omit<SharedAircraft, 'id'>))) return;
       setSuccessMessage('Aircraft added!');
     }
 

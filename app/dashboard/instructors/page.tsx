@@ -24,6 +24,8 @@ import { useRoster } from '@/lib/hooks/useRoster';
 import { dutyWindow } from '@/lib/roster';
 import { ROSTER_VIEW_ROLES } from '@/lib/permissions';
 import { Search, GraduationCap } from 'lucide-react';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { inSelectedBase } from '@/lib/bases';
 
 export default function InstructorsPage() {
   const { data: session } = useSession();
@@ -32,7 +34,9 @@ export default function InstructorsPage() {
   // role/tab matrix) — operations/instructor/maintenance can view/manage
   // it too if a super_admin has granted a per-user override.
   const canWrite = canWriteModule(session?.user?.role, overrides, 'instructors');
-  const { instructors } = useInstructors();
+  const { instructors: allInstructors } = useInstructors();
+  const { selected: selectedBase } = useSelectedBase(); // multi-base M3: header base
+  const instructors = useMemo(() => allInstructors.filter(i => inSelectedBase(selectedBase, i.homeBaseId)), [allInstructors, selectedBase]);
   const { scheduledFlights } = useScheduledFlights();
   // A role without leave access just gets no records here — status then
   // can't show On leave, but nothing breaks.

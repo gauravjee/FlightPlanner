@@ -12,6 +12,8 @@ import StudentRecordPanels from '@/components/students/StudentRecordPanels';
 import type { StudentIdDocuments } from '@/lib/hooks/useStudents';
 import PhoneInput from '@/components/ui/PhoneInput';
 import HomeBaseSelect from '@/components/ui/HomeBaseSelect';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { newRecordBaseId } from '@/lib/bases';
 import { COUNTRIES, DEFAULT_COUNTRY } from '@/lib/countries';
 import { latestStudentDob, MIN_STUDENT_AGE } from '@/lib/student-age';
 
@@ -24,6 +26,7 @@ interface Props {
 }
 
 export default function StudentFormModal({ student, onSave, onClose }: Props) {
+  const newBaseId = newRecordBaseId(useSelectedBase().selected) ?? ''; // multi-base M3: a new record starts at the header's base
   useEscapeToClose(onClose);
   const { instructors } = useInstructors();
   const { students } = useStudents();
@@ -114,7 +117,7 @@ export default function StudentFormModal({ student, onSave, onClose }: Props) {
           emergencyContactRelation: '',
           emergencyContactPhone: '',
           bloodGroup: '',
-          homeBaseId: '',
+          homeBaseId: newBaseId,
         }
   );
   // B3: a new student's ID documents go with the create (admin-only form); an existing

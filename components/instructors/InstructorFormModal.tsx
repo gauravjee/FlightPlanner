@@ -12,6 +12,8 @@ import { effectiveDailyLimit } from '@/lib/instructor-status';
 import type { StaffMember } from '@/lib/staff-id';
 import PhoneInput from '@/components/ui/PhoneInput';
 import HomeBaseSelect from '@/components/ui/HomeBaseSelect';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { newRecordBaseId } from '@/lib/bases';
 
 interface Props {
   instructor: Instructor | null;
@@ -20,6 +22,7 @@ interface Props {
 }
 
 export default function InstructorFormModal({ instructor, onSave, onClose }: Props) {
+  const newBaseId = newRecordBaseId(useSelectedBase().selected) ?? ''; // multi-base M3: a new record starts at the header's base
   useEscapeToClose(onClose);
   const isEditing = !!instructor;
   const { data: session } = useSession();
@@ -81,7 +84,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
           maxDailyHours: 8,
           email: '',
           phone: '',
-          homeBaseId: '',
+          homeBaseId: newBaseId,
           status: 'AVAILABLE' as Instructor['status'],
           canSelfBook: false,
           employmentStatus: 'ACTIVE' as NonNullable<Instructor['employmentStatus']>,

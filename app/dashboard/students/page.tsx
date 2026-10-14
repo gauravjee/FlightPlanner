@@ -16,6 +16,8 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RoleGate from '@/components/ui/RoleGate';
 import { Plus, Search, GraduationCap } from 'lucide-react';
 import { STATUS_LABEL } from '@/components/students/StudentRecordPanels';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { inSelectedBase } from '@/lib/bases';
 
 // Creating a student also creates their login (POST /api/students), which
 // is scoped server-side to admin/super_admin only — see
@@ -34,7 +36,11 @@ export default function StudentsPage() {
   // into the cached student rows (see useStudents.ts's file header for why).
   const { students: rawStudents, isLoading: loadingStudents } = useStudents();
   const { instructors } = useInstructors();
-  const students = useMemo(() => withInstructorNames(rawStudents, instructors), [rawStudents, instructors]);
+  const { selected: selectedBase } = useSelectedBase(); // multi-base M3: header base
+  const students = useMemo(
+    () => withInstructorNames(rawStudents.filter(s => inSelectedBase(selectedBase, s.homeBaseId)), instructors),
+    [rawStudents, instructors, selectedBase],
+  );
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null);
   const [searchTerm, setSearchTerm] = useState('');

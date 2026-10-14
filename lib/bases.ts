@@ -75,3 +75,38 @@ export function baseRowError(row: Record<string, unknown>, isNew: boolean): stri
   }
   return null;
 }
+
+// ---- Multi-base M3: the base selected in the header ----
+
+export const ALL_BASES = 'all' as const;
+export type SelectedBase = number | typeof ALL_BASES;
+const VIEW_ALL_ROLES = ['admin', 'super_admin'];
+
+/**
+ * Which base the header switcher shows. A stored choice wins if it is still valid; otherwise admins start
+ * on all bases and everyone else on their home base. With one active base there is nothing to choose.
+ */
+export function resolveSelectedBase(
+  stored: string | null, activeIds: number[], role: string | undefined, homeBaseId: number | null,
+): SelectedBase {
+  if (activeIds.length <= 1) return ALL_BASES;
+  if (stored === ALL_BASES) return ALL_BASES;
+  if (stored && activeIds.includes(Number(stored))) return Number(stored);
+  if (VIEW_ALL_ROLES.includes(role ?? '')) return ALL_BASES;
+  return homeBaseId && activeIds.includes(homeBaseId) ? homeBaseId : ALL_BASES;
+}
+
+/** True when a record (by its base id; missing = Base 1, the column default) belongs in the current view. */
+export const inSelectedBase = (selected: SelectedBase, baseId: string | number | null | undefined): boolean =>
+  selected === ALL_BASES || Number(baseId ?? BASE1_ID) === selected;
+
+/** fto_settings with the selected base's per-base values laid over it (airport, coordinates, hours, off days). */
+export function overlayBaseSettings(settings: Record<string, string>, base: BaseRow | null | undefined): Record<string, string> {
+  if (!base) return settings;
+  const out = { ...settings };
+  for (const key of BASE_SETTING_KEYS) out[key] = baseToSettingValue(base[key]);
+  return out;
+}
+
+/** Base for a record created from the current view: the selected base, or none (DB default, Base 1) on "All bases". */
+export const newRecordBaseId = (selected: SelectedBase): string | undefined => (selected === ALL_BASES ? undefined : String(selected));

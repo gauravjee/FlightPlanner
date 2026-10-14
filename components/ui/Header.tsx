@@ -11,6 +11,7 @@ import { ArrowLeft, Plane, Wrench, Crown, GraduationCap, ClipboardList, UserRoun
 import { useFtoSettings } from '@/lib/hooks/useFtoSettings';
 import { getLocationDisplay } from '@/lib/location';
 import ThemeToggle from './ThemeToggle';
+import BaseSwitcher from './BaseSwitcher';
 import { useHeaderConfig } from './HeaderContext';
 import { useVisibleNavItems, type NavItem } from './Sidebar';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -377,6 +378,7 @@ export default function Header(props: HeaderProps = {}) {
           {/* Right section */}
           <div className="flex items-center gap-3 flex-shrink-0">
             {action && action}
+            <BaseSwitcher />
             <ThemeToggle />
             <UserMenu />
             {/* 2026-09-23 UI audit finding #5: this used to show from md

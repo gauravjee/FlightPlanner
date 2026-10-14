@@ -29,6 +29,8 @@ import { useHolidays } from '@/lib/hooks/useHolidays';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { useExercises } from '@/lib/hooks/useExercises';
 import { useAircraft } from '@/lib/hooks/useAircraft';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { inSelectedBase } from '@/lib/bases';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { getLocationDisplay } from '@/lib/location';
@@ -113,6 +115,7 @@ export default function ScheduleBoard() {
 
   // Data collections
   const { aircraft } = useAircraft();            // Fleet data
+  const { selected: selectedBase } = useSelectedBase();
   const { instructors } = useInstructors();      // Instructor list
   const { students } = useStudents();            // Student list
 
@@ -207,7 +210,8 @@ export default function ScheduleBoard() {
 
   // ----- Chart Configuration -----
   const HOURS = Array.from({ length: 17 }, (_, i) => i + 5); // 05:00 to 21:00 (17 hours)
-  const activeAircraft = aircraft.filter(a => a.status !== 'GROUNDED'); // Only operational
+  // Only operational, and (multi-base M3) only those at the base picked in the header.
+  const activeAircraft = aircraft.filter(a => a.status !== 'GROUNDED' && inSelectedBase(selectedBase, a.currentBaseId));
   const totalHours = 17; // 5 AM to 10 PM = 17 hours
 
   // Refs for auto-centering the Gantt horizontally on the current time when

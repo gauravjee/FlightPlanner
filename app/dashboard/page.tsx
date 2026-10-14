@@ -23,6 +23,8 @@ import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { useScheduledFlights, withScheduledFlightNames } from '@/lib/hooks/useScheduledFlights';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { inSelectedBase, ALL_BASES } from '@/lib/bases';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { useWeather, useGeneralWeather, useNotams } from '@/lib/hooks/useWeather';
 import { useSetHeader } from '@/components/ui/HeaderContext';
@@ -41,7 +43,10 @@ export default function DashboardPage() {
   // read before that hook runs.
   const { data: session } = useSession();
 
-  const { aircraft } = useAircraft();
+  const { aircraft: allAircraft } = useAircraft();
+  // Multi-base M3: the dashboard shows the header's base (its aircraft and their flights; weather via settings).
+  const { selected: selectedBase } = useSelectedBase();
+  const aircraft = useMemo(() => allAircraft.filter(a => inSelectedBase(selectedBase, a.currentBaseId)), [allAircraft, selectedBase]);
   const { instructors } = useInstructors();
 
   // 2026-09-05 (item 81/53): gated, matching StudentProgressWidget and
@@ -67,7 +72,10 @@ export default function DashboardPage() {
   // Scheduled flights come from SWR (Stage 5, 2026-09-01) — fetch-on-mount +
   // dedup, names joined at render time (see withScheduledFlightNames).
   const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
-  const scheduledFlights = withScheduledFlightNames(rawScheduledFlights, aircraft, students, instructors);
+  const scheduledFlights = withScheduledFlightNames(
+    selectedBase === ALL_BASES ? rawScheduledFlights : rawScheduledFlights.filter(f => aircraft.some(a => String(a.id) === String(f.aircraftId))),
+    aircraft, students, instructors,
+  );
 
   const router = useRouter();
 

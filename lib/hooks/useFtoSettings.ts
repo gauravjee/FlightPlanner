@@ -28,6 +28,9 @@
 'use client';
 
 import useSWR from 'swr';
+import { useMemo } from 'react';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { overlayBaseSettings } from '@/lib/bases';
 
 export const ftoSettingsKey = ['ftoSettings'] as const;
 
@@ -62,8 +65,12 @@ export function useFtoSettings() {
     () => fetchFtoSettings()
   );
 
+  // Multi-base M3: with one base picked in the header, its airport / coordinates / hours / off days replace
+  // these keys for every screen that reads settings. "All bases" (and a one-base school) = FTO Settings as is.
+  const { selectedBase } = useSelectedBase();
+  const ftoSettings = useMemo(() => overlayBaseSettings(data ?? {}, selectedBase), [data, selectedBase]);
   return {
-    ftoSettings: data ?? {},
+    ftoSettings,
     isLoading,
     error,
     mutate: boundMutate,
