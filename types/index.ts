@@ -225,6 +225,7 @@ export interface ScheduledFlight {
   // 2026-09-23 (roster step 3): admin/super_admin booked this outside the
   // instructor's duty hours on purpose (scheduled_flights.roster_override).
   rosterOverride?: boolean;
+  baseId?: string; // multi-base M4b: where its aircraft was when booked or moved; missing = Base 1
   // Display fields (looked up)
   aircraftReg?: string;
   studentName?: string;

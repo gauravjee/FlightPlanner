@@ -122,10 +122,19 @@ export async function PATCH(request: Request, context: RouteContext) {
   // re-sends the current instructorId, and a notes-only edit of an existing
   // booking must still save even if its instructor has since left or its day
   // is already at the limit.
-  if (['instructor_id', 'student_id', 'start_time', 'end_time', 'status'].some(k => dbUpdates[k] !== undefined)) {
+  if (['instructor_id', 'student_id', 'start_time', 'end_time', 'status', 'aircraft_id'].some(k => dbUpdates[k] !== undefined)) {
     const { data: current } = await supabaseAdmin.from('scheduled_flights')
-      .select('instructor_id, student_id, start_time, end_time, status').eq('id', id).maybeSingle();
+      .select('instructor_id, student_id, start_time, end_time, status, aircraft_id, base_id').eq('id', id).maybeSingle();
     if (current) {
+      // Multi-base M4b: a move (aircraft or time) puts the flight at its aircraft's current base, as on create.
+      let baseId = Number(current.base_id ?? 1);
+      if (['aircraft_id', 'start_time', 'end_time'].some(k => dbUpdates[k] !== undefined)) {
+        const { data: ac } = await supabaseAdmin.from('aircraft').select('current_base_id')
+          .eq('id', String(dbUpdates.aircraft_id ?? current.aircraft_id)).maybeSingle();
+        if (!ac) return NextResponse.json({ error: 'Aircraft not found.' }, { status: 400 });
+        baseId = Number(ac.current_base_id ?? 1);
+        if (baseId !== Number(current.base_id ?? 1)) dbUpdates.base_id = baseId;
+      }
       const next = {
         instructor: String(dbUpdates.instructor_id ?? current.instructor_id ?? ''),
         student: String(dbUpdates.student_id ?? current.student_id ?? ''),
@@ -186,14 +195,14 @@ export async function PATCH(request: Request, context: RouteContext) {
         const refusal = next.student ? await studentBookingRefusal(next.student, next.start) : null;
         if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
       }
-      if (addsHours && next.instructor && next.status !== 'CANCELLED') {
+      if ((addsHours || dbUpdates.base_id !== undefined) && next.instructor && next.status !== 'CANCELLED') {
         const refusal = await dailyLimitRefusal(next.instructor, next.start, next.end, id);
         if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
 
         // 2026-09-23 (roster step 3): same duty-hours rule as creating a
         // flight — only admin/super_admin may override, and the flag follows
         // where the flight now sits (cleared when a move brings it inside).
-        const outside = await rosterRefusal(next.instructor, next.start, next.end);
+        const outside = await rosterRefusal(next.instructor, next.start, next.end, baseId);
         if (outside) {
           if (!ROSTER_OVERRIDE_ROLES.includes(session.user.role ?? '')) {
             return NextResponse.json({ error: outside }, { status: 403 });

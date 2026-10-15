@@ -107,6 +107,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `A flight must be at least ${MIN_FLIGHT_DURATION_MIN} minutes long.` }, { status: 400 });
   }
 
+  // Multi-base M4b: a flight's base is where its aircraft is now, so the aircraft is always at the flight's base.
+  const { data: bookedAircraft } = await supabaseAdmin.from('aircraft').select('current_base_id').eq('id', String(aircraftId)).maybeSingle();
+  if (!bookedAircraft) return NextResponse.json({ error: 'Aircraft not found.' }, { status: 400 });
+  const baseId = Number(bookedAircraft.current_base_id ?? 1);
+
   // 2026-09-22 (student self-booking): everything the client sent for
   // studentId/instructorId/status is untrusted here specifically because
   // requireScheduleCreateAccess() just let a STUDENT through — every other
@@ -215,7 +220,7 @@ export async function POST(request: Request) {
 
     // 2026-09-23 (roster step 3): outside the instructor's duty hours is
     // blocked; only admin/super_admin may override, and the flight is marked.
-    const outside = await rosterRefusal(String(instructorId), String(startTime), String(endTime));
+    const outside = await rosterRefusal(String(instructorId), String(startTime), String(endTime), baseId);
     if (outside) {
       if (!ROSTER_OVERRIDE_ROLES.includes(session.user.role ?? '')) {
         return NextResponse.json({ error: outside }, { status: 403 });
@@ -240,6 +245,7 @@ export async function POST(request: Request) {
     notam_briefed: notamBriefed || false,
     notes: notes || '',
     roster_override: rosterOverride,
+    base_id: baseId,
   });
 
   if (dbError) {

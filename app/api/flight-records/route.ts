@@ -141,12 +141,18 @@ export async function POST(request: Request) {
   // uses the debrief's readings, and checkout already advanced the aircraft, so
   // its start may legitimately sit below the aircraft's current reading.
   let completingPending = false;
+  let baseId: number | null = null; // multi-base M4b: the booking's base, else where the aircraft is now
   if (scheduledFlightId) {
-    const { data: booking } = await supabaseAdmin.from('scheduled_flights').select('logbook_pending').eq('id', scheduledFlightId).maybeSingle();
+    const { data: booking } = await supabaseAdmin.from('scheduled_flights').select('logbook_pending, base_id').eq('id', scheduledFlightId).maybeSingle();
     if (!booking) return NextResponse.json({ error: 'That flight no longer exists.' }, { status: 400 });
     const { data: existing } = await supabaseAdmin.from('flight_records').select('id').eq('scheduled_flight_id', scheduledFlightId).limit(1);
     if (existing?.length) return NextResponse.json({ error: 'This flight already has a logbook entry.' }, { status: 409 });
     completingPending = booking.logbook_pending === true;
+    baseId = booking.base_id != null ? Number(booking.base_id) : null;
+  }
+  if (baseId === null) {
+    const { data: acBase } = await supabaseAdmin.from('aircraft').select('current_base_id').eq('id', aircraftId).maybeSingle();
+    baseId = Number(acBase?.current_base_id ?? 1);
   }
 
   if (!startOverride && !completingPending) {
@@ -194,6 +200,7 @@ export async function POST(request: Request) {
     weather_conditions: weatherConditions,
     total_hours: totalHours,
     scheduled_flight_id: scheduledFlightId || null,
+    base_id: baseId,
     // 2026-09-10: DGCA PICUS on a dual sortie. `?? null` rather than
     // `|| null` so a deliberate 0 is stored as 0 — see add-picus-hours.sql
     // for why NULL and 0 are different facts here. Only ever set on DUAL;

@@ -73,7 +73,7 @@ export default function DashboardPage() {
   // dedup, names joined at render time (see withScheduledFlightNames).
   const { scheduledFlights: rawScheduledFlights } = useScheduledFlights();
   const scheduledFlights = withScheduledFlightNames(
-    selectedBase === ALL_BASES ? rawScheduledFlights : rawScheduledFlights.filter(f => aircraft.some(a => String(a.id) === String(f.aircraftId))),
+    selectedBase === ALL_BASES ? rawScheduledFlights : rawScheduledFlights.filter(f => inSelectedBase(selectedBase, f.baseId)),
     aircraft, students, instructors,
   );
 

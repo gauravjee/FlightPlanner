@@ -159,8 +159,7 @@ export default function RosterPage() {
   const outside = useMemo(() => {
     return scheduledFlights
       .filter(f => f.instructorId && !f.rosterOverride && new Date(f.endTime).getTime() > nowMs && (f.status === 'SCHEDULED' || f.status === 'PENDING_APPROVAL'))
-      // shortcut: bookings don't carry a base until M4b, so they're checked against Base 1's roster (the booking default).
-      .map(f => ({ f, w: windowFor(String(f.instructorId), toIST(f.startTime).date, BASE1_ID).window }))
+      .map(f => ({ f, w: windowFor(String(f.instructorId), toIST(f.startTime).date, Number(f.baseId ?? BASE1_ID)).window }))
       .filter(({ f, w }) => !flightFitsDuty(w, f.startTime, f.endTime))
       .sort((a, b) => a.f.startTime.localeCompare(b.f.startTime));
     // windowFor reads weekly/exceptions/instructors/settings, all listed.

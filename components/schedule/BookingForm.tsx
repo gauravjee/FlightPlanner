@@ -50,6 +50,8 @@ import { dutyWindow, flightFitsDuty, describeWindow, dutySourceNote } from '@/li
 import { ROSTER_VIEW_ROLES, ROSTER_OVERRIDE_ROLES } from '@/lib/permissions';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { ALL_BASES, BASE1_ID, overlayBaseSettings } from '@/lib/bases';
 
 // ============================================================
 // PROPS
@@ -118,7 +120,19 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   useEscapeToClose(onClose);
 
   // ----- Store -----
-  const { aircraft } = useAircraft();
+  const { aircraft: allAircraft } = useAircraft();
+  // Multi-base M4b: the form books at one base — the edited / clicked aircraft's, else the header base
+  // (Base 1 on "All bases"), unless picked below. Only that base's aircraft, hours and off days apply;
+  // the server saves the flight at its aircraft's base.
+  const { selected: headerBase, activeBases, multiBase } = useSelectedBase();
+  const [pickedBase, setPickedBase] = useState<number | null>(null);
+  const anchorAircraftId = existingFlight?.aircraftId ?? prefill?.aircraftId;
+  const anchorAircraft = anchorAircraftId ? allAircraft.find(a => String(a.id) === String(anchorAircraftId)) : undefined;
+  const formBaseId = pickedBase ?? (anchorAircraft ? Number(anchorAircraft.currentBaseId ?? BASE1_ID) : headerBase === ALL_BASES ? BASE1_ID : headerBase);
+  const aircraft = useMemo(
+    () => allAircraft.filter(a => Number(a.currentBaseId ?? BASE1_ID) === formBaseId || String(a.id) === String(existingFlight?.aircraftId)),
+    [allAircraft, formBaseId, existingFlight?.aircraftId],
+  );
   const { instructors } = useInstructors();
   const { students } = useStudents();
   // Self-booking student's own record and their assigned instructor id
@@ -134,7 +148,9 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   // Holidays, FTO Settings, and Exercises are all SWR-migrated now (Stages
   // 7-8, 2026-09-02) — fetch-on-mount, no manual load effect needed anymore.
   const { holidays } = useHolidays();
-  const { ftoSettings } = useFtoSettings();
+  const { ftoSettings: viewSettings } = useFtoSettings();
+  const formBase = activeBases.find(b => b.id === formBaseId);
+  const ftoSettings = useMemo(() => overlayBaseSettings(viewSettings, formBase), [viewSettings, formBase]);
   // Exercise dropdown used to be a hardcoded EXERCISES array (removed
   // 2026-08-19) that didn't reflect anything added/edited/removed via
   // Admin Setup -> Exercises — the two lists could silently drift. Now
@@ -451,11 +467,11 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     const instr = instructors.find(i => String(i.id) === String(form.instructorId));
     const r = dutyWindow({
       instructorId: String(form.instructorId), date: form.date, weekly: rosterWeekly, exceptions: rosterExceptions,
-      offDutyDate: instr?.offDutyDate, openStart: ftoSettings['time_slot_start'], openEnd: ftoSettings['time_slot_end'],
+      offDutyDate: instr?.offDutyDate, openStart: ftoSettings['time_slot_start'], openEnd: ftoSettings['time_slot_end'], baseId: formBaseId,
     });
     return flightFitsDuty(r.window, startIso, endIso) ? ''
       : `⛔ ${instr?.name ?? 'The instructor'} isn't on duty then — duty hours on ${form.date}: ${describeWindow(r.window)}${dutySourceNote(r.source)}.`;
-  }, [isSolo, form.instructorId, form.date, form.startTime, form.endTime, existingFlight, instructors, ftoSettings, rosterWeekly, rosterExceptions]);
+  }, [isSolo, form.instructorId, form.date, form.startTime, form.endTime, existingFlight, instructors, ftoSettings, rosterWeekly, rosterExceptions, formBaseId]);
 
   // SWR migration, Stage 8 (2026-09-02): keyed per-studentId (null while
   // Maintenance or no student picked, via SWR's null-key idiom), so
@@ -923,6 +939,21 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
           {conflictWarning && (
             <div role="alert" className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3">
               <p className="text-sm text-yellow-400">{conflictWarning}</p>
+            </div>
+          )}
+
+          {multiBase && (
+            <div>
+              <label htmlFor="booking-base" className="block text-sm text-secondary mb-1">Base</label>
+              {existingFlight ? (
+                <p id="booking-base" className="text-sm">{formBase?.name ?? `Base ${formBaseId}`}</p>
+              ) : (
+                <select id="booking-base" value={formBaseId}
+                  onChange={e => { setPickedBase(Number(e.target.value)); setForm(prev => ({ ...prev, aircraftId: '' })); }}
+                  className="w-full surface-inner rounded-lg px-3 py-2">
+                  {activeBases.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                </select>
+              )}
             </div>
           )}
 
