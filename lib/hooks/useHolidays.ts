@@ -50,6 +50,7 @@ export async function fetchHolidays(): Promise<Holiday[]> {
     date: row.holiday_date as string,
     isRecurring: !!row.is_recurring,
     notes: (row.notes as string) || '',
+    baseId: row.base_id != null ? String(row.base_id) : undefined,
   }));
 }
 
@@ -115,6 +116,7 @@ export async function addHoliday(holiday: Omit<Holiday, 'id'>): Promise<{
       holiday_date: holiday.date,
       is_recurring: holiday.isRecurring,
       notes: holiday.notes || '',
+      base_id: holiday.baseId ? Number(holiday.baseId) : null, // multi-base M4c: null = school-wide
     }),
   });
   if (!res.ok) {

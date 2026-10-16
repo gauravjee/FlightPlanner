@@ -108,5 +108,12 @@ export function overlayBaseSettings(settings: Record<string, string>, base: Base
   return out;
 }
 
+/** The base whose hours / holidays a view uses: the selected base, or Base 1 on "All bases" (as the hours already do). */
+export const viewBaseId = (selected: SelectedBase): number => (selected === ALL_BASES ? BASE1_ID : selected);
+
+/** Multi-base M4c: holidays that close `baseId` — school-wide ones (no base) plus that base's own. */
+export const holidaysAt = <T extends { baseId?: string | number | null }>(holidays: T[], baseId: number): T[] =>
+  holidays.filter(h => h.baseId == null || h.baseId === '' || Number(h.baseId) === baseId);
+
 /** Base for a record created from the current view: the selected base, or none (DB default, Base 1) on "All bases". */
 export const newRecordBaseId = (selected: SelectedBase): string | undefined => (selected === ALL_BASES ? undefined : String(selected));

@@ -126,6 +126,7 @@ const WRITABLE_FIELDS = [
   'topic',
   'notes',
   'status',
+  'base_id', // multi-base M4c: set on create; missing = the DB default, Base 1
 ] as const;
 
 type ClassPayload = Record<string, unknown>;
@@ -152,6 +153,7 @@ function validate(payload: ClassPayload, requireAll: boolean): string | null {
     if (typeof payload.instructor_id !== 'string' || !payload.instructor_id.trim()) return 'Select an instructor.';
     if (typeof payload.class_date !== 'string' || !payload.class_date.trim()) return 'Select a date.';
   }
+  if (payload.base_id !== undefined && !(Number.isInteger(payload.base_id) && (payload.base_id as number) > 0)) return 'Pick a base.';
   const start = payload.start_time;
   const end = payload.end_time;
   // Enforced server-side as well as in the modal: the times are plain

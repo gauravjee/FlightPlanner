@@ -20,6 +20,7 @@ import Papa from 'papaparse';
 import { useHolidays, addHoliday, addHolidaysBulk, removeHoliday } from '@/lib/hooks/useHolidays';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { CalendarDays, Plus, Trash2, Upload, Download, LoaderCircle, RefreshCw } from 'lucide-react';
+import { useBases } from '@/lib/hooks/useBases';
 
 interface CsvImportResult {
   added: number;
@@ -33,12 +34,16 @@ export default function HolidaysTab() {
   // needed; addHoliday/addHolidaysBulk/removeHoliday are plain imports now,
   // not store actions.
   const { holidays, isLoading: loadingHolidays } = useHolidays();
+  // Multi-base M4c: a holiday can close one base only; blank = school-wide. CSV imports stay school-wide.
+  const { bases, activeBases, multiBase } = useBases();
+  const baseName = (id?: string) => (id ? bases.find(b => String(b.id) === id)?.name ?? `Base ${id}` : 'All bases');
 
   const [form, setForm] = useState({
     holidayName: '',
     date: '',
     isRecurring: false,
     notes: '',
+    baseId: '',
   });
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
@@ -55,7 +60,7 @@ export default function HolidaysTab() {
     const result = await addHoliday(form);
     setSaveMessage(result.message);
     if (result.success) {
-      setForm({ holidayName: '', date: '', isRecurring: false, notes: '' });
+      setForm({ holidayName: '', date: '', isRecurring: false, notes: '', baseId: '' });
     }
     setSaving(false);
   };
@@ -193,6 +198,16 @@ export default function HolidaysTab() {
           </div>
         </div>
 
+        {multiBase && (
+          <div className="mb-3">
+            <label htmlFor="holiday-base" className="block text-xs text-tertiary mb-1">Base</label>
+            <select id="holiday-base" value={form.baseId} onChange={e => setForm(p => ({ ...p, baseId: e.target.value }))} className={inputClass}>
+              <option value="">All bases (school-wide)</option>
+              {activeBases.map(b => <option key={b.id} value={String(b.id)}>{b.name} only</option>)}
+            </select>
+          </div>
+        )}
+
         <div className="mb-3">
           <label className="block text-xs text-tertiary mb-1">Notes</label>
           <input
@@ -287,6 +302,7 @@ export default function HolidaysTab() {
                 <th className="pb-3">Date</th>
                 <th className="pb-3">Holiday</th>
                 <th className="pb-3">Recurs</th>
+                {multiBase && <th className="pb-3">Base</th>}
                 <th className="pb-3">Notes</th>
                 <th className="pb-3">Actions</th>
               </tr>
@@ -301,6 +317,7 @@ export default function HolidaysTab() {
                       {h.isRecurring ? 'Every year' : 'One-time'}
                     </span>
                   </td>
+                  {multiBase && <td className="py-3 text-xs">{baseName(h.baseId)}</td>}
                   <td className="py-3 text-xs text-tertiary max-w-[300px] truncate">{h.notes || '—'}</td>
                   <td className="py-3">
                     <button onClick={() => handleDelete(h.id)} style={{ color: 'var(--danger)' }} aria-label={`Delete ${h.holidayName}`}><Trash2 className="w-3.5 h-3.5" /></button>

@@ -30,7 +30,7 @@ import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { useExercises } from '@/lib/hooks/useExercises';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
-import { inSelectedBase } from '@/lib/bases';
+import { inSelectedBase, holidaysAt, viewBaseId } from '@/lib/bases';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import { getLocationDisplay } from '@/lib/location';
@@ -195,7 +195,7 @@ export default function ScheduleBoard() {
 
   // Is the currently viewed date blocked for scheduling — a holiday or the
   // FTO's weekly off day? null if the date is open.
-  const dateBlockReason = getSchedulingBlockReason(selectedDate, holidays, weeklyOffDays, partialWeeklyOffRule);
+  const dateBlockReason = getSchedulingBlockReason(selectedDate, holidaysAt(holidays, viewBaseId(selectedBase)), weeklyOffDays, partialWeeklyOffRule);
 
   // ----- Filter flights for the selected date -----
  // Excludes CANCELLED: cancelFlight() now soft-cancels (keeps the row,

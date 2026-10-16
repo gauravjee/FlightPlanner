@@ -1,6 +1,6 @@
 // lib/bases.test.ts — run: npx tsx lib/bases.test.ts
 import assert from 'node:assert/strict';
-import { baseRowError, settingToBaseValue, baseToSettingValue, isBaseSettingKey, resolveSelectedBase, inSelectedBase, overlayBaseSettings, ALL_BASES, type BaseRow } from './bases';
+import { baseRowError, settingToBaseValue, baseToSettingValue, isBaseSettingKey, resolveSelectedBase, inSelectedBase, overlayBaseSettings, holidaysAt, viewBaseId, ALL_BASES, type BaseRow } from './bases';
 
 const ok = {
   name: 'Shirpur Airport', code: 'B1', time_slot_start: '06:00', time_slot_end: '20:00', time_slot_interval: 15,
@@ -41,5 +41,12 @@ const over = overlayBaseSettings({ school_name: 'Horizon', airport_code: 'VOBL',
 assert.deepEqual([over.school_name, over.buffer_minutes, over.airport_code, over.latitude, over.time_slot_start, over.time_slot_interval, over.weekly_off_days],
   ['Horizon', '30', '', '19.1', '07:00', '30', '1']); // school-wide keys untouched, per-base keys replaced
 assert.equal(overlayBaseSettings({ a: '1' }, null).a, '1');
+
+// M4c: school-wide holidays close every base; a base's own close only it.
+const hols = [{ id: 'a' }, { id: 'b', baseId: '1' }, { id: 'c', baseId: '3' }, { id: 'd', baseId: null }];
+assert.deepEqual(holidaysAt(hols, 1).map(h => h.id), ['a', 'b', 'd']);
+assert.deepEqual(holidaysAt(hols, 3).map(h => h.id), ['a', 'c', 'd']);
+assert.equal(viewBaseId(ALL_BASES), 1);
+assert.equal(viewBaseId(3), 3);
 
 console.log('bases: all checks passed');

@@ -734,6 +734,7 @@ export interface Holiday {
   date: string;          // 'YYYY-MM-DD'
   isRecurring: boolean;
   notes?: string;
+  baseId?: string; // multi-base M4c: one base only; missing = school-wide (every base)
 }
 
 // Student enrollment

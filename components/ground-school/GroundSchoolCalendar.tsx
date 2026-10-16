@@ -68,6 +68,8 @@ import { ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Save, CircleCheck, X }
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { toDateStr } from '@/lib/ist';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { inSelectedBase, holidaysAt, viewBaseId, newRecordBaseId } from '@/lib/bases';
 
 // ============================================================
 // Type definitions
@@ -88,6 +90,7 @@ interface GroundClass {
   topic: string;
   notes: string;
   status: string;
+  base_id?: number | null;  // multi-base M4c; missing = Base 1
   subject_name?: string;    // enriched client‑side
   instructor_initials?: string;
 }
@@ -172,7 +175,10 @@ export default function GroundSchoolCalendar() {
   // FTO-wide blackout dates — flight bookings and ground-school classes
   // cannot be scheduled on a holiday or the FTO's weekly off day. SWR-
   // migrated (Stage 7, 2026-09-02) — fetch-on-mount, no manual load needed.
-  const { holidays } = useHolidays();
+  const { holidays: allHolidays } = useHolidays();
+  // Multi-base M4c: the header base's classes and holidays (Base 1's holidays on "All bases", like its hours).
+  const { selected: selectedBase } = useSelectedBase();
+  const holidays = holidaysAt(allHolidays, viewBaseId(selectedBase));
   const { ftoSettings } = useFtoSettings();
   const weeklyOffDays = parseWeeklyOffDays(ftoSettings['weekly_off_days']);
   const partialWeeklyOffRule = parsePartialWeeklyOffRule(ftoSettings['partial_weekly_off_days']);
@@ -334,7 +340,8 @@ export default function GroundSchoolCalendar() {
     }
     const filtered = (classData || []).filter((c: Omit<GroundClass, 'subject_name' | 'instructor_initials'>) =>
       (!filterSubject || c.subject_id === parseInt(filterSubject)) &&
-      (!filterInstructor || c.instructor_id === filterInstructor)
+      (!filterInstructor || c.instructor_id === filterInstructor) &&
+      inSelectedBase(selectedBase, c.base_id)
     );
 
     // Enrich each class with human‑readable subject name and instructor initials.
@@ -351,7 +358,7 @@ export default function GroundSchoolCalendar() {
     setClasses(enriched);
     setInitialRender(false); // ← Marks that data has loaded at least once
     setLoading(false);
-  }, [currentWeekStart, currentMonth, view, filterSubject, filterInstructor, subjects, instructors]);
+  }, [currentWeekStart, currentMonth, view, filterSubject, filterInstructor, subjects, instructors, selectedBase]);
 
   // Reload classes whenever the dependencies change
   useEffect(() => {
@@ -516,7 +523,8 @@ export default function GroundSchoolCalendar() {
       : await fetch('/api/ground-school/classes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...form }),
+          // A new class is held at the header base ("All bases": the DB default, Base 1).
+          body: JSON.stringify({ ...form, ...(newRecordBaseId(selectedBase) ? { base_id: Number(newRecordBaseId(selectedBase)) } : {}) }),
         });
 
     const error = res.ok ? null : (await res.json().catch(() => ({ error: '' }))).error || 'Could not save the class.';

@@ -33,7 +33,7 @@ import { generateDutyRoster } from '@/lib/pdf';
 import { ROSTER_VIEW_ROLES } from '@/lib/permissions';
 import { ChevronLeft, ChevronRight, Download } from 'lucide-react';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
-import { ALL_BASES } from '@/lib/bases';
+import { ALL_BASES, holidaysAt, viewBaseId } from '@/lib/bases';
 import { rowBase } from '@/lib/roster';
 
 type Period = 'weekly' | 'monthly' | 'custom';
@@ -124,7 +124,7 @@ export default function DutyRosterReportPage() {
         .map(l => ({ personId: l.personId, start_date: l.startDate, end_date: l.endDate, start_time: l.startTime, end_time: l.endTime })),
       flights: scheduledFlights,
       openStart: ftoSettings['time_slot_start'], openEnd: ftoSettings['time_slot_end'],
-      closedReason: date => getSchedulingBlockReason(date, holidays, weeklyOff, partial)?.label ?? null,
+      closedReason: date => getSchedulingBlockReason(date, holidaysAt(holidays, viewBaseId(selectedBase)), weeklyOff, partial)?.label ?? null,
     });
   }, [rangeError, from, to, selected, weekly, exceptions, availabilityRecords, scheduledFlights, ftoSettings, holidays, selectedBase]);
 

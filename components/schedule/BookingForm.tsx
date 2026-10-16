@@ -51,7 +51,7 @@ import { ROSTER_VIEW_ROLES, ROSTER_OVERRIDE_ROLES } from '@/lib/permissions';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
-import { ALL_BASES, BASE1_ID, overlayBaseSettings } from '@/lib/bases';
+import { ALL_BASES, BASE1_ID, overlayBaseSettings, holidaysAt } from '@/lib/bases';
 
 // ============================================================
 // PROPS
@@ -523,7 +523,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (selected < today) return '❌ Cannot book flights in the past.';
-    const blockReason = getSchedulingBlockReason(dateStr, holidays, weeklyOffDays, partialWeeklyOffRule);
+    const blockReason = getSchedulingBlockReason(dateStr, holidaysAt(holidays, formBaseId), weeklyOffDays, partialWeeklyOffRule);
     if (blockReason) return `❌ FTO is closed (${blockReason.label}) — cannot book flights on this date.`;
     return '';
   };

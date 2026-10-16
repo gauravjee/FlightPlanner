@@ -102,7 +102,7 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
   // stays a client-side read — no security concern, it never writes.
   holidays: {
     dbTable: 'holidays',
-    columns: ['holiday_name', 'holiday_date', 'is_recurring', 'notes'],
+    columns: ['holiday_name', 'holiday_date', 'is_recurring', 'notes', 'base_id'], // base_id: multi-base M4c, null = school-wide
   },
   // Aircraft Maintenance Schedule (Admin Setup, 2026-08-26, Phase 1) —
   // recurring maintenance items per aircraft model. See

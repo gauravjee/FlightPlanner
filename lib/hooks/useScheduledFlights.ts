@@ -44,7 +44,7 @@ import { fetchAircraft } from './useAircraft';
 import { fetchHolidays } from './useHolidays';
 import { fetchFtoSettings } from './useFtoSettings';
 import { basesKey } from './useBases';
-import { overlayBaseSettings, type BaseRow } from '@/lib/bases';
+import { overlayBaseSettings, holidaysAt, type BaseRow } from '@/lib/bases';
 import { toIST } from '@/lib/leave-window';
 import type { Aircraft, CancellationReason, Instructor, ScheduledFlight, StudentRecord, TimeConflict } from '@/types';
 
@@ -97,16 +97,17 @@ export async function fetchScheduledFlights(): Promise<ScheduledFlight[]> {
   });
 }
 
-// Multi-base M4b: a flight's weekly off days are its base's — the base its aircraft is at (the server sets
-// the same base on save). Any lookup failing falls back to FTO Settings (Base 1).
-async function settingsAtAircraftBase(aircraftId?: string): Promise<Record<string, string>> {
-  const [settings, aircraft, bases] = await Promise.all([
+// Multi-base M4b/M4c: a flight's weekly off days and holidays are its base's — the base its aircraft is at (the
+// server sets the same base on save). Any lookup failing falls back to FTO Settings / Base 1.
+async function closingRulesAtAircraftBase(aircraftId?: string) {
+  const [holidays, settings, aircraft, bases] = await Promise.all([
+    fetchHolidays(),
     fetchFtoSettings(),
     aircraftId ? fetchAircraft().catch(() => []) : [],
     aircraftId ? fetch(basesKey).then(r => (r.ok ? r.json() : {})).then((j: { rows?: BaseRow[] }) => j.rows ?? []).catch(() => [] as BaseRow[]) : [],
   ]);
   const baseId = Number(aircraft.find(a => String(a.id) === String(aircraftId))?.currentBaseId ?? 1);
-  return overlayBaseSettings(settings, bases.find(b => Number(b.id) === baseId));
+  return [holidaysAt(holidays, baseId), overlayBaseSettings(settings, bases.find(b => Number(b.id) === baseId))] as const;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +223,7 @@ export async function bookFlight(
   booking: Omit<ScheduledFlight, 'id' | 'aircraftReg' | 'studentName' | 'instructorName' | 'duration'>
 ): Promise<{ success: boolean; message: string; pendingApproval?: boolean }> {
   const bookingDateStr = toIST(booking.startTime).date; // FTO (IST) date, not the browser's
-  const [holidays, ftoSettings] = await Promise.all([fetchHolidays(), settingsAtAircraftBase(booking.aircraftId)]);
+  const [holidays, ftoSettings] = await closingRulesAtAircraftBase(booking.aircraftId);
   const blockReason = getSchedulingBlockReason(
     bookingDateStr, holidays,
     parseWeeklyOffDays(ftoSettings['weekly_off_days']),
@@ -350,7 +351,7 @@ export async function updateScheduledFlight(id: string, updates: Partial<Schedul
   // ScheduleBoard's drag-and-drop reschedule).
   if (updates.startTime !== undefined) {
     const newDateStr = toIST(updates.startTime).date; // FTO (IST) date, not the browser's
-    const [holidays, ftoSettings] = await Promise.all([fetchHolidays(), settingsAtAircraftBase(updates.aircraftId)]);
+    const [holidays, ftoSettings] = await closingRulesAtAircraftBase(updates.aircraftId);
     const blockReason = getSchedulingBlockReason(
       newDateStr, holidays,
       parseWeeklyOffDays(ftoSettings['weekly_off_days']),
