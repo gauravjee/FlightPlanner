@@ -30,6 +30,8 @@ import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useInstructors } from '@/lib/hooks/useInstructors';
 import { useStudents } from '@/lib/hooks/useStudents';
 import type { BATest } from '@/types';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { ALL_BASES, viewBaseId } from '@/lib/bases';
 import {
   Wind, CalendarDays, Plus, X, Pencil, Trash2, FileSpreadsheet, Save,
 } from 'lucide-react';
@@ -61,7 +63,12 @@ export default function BreathAnalyserRegisterPage() {
   const role = session?.user?.role;
   const canWrite = !!role && BA_TEST_WRITE_ROLES.includes(role);
 
-  const { aircraft } = useAircraft();
+  const { aircraft: allAircraft } = useAircraft();
+  // Multi-base M5: the header base's tests ("All bases": every base); a new test is recorded at the header
+  // base (Base 1 on "All bases"), or the server uses the chosen aircraft's base.
+  const { selected: selectedBase } = useSelectedBase();
+  const baseQuery = selectedBase === ALL_BASES ? '' : `&baseId=${selectedBase}`;
+  const aircraft = allAircraft.filter(a => Number(a.currentBaseId ?? 1) === viewBaseId(selectedBase));
   const { instructors } = useInstructors();
   const { students } = useStudents();
 
@@ -87,8 +94,8 @@ export default function BreathAnalyserRegisterPage() {
   // (react-hooks/set-state-in-effect flags any named function that sets
   // state anywhere in its body, even safely after an await, when called
   // from an effect).
-  const fetchForDate = async (d: string): Promise<BATest[]> => {
-    const res = await fetch(`/api/ba-tests?date=${d}`);
+  const fetchForDate = async (d: string, q: string): Promise<BATest[]> => {
+    const res = await fetch(`/api/ba-tests?date=${d}${q}`);
     const json = await res.json().catch(() => ({}));
     return json.baTests || [];
   };
@@ -99,24 +106,24 @@ export default function BreathAnalyserRegisterPage() {
     setLoading(true);
     setErrorMsg('');
     try {
-      setTests(await fetchForDate(d));
+      setTests(await fetchForDate(d, baseQuery));
     } catch {
       setErrorMsg('Failed to load BA test register.');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [baseQuery]);
 
   // Loads on mount (loading starts true above) and whenever the date
   // changes — the date picker's onChange flips loading back to true for
   // that case, since doing it here directly would itself be a synchronous
   // setState-in-effect.
   useEffect(() => {
-    fetchForDate(date)
+    fetchForDate(date, baseQuery)
       .then(setTests)
       .catch(() => setErrorMsg('Failed to load BA test register.'))
       .finally(() => setLoading(false));
-  }, [date]);
+  }, [date, baseQuery]);
 
   useEffect(() => {
     if (!canWrite) return;
@@ -205,6 +212,7 @@ export default function BreathAnalyserRegisterPage() {
         baTime: form.baTime || undefined,
         baPercentage: form.baPercentage !== '' ? parseFloat(form.baPercentage) : undefined,
         baEquipment: form.baEquipment || undefined,
+        baseId: viewBaseId(selectedBase),
       };
       const res = editingId
         ? await fetch(`/api/ba-tests/${editingId}`, {

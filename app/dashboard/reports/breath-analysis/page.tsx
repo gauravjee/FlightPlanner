@@ -29,6 +29,8 @@ import RoleGate from '@/components/ui/RoleGate';
 import { BA_TEST_VIEW_ROLES } from '@/lib/permissions';
 import { generateBreathAnalysisReport } from '@/lib/pdf';
 import type { BATest } from '@/types';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { ALL_BASES } from '@/lib/bases';
 import { Wind, CalendarDays, FileSpreadsheet, FileDown } from 'lucide-react';
 
 type Period = 'Daily' | 'Weekly' | 'Monthly';
@@ -68,6 +70,9 @@ function monthRange(monthStr: string): { from: string; to: string; label: string
 }
 
 export default function BreathAnalysisReportPage() {
+  // Multi-base M5: the header base's tests; "All bases" shows every base.
+  const { selected: selectedBase } = useSelectedBase();
+  const baseQuery = selectedBase === ALL_BASES ? '' : `&baseId=${selectedBase}`;
   const [period, setPeriod] = useState<Period>('Daily');
   const [date, setDate] = useState(todayStr());
   const [weekAnchor, setWeekAnchor] = useState(todayStr());
@@ -98,8 +103,8 @@ export default function BreathAnalysisReportPage() {
   // (react-hooks/set-state-in-effect flags any named function that sets
   // state anywhere in its body, even safely after an await, when called
   // from an effect).
-  const fetchRange = async (from: string, to: string): Promise<BATest[]> => {
-    const res = await fetch(`/api/ba-tests?from=${from}&to=${to}`);
+  const fetchRange = async (from: string, to: string, q: string): Promise<BATest[]> => {
+    const res = await fetch(`/api/ba-tests?from=${from}&to=${to}${q}`);
     const json = await res.json().catch(() => ({}));
     return json.baTests || [];
   };
@@ -109,11 +114,11 @@ export default function BreathAnalysisReportPage() {
   // loading back to true for that case, since doing it here directly would
   // itself be a synchronous setState-in-effect.
   useEffect(() => {
-    fetchRange(range.from, range.to)
+    fetchRange(range.from, range.to, baseQuery)
       .then(setTests)
       .catch(() => setErrorMsg('Failed to load the Breath Analysis Report.'))
       .finally(() => setLoading(false));
-  }, [range.from, range.to]);
+  }, [range.from, range.to, baseQuery]);
 
   const stats = useMemo(() => {
     const total = tests.length;

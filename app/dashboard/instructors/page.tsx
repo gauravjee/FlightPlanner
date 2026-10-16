@@ -21,7 +21,7 @@ import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { computeInstructorStatus, dayHours, effectiveDailyLimit, STATUS_LABELS, type ComputedStatus } from '@/lib/instructor-status';
 import { toIST } from '@/lib/leave-window';
 import { useRoster } from '@/lib/hooks/useRoster';
-import { dutyWindow } from '@/lib/roster';
+import { dutyWindow, onDutyAt } from '@/lib/roster';
 import { ROSTER_VIEW_ROLES } from '@/lib/permissions';
 import { Search, GraduationCap } from 'lucide-react';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
@@ -35,7 +35,7 @@ export default function InstructorsPage() {
   // it too if a super_admin has granted a per-user override.
   const canWrite = canWriteModule(session?.user?.role, overrides, 'instructors');
   const { instructors: allInstructors } = useInstructors();
-  const { selected: selectedBase } = useSelectedBase(); // multi-base M3: header base
+  const { selected: selectedBase, activeBases } = useSelectedBase(); // multi-base M3: header base
   const instructors = useMemo(() => allInstructors.filter(i => inSelectedBase(selectedBase, i.homeBaseId)), [allInstructors, selectedBase]);
   const { scheduledFlights } = useScheduledFlights();
   // A role without leave access just gets no records here — status then
@@ -70,23 +70,25 @@ export default function InstructorsPage() {
       personType: r.personType, personId: r.personId, status: r.status,
       start_date: r.startDate, end_date: r.endDate, start_time: r.startTime ?? null, end_time: r.endTime ?? null,
     }));
+    const nowTime = toIST(now.toISOString()).time;
     return new Map(instructors.map(i => {
       const limit = effectiveDailyLimit(i.maxDailyHours, ftoSettings['instructor_daily_limit_hours']);
+      const dutyAt = (baseId: number, openStart?: string, openEnd?: string) => dutyWindow({
+        instructorId: i.id, date: today, weekly, exceptions, offDutyDate: i.offDutyDate, baseId, openStart, openEnd,
+      }).window;
+      // Multi-base M5: on duty now at any active base counts; otherwise the home base's hours.
+      const visiting = activeBases.map(b => dutyAt(b.id, b.time_slot_start, b.time_slot_end)).find(w => onDutyAt(w, nowTime));
       return [i.id, {
         status: computeInstructorStatus({
           instructorId: i.id, now, flights: scheduledFlights, leaves, limit,
-          // shortcut: status reads the home base's roster (M4a); an instructor visiting another base shows Off duty here.
-          duty: dutyWindow({
-            instructorId: i.id, date: today, weekly, exceptions, offDutyDate: i.offDutyDate, baseId: Number(i.homeBaseId ?? 1),
-            openStart: ftoSettings['time_slot_start'], openEnd: ftoSettings['time_slot_end'],
-          }).window,
+          duty: visiting ?? dutyAt(Number(i.homeBaseId ?? 1), ftoSettings['time_slot_start'], ftoSettings['time_slot_end']),
         }),
         todayHours: dayHours(scheduledFlights, i.id, today),
         limit,
         offDutyToday: i.offDutyDate === today,
       }];
     }));
-  }, [instructors, scheduledFlights, availabilityRecords, ftoSettings, now, weekly, exceptions]);
+  }, [instructors, scheduledFlights, availabilityRecords, ftoSettings, now, weekly, exceptions, activeBases]);
 
   // Filter instructors based on search and status
   const filteredInstructors = (showInactive ? instructors : activeInstructors).filter(i => {

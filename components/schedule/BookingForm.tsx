@@ -518,12 +518,15 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
 
   // Date must not be in the past, and must not fall on a holiday or the
   // FTO's weekly off day.
-  const validateDate = (dateStr: string): string => {
+  // baseId: re-checking for a base just picked, before its settings have re-rendered (M5).
+  const validateDate = (dateStr: string, baseId = formBaseId): string => {
     const selected = new Date(dateStr + 'T00:00:00');
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (selected < today) return '❌ Cannot book flights in the past.';
-    const blockReason = getSchedulingBlockReason(dateStr, holidaysAt(holidays, formBaseId), weeklyOffDays, partialWeeklyOffRule);
+    const b = baseId === formBaseId ? null : activeBases.find(x => x.id === baseId);
+    const blockReason = getSchedulingBlockReason(dateStr, holidaysAt(holidays, baseId),
+      b ? parseWeeklyOffDays(b.weekly_off_days) : weeklyOffDays, b ? parsePartialWeeklyOffRule(b.partial_weekly_off_days) : partialWeeklyOffRule);
     if (blockReason) return `❌ FTO is closed (${blockReason.label}) — cannot book flights on this date.`;
     return '';
   };
@@ -949,7 +952,12 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                 <p id="booking-base" className="text-sm">{formBase?.name ?? `Base ${formBaseId}`}</p>
               ) : (
                 <select id="booking-base" value={formBaseId}
-                  onChange={e => { setPickedBase(Number(e.target.value)); setForm(prev => ({ ...prev, aircraftId: '' })); }}
+                  onChange={e => {
+                    const b = Number(e.target.value);
+                    setPickedBase(b);
+                    setForm(prev => ({ ...prev, aircraftId: '' }));
+                    setError(form.date ? validateDate(form.date, b) : ''); // the date may be closed at the new base
+                  }}
                   className="w-full surface-inner rounded-lg px-3 py-2">
                   {activeBases.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>

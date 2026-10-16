@@ -29,6 +29,8 @@ import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { generateAuditPack } from '@/lib/pdf';
 import { todayIST, daysFromTodayIST } from '@/lib/ist';
 import type { BATest, DailyFlyingReport } from '@/types';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { ALL_BASES, viewBaseId } from '@/lib/bases';
 import { FileDown, TriangleAlert, CalendarDays, ClipboardList } from 'lucide-react';
 
 // A pack is a compliance document, not a data dump: keep the range to
@@ -58,7 +60,12 @@ export default function AuditPackPage() {
     subtitle: 'One PDF covering a date range — flying, breath analysis and maintenance',
   });
 
-  const { aircraft, isLoading: aircraftLoading } = useAircraft();
+  const { aircraft: allAircraft, isLoading: aircraftLoading } = useAircraft();
+  // Multi-base M5: a pack is for one base (the header base; Base 1 on "All bases") — its daily reports, its BA
+  // tests, and the maintenance of the aircraft currently there.
+  const { selected: selectedBase, activeBases, multiBase } = useSelectedBase();
+  const baseId = viewBaseId(selectedBase);
+  const aircraft = useMemo(() => allAircraft.filter(a => Number(a.currentBaseId ?? 1) === baseId), [allAircraft, baseId]);
   const { maintenanceRecords, isLoading: maintenanceLoading } = useMaintenanceRecords();
   const { ftoSettings } = useFtoSettings();
   // 2026-09-11: on a cold mount, aircraft/maintenanceRecords start as SWR's
@@ -120,13 +127,13 @@ export default function AuditPackPage() {
       const [dailyResults, baRes] = await Promise.all([
         Promise.all(
           days.map(d =>
-            fetch(`/api/reports/daily-flying?date=${d}`)
+            fetch(`/api/reports/daily-flying?date=${d}&baseId=${baseId}`)
               .then(r => r.json())
               .then(j => ({ date: d, report: (j.report || null) as DailyFlyingReport | null }))
               .catch(() => ({ date: d, report: null }))
           )
         ),
-        fetch(`/api/ba-tests?from=${from}&to=${to}`).then(r => r.json()).catch(() => ({})),
+        fetch(`/api/ba-tests?from=${from}&to=${to}&baseId=${baseId}`).then(r => r.json()).catch(() => ({})),
       ]);
 
       const dailyReports = dailyResults.filter(r => r.report).map(r => r.report as DailyFlyingReport);
@@ -177,6 +184,12 @@ export default function AuditPackPage() {
                 <CalendarDays className="w-4 h-4" style={{ color: 'var(--accent)' }} />
                 <h3 className="text-base font-bold">Period</h3>
               </div>
+              {multiBase && (
+                <p className="text-sm text-secondary mb-3">
+                  Base: <strong>{activeBases.find(b => b.id === baseId)?.name ?? `Base ${baseId}`}</strong>
+                  {selectedBase === ALL_BASES ? ' — pick a base in the header for another base\'s pack' : ''}
+                </p>
+              )}
 
               <div className="flex flex-wrap gap-3">
                 <label className="flex flex-col gap-1 text-xs text-secondary">

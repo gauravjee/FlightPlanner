@@ -21,6 +21,8 @@ import RoleGate from '@/components/ui/RoleGate';
 import { REPORTS_VIEW_ROLES, REPORTS_WRITE_ROLES, INCIDENT_REPORT_ROLES, SAFETY_INCIDENT_CATEGORIES } from '@/lib/permissions';
 import { generateDailyFlyingReport } from '@/lib/pdf';
 import type { DailyFlyingReport, SafetyIncident } from '@/types';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { ALL_BASES, viewBaseId } from '@/lib/bases';
 import {
   FileDown, FileSpreadsheet, RefreshCw, TriangleAlert, Plus, X,
   ClipboardList, CalendarDays,
@@ -52,6 +54,9 @@ export default function DailyFlyingReportPage() {
   const canWrite = !!role && REPORTS_WRITE_ROLES.includes(role);
   const canReportIncident = !!role && INCIDENT_REPORT_ROLES.includes(role);
 
+  // Multi-base M5: one report per base — the header base (Base 1 on "All bases").
+  const { selected: selectedBase, activeBases, multiBase } = useSelectedBase();
+  const baseId = viewBaseId(selectedBase);
   const [date, setDate] = useState(todayStr());
   const [report, setReport] = useState<DailyFlyingReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -69,9 +74,9 @@ export default function DailyFlyingReportPage() {
   // (react-hooks/set-state-in-effect flags any named function that sets
   // state anywhere in its body, even safely after an await, when called
   // from an effect).
-  const fetchForDate = async (d: string) => {
+  const fetchForDate = async (d: string, b: number) => {
     const [reportRes, incidentsRes] = await Promise.all([
-      fetch(`/api/reports/daily-flying?date=${d}`),
+      fetch(`/api/reports/daily-flying?date=${d}&baseId=${b}`),
       fetch(`/api/safety-incidents?date=${d}`),
     ]);
     const reportJson = await reportRes.json().catch(() => ({}));
@@ -88,7 +93,7 @@ export default function DailyFlyingReportPage() {
     setLoading(true);
     setErrorMsg('');
     try {
-      const data = await fetchForDate(d);
+      const data = await fetchForDate(d, baseId);
       setReport(data.report);
       setRemarksDraft(data.report?.remarks || '');
       setIncidents(data.incidents);
@@ -97,14 +102,14 @@ export default function DailyFlyingReportPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [baseId]);
 
   // Loads on mount (loading starts true above) and whenever the date
   // changes — the date picker's onChange flips loading back to true for
   // that case, since doing it here directly would itself be a synchronous
   // setState-in-effect.
   useEffect(() => {
-    fetchForDate(date)
+    fetchForDate(date, baseId)
       .then(data => {
         setReport(data.report);
         setRemarksDraft(data.report?.remarks || '');
@@ -112,7 +117,7 @@ export default function DailyFlyingReportPage() {
       })
       .catch(() => setErrorMsg('Failed to load report data.'))
       .finally(() => setLoading(false));
-  }, [date]);
+  }, [date, baseId]);
 
   useSetHeader({
     title: 'Daily Flying Report',
@@ -126,7 +131,7 @@ export default function DailyFlyingReportPage() {
       const res = await fetch('/api/reports/daily-flying', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, remarks: remarksDraft }),
+        body: JSON.stringify({ date, remarks: remarksDraft, baseId }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -209,6 +214,12 @@ export default function DailyFlyingReportPage() {
                   className="surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]"
                 />
               </div>
+              {multiBase && (
+                <span className="text-sm text-secondary">
+                  Base: <strong>{activeBases.find(b => b.id === baseId)?.name ?? `Base ${baseId}`}</strong>
+                  {selectedBase === ALL_BASES ? ' — pick a base in the header for another base\'s report' : ''}
+                </span>
+              )}
 
               {canWrite && (
                 <button

@@ -39,7 +39,9 @@ import {
 // not a Multi-Airport-aware timezone lookup.
 const IST_OFFSET = '+05:30';
 
-async function computeReport(date: string) {
+// Multi-base M5 (operator, 16 Oct): one report per base per date — that base's logbook entries, cancellations,
+// grounded aircraft and airport. Safety incidents aren't per base yet, so the count stays school-wide.
+async function computeReport(date: string, baseId: number) {
   const [
     { data: flightRows, error: flightErr },
     { data: aircraftRows },
@@ -48,21 +50,20 @@ async function computeReport(date: string) {
     { data: maintenanceRows },
     { data: cancelledRows },
     { data: incidentRows },
-    { data: ftoSettingRows },
+    { data: baseRow },
   ] = await Promise.all([
-    supabaseAdmin.from('flight_records').select('*').eq('flight_date', date),
-    supabaseAdmin.from('aircraft').select('id, registration'),
+    supabaseAdmin.from('flight_records').select('*').eq('flight_date', date).eq('base_id', baseId),
+    supabaseAdmin.from('aircraft').select('id, registration, current_base_id'),
     supabaseAdmin.from('students').select('id, name'),
     supabaseAdmin.from('instructors').select('id, name'),
     supabaseAdmin.from('maintenance_records').select('aircraft_id, status, scheduled_date, maintenance_start, maintenance_end')
       .in('status', ['SCHEDULED', 'IN_PROGRESS']),
     supabaseAdmin.from('scheduled_flights').select('id, cancellation_reason, start_time')
-      .eq('status', 'CANCELLED')
+      .eq('status', 'CANCELLED').eq('base_id', baseId)
       .gte('start_time', `${date}T00:00:00${IST_OFFSET}`)
       .lt('start_time', `${date}T23:59:59.999${IST_OFFSET}`),
     supabaseAdmin.from('safety_incidents').select('id').eq('incident_date', date),
-    supabaseAdmin.from('fto_settings').select('setting_key, setting_value')
-      .in('setting_key', ['airport_code', 'location_name']),
+    supabaseAdmin.from('bases').select('airport_code, location_name').eq('id', baseId).maybeSingle(),
   ]);
 
   if (flightErr) throw flightErr;
@@ -105,7 +106,8 @@ async function computeReport(date: string) {
   const dayStart = new Date(`${date}T00:00:00${IST_OFFSET}`).getTime();
   const dayEnd = new Date(`${date}T23:59:59.999${IST_OFFSET}`).getTime();
   const groundedAircraftIds = new Set<string>();
-  for (const m of maintenanceRows || []) {
+  const atBase = new Set((aircraftRows || []).filter(a => Number(a.current_base_id ?? 1) === baseId).map(a => String(a.id)));
+  for (const m of (maintenanceRows || []).filter(r => atBase.has(String(r.aircraft_id)))) {
     let winStart: number; let winEnd: number;
     if (m.maintenance_start) {
       winStart = new Date(m.maintenance_start as string).getTime();
@@ -122,8 +124,7 @@ async function computeReport(date: string) {
   const maintenanceCancellations = cancellations.filter(c => c.cancellation_reason === 'MAINTENANCE').length;
   const otherCancellations = cancellations.length - weatherCancellations - maintenanceCancellations;
 
-  const settingsMap = new Map((ftoSettingRows || []).map(r => [r.setting_key as string, r.setting_value as string]));
-  const airportDisplay = getLocationDisplay(settingsMap.get('airport_code') || '', settingsMap.get('location_name') || '');
+  const airportDisplay = getLocationDisplay((baseRow?.airport_code as string) || '', (baseRow?.location_name as string) || '');
 
   const stats = {
     totalAircraftHours,
@@ -181,11 +182,14 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const date = searchParams.get('date');
   if (!date) return NextResponse.json({ error: 'date is required.' }, { status: 400 });
+  const baseId = Number(searchParams.get('baseId') || 1);
+  if (!Number.isInteger(baseId) || baseId < 1) return NextResponse.json({ error: 'Invalid base.' }, { status: 400 });
 
   const { data, error: dbError } = await supabaseAdmin
     .from('daily_flying_reports')
     .select('*')
     .eq('report_date', date)
+    .eq('base_id', baseId)
     .maybeSingle();
 
   if (dbError) {
@@ -225,10 +229,14 @@ export async function POST(request: Request) {
   if (!date || typeof date !== 'string') {
     return NextResponse.json({ error: 'date is required.' }, { status: 400 });
   }
+  const baseId = body.baseId == null ? 1 : Number(body.baseId);
+  const { data: base } = Number.isInteger(baseId) && baseId > 0
+    ? await supabaseAdmin.from('bases').select('id').eq('id', baseId).maybeSingle() : { data: null };
+  if (!base) return NextResponse.json({ error: 'Pick a base.' }, { status: 400 });
 
   let computed;
   try {
-    computed = await computeReport(date);
+    computed = await computeReport(date, baseId);
   } catch (e) {
     console.error('Error computing daily flying report:', e);
     return NextResponse.json({ error: 'Failed to compute report.' }, { status: 500 });
@@ -238,6 +246,7 @@ export async function POST(request: Request) {
     .from('daily_flying_reports')
     .upsert({
       report_date: date,
+      base_id: baseId,
       airport_code: computed.airportCode,
       rows: computed.rows,
       stats: computed.stats,
@@ -245,7 +254,7 @@ export async function POST(request: Request) {
       generated_by: session.user.name || session.user.email || 'Unknown',
       generated_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'report_date' })
+    }, { onConflict: 'report_date,base_id' })
     .select()
     .single();
 

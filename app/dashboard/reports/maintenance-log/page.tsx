@@ -39,6 +39,8 @@ import { useMaintenanceRecords } from '@/lib/hooks/useMaintenanceRecords';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { generateMaintenanceLogReport, formatLogDate } from '@/lib/pdf';
 import { todayIST, daysFromTodayIST } from '@/lib/ist';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { inSelectedBase } from '@/lib/bases';
 import { Wrench, FileDown, FileSpreadsheet, TriangleAlert } from 'lucide-react';
 
 export default function MaintenanceLogPage() {
@@ -47,7 +49,10 @@ export default function MaintenanceLogPage() {
     subtitle: 'DGCA aircraft maintenance & release-to-service record',
   });
 
-  const { aircraft } = useAircraft();
+  const { aircraft: allAircraft } = useAircraft();
+  // Multi-base M5: only the aircraft currently at the header base (all aircraft on "All bases").
+  const { selected: selectedBase } = useSelectedBase();
+  const aircraft = useMemo(() => allAircraft.filter(a => inSelectedBase(selectedBase, a.currentBaseId)), [allAircraft, selectedBase]);
   const { maintenanceRecords, isLoading } = useMaintenanceRecords();
   const { ftoSettings } = useFtoSettings();
 

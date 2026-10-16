@@ -36,6 +36,7 @@ function mapRow(row: Record<string, unknown>) {
     recordedBy: (row.recorded_by as string) || undefined,
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
+    baseId: row.base_id != null ? String(row.base_id) : undefined,
   };
 }
 
@@ -47,11 +48,13 @@ export async function GET(request: Request) {
   const date = searchParams.get('date');
   const from = searchParams.get('from');
   const to = searchParams.get('to');
+  const baseId = searchParams.get('baseId'); // multi-base M5: optional; missing = every base
 
   let query = supabaseAdmin.from('ba_tests').select('*').order('test_date', { ascending: false }).order('created_at', { ascending: true });
   if (date) query = query.eq('test_date', date);
   if (from) query = query.gte('test_date', from);
   if (to) query = query.lte('test_date', to);
+  if (baseId) query = query.eq('base_id', Number(baseId));
 
   const { data, error: dbError } = await query;
   if (dbError) {
@@ -93,6 +96,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'A Name is required.' }, { status: 400 });
   }
 
+  // Multi-base M5 (operator, 16 Oct): each test records its base — the aircraft's base when one is given,
+  // else the base the form was filled in at.
+  let baseId = Number(body.baseId ?? 1);
+  if (aircraftId) {
+    const { data: ac } = await supabaseAdmin.from('aircraft').select('current_base_id').eq('id', String(aircraftId)).maybeSingle();
+    if (ac) baseId = Number(ac.current_base_id ?? 1);
+  }
+  const { data: base } = Number.isInteger(baseId) && baseId > 0
+    ? await supabaseAdmin.from('bases').select('id').eq('id', baseId).maybeSingle() : { data: null };
+  if (!base) return NextResponse.json({ error: 'Pick a base.' }, { status: 400 });
+
   const { data, error: dbError } = await supabaseAdmin.from('ba_tests').insert({
     test_date: testDate,
     aircraft_id: aircraftId || null,
@@ -108,6 +122,7 @@ export async function POST(request: Request) {
     ba_percentage: typeof baPercentage === 'number' ? baPercentage : (baPercentage ? Number(baPercentage) : null),
     ba_equipment: baEquipment || null,
     recorded_by: session.user.name || session.user.email || 'Unknown',
+    base_id: baseId,
   }).select().single();
 
   if (dbError) {
