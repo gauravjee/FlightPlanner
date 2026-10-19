@@ -6,7 +6,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useAircraft } from '@/lib/hooks/useAircraft';
-import { useStudents } from '@/lib/hooks/useStudents';
+import { useStudents, useStudentCourses } from '@/lib/hooks/useStudents';
 import { useStudentFlightRecords } from '@/lib/hooks/useFlightRecords';
 import { useTrainingRequirements } from '@/lib/hooks/useTrainingRequirements';
 import { useSetHeader } from '@/components/ui/HeaderContext';
@@ -18,7 +18,7 @@ import { ChartColumn, TrendingUp, School, ArrowRight, Plane } from 'lucide-react
 import { isCrossCountrySortie, isInstrumentSortie, isNightSortie, isMultiEngineFlight, isSimulatorFlight } from '@/lib/flight-classification';
 import { matchTrainingProgram, requirementPercent } from '@/lib/training-programs';
 import { totalPicHours, totalSoloHours } from '@/lib/flight-hours';
-import { paceFor, paceLabel } from '@/lib/training-pace';
+import { paceFor, paceLabel, planFor, planLabel } from '@/lib/training-pace';
 
 // ============================================================
 // TRAINING STAGE REQUIREMENTS — built-in fallback defaults (DGCA/CAA
@@ -70,6 +70,7 @@ interface TrainingProgramRow {
   // student. See add-multi-engine-simulator-hours-to-training-programs.sql.
   multi_engine_hours: number | null;
   simulator_hours: number | null;
+  duration_months: number | null; // 19 Oct: planned course length (plan vs actual)
 }
 
 // ============================================================
@@ -191,6 +192,8 @@ export default function ProgressPage() {
   // already gets, per app/api/flight-records/route.ts), so staff and the
   // student now compute this page's totals from the same data.
   const { flightRecords: studentFlights } = useStudentFlightRecords(selectedStudentId || null);
+  // 19 Oct: the plan runs from the start of the student's current course.
+  const courseStart = useStudentCourses(selectedStudentId || null).find(c => c.outcome === 'IN_PROGRESS')?.startDate ?? null;
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -284,9 +287,11 @@ export default function ProgressPage() {
       // there is no required pace to compare against yet. See
       // lib/training-pace.ts.
       pace: paceFor(flights, totalHours, requirements.totalHours),
+      // 19 Oct: against the course plan (program length from the current course's start); null without one.
+      plan: planFor(totalHours, requirements.totalHours, courseStart, matchedProgram?.duration_months),
       overallPercent: 0,
     };
-  }, [studentFlights, selectedStudent, matchedProgram, aircraft]);
+  }, [studentFlights, selectedStudent, matchedProgram, aircraft, courseStart]);
 
   // Calculate overall progress — averages whichever metrics actually apply
   // to this student's program. The original six (Total/Solo/Cross-Country/
@@ -552,8 +557,15 @@ export default function ProgressPage() {
                         <span className="text-tertiary"> — around {new Date(stats.pace.projectedDate + 'T00:00:00').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</span>
                       )}
                     </p>
+                    {stats.plan && (
+                      <p className="text-sm mt-1" data-testid="plan-vs-actual"
+                        style={stats.plan.status === 'behind' || stats.plan.status === 'overdue' ? { color: 'var(--warning-text)' } : undefined}>
+                        <span className="text-tertiary">Against plan: </span>{planLabel(stats.plan)}
+                      </p>
+                    )}
                     <p className="text-[11px] text-tertiary mt-0.5">
                       Estimated from recent flying rate against the Total Hours target. Not a scheduled completion date.
+                      {stats.plan && ` The plan spreads the target evenly over the program's course length from the current course's start (ends ${stats.plan.endDate}).`}
                     </p>
                   </div>
                 </div>

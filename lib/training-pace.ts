@@ -18,6 +18,8 @@
 // Plan-based pace is a later addition — see the handoff — and when it
 // arrives it should sit ALONGSIDE this, not replace it: "behind plan" and
 // "not flying at all" are different problems with different fixes.
+// 19 Oct: it has — planFor() below, from training_programs.duration_months
+// and the start date of the student's current course (student_courses).
 //
 // WHAT IT IS HONEST ABOUT. A trailing-window rate is a weak estimator on
 // small samples, and flight training is lumpy — weather, unserviceable
@@ -153,4 +155,63 @@ export function paceLabel(p: Pace): string {
   if (p.farOff) return `${rate} — over 2 years to target at this rate (${sample})`;
   const weeks = Math.ceil(p.weeksRemaining as number);
   return `${rate} — ~${weeks} week${weeks === 1 ? '' : 's'} to target (${sample})`;
+}
+
+// ---------------------------------------------------------------------------
+// 19 Oct: plan vs actual. The plan is linear: the program's Total Hours target
+// spread evenly from the current course's start date over its planned length.
+// shortcut: a straight line ignores phases (ground school first, cross-country
+// late); a per-phase plan would need per-phase targets and dates.
+// ---------------------------------------------------------------------------
+
+export interface PlanPace {
+  status: 'ahead' | 'on_track' | 'behind' | 'overdue';
+  /** Hours the plan expects flown by asOf. */
+  expectedHours: number;
+  /** Actual minus expected: positive = ahead. */
+  deltaHours: number;
+  /** ISO date the plan ends (start + duration). */
+  endDate: string;
+}
+
+/** Hours either side of the plan that still count as on plan: 5% of the target, at least 2 h. */
+function planTolerance(targetHours: number): number {
+  return Math.max(2, targetHours * 0.05);
+}
+
+/**
+ * Where the student stands against the course plan, or null when there is no
+ * plan to measure against (no start date, no course length, no target) or the
+ * target is already met.
+ */
+export function planFor(
+  actualHours: number,
+  targetHours: number | null | undefined,
+  startDate: string | null | undefined,
+  durationMonths: number | null | undefined,
+  asOf: string = toISO(new Date()),
+): PlanPace | null {
+  if (!startDate || durationMonths == null || !(durationMonths > 0)) return null;
+  if (targetHours == null || !(targetHours > 0) || actualHours >= targetHours) return null;
+
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + durationMonths);
+  const now = new Date(asOf + 'T00:00:00');
+
+  const fraction = Math.min(1, Math.max(0, (now.getTime() - start.getTime()) / (end.getTime() - start.getTime())));
+  const expectedHours = targetHours * fraction;
+  const deltaHours = actualHours - expectedHours;
+  const tol = planTolerance(targetHours);
+  const status: PlanPace['status'] = now >= end ? 'overdue' : deltaHours > tol ? 'ahead' : deltaHours < -tol ? 'behind' : 'on_track';
+  return { status, expectedHours, deltaHours, endDate: toISO(end) };
+}
+
+/** One-line summary for the Progress page. */
+export function planLabel(p: PlanPace): string {
+  const expected = `expected ${p.expectedHours.toFixed(1)}h by today`;
+  if (p.status === 'overdue') return `Planned end ${p.endDate} has passed — ${(-p.deltaHours).toFixed(1)}h still to fly`;
+  if (p.status === 'ahead') return `${p.deltaHours.toFixed(1)}h ahead of plan (${expected})`;
+  if (p.status === 'behind') return `${(-p.deltaHours).toFixed(1)}h behind plan (${expected})`;
+  return `On plan (${expected})`;
 }

@@ -28,6 +28,7 @@ interface TrainingProgram {
   // apply to the program. See add-multi-engine-simulator-hours-to-training-programs.sql.
   multi_engine_hours: number | null;
   simulator_hours: number | null;
+  duration_months: number | null; // 19 Oct: planned course length, for plan-vs-actual on the Progress page
   description: string;
   is_active: boolean;
   sort_order: number;
@@ -40,6 +41,7 @@ const FIELDS: ConfigField[] = [
   { name: 'program_name', type: 'text', default: '', placeholder: 'Program Name (e.g., Private Pilot License)', required: true },
   { name: 'program_code', type: 'text', default: '', placeholder: 'Code (e.g., PPL)', required: true },
   { name: 'required_hours', type: 'number', default: 40, placeholder: 'Required Hours', integer: true },
+  { name: 'duration_months', type: 'number', default: null, placeholder: 'Course length, months (e.g., 9)', nullable: true, integer: true },
 
   // 2026-09-10: label only. The COLUMN stays solo_hours — the target
   // number a school configured hasn't changed meaning, only what the app
@@ -63,7 +65,7 @@ const FIELDS: ConfigField[] = [
 const COLUMNS: ConfigColumn<TrainingProgram>[] = [
   { header: 'Program', render: p => p.program_name, primary: true },
   { header: 'Code', render: p => <span className="badge badge-accent">{p.program_code}</span> },
-  { header: 'Hours', render: p => `${p.required_hours}h` },
+  { header: 'Hours', render: p => `${p.required_hours}h${p.duration_months ? ` in ${p.duration_months} mo` : ''}` },
   {
     header: 'Progress Targets',
     render: p => (
