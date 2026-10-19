@@ -32,6 +32,7 @@ interface ScheduleTemplateRow {
   // expected across every row for a given aircraft_model; the Engine Type
   // selector below keeps them in sync when changed.
   engine_type: string | null;
+  blocks_booking: boolean; // Maintenance Phase 2 (19 Oct): when OVERDUE, the aircraft can't be booked (admin override with a reason)
 }
 
 const ENGINE_TYPES = ['Single Engine', 'Multi Engine'];
@@ -87,6 +88,7 @@ export default function AircraftMaintenanceScheduleTab() {
     interval_value: 100,
     notes: '',
     is_active: true,
+    blocks_booking: false,
   });
 
   // ----- CSV bulk import state (2026-08-27) -----
@@ -152,7 +154,7 @@ export default function AircraftMaintenanceScheduleTab() {
 
   const resetForm = () => {
     setEditing(null);
-    setForm({ item_name: '', interval_type: 'HOBBS_HOURS', interval_value: 100, notes: '', is_active: true });
+    setForm({ item_name: '', interval_type: 'HOBBS_HOURS', interval_value: 100, notes: '', is_active: true, blocks_booking: false });
   };
 
   // Applies an Engine Type to EVERY existing row for the selected model in
@@ -204,6 +206,7 @@ export default function AircraftMaintenanceScheduleTab() {
       interval_value: row.interval_value,
       notes: row.notes || '',
       is_active: row.is_active,
+      blocks_booking: !!row.blocks_booking,
     });
   };
 
@@ -567,6 +570,17 @@ export default function AircraftMaintenanceScheduleTab() {
           <label className="text-sm text-secondary">Active (included in due-status calculations)</label>
         </div>
 
+        <div className="mb-3 flex items-center space-x-2">
+          <input
+            id="ms-blocks-booking"
+            type="checkbox"
+            checked={form.blocks_booking}
+            onChange={e => setForm(p => ({ ...p, blocks_booking: e.target.checked }))}
+            className="w-4 h-4"
+          />
+          <label htmlFor="ms-blocks-booking" className="text-sm text-secondary">Blocks booking when overdue (admin can override with a reason)</label>
+        </div>
+
         <div className="flex space-x-2">
           <button
             onClick={handleSave}
@@ -605,7 +619,10 @@ export default function AircraftMaintenanceScheduleTab() {
             <tbody className="text-secondary">
               {rowsForModel.map(row => (
                 <tr key={row.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
-                  <td className="py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{row.item_name}</td>
+                  <td className="py-3 font-medium" style={{ color: 'var(--text-primary)' }}>
+                    {row.item_name}
+                    {row.blocks_booking && <span className="badge badge-danger ml-2 text-xs">Blocks booking</span>}
+                  </td>
                   <td className="py-3 text-xs">
                     {row.interval_value} {row.interval_type === 'HOBBS_HOURS' ? 'hrs' : 'mo'}
                   </td>

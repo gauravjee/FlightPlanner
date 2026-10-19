@@ -211,6 +211,8 @@ export const ROSTER_EDIT_ROLES = ['admin', 'super_admin', 'operations'];
 // Who may book an instructor outside their duty hours on purpose (the
 // "Override roster" tick box) — operator decision: admin + super admin only.
 export const ROSTER_OVERRIDE_ROLES = ['admin', 'super_admin'];
+// Maintenance Phase 2 (19 Oct, operator): who may book an aircraft with an overdue blocking item, with a reason.
+export const MAINTENANCE_OVERRIDE_ROLES = ['admin', 'super_admin'];
 
 // 2026-09-24: staff master (B2; claude/staff-master-design-2026-09-24.md).
 // Admin + super admin manage staff records, including the encrypted ID

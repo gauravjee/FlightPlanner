@@ -16,7 +16,7 @@
 // boundary.
 
 import { NextResponse } from 'next/server';
-import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES, ROSTER_OVERRIDE_ROLES } from '@/lib/api-auth';
+import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES, ROSTER_OVERRIDE_ROLES, MAINTENANCE_OVERRIDE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { studentBookingRefusal } from '@/lib/student-server';
 import { flightHoursFromTimes } from '@/lib/flight-classification';
@@ -25,6 +25,7 @@ import { isOnApprovedLeave } from '@/lib/leave';
 import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
 import { rosterRefusal } from '@/lib/roster-server';
 import { instructorLeftBefore } from '@/lib/staff-server';
+import { overdueBlockingItems, maintenanceBlockMessage, overrideReasonFrom } from '@/lib/maintenance-block';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -124,7 +125,7 @@ export async function PATCH(request: Request, context: RouteContext) {
   // is already at the limit.
   if (['instructor_id', 'student_id', 'start_time', 'end_time', 'status', 'aircraft_id'].some(k => dbUpdates[k] !== undefined)) {
     const { data: current } = await supabaseAdmin.from('scheduled_flights')
-      .select('instructor_id, student_id, start_time, end_time, status, aircraft_id, base_id').eq('id', id).maybeSingle();
+      .select('instructor_id, student_id, start_time, end_time, status, aircraft_id, base_id, sortie_type, maintenance_override_reason').eq('id', id).maybeSingle();
     if (current) {
       // Multi-base M4b: a move (aircraft or time) puts the flight at its aircraft's current base, as on create.
       let baseId = Number(current.base_id ?? 1);
@@ -143,6 +144,27 @@ export async function PATCH(request: Request, context: RouteContext) {
         status: String(dbUpdates.status ?? current.status),
       };
       const instructorChanged = next.instructor !== String(current.instructor_id ?? '');
+
+      // Maintenance Phase 2 (19 Oct): same rule as booking when the flight moves onto an aircraft or time,
+      // or a cancelled flight comes back; the override reason follows where the flight now sits.
+      const aircraftMoved = ['aircraft_id', 'start_time', 'end_time'].some(k => dbUpdates[k] !== undefined)
+        || (current.status === 'CANCELLED' && next.status !== 'CANCELLED');
+      if (aircraftMoved && next.status !== 'CANCELLED' && String(dbUpdates.sortie_type ?? current.sortie_type) !== 'MAINTENANCE') {
+        const overdue = await overdueBlockingItems(String(dbUpdates.aircraft_id ?? current.aircraft_id));
+        let reason: string | null = null;
+        if (overdue.length) {
+          const msg = maintenanceBlockMessage(overdue);
+          const canOverride = MAINTENANCE_OVERRIDE_ROLES.includes(session.user.role ?? '');
+          // An override already given for this aircraft carries over when only the time moves (e.g. a drag on the board).
+          const kept = String(dbUpdates.aircraft_id ?? current.aircraft_id) === String(current.aircraft_id)
+            ? (current.maintenance_override_reason as string | null) : null;
+          reason = (canOverride ? overrideReasonFrom(body) : null) ?? kept;
+          if (!reason) {
+            return NextResponse.json({ error: canOverride ? `${msg} Give an override reason (at least 5 characters) to book anyway.` : msg }, { status: 403 });
+          }
+        }
+        dbUpdates.maintenance_override_reason = reason;
+      }
 
       // 2026-09-23: same minimum the booking form enforces, only when the
       // times change (an older short flight can still get a notes edit).

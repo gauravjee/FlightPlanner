@@ -17,7 +17,7 @@
 // scheduled_flights with no server-side check whatsoever.
 
 import { NextResponse } from 'next/server';
-import { requireScheduleCreateAccess, requireSession, ROSTER_OVERRIDE_ROLES } from '@/lib/api-auth';
+import { requireScheduleCreateAccess, requireSession, ROSTER_OVERRIDE_ROLES, MAINTENANCE_OVERRIDE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { studentBookingRefusal } from '@/lib/student-server';
 // 2026-09-23 (leave/vacation enforcement): only used in the student
@@ -30,6 +30,7 @@ import { dailyLimitRefusal } from '@/lib/daily-limit';
 import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
 import { rosterRefusal } from '@/lib/roster-server';
 import { instructorLeftBefore } from '@/lib/staff-server';
+import { overdueBlockingItems, maintenanceBlockMessage, overrideReasonFrom } from '@/lib/maintenance-block';
 
 // GET added 2026-09-18 (RLS remediation Step 3 — see
 // claude/rls-remediation-progress-2026-09-18.md): reads used to be direct
@@ -111,6 +112,21 @@ export async function POST(request: Request) {
   const { data: bookedAircraft } = await supabaseAdmin.from('aircraft').select('current_base_id').eq('id', String(aircraftId)).maybeSingle();
   if (!bookedAircraft) return NextResponse.json({ error: 'Aircraft not found.' }, { status: 400 });
   const baseId = Number(bookedAircraft.current_base_id ?? 1);
+
+  // Maintenance Phase 2 (19 Oct): an overdue "blocks booking" item stops the booking (a maintenance
+  // sortie is exempt); admin / super_admin may override with a reason, which the booking keeps.
+  let maintenanceOverrideReason: string | null = null;
+  if (sortieType !== 'MAINTENANCE') {
+    const overdue = await overdueBlockingItems(String(aircraftId));
+    if (overdue.length) {
+      const msg = maintenanceBlockMessage(overdue);
+      if (!MAINTENANCE_OVERRIDE_ROLES.includes(session.user.role ?? '')) return NextResponse.json({ error: msg }, { status: 403 });
+      maintenanceOverrideReason = overrideReasonFrom(body);
+      if (!maintenanceOverrideReason) {
+        return NextResponse.json({ error: `${msg} Give an override reason (at least 5 characters) to book anyway.` }, { status: 403 });
+      }
+    }
+  }
 
   // 2026-09-22 (student self-booking): everything the client sent for
   // studentId/instructorId/status is untrusted here specifically because
@@ -245,6 +261,7 @@ export async function POST(request: Request) {
     notam_briefed: notamBriefed || false,
     notes: notes || '',
     roster_override: rosterOverride,
+    maintenance_override_reason: maintenanceOverrideReason,
     base_id: baseId,
   });
 
