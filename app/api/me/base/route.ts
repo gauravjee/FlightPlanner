@@ -13,8 +13,13 @@ export async function GET() {
     .select('staff_member_id, student_id').eq('email', session.user.email ?? '').maybeSingle();
   let homeBaseId: number | null = null;
   if (user?.staff_member_id) {
-    const { data } = await supabaseAdmin.from('staff_members').select('home_base_id').eq('id', user.staff_member_id).maybeSingle();
-    homeBaseId = data?.home_base_id ?? null;
+    // An instructor's home base is edited on the Instructors page (instructors.home_base_id), so it wins
+    // over the staff record's; other staff use the staff record.
+    const [{ data: instructor }, { data: staff }] = await Promise.all([
+      supabaseAdmin.from('instructors').select('home_base_id').eq('staff_member_id', user.staff_member_id).maybeSingle(),
+      supabaseAdmin.from('staff_members').select('home_base_id').eq('id', user.staff_member_id).maybeSingle(),
+    ]);
+    homeBaseId = instructor?.home_base_id ?? staff?.home_base_id ?? null;
   } else if (user?.student_id) {
     const { data } = await supabaseAdmin.from('students').select('home_base_id').eq('id', user.student_id).maybeSingle();
     homeBaseId = data?.home_base_id ?? null;

@@ -20,6 +20,7 @@ import { daysFromTodayIST } from '@/lib/ist';
 import AircraftReadingCorrection from '@/components/aircraft/AircraftReadingCorrection';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
 import { newRecordBaseId } from '@/lib/bases';
+import HomeBaseSelect from '@/components/ui/HomeBaseSelect';
 
 // ============================================================
 // TYPE DEFINITIONS
@@ -77,7 +78,9 @@ const getDefaultForm = () => ({
 });
 
 export default function AircraftSetupTab() {
-  const { selected: selectedBase } = useSelectedBase(); // multi-base M3: new aircraft start at the header's base
+  const { selected: selectedBase, multiBase } = useSelectedBase(); // multi-base M3: new aircraft start at the header's base
+  const [pickedBase, setPickedBase] = useState(''); // changed with the Base picker; '' = the header's base
+  const newBase = pickedBase || newRecordBaseId(selectedBase) || '';
   // 2026-08-28 (SWR migration, Stage 1): this tab used to run its own
   // independent `supabase.from('aircraft').select('*')` fetch here — a
   // second read path for the same table as app/dashboard/aircraft/page.tsx,
@@ -213,7 +216,7 @@ export default function AircraftSetupTab() {
       if (!(await updateAircraftRemote(String(editing.id), payload))) return; // error already shown; keep the form open
       setSuccessMessage('Aircraft updated!');
     } else {
-      if (!(await addAircraftRemote({ ...payload, currentBaseId: newRecordBaseId(selectedBase) } as Omit<SharedAircraft, 'id'>))) return;
+      if (!(await addAircraftRemote({ ...payload, currentBaseId: newBase || undefined } as Omit<SharedAircraft, 'id'>))) return;
       setSuccessMessage('Aircraft added!');
     }
 
@@ -504,6 +507,13 @@ export default function AircraftSetupTab() {
             />
           </div>
         </div>
+
+        {!editing && multiBase && (
+          <div className="mb-3 max-w-xs">
+            <HomeBaseSelect id="as-base" label="Base" value={newBase} onChange={setPickedBase} className={inputClass}
+              labelClassName="block text-xs text-tertiary mb-1" />
+          </div>
+        )}
 
         {/* Action Buttons */}
         <div className="flex space-x-2">

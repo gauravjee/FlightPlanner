@@ -8,6 +8,9 @@ import { FUEL_BURN_RATE_BY_TYPE_LPH, DEFAULT_FUEL_BURN_RATE_LPH, deriveModelEngi
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { daysFromTodayIST } from '@/lib/ist';
 import AircraftReadingCorrection from '@/components/aircraft/AircraftReadingCorrection';
+import HomeBaseSelect from '@/components/ui/HomeBaseSelect';
+import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
+import { newRecordBaseId } from '@/lib/bases';
 
 // 2026-08-26: sentinel value for the "Other" option in the Model dropdown
 // below — never written to form.model itself, only used to decide whether
@@ -39,6 +42,7 @@ interface Props {
 export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) {
   useEscapeToClose(onClose);
   const isEditing = !!aircraft;
+  const { selected: selectedBase } = useSelectedBase();
 
   // The parent only ever renders this modal conditionally ({showForm &&
   // <AircraftFormModal .../>}), so `aircraft` is fixed for this instance's
@@ -61,6 +65,7 @@ export default function AircraftFormModal({ aircraft, onSave, onClose }: Props) 
           status: 'ACTIVE',
           nextMaintenance: daysFromTodayIST(30),
           isSimulator: false,
+          currentBaseId: newRecordBaseId(selectedBase), // multi-base: starts at the header base; changeable below
         }
   );
 
@@ -463,6 +468,11 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
           </div>
 
           {/* Buttons */}
+          {!isEditing && (
+            <HomeBaseSelect id="ac-base" label="Base" value={form.currentBaseId ?? ''} className={inputClass}
+              labelClassName="block text-sm text-secondary mb-1" onChange={v => setForm(p => ({ ...p, currentBaseId: v }))} />
+          )}
+
           <div className="flex space-x-3 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
             <button
               type="button"

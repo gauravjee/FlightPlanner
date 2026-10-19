@@ -75,7 +75,7 @@ export default function AircraftPage() {
         ...(currentFuel !== editingAircraft.currentFuel && { currentFuel }),
       });
     } else {
-      ok = await addAircraft({ ...ac, currentBaseId: newRecordBaseId(selectedBase) });
+      ok = await addAircraft({ ...ac, currentBaseId: ac.currentBaseId || newRecordBaseId(selectedBase) });
     }
     if (ok) {
       setShowForm(false);

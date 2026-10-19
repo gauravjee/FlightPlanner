@@ -7,7 +7,8 @@ import { useSession } from 'next-auth/react';
 import { useBases } from '@/lib/hooks/useBases';
 import { resolveSelectedBase, ALL_BASES, type SelectedBase } from '@/lib/bases';
 
-const storageKey = (email: string) => `fp-selected-base:${email}`;
+// Keyed by home base too: when someone's home base changes, their old choice no longer applies.
+const storageKey = (email: string, home: number | null) => `fp-selected-base:${email}:${home ?? 'none'}`;
 const readStored = (key: string): string | null => { try { return localStorage.getItem(key); } catch { return null; } };
 
 export function useSelectedBase() {
@@ -16,13 +17,14 @@ export function useSelectedBase() {
   const { activeBases, multiBase } = useBases();
   const { data: me } = useSWR(email && multiBase ? '/api/me/base' : null, (u: string) => fetch(u).then(r => r.json()));
   // SWR as a tiny shared store, so every component sees a change from the header at once.
-  const { data: stored, mutate } = useSWR(email ? ['selectedBase', email] : null, () => readStored(storageKey(email)));
+  const home: number | null = me?.homeBaseId ?? null;
+  const { data: stored, mutate } = useSWR(email ? ['selectedBase', email, home] : null, () => readStored(storageKey(email, home)));
 
   const selected: SelectedBase = resolveSelectedBase(
-    stored ?? null, activeBases.map(b => b.id), session?.user?.role, me?.homeBaseId ?? null,
+    stored ?? null, activeBases.map(b => b.id), session?.user?.role, home,
   );
   const setSelected = (value: SelectedBase) => {
-    try { localStorage.setItem(storageKey(email), String(value)); } catch { /* private mode: not remembered */ }
+    try { localStorage.setItem(storageKey(email, home), String(value)); } catch { /* private mode: not remembered */ }
     mutate(String(value), { revalidate: false });
   };
   const selectedBase = selected === ALL_BASES ? null : activeBases.find(b => b.id === selected) ?? null;

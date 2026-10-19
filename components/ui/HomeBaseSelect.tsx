@@ -11,15 +11,16 @@ interface Props {
   onChange: (value: string) => void;
   className: string;
   labelClassName: string;
+  label?: string; // 'Base' for an aircraft
 }
 
-export default function HomeBaseSelect({ id, value, onChange, className, labelClassName }: Props) {
+export default function HomeBaseSelect({ id, value, onChange, className, labelClassName, label = 'Home base' }: Props) {
   const { bases, multiBase } = useBases();
   if (!multiBase) return null;
   const shown = value || String(BASE1_ID);
   return (
     <div>
-      <label htmlFor={id} className={labelClassName}>Home base</label>
+      <label htmlFor={id} className={labelClassName}>{label}</label>
       <select id={id} value={shown} onChange={e => onChange(e.target.value)} className={className}>
         {bases.filter(b => b.is_active || String(b.id) === shown).map(b => (
           <option key={b.id} value={b.id}>{b.name}{b.is_active ? '' : ' (inactive)'}</option>
