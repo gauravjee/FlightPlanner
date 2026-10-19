@@ -26,6 +26,7 @@
 'use client';
 
 import { useState, useMemo, useEffect } from 'react';
+import useSWR from 'swr';
 import {
   getAircraftBufferMinutes, parseTurnaroundBufferSetting,
   MIN_FLIGHT_DURATION_MIN, FLIGHT_DURATION_INCREMENT_MIN,
@@ -47,7 +48,7 @@ import { effectiveDailyLimit, exceedsDailyLimit } from '@/lib/instructor-status'
 import { useSession } from 'next-auth/react';
 import { useRoster } from '@/lib/hooks/useRoster';
 import { dutyWindow, flightFitsDuty, describeWindow, dutySourceNote } from '@/lib/roster';
-import { ROSTER_VIEW_ROLES, ROSTER_OVERRIDE_ROLES } from '@/lib/permissions';
+import { ROSTER_VIEW_ROLES, ROSTER_OVERRIDE_ROLES, MAINTENANCE_OVERRIDE_ROLES } from '@/lib/permissions';
 import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
@@ -456,6 +457,22 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
   const canOverrideRoster = ROSTER_OVERRIDE_ROLES.includes(role);
   const { weekly: rosterWeekly, exceptions: rosterExceptions } = useRoster(ROSTER_VIEW_ROLES.includes(role));
   const [rosterOverride, setRosterOverride] = useState(false);
+
+  // Maintenance Phase 2 (19 Oct): overdue "blocks booking" items on the picked aircraft (the server re-checks).
+  // Admin / super_admin may override with a reason; one already given carries over while the aircraft is unchanged.
+  const { data: mxBlock } = useSWR<{ items: string[] }>(
+    form.aircraftId && !isMaintenance ? ['maintenance-block', form.aircraftId] : null,
+    () => fetch(`/api/aircraft/${form.aircraftId}/maintenance-block`).then(r => (r.ok ? r.json() : { items: [] })),
+  );
+  const mxItems = mxBlock?.items ?? [];
+  const canOverrideMaintenance = MAINTENANCE_OVERRIDE_ROLES.includes(role);
+  const [mxReason, setMxReason] = useState('');
+  const mxKept = existingFlight && String(existingFlight.aircraftId) === String(form.aircraftId) ? existingFlight.maintenanceOverrideReason : null;
+  // An edit is only checked when the flight moves (aircraft or times), same as the server.
+  const mxMoved = !existingFlight || (String(existingFlight.aircraftId) !== String(form.aircraftId)
+    || new Date(`${form.date}T${form.startTime}:00+05:30`).getTime() !== new Date(existingFlight.startTime).getTime()
+    || new Date(`${form.date}T${form.endTime}:00+05:30`).getTime() !== new Date(existingFlight.endTime).getTime());
+  const mxBlocked = mxMoved && mxItems.length > 0 && !mxKept && !(canOverrideMaintenance && mxReason.trim().length >= 5);
   const rosterMessage = useMemo(() => {
     if (isSolo || !form.instructorId || !form.date || !form.startTime || !form.endTime) return '';
     const startIso = new Date(`${form.date}T${form.startTime}:00+05:30`).toISOString();
@@ -756,6 +773,12 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     // Duty roster — blocked unless admin/super_admin ticked the override (server re-checks).
     if (rosterMessage && !(canOverrideRoster && rosterOverride)) { setError(rosterMessage.replace('⛔', '❌')); return; }
 
+    // Maintenance block — admin / super_admin may override with a reason (server re-checks).
+    if (mxBlocked) {
+      setError(`❌ This aircraft is overdue for ${mxItems.join(', ')}.${canOverrideMaintenance ? ' Give an override reason (at least 5 characters) to book anyway.' : ''}`);
+      return;
+    }
+
     // 2026-09-23 (leave/vacation enforcement): hard stop — checked fresh here
     // rather than trusting the effect-derived banner, which can be a beat
     // stale if the date was just changed. Server re-checks in both
@@ -865,6 +888,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
           || startIST.getTime() !== new Date(existingFlight.startTime).getTime()
           || endIST.getTime() !== new Date(existingFlight.endTime).getTime())
           ? { rosterOverride: !!rosterMessage && rosterOverride } : {}),
+        ...(moved && mxItems.length && mxReason.trim() ? { maintenanceOverrideReason: mxReason.trim() } : {}),
         instructorId: isSolo ? '' : form.instructorId,
         studentId: isMaintenance ? undefined : form.studentId,
         sortieType: form.sortieType,
@@ -892,6 +916,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
         weatherBriefed: false,         
         notamBriefed: false,           
         rosterOverride: !!rosterMessage && rosterOverride,
+        maintenanceOverrideReason: mxItems.length ? mxReason.trim() || null : null,
       });
       setLoading(false);
       if (result.success) { onSuccess(result.message); } else { setError(result.message); }
@@ -1110,6 +1135,18 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                 🔴 {bookedAircraft.length} aircraft booked ({turnaroundMin}-min turnaround, +{FUELING_BUFFER_MIN} min if fuel ≤ {LOW_FUEL_THRESHOLD_L}L)
               </p>
             )}
+            {mxItems.length > 0 && (
+              <>
+                <p role="alert" className="text-xs text-red-400 mt-1" data-testid="maintenance-block">
+                  ⛔ Overdue maintenance: {mxItems.join(', ')}.{mxKept ? ` Booked with an override: "${mxKept}".` : ''}
+                </p>
+                {canOverrideMaintenance && !mxKept && (
+                  <input type="text" value={mxReason} onChange={e => setMxReason(e.target.value)} maxLength={500}
+                    aria-label="Maintenance override reason" placeholder="Override reason (the booking is marked)"
+                    className="w-full surface-inner rounded-lg px-3 py-2 mt-1 text-xs" />
+                )}
+              </>
+            )}
           </div>
 
           {/* ===== STUDENT ===== */}
@@ -1239,6 +1276,21 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
                   return <option key={ex.short_code} value={label} title={ex.full_description}>{label}</option>;
                 })}
               </select>
+              {(() => {
+                const ex = exercises.find(x => `${x.short_code} - ${x.exercise_name}` === form.exercise);
+                if (!ex || (!ex.briefing_notes && !ex.reference_url)) return null;
+                return (
+                  <div className="mt-2 text-xs text-secondary surface-inner rounded-lg px-3 py-2" data-testid="exercise-guidance">
+                    {ex.briefing_notes && <p className="whitespace-pre-line">{ex.briefing_notes}</p>}
+                    {/* only http(s) links render (the DB check enforces it too) */}
+                    {ex.reference_url && /^https?:\/\//i.test(ex.reference_url) && (
+                      <a href={ex.reference_url} target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--accent)' }}>
+                        Open SOP / video
+                      </a>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

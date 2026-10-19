@@ -35,6 +35,8 @@ export interface Exercise {
   exercise_name: string;
   short_code: string;
   full_description: string;
+  briefing_notes: string | null;
+  reference_url: string | null;
 }
 
 export const exercisesKey = ['exercises'] as const;
@@ -51,6 +53,8 @@ export async function fetchExercises(): Promise<Exercise[]> {
     exercise_name: row.exercise_name as string,
     short_code: row.short_code as string,
     full_description: row.full_description as string,
+    briefing_notes: (row.briefing_notes as string | null) ?? null,
+    reference_url: (row.reference_url as string | null) ?? null,
   }));
 }
 

@@ -64,14 +64,14 @@ import { BASE1_ID, baseRowError, isBaseSettingKey, settingToBaseValue, baseToSet
 const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
   exercises: {
     dbTable: 'exercises',
-    columns: ['exercise_name', 'short_code', 'full_description', 'is_active', 'sort_order'],
+    columns: ['exercise_name', 'short_code', 'full_description', 'is_active', 'sort_order', 'briefing_notes', 'reference_url'],
   },
   'training-programs': {
     dbTable: 'training_programs',
     columns: [
       'program_name', 'program_code', 'required_hours',
       'solo_hours', 'cross_country_hours', 'instrument_hours', 'night_hours', 'landings_required',
-      'multi_engine_hours', 'simulator_hours', 'description', 'is_active', 'sort_order',
+      'multi_engine_hours', 'simulator_hours', 'description', 'is_active', 'sort_order', 'duration_months',
     ],
   },
   'instructor-roles': {
@@ -111,7 +111,7 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
   'aircraft-maintenance-schedule': {
     dbTable: 'aircraft_maintenance_schedule_templates',
     // engine_type added 2026-08-27 — see add-schedule-template-engine-type.sql.
-    columns: ['aircraft_model', 'item_name', 'interval_type', 'interval_value', 'notes', 'is_active', 'engine_type'],
+    columns: ['aircraft_model', 'item_name', 'interval_type', 'interval_value', 'notes', 'is_active', 'engine_type', 'blocks_booking'],
   },
   // FTO Settings (2026-09-18, RLS exposure remediation — see
   // claude/rls-exposure-2026-09-18.md) — a flat key-value table

@@ -17,6 +17,8 @@ interface Exercise {
   exercise_name: string;
   short_code: string;
   full_description: string;
+  briefing_notes: string | null;
+  reference_url: string | null;
   is_active: boolean;
   sort_order: number;
 }
@@ -39,6 +41,8 @@ export default function ExercisesTab() {
     exercise_name: '',
     short_code: '',
     full_description: '',
+    briefing_notes: '',
+    reference_url: '',
     is_active: true,
     sort_order: 99,
   });
@@ -102,12 +106,19 @@ export default function ExercisesTab() {
   // role-checked route instead.
   const handleSave = async () => {
     if (!form.exercise_name || !form.short_code) return;
+    const url = form.reference_url.trim();
+    if (url && !/^https?:\/\/\S+$/i.test(url)) {
+      notify('The SOP / video link must start with http:// or https://');
+      return;
+    }
+    const payload = { ...form, briefing_notes: form.briefing_notes.trim() || null, reference_url: url || null };
 
+    let res: Response;
     if (editing) {
-      await fetch('/api/admin/config/exercises', {
+      res = await fetch('/api/admin/config/exercises', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editing.id, ...form }),
+        body: JSON.stringify({ id: editing.id, ...payload }),
       });
     } else {
       // Check for duplicate short code
@@ -123,15 +134,20 @@ export default function ExercisesTab() {
         notify('An exercise with this short code already exists!');
         return;
       }
-      await fetch('/api/admin/config/exercises', {
+      res = await fetch('/api/admin/config/exercises', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       });
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      notify(err.error || 'Could not save the exercise.');
+      return;
     }
 
     setEditing(null);
-    setForm({ exercise_name: '', short_code: '', full_description: '', is_active: true, sort_order: 99 });
+    setForm({ exercise_name: '', short_code: '', full_description: '', briefing_notes: '', reference_url: '', is_active: true, sort_order: 99 });
     loadExercises();
   };
 
@@ -142,6 +158,8 @@ export default function ExercisesTab() {
       exercise_name: exercise.exercise_name,
       short_code: exercise.short_code,
       full_description: exercise.full_description,
+      briefing_notes: exercise.briefing_notes ?? '',
+      reference_url: exercise.reference_url ?? '',
       is_active: exercise.is_active,
       sort_order: exercise.sort_order,
     });
@@ -172,7 +190,7 @@ export default function ExercisesTab() {
 
   // Downloadable CSV template — columns match what handleCsvUpload expects.
   const downloadTemplate = () => {
-    const csv = 'exercise_name,short_code,full_description,sort_order,is_active\nCircuits & Landings,CCTS,CCTS - Circuits & Landings,10,true\n';
+    const csv = 'exercise_name,short_code,full_description,sort_order,is_active,briefing_notes,reference_url\nCircuits & Landings,CCTS,CCTS - Circuits & Landings,10,true,,\n';
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -199,7 +217,7 @@ export default function ExercisesTab() {
         const rows = results.data as Record<string, string>[];
         const existingCodes = new Set(exercises.map(ex => ex.short_code.toUpperCase()));
         const seenInBatch = new Set<string>();
-        const toInsert: (typeof form)[] = [];
+        const toInsert: (Omit<typeof form, 'briefing_notes' | 'reference_url'> & { briefing_notes: string | null; reference_url: string | null })[] = [];
         const skipped: CsvImportResult['skipped'] = [];
 
         rows.forEach((row, idx) => {
@@ -214,12 +232,19 @@ export default function ExercisesTab() {
             skipped.push({ row: rowNum, short_code, reason: 'Duplicate short_code — already exists' });
             return;
           }
+          const refUrl = (row.reference_url || '').trim();
+          if (refUrl && !/^https?:\/\/\S+$/i.test(refUrl)) {
+            skipped.push({ row: rowNum, short_code, reason: 'reference_url must start with http:// or https://' });
+            return;
+          }
           seenInBatch.add(short_code);
           const sortOrder = parseInt(row.sort_order, 10);
           toInsert.push({
             exercise_name,
             short_code,
             full_description: (row.full_description || '').trim(),
+            briefing_notes: (row.briefing_notes || '').trim() || null,
+            reference_url: refUrl || null,
             is_active: row.is_active === undefined || row.is_active === '' ? true : /^(true|1|yes)$/i.test(row.is_active.trim()),
             sort_order: Number.isFinite(sortOrder) ? sortOrder : 99,
           });
@@ -338,6 +363,30 @@ export default function ExercisesTab() {
           />
         </div>
 
+        {/* Briefing notes + SOP / video link: shown on the booking form when this exercise is picked */}
+        <div className="mb-3">
+          <label htmlFor="ex-notes" className="block text-xs text-tertiary mb-1">Briefing notes (shown when booking)</label>
+          <textarea
+            id="ex-notes"
+            rows={3}
+            placeholder="Aim, key points, completion standard"
+            value={form.briefing_notes}
+            onChange={e => setForm(p => ({ ...p, briefing_notes: e.target.value }))}
+            className={inputClass}
+          />
+        </div>
+        <div className="mb-3">
+          <label htmlFor="ex-url" className="block text-xs text-tertiary mb-1">SOP / video link</label>
+          <input
+            id="ex-url"
+            type="url"
+            placeholder="https://..."
+            value={form.reference_url}
+            onChange={e => setForm(p => ({ ...p, reference_url: e.target.value }))}
+            className={inputClass}
+          />
+        </div>
+
         {/* Active Toggle */}
         <div className="flex items-center space-x-2 mb-3">
           <input
@@ -362,7 +411,7 @@ export default function ExercisesTab() {
             <button
               onClick={() => {
                 setEditing(null);
-                setForm({ exercise_name: '', short_code: '', full_description: '', is_active: true, sort_order: 99 });
+                setForm({ exercise_name: '', short_code: '', full_description: '', briefing_notes: '', reference_url: '', is_active: true, sort_order: 99 });
               }}
               className="px-4 py-2 rounded-lg text-sm transition surface-inner"
             >
@@ -378,7 +427,7 @@ export default function ExercisesTab() {
           <Upload className="w-3.5 h-3.5" /> Bulk Import (CSV)
         </h3>
         <p className="text-xs text-tertiary mb-3">
-          Upload a CSV with columns <code>exercise_name, short_code, full_description, sort_order, is_active</code>.
+          Upload a CSV with columns <code>exercise_name, short_code, full_description, sort_order, is_active</code> (optional: <code>briefing_notes, reference_url</code>).
           New rows are added; rows with a short_code that already exists are skipped and reported below.
         </p>
         <div className="flex items-center gap-2 flex-wrap">
@@ -466,6 +515,7 @@ export default function ExercisesTab() {
                   <td className="py-3" style={{ color: 'var(--text-primary)' }}>{exercise.exercise_name}</td>
                   <td className="py-3 text-xs text-tertiary max-w-[300px] truncate">
                     {exercise.full_description || '—'}
+                    {exercise.reference_url && <span className="ml-1" title={exercise.reference_url}>🔗</span>}
                   </td>
                   <td className="py-3 text-xs">{exercise.sort_order}</td>
                   <td className="py-3">
