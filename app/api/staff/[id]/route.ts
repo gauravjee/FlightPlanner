@@ -73,6 +73,11 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'Saved, but the change could not be written to the ID-document log. Tell your super admin.' }, { status: 500 });
   }
   const staff = toStaffMember(data as Record<string, unknown>);
+  // Multi-base: keep the linked instructor profile's home base the same (bookings, status and login read it).
+  if ('home_base_id' in parsed.data && staff.instructorId !== null) {
+    const { error: baseError } = await supabaseAdmin.from('instructors').update({ home_base_id: parsed.data.home_base_id }).eq('id', String(staff.instructorId));
+    if (baseError) console.error('Error copying home base to the instructor profile:', baseError.code);
+  }
 
   // B2 S3b: bookings aren't cancelled when a last working day is set — list
   // this instructor's flights after 17:00 IST that day so someone can move them.

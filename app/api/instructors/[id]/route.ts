@@ -92,7 +92,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
   }
 
-  const { data: rows, error: dbError } = await supabaseAdmin.from('instructors').update(dbUpdates).eq('id', id).select('id');
+  const { data: rows, error: dbError } = await supabaseAdmin.from('instructors').update(dbUpdates).eq('id', id).select('id, staff_member_id');
 
   if (dbError) {
     console.error('Error updating instructor:', dbError);
@@ -108,6 +108,12 @@ export async function PATCH(request: Request, context: RouteContext) {
 
   if (!rows?.length) {
     return NextResponse.json({ error: 'Instructor not found.' }, { status: 404 });
+  }
+
+  // Multi-base: keep the linked staff record's home base the same (the Staff page shows it).
+  if (dbUpdates.home_base_id !== undefined && rows[0].staff_member_id) {
+    const { error: baseError } = await supabaseAdmin.from('staff_members').update({ home_base_id: dbUpdates.home_base_id }).eq('id', rows[0].staff_member_id);
+    if (baseError) console.error('Error copying home base to the staff record:', baseError.code);
   }
 
   return NextResponse.json({ success: true });

@@ -109,6 +109,11 @@ export async function POST(request: Request) {
     if (link.created) await removeNewStaff(link.staffMemberId);
     return NextResponse.json({ error: 'Failed to create instructor.' }, { status: 500 });
   }
+  // Multi-base: the linked staff record carries the same home base (login and the Staff page read it).
+  if (homeBaseId && link.staffMemberId) {
+    const { error: baseError } = await supabaseAdmin.from('staff_members').update({ home_base_id: Number(homeBaseId) }).eq('id', link.staffMemberId);
+    if (baseError) console.error('Error copying home base to the staff record:', baseError.code);
+  }
 
   return NextResponse.json({ instructor: data });
 }
