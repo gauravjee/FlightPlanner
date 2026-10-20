@@ -4,9 +4,9 @@
 //
 // This is the source list an aircraft's Model field is chosen from (see
 // AircraftFormModal.tsx / AircraftSetupTab.tsx) and what
-// computeMaintenanceDueItems() in lib/store.ts reads to work out
-// due/overdue status per aircraft. Phase 1 scope only: warnings, no
-// scheduling block — see add-aircraft-maintenance-schedule.sql's header.
+// computeMaintenanceDueItems() in lib/maintenance-due.ts reads to work out
+// due/overdue status per aircraft. Phase 2 (19 Oct): an item ticked "Blocks
+// booking" stops bookings while OVERDUE (lib/maintenance-block.ts).
 //
 // Modeled directly on RequirementsTab.tsx's "grouped by parent selector"
 // pattern (program_code selector -> aircraft_model selector here).
@@ -379,7 +379,7 @@ export default function AircraftMaintenanceScheduleTab() {
       <p className="text-sm text-secondary mb-4">
         Define recurring maintenance items (engine overhaul, inspections, etc.) per aircraft model.
         These populate the Aircraft Model dropdown and drive due/overdue warnings on the Maintenance page
-        (Phase 1: warnings only — this does not block scheduling).
+        Only items ticked &ldquo;Blocks booking&rdquo; stop bookings while overdue; an admin can override with a reason.
       </p>
 
       {/* Bulk Import (CSV) — 2026-08-27, same download-template/upload-back
