@@ -135,6 +135,11 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
     // 2026-09-24 (B2 S3a): + the staff record the engineer belongs to.
     columns: ['name', 'license_no', 'is_active', 'staff_member_id'],
   },
+  // Billing B2 (21 Oct): course packages (fee + included hours per program). See BillingTab.tsx.
+  'course-packages': {
+    dbTable: 'course_packages',
+    columns: ['program_id', 'name', 'fee', 'gst_rate', 'se_hours', 'me_hours', 'sim_hours', 'is_active'],
+  },
   // Billing B1 (21 Oct): school hourly rates per category. The three rows are seeded by billing-b1.sql;
   // only the rate and GST % change here (no adds or deletes, refused below).
   'billing-rates': {
@@ -389,6 +394,7 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   if (dbError) {
     console.error(`Error deleting from ${config.dbTable}:`, dbError);
+    if (dbError.code === '23503') return NextResponse.json({ error: "This is still in use, so it can't be deleted. Make it inactive instead." }, { status: 409 });
     return NextResponse.json({ error: 'Failed to delete.' }, { status: 500 });
   }
 

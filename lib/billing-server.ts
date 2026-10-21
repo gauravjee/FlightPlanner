@@ -3,7 +3,11 @@
 // low-balance booking check. Billing never blocks the logbook: a failed charge is logged, not thrown.
 
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { BILLING_CATEGORIES, categoryFor, priceHours, balanceOf, round2, formatINR, type BillingCategory } from '@/lib/billing';
+import {
+  BILLING_CATEGORIES, CATEGORY_HOURS_FIELD, categoryFor, priceHours, balanceOf, round2, formatINR, splitHours, dueNow,
+  type BillingCategory,
+} from '@/lib/billing';
+import { todayIST } from '@/lib/ist';
 
 export interface EffectiveRate { category: BillingCategory; hourlyRate: number; gstRate: number; override: boolean }
 
@@ -25,30 +29,75 @@ export async function ratesFor(studentId: string): Promise<EffectiveRate[]> {
   });
 }
 
-/** Charge a student for a saved logbook entry (logbook flight time × their rate). Idempotent per entry. */
+type ByCategory = Record<BillingCategory, number>;
+export interface ActivePackage {
+  id: number; name: string; agreedFee: number; gstRate: number; assignedAt: string; note: string | null;
+  included: ByCategory; used: ByCategory; left: ByCategory;
+  instalments: { id: number; due_date: string; amount: number }[];
+}
+
+/** B2: the student's active package with hours used / left per category and its instalment plan; null if none. */
+export async function activePackage(studentId: string): Promise<ActivePackage | null> {
+  const { data: sp } = await supabaseAdmin.from('student_packages').select('*').eq('student_id', studentId).eq('status', 'ACTIVE').maybeSingle();
+  if (!sp) return null;
+  const [{ data: usage }, { data: plan }] = await Promise.all([
+    supabaseAdmin.from('package_usage').select('category, hours').eq('student_package_id', sp.id),
+    supabaseAdmin.from('package_instalments').select('id, due_date, amount').eq('student_package_id', sp.id).order('due_date'),
+  ]);
+  const per = (f: (c: BillingCategory) => number) => Object.fromEntries(BILLING_CATEGORIES.map(c => [c, round2(f(c))])) as ByCategory;
+  const included = per(c => Number(sp[CATEGORY_HOURS_FIELD[c]] ?? 0));
+  const used = per(c => (usage ?? []).filter(u => u.category === c).reduce((s, u) => s + Number(u.hours), 0));
+  return {
+    id: Number(sp.id), name: sp.name, agreedFee: Number(sp.agreed_fee), gstRate: Number(sp.gst_rate), assignedAt: sp.assigned_at, note: sp.note ?? null,
+    included, used, left: per(c => Math.max(0, included[c] - used[c])),
+    instalments: (plan ?? []).map(i => ({ id: Number(i.id), due_date: i.due_date, amount: Number(i.amount) })),
+  };
+}
+
+/**
+ * Charge a student for a saved logbook entry. B2: hours of the flight's category come out of the active package first;
+ * only the rest is charged at the hourly rate (logbook flight time × rate + GST). Idempotent per entry.
+ */
 export async function chargeLogbookEntry(recordId: string, by: string): Promise<void> {
   try {
     const { data: rec } = await supabaseAdmin.from('flight_records')
       .select('id, student_id, aircraft_id, total_hours, flight_date, flight_type').eq('id', recordId).maybeSingle();
     const hours = Number(rec?.total_hours ?? 0);
     if (!rec?.student_id || !(hours > 0)) return;
+    const [{ data: usedRow }, { data: chargedRow }] = await Promise.all([
+      supabaseAdmin.from('package_usage').select('id').eq('flight_record_id', recordId).maybeSingle(),
+      supabaseAdmin.from('ledger_entries').select('id').eq('source', 'LOGBOOK').eq('source_id', recordId).is('voided_at', null).maybeSingle(),
+    ]);
+    if (usedRow || chargedRow) return; // already billed
     const { data: ac } = await supabaseAdmin.from('aircraft').select('registration, type, is_simulator').eq('id', rec.aircraft_id).maybeSingle();
     if (!ac) return;
     const category = categoryFor(ac);
+    // shortcut: two entries saved at the same instant can both read the same hours left; fine at one school's volume.
+    const pkg = await activePackage(String(rec.student_id));
+    const { fromPackage, charged } = splitHours(hours, pkg?.left[category] ?? 0);
+    if (pkg && fromPackage > 0) {
+      const { error } = await supabaseAdmin.from('package_usage')
+        .insert({ flight_record_id: recordId, student_package_id: pkg.id, category, hours: fromPackage });
+      if (error) {
+        if (error.code !== '23505') console.error('Billing: recording package hours failed:', error.code);
+        return;
+      }
+    }
+    if (!(charged > 0)) return;
     const rate = (await ratesFor(String(rec.student_id))).find(r => r.category === category)!;
     if (!(rate.hourlyRate > 0)) {
-      console.warn(`Billing: no ${category} rate set — logbook entry ${recordId} not charged.`);
+      console.warn(`Billing: no ${category} rate set — ${charged} h of logbook entry ${recordId} not charged.`);
       return;
     }
-    const { gst, total } = priceHours(hours, rate.hourlyRate, rate.gstRate);
+    const { gst, total } = priceHours(charged, rate.hourlyRate, rate.gstRate);
     const { error } = await supabaseAdmin.from('ledger_entries').insert({
       student_id: rec.student_id,
       entry_date: rec.flight_date,
       kind: 'CHARGE',
       source: 'LOGBOOK',
       source_id: String(rec.id),
-      description: `${ac.registration} ${rec.flight_type ?? ''} flight, ${hours} h`.replace(/\s+/g, ' '),
-      hours,
+      description: `${ac.registration} ${rec.flight_type ?? ''} flight, ${hours} h${fromPackage ? ` (${fromPackage} h from package)` : ''}`.replace(/\s+/g, ' '),
+      hours: charged,
       rate: rate.hourlyRate,
       gst_rate: rate.gstRate,
       gst_amount: gst,
@@ -89,33 +138,42 @@ export async function bookingFundsRefusal(
   const { data: setting } = await supabaseAdmin.from('fto_settings').select('setting_value').eq('setting_key', 'billing_booking_block').maybeSingle();
   if (setting?.setting_value !== 'true') return null;
 
-  const [rates, bal, { data: student }, { data: upcoming }, { data: fleet }] = await Promise.all([
+  const [rates, bal, pkg, { data: student }, { data: upcoming }, { data: fleet }] = await Promise.all([
     ratesFor(studentId),
     balances([studentId]),
+    activePackage(studentId),
     supabaseAdmin.from('students').select('name, credit_limit').eq('id', studentId).maybeSingle(),
     // Booked or flown but not yet logbooked: not charged yet, so it still needs covering.
     supabaseAdmin.from('scheduled_flights').select('id, aircraft_id, start_time, end_time, status, logbook_pending')
       .eq('student_id', studentId).in('status', ['SCHEDULED', 'PENDING_APPROVAL', 'IN_PROGRESS', 'COMPLETED']),
     supabaseAdmin.from('aircraft').select('id, type, is_simulator'),
   ]);
+  // B2: package hours left are used up by the earlier bookings first, then this one; only the rest costs money.
+  const left: ByCategory = { ...(pkg?.left ?? { SINGLE_ENGINE: 0, MULTI_ENGINE: 0, SIMULATOR: 0 }) };
   const cost = (acId: string, s: string, e: string) => {
     const ac = fleet?.find(a => String(a.id) === String(acId));
-    const r = rates.find(x => x.category === categoryFor(ac ?? {}))!;
-    return priceHours(round2(hoursBetween(s, e)), r.hourlyRate, r.gstRate).total;
+    const category = categoryFor(ac ?? {});
+    const r = rates.find(x => x.category === category)!;
+    const { fromPackage, charged } = splitHours(round2(hoursBetween(s, e)), left[category]);
+    left[category] = round2(left[category] - fromPackage);
+    return priceHours(charged, r.hourlyRate, r.gstRate).total;
   };
-  const thisCost = cost(aircraftId, start, end);
-  if (!(thisCost > 0)) return null; // no rate configured for this aircraft: nothing to cover
   // A booking that ended over 2 days ago and was never checked out is stale, not a cost still to come.
   const staleBefore = Date.now() - 2 * 24 * 3_600_000;
   const otherCost = round2((upcoming ?? [])
     .filter(f => String(f.id) !== String(excludeBookingId ?? ''))
     .filter(f => (f.status === 'COMPLETED' ? f.logbook_pending : new Date(f.end_time).getTime() >= staleBefore))
+    .sort((a, b) => a.start_time.localeCompare(b.start_time))
     .reduce((s, f) => s + cost(String(f.aircraft_id), f.start_time, f.end_time), 0));
+  const thisCost = cost(aircraftId, start, end);
+  if (!(thisCost > 0)) return null; // covered by the package, or no rate configured for this aircraft
   const balance = bal.get(studentId) ?? 0;
   const creditLimit = Number(student?.credit_limit ?? 0);
-  if (round2(balance + creditLimit) >= round2(thisCost + otherCost)) return null;
+  // B2: instalments not yet due don't count against the student.
+  const notYetDue = pkg ? dueNow(balance, pkg.instalments, todayIST()).notYetDue : 0;
+  if (round2(balance + creditLimit + notYetDue) >= round2(thisCost + otherCost)) return null;
   return `${student?.name ?? 'This student'}'s account doesn't cover this booking: balance ${formatINR(balance)}`
-    + `${creditLimit ? ` + credit ${formatINR(creditLimit)}` : ''}, needed ${formatINR(thisCost)}`
+    + `${creditLimit ? ` + credit ${formatINR(creditLimit)}` : ''}${notYetDue ? ` + instalments not yet due ${formatINR(notYetDue)}` : ''}, needed ${formatINR(thisCost)}`
     + `${otherCost ? ` (plus ${formatINR(otherCost)} for bookings not yet charged)` : ''}.`
     + ' Record a payment, or ask an admin to add credit.';
 }

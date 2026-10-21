@@ -8,6 +8,7 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import { notify } from '@/lib/notify';
 import { CATEGORY_LABEL, PAYMENT_METHODS, formatINR, type BillingCategory } from '@/lib/billing';
+import PackageCard, { type PackageInfo, type DueInfo } from '@/components/billing/PackageCard';
 
 interface Entry {
   id: number; entry_date: string; kind: string; source: string; description: string; hours: number | null;
@@ -19,6 +20,8 @@ interface Account {
   balance: number; creditLimit: number; creditNote: string | null;
   rates: { category: BillingCategory; hourlyRate: number; gstRate: number; override: boolean }[];
   entries: Entry[];
+  package: PackageInfo | null; // B2
+  due: DueInfo;
 }
 
 async function fetchAccount(url: string): Promise<Account> {
@@ -32,8 +35,8 @@ const inputClass = 'surface-inner rounded-lg px-3 py-2 text-sm w-full focus:outl
 const primaryBtn = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' };
 type Form = 'payment' | 'opening' | 'adjustment' | 'credit' | null;
 
-export default function StudentAccountPanel({ studentId, canRecord = false, canAdmin = false, onChanged }: {
-  studentId: string; canRecord?: boolean; canAdmin?: boolean; onChanged?: () => void;
+export default function StudentAccountPanel({ studentId, canRecord = false, canAdmin = false, canPackage = false, onChanged }: {
+  studentId: string; canRecord?: boolean; canAdmin?: boolean; canPackage?: boolean; onChanged?: () => void;
 }) {
   const url = `/api/billing/students/${studentId}`;
   const { data, error, isLoading, mutate } = useSWR(url, fetchAccount);
@@ -117,6 +120,8 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
           {data.rates[0] && <p className="text-[11px] text-tertiary mt-1">+ GST {data.rates[0].gstRate}%</p>}
         </div>
       </div>
+
+      <PackageCard pkg={data.package} due={data.due} canPackage={canPackage} saving={saving} post={post} />
 
       {(canRecord || canAdmin) && (
         <div className="flex flex-wrap gap-2 mb-3">

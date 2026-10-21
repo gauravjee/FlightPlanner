@@ -8,8 +8,9 @@ import { useState } from 'react';
 import useSWR, { mutate as globalMutate } from 'swr';
 import { ftoSettingsKey } from '@/lib/hooks/useFtoSettings';
 import { notify } from '@/lib/notify';
-import { CATEGORY_LABEL, type BillingCategory } from '@/lib/billing';
-import { IndianRupee } from 'lucide-react';
+import { CATEGORY_LABEL, formatINR, type BillingCategory } from '@/lib/billing';
+import { IndianRupee, Package } from 'lucide-react';
+import ConfigTable, { type ConfigField, type ConfigColumn } from '@/components/admin/ConfigTable';
 
 interface RateRow { id: number; category: BillingCategory; hourly_rate: number; gst_rate: number }
 interface SettingRow { id: number; setting_key: string; setting_value: string }
@@ -111,6 +112,53 @@ export default function BillingTab() {
         </label>
         {!block && settings && <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>Setting missing — run billing-b1.sql.</p>}
       </div>
+      <div className="mt-6"><PackagesSection /></div>
     </div>
+  );
+}
+
+// B2 (21 Oct): course packages per training program — a fee (+ GST) that includes hours. Assigned on the Accounts page;
+// a student's package keeps the fee and hours it was assigned with, so editing a package here changes only later ones.
+interface PackageRow { id: number; program_id: number; name: string; fee: number; gst_rate: number; se_hours: number; me_hours: number; sim_hours: number; is_active: boolean }
+interface ProgramRow { id: number; program_code: string; program_name: string }
+
+function PackagesSection() {
+  const { data: programs = [] } = useSWR('/api/admin/config/training-programs?orderBy=sort_order', rows<ProgramRow>);
+  const programOf = (id: number) => programs.find(p => p.id === Number(id))?.program_code ?? '—';
+  const hours = (n: number) => Number(n) || 0;
+  const fields: ConfigField[] = [
+    { name: 'program_id', type: 'select', default: '', label: 'Program', required: true,
+      options: [{ label: '— Pick a program —', value: '' }, ...programs.map(p => ({ label: `${p.program_code} · ${p.program_name}`, value: String(p.id) }))] },
+    { name: 'name', type: 'text', default: '', label: 'Package name', required: true, placeholder: 'e.g., PPL standard' },
+    { name: 'fee', type: 'number', default: 0, label: 'Fee (₹, before GST)', step: '0.01' },
+    { name: 'gst_rate', type: 'number', default: 18, label: 'GST %', step: '0.01' },
+    { name: 'se_hours', type: 'number', default: 0, label: 'Single-engine hours included', step: '0.1' },
+    { name: 'me_hours', type: 'number', default: 0, label: 'Multi-engine hours included', step: '0.1' },
+    { name: 'sim_hours', type: 'number', default: 0, label: 'Simulator hours included', step: '0.1' },
+    { name: 'is_active', type: 'checkbox', default: true, label: 'Active (can be assigned)', full: true },
+  ];
+  const columns: ConfigColumn<PackageRow>[] = [
+    { header: 'Package', render: p => p.name, primary: true },
+    { header: 'Program', render: p => <span className="badge badge-accent">{programOf(p.program_id)}</span> },
+    { header: 'Fee', render: p => `${formatINR(Number(p.fee))} + ${Number(p.gst_rate)}% GST` },
+    { header: 'Hours included', render: p => [
+      hours(p.se_hours) ? `SE ${hours(p.se_hours)} h` : null, hours(p.me_hours) ? `ME ${hours(p.me_hours)} h` : null, hours(p.sim_hours) ? `Sim ${hours(p.sim_hours)} h` : null,
+    ].filter(Boolean).join(' · ') || '—' },
+    { header: 'Status', render: p => <span className={`badge ${p.is_active ? 'badge-success' : 'badge-danger'}`}>{p.is_active ? 'Active' : 'Inactive'}</span> },
+  ];
+  return (
+    <ConfigTable<PackageRow>
+      title="Course packages"
+      singular="Package"
+      icon={<Package className="w-4 h-4 text-secondary" />}
+      description="A course fee that includes hours. When a student flies, hours come out of their package first; the rest is charged at the hourly rate. Assign packages on the Accounts page. Editing a package doesn't change packages already assigned."
+      table="course_packages"
+      endpoint="course-packages"
+      fields={fields}
+      columns={columns}
+      cols={3}
+      deleteMessage="Delete this package? A package already assigned to a student can't be deleted — make it inactive instead."
+      labelFor={p => p.name}
+    />
   );
 }

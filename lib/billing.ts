@@ -40,3 +40,35 @@ export function parseAmount(v: unknown): number | null {
 
 export const formatINR = (n: number) =>
   `${n < 0 ? '−' : ''}₹${Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// ---- B2 (21 Oct): packages and instalments ----
+export const CATEGORY_HOURS_FIELD = { SINGLE_ENGINE: 'se_hours', MULTI_ENGINE: 'me_hours', SIMULATOR: 'sim_hours' } as const;
+
+/** How many of a flight's hours come out of the package, and how many are charged at the hourly rate. */
+export function splitHours(hours: number, packageHoursLeft: number) {
+  const fromPackage = round2(Math.max(0, Math.min(hours, packageHoursLeft)));
+  return { fromPackage, charged: round2(hours - fromPackage) };
+}
+
+export interface Instalment { due_date: string; amount: number | string }
+
+/**
+ * What a student owes right now: the part of a negative balance not covered by instalments that aren't due yet.
+ * Overdue = something is owed now and an instalment date has already passed.
+ */
+export function dueNow(balance: number, instalments: Instalment[], today: string) {
+  const notYetDue = round2(instalments.filter(i => i.due_date > today).reduce((s, i) => s + Number(i.amount), 0));
+  const due = round2(Math.max(0, -balance - notYetDue));
+  return { notYetDue, due, overdue: due > 0 && instalments.some(i => i.due_date < today) };
+}
+
+/** A plan of n monthly instalments from firstDate; the last one takes the rounding. */
+export function monthlyPlan(total: number, n: number, firstDate: string): { due_date: string; amount: number }[] {
+  const each = Math.floor((total / n) * 100) / 100;
+  return Array.from({ length: n }, (_, i) => {
+    // shortcut: a 29th–31st start can roll into the next month (31 Jan + 1 → 3 Mar); the rows are editable before saving.
+    const d = new Date(firstDate + 'T00:00:00Z');
+    d.setUTCMonth(d.getUTCMonth() + i);
+    return { due_date: d.toISOString().slice(0, 10), amount: i === n - 1 ? round2(total - each * (n - 1)) : each };
+  });
+}

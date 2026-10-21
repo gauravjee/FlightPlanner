@@ -7,13 +7,17 @@
 //   void       { entryId, reason }                                 admin / super admin; entries are never deleted
 //   credit     { creditLimit, note? }                              admin / super admin
 //   rate       { category, hourlyRate | null }                     admin / super admin; null = back to the school rate
+// B2 (21 Oct): course packages — admin / super admin / accounts:
+//   assignPackage { packageId, agreedFee?, plan: [{ due_date, amount }], note? }  charges fee + GST; the plan must add up
+//   editPlan      { plan: [...] }                                   replaces the active package's plan (same total)
+//   closePackage  {}                                                stops it supplying hours; nothing automatic happens to money
 
 import { NextResponse } from 'next/server';
 import { requireSession, requireRole } from '@/lib/api-auth';
-import { BILLING_VIEW_ROLES, BILLING_RECORD_ROLES, BILLING_ADMIN_ROLES } from '@/lib/permissions';
+import { BILLING_VIEW_ROLES, BILLING_RECORD_ROLES, BILLING_ADMIN_ROLES, BILLING_PACKAGE_ROLES } from '@/lib/permissions';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { ratesFor } from '@/lib/billing-server';
-import { BILLING_CATEGORIES, PAYMENT_METHODS, balanceOf, parseAmount, round2 } from '@/lib/billing';
+import { ratesFor, activePackage } from '@/lib/billing-server';
+import { BILLING_CATEGORIES, PAYMENT_METHODS, balanceOf, parseAmount, round2, dueNow } from '@/lib/billing';
 import { todayIST } from '@/lib/ist';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -28,19 +32,23 @@ export async function GET(_request: Request, context: RouteContext) {
   const own = role === 'student' && session.user.studentId === id;
   if (!own && !BILLING_VIEW_ROLES.includes(role)) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
 
-  const [{ data: student }, { data: entries, error: dbError }, rates] = await Promise.all([
+  const [{ data: student }, { data: entries, error: dbError }, rates, pkg] = await Promise.all([
     supabaseAdmin.from('students').select('id, name, enrollment_id, credit_limit, credit_note').eq('id', id).maybeSingle(),
     supabaseAdmin.from('ledger_entries').select('*').eq('student_id', id).order('entry_date', { ascending: false }).order('id', { ascending: false }),
     ratesFor(id),
+    activePackage(id),
   ]);
   if (dbError) {
     console.error('Error loading ledger:', dbError.code);
     return NextResponse.json({ error: 'Failed to load the account.' }, { status: 500 });
   }
   if (!student) return NextResponse.json({ error: 'Student not found.' }, { status: 404 });
+  const balance = balanceOf(entries ?? []);
   return NextResponse.json({
     student: { id: student.id, name: student.name, enrollmentId: student.enrollment_id },
-    balance: balanceOf(entries ?? []),
+    balance,
+    package: pkg && own ? { ...pkg, note: null } : pkg, // the package note is staff-only, like the credit note
+    due: dueNow(balance, pkg?.instalments ?? [], todayIST()),
     creditLimit: Number(student.credit_limit ?? 0),
     creditNote: own ? null : student.credit_note ?? null, // staff-only note (operator, 21 Oct)
     rates,
@@ -59,7 +67,8 @@ export async function POST(request: Request, context: RouteContext) {
   }
   const action = body.action;
   const adminOnly = action === 'void' || action === 'credit' || action === 'rate';
-  const { session, error } = await requireRole(adminOnly ? BILLING_ADMIN_ROLES : BILLING_RECORD_ROLES);
+  const packageAction = action === 'assignPackage' || action === 'editPlan' || action === 'closePackage';
+  const { session, error } = await requireRole(adminOnly ? BILLING_ADMIN_ROLES : packageAction ? BILLING_PACKAGE_ROLES : BILLING_RECORD_ROLES);
   if (error) return error;
   const by = session.user.email ?? 'unknown';
 
@@ -101,9 +110,15 @@ export async function POST(request: Request, context: RouteContext) {
     if (!reason) return NextResponse.json({ error: 'Give a reason for voiding.' }, { status: 400 });
     const { data: rows, error: dbError } = await supabaseAdmin.from('ledger_entries')
       .update({ voided_at: new Date().toISOString(), voided_by: by, void_reason: reason })
-      .eq('id', Number(body.entryId)).eq('student_id', id).is('voided_at', null).select('id');
+      .eq('id', Number(body.entryId)).eq('student_id', id).is('voided_at', null).select('id, source, source_id');
     if (dbError) return done(dbError, 'void');
     if (!rows?.length) return NextResponse.json({ error: 'No live entry with that id for this student.' }, { status: 404 });
+    // B2: voiding a package's fee closes that package too.
+    if (rows[0].source === 'PACKAGE') {
+      const { error: closeError } = await supabaseAdmin.from('student_packages')
+        .update({ status: 'CLOSED', closed_by: by, closed_at: new Date().toISOString() }).eq('id', Number(rows[0].source_id)).eq('status', 'ACTIVE');
+      if (closeError) console.error('Billing: closing the voided package failed:', closeError.code);
+    }
     return NextResponse.json({ success: true });
   }
 
@@ -130,5 +145,52 @@ export async function POST(request: Request, context: RouteContext) {
     return done(dbError, 'rate');
   }
 
+  if (packageAction) {
+    // The database functions refuse with "BILLING: <reason>"; that reason is safe to show.
+    const refused = (e: { message?: string; code?: string }, what: string) => e.message?.startsWith('BILLING: ')
+      ? NextResponse.json({ error: e.message.slice(9) }, { status: 400 })
+      : done(e, what);
+    const plan = parsePlan(body.plan);
+    if (action === 'closePackage') {
+      const { data: rows, error: dbError } = await supabaseAdmin.from('student_packages')
+        .update({ status: 'CLOSED', closed_by: by, closed_at: new Date().toISOString() })
+        .eq('student_id', id).eq('status', 'ACTIVE').select('id');
+      if (dbError) return done(dbError, 'package');
+      if (!rows?.length) return NextResponse.json({ error: 'This student has no active package.' }, { status: 404 });
+      return NextResponse.json({ success: true });
+    }
+    if (typeof plan === 'string') return NextResponse.json({ error: plan }, { status: 400 });
+    if (action === 'editPlan') {
+      const { data: sp } = await supabaseAdmin.from('student_packages').select('id').eq('student_id', id).eq('status', 'ACTIVE').maybeSingle();
+      if (!sp) return NextResponse.json({ error: 'This student has no active package.' }, { status: 404 });
+      const { error: dbError } = await supabaseAdmin.rpc('replace_package_instalments', { p_student_package: sp.id, p_plan: plan });
+      return dbError ? refused(dbError, 'payment plan') : NextResponse.json({ success: true });
+    }
+    const { data: listed } = await supabaseAdmin.from('course_packages').select('fee').eq('id', Number(body.packageId)).maybeSingle();
+    if (!listed) return NextResponse.json({ error: 'Pick a package.' }, { status: 400 });
+    const agreedFee = body.agreedFee === undefined || body.agreedFee === '' ? Number(listed.fee)
+      : body.agreedFee === 0 || body.agreedFee === '0' ? 0 : parseAmount(body.agreedFee);
+    if (agreedFee === null) return NextResponse.json({ error: 'Enter the agreed fee (0 or more, at most 2 decimals).' }, { status: 400 });
+    const { error: dbError } = await supabaseAdmin.rpc('assign_student_package', {
+      p_student: id, p_package: Number(body.packageId), p_agreed_fee: agreedFee, p_plan: plan,
+      p_note: text(body.note), p_by: by, p_date: todayIST(),
+    });
+    if (dbError?.code === '23505') return NextResponse.json({ error: 'This student already has an active package. Close it first.' }, { status: 409 });
+    return dbError ? refused(dbError, 'package') : NextResponse.json({ success: true });
+  }
+
   return NextResponse.json({ error: 'Unknown action.' }, { status: 400 });
+}
+
+/** A payment plan from the request: [{ due_date: 'YYYY-MM-DD', amount }], or the reason it isn't one. */
+function parsePlan(raw: unknown): { due_date: string; amount: number }[] | string {
+  if (!Array.isArray(raw) || raw.length > 60) return 'The payment plan can have at most 60 instalments.'; // [] only for a free package (the database checks)
+  const rows: { due_date: string; amount: number }[] = [];
+  for (const r of raw as Record<string, unknown>[]) {
+    const date = typeof r?.due_date === 'string' && DATE_RE.test(r.due_date) && !Number.isNaN(Date.parse(r.due_date)) ? r.due_date : null;
+    const amount = parseAmount(r?.amount);
+    if (!date || amount === null) return 'Each instalment needs a valid date and an amount above 0 with at most 2 decimals.';
+    rows.push({ due_date: date, amount });
+  }
+  return rows;
 }

@@ -10,10 +10,13 @@ import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import StudentAccountPanel from '@/components/billing/StudentAccountPanel';
-import { BILLING_VIEW_ROLES, BILLING_RECORD_ROLES, BILLING_ADMIN_ROLES } from '@/lib/permissions';
+import { BILLING_VIEW_ROLES, BILLING_RECORD_ROLES, BILLING_ADMIN_ROLES, BILLING_PACKAGE_ROLES } from '@/lib/permissions';
 import { formatINR } from '@/lib/billing';
 
-interface AccountRow { id: string; name: string; enrollmentId: string; status: string; stage: string | null; balance: number; creditLimit: number }
+interface AccountRow {
+  id: string; name: string; enrollmentId: string; status: string; stage: string | null; balance: number; creditLimit: number;
+  packageName: string | null; dueNow: number; overdue: boolean; // B2
+}
 
 async function fetchAccounts(url: string): Promise<AccountRow[]> {
   const res = await fetch(url);
@@ -29,13 +32,14 @@ export default function AccountsPage() {
   const { data: rows, error, isLoading, mutate } = useSWR('/api/billing/accounts', fetchAccounts);
   const [search, setSearch] = useState('');
   const [owingOnly, setOwingOnly] = useState(false);
+  const [overdueOnly, setOverdueOnly] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
 
   const shown = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (rows ?? []).filter(r => (!owingOnly || r.balance < 0)
+    return (rows ?? []).filter(r => (!owingOnly || r.balance < 0) && (!overdueOnly || r.overdue)
       && (!q || r.name.toLowerCase().includes(q) || r.enrollmentId.toLowerCase().includes(q)));
-  }, [rows, search, owingOnly]);
+  }, [rows, search, owingOnly, overdueOnly]);
   const totalOwed = (rows ?? []).reduce((s, r) => s + (r.balance < 0 ? -r.balance : 0), 0);
   const current = rows?.find(r => r.id === selected);
 
@@ -51,6 +55,9 @@ export default function AccountsPage() {
                 <label className="text-sm text-secondary flex items-center gap-1.5">
                   <input type="checkbox" checked={owingOnly} onChange={e => setOwingOnly(e.target.checked)} /> Owing only
                 </label>
+                <label className="text-sm text-secondary flex items-center gap-1.5">
+                  <input type="checkbox" checked={overdueOnly} onChange={e => setOverdueOnly(e.target.checked)} /> Overdue only
+                </label>
               </div>
               <p className="text-xs text-tertiary mb-2">Total owed by students: <span className="font-semibold" style={{ color: 'var(--danger)' }}>{formatINR(totalOwed)}</span></p>
               {isLoading ? <p className="text-secondary text-center py-8">Loading...</p>
@@ -64,10 +71,11 @@ export default function AccountsPage() {
                         style={selected === r.id ? { backgroundColor: 'var(--accent-soft)' } : undefined}>
                         <span className="min-w-0">
                           <span className="block font-medium truncate">{r.name}</span>
-                          <span className="block text-xs text-tertiary">{r.enrollmentId}{r.stage ? ` · ${r.stage}` : ''}{r.status && r.status !== 'ACTIVE' ? ` · ${r.status}` : ''}</span>
+                          <span className="block text-xs text-tertiary">{r.enrollmentId}{r.stage ? ` · ${r.stage}` : ''}{r.status && r.status !== 'ACTIVE' ? ` · ${r.status}` : ''}{r.packageName ? ` · ${r.packageName}` : ''}</span>
                         </span>
                         <span className="text-right shrink-0">
                           <span className="block font-semibold" style={{ color: r.balance < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>{formatINR(r.balance)}</span>
+                          {r.dueNow > 0 && <span className="block text-[11px]" style={{ color: 'var(--danger)' }}>due now {formatINR(r.dueNow)}{r.overdue ? ' · overdue' : ''}</span>}
                           {r.creditLimit > 0 && <span className="block text-[11px] text-tertiary">credit {formatINR(r.creditLimit)}</span>}
                         </span>
                       </button>
@@ -81,7 +89,8 @@ export default function AccountsPage() {
                 <>
                   <h2 className="text-lg font-semibold mb-3">{current.name} <span className="text-sm text-tertiary font-normal">{current.enrollmentId}</span></h2>
                   <StudentAccountPanel key={current.id} studentId={current.id}
-                    canRecord={BILLING_RECORD_ROLES.includes(role)} canAdmin={BILLING_ADMIN_ROLES.includes(role)} onChanged={() => mutate()} />
+                    canRecord={BILLING_RECORD_ROLES.includes(role)} canAdmin={BILLING_ADMIN_ROLES.includes(role)}
+                    canPackage={BILLING_PACKAGE_ROLES.includes(role)} onChanged={() => mutate()} />
                 </>
               ) : <p className="text-secondary text-center py-12">Pick a student to see their account.</p>}
             </section>
