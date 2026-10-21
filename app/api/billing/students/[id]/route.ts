@@ -108,6 +108,16 @@ export async function POST(request: Request, context: RouteContext) {
   if (action === 'void') {
     const reason = text(body.reason);
     if (!reason) return NextResponse.json({ error: 'Give a reason for voiding.' }, { status: 400 });
+    // B2: a package fee whose hours have been flown can't simply be voided — those flights were never charged hourly.
+    const { data: target } = await supabaseAdmin.from('ledger_entries').select('source, source_id').eq('id', Number(body.entryId)).eq('student_id', id).maybeSingle();
+    if (target?.source === 'PACKAGE') {
+      const { count } = await supabaseAdmin.from('package_usage').select('id', { count: 'exact', head: true }).eq('student_package_id', Number(target.source_id));
+      if (count) {
+        return NextResponse.json({
+          error: `${count} flight${count === 1 ? ' has' : 's have'} already used this package's hours, so its fee can't be voided. Close the package, then refund the unused part with an adjustment.`,
+        }, { status: 409 });
+      }
+    }
     const { data: rows, error: dbError } = await supabaseAdmin.from('ledger_entries')
       .update({ voided_at: new Date().toISOString(), voided_by: by, void_reason: reason })
       .eq('id', Number(body.entryId)).eq('student_id', id).is('voided_at', null).select('id, source, source_id');

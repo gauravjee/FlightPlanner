@@ -165,13 +165,17 @@ export async function bookingFundsRefusal(
     .filter(f => (f.status === 'COMPLETED' ? f.logbook_pending : new Date(f.end_time).getTime() >= staleBefore))
     .sort((a, b) => a.start_time.localeCompare(b.start_time))
     .reduce((s, f) => s + cost(String(f.aircraft_id), f.start_time, f.end_time), 0));
+  // Even a booking costing ₹0 (package hours) is checked: a student with an unpaid instalment that's due can't book.
   const thisCost = cost(aircraftId, start, end);
-  if (!(thisCost > 0)) return null; // covered by the package, or no rate configured for this aircraft
   const balance = bal.get(studentId) ?? 0;
   const creditLimit = Number(student?.credit_limit ?? 0);
   // B2: instalments not yet due don't count against the student.
   const notYetDue = pkg ? dueNow(balance, pkg.instalments, todayIST()).notYetDue : 0;
   if (round2(balance + creditLimit + notYetDue) >= round2(thisCost + otherCost)) return null;
+  if (!(thisCost > 0) && !(otherCost > 0)) {
+    return `${student?.name ?? 'This student'} has ${formatINR(-round2(balance + notYetDue))} due now`
+      + `${creditLimit ? ` (more than the ${formatINR(creditLimit)} credit limit)` : ''}. Record a payment, or ask an admin to add credit.`;
+  }
   return `${student?.name ?? 'This student'}'s account doesn't cover this booking: balance ${formatINR(balance)}`
     + `${creditLimit ? ` + credit ${formatINR(creditLimit)}` : ''}${notYetDue ? ` + instalments not yet due ${formatINR(notYetDue)}` : ''}, needed ${formatINR(thisCost)}`
     + `${otherCost ? ` (plus ${formatINR(otherCost)} for bookings not yet charged)` : ''}.`
