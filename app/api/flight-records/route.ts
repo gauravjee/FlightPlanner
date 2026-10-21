@@ -30,7 +30,7 @@
 // notes and student performance ratings. Stripped from the response for
 // those two roles only; every other role's response is unchanged.
 const ASSESSMENT_FIELDS = ['instructor_notes', 'student_performance'] as const;
-const ROLES_WITHOUT_ASSESSMENT_FIELDS = ['safety_officer', 'maintenance'];
+const ROLES_WITHOUT_ASSESSMENT_FIELDS = ['safety_officer', 'maintenance', 'accounts']; // accounts: operator, 21 Oct
 
 // POST: flight records are add-only from the UI today (no edit/delete
 // anywhere in lib/store.ts or FlightRecordForm.tsx). Per the 2026-08-17

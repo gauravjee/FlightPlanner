@@ -91,7 +91,8 @@ export const MAINTENANCE_WRITE_ROLES = ['admin', 'super_admin', 'maintenance'];
 // ============================================================
 // operations isn't on this tab at all, per the role/tab matrix. maintenance
 // can view the logbook but not log a flight.
-export const FLIGHT_RECORDS_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'maintenance'];
+// 'accounts' (21 Oct): view-only, to reconcile flights with charges and export; no instructor notes or grades.
+export const FLIGHT_RECORDS_VIEW_ROLES = ['admin', 'instructor', 'super_admin', 'maintenance', 'accounts'];
 export const FLIGHT_RECORDS_WRITE_ROLES = ['admin', 'instructor', 'super_admin'];
 
 // ============================================================

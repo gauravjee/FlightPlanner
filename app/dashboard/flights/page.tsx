@@ -286,7 +286,7 @@ export default function FlightsPage() {
                       </td>
                       <td className="py-3 text-xs">{record.landings}</td>
                       <td className="py-3 text-xs flex items-center gap-1" style={{ color: 'var(--warning-text)' }}>
-                        <Star className="w-3.5 h-3.5" /> {record.studentPerformance}/5
+                        {record.studentPerformance != null ? <><Star className="w-3.5 h-3.5" /> {record.studentPerformance}/5</> : '—'}
                       </td>
                     </tr>
                   ))}

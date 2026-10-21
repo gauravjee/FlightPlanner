@@ -66,7 +66,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
   { href: '/dashboard/student', label: 'My Dashboard', icon: LayoutDashboard, roles: ['student'] },
   { href: '/dashboard/schedule', label: 'Schedule', icon: Calendar, roles: ['admin', 'instructor', 'super_admin', 'operations', 'student'] },
-  { href: '/dashboard/flights', label: 'Flight Records', icon: FileText, roles: ['admin', 'instructor', 'super_admin', 'maintenance'], moduleKey: 'flightRecords' },
+  { href: '/dashboard/flights', label: 'Flight Records', icon: FileText, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'accounts'], moduleKey: 'flightRecords' },
   { href: '/dashboard/fuel', label: 'Fuel', icon: Fuel, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'fuel' },
   { href: '/dashboard/maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'maintenance' },
   { href: '/dashboard/aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'aircraft' },

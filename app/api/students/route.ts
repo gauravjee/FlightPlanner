@@ -83,7 +83,8 @@ export async function GET() {
   // lib/hooks/useStudents.ts's mapper already defaults every field not
   // selected here to '' /undefined, so this reuses the same fetcher/hook/
   // type as every other role — no client-side changes needed for either use.
-  if (role === 'safety_officer' || role === 'maintenance') {
+  // accounts (21 Oct): same reason as maintenance — names on the Flight Records page they now view.
+  if (role === 'safety_officer' || role === 'maintenance' || role === 'accounts') {
     const { data, error: dbError } = await supabaseAdmin
       .from('students')
       .select('id, name, initials, status, spl_number, enrollment_id, training_stage, total_hours')
