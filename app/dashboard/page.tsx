@@ -84,6 +84,8 @@ export default function DashboardPage() {
     if (session?.user && session.user.role === 'student') {
       router.push('/dashboard/student');
     }
+    // Billing B1: the accounts role only has the Accounts page.
+    if (session?.user?.role === 'accounts') router.push('/dashboard/accounts');
   }, [session, router]);
 
   // FTO Settings is SWR-migrated (Stage 8, 2026-09-02) — fetch-on-mount, no

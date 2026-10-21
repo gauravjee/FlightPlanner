@@ -48,6 +48,7 @@ const ROLES_WITHOUT_ASSESSMENT_FIELDS = ['safety_officer', 'maintenance'];
 
 import { NextResponse } from 'next/server';
 import { requireSession, requireModuleAccess } from '@/lib/api-auth';
+import { chargeLogbookEntry } from '@/lib/billing-server';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { flightHoursFromTimes } from '@/lib/flight-classification';
 
@@ -181,7 +182,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Hobbs shows ${(hobbsEndNum - hobbsStartNum).toFixed(1)} h but the flight times give ${totalHours} h. Check the readings.` }, { status: 400 });
   }
 
-  const { error: dbError } = await supabaseAdmin.from('flight_records').insert({
+  const { data: inserted, error: dbError } = await supabaseAdmin.from('flight_records').insert({
     student_id: studentId,
     aircraft_id: aircraftId,
     instructor_id: instructorId || null, // solo: never '' (the column becomes bigint, fk-design-2026-10-08)
@@ -213,7 +214,7 @@ export async function POST(request: Request) {
     // (or a form with a stale totalHours) could store a PICUS figure
     // exceeding the flight's own duration with nothing to catch it.
     picus_hours: flightType === 'SOLO' ? null : (picusHours != null ? Math.max(0, Math.min(Number(picusHours), totalHours)) : null),
-  });
+  }).select('id').maybeSingle();
 
   if (dbError?.code === '23505') {
     return NextResponse.json({ error: 'This flight already has a logbook entry.' }, { status: 409 });
@@ -263,6 +264,9 @@ export async function POST(request: Request) {
   if (aircraftError) {
     console.error('Error advancing aircraft hobbs time after flight record:', aircraftError);
   }
+
+  // Billing B1 (operator, 21 Oct): the logbook entry is what's charged. Never fails the save.
+  if (inserted?.id) await chargeLogbookEntry(String(inserted.id), session.user.email ?? 'unknown');
 
   return NextResponse.json({ success: true });
 }

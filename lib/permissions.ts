@@ -214,6 +214,13 @@ export const ROSTER_OVERRIDE_ROLES = ['admin', 'super_admin'];
 // Maintenance Phase 2 (19 Oct, operator): who may book an aircraft with an overdue blocking item, with a reason.
 export const MAINTENANCE_OVERRIDE_ROLES = ['admin', 'super_admin'];
 
+// Billing B1 (21 Oct; claude/billing-design-2026-10-20.md). Payments, opening balances and adjustments by the
+// billing staff; voids, credit limits and per-student rates by admin / super admin only. School rates are set
+// in Admin Setup -> Billing (ADMIN_SETUP_WRITE_ROLES).
+export const BILLING_VIEW_ROLES = ['admin', 'super_admin', 'operations', 'accounts'];
+export const BILLING_RECORD_ROLES = BILLING_VIEW_ROLES;
+export const BILLING_ADMIN_ROLES = ['admin', 'super_admin'];
+
 // 2026-09-24: staff master (B2; claude/staff-master-design-2026-09-24.md).
 // Admin + super admin manage staff records, including the encrypted ID
 // documents (operator decision). The staff ID prefix itself stays in Admin
@@ -467,6 +474,7 @@ export const USER_ROLE_OPTIONS: { value: string; label: string }[] = [
   { value: 'operations', label: '📋 Operations' },
   { value: 'maintenance', label: '🔧 Maintenance' },
   { value: 'safety_officer', label: '🦺 Safety Officer' },
+  { value: 'accounts', label: '💰 Accounts' }, // billing B1: Accounts page only
   { value: 'super_admin', label: '🔧 Super Admin' },
 ];
 export const VALID_USER_ROLES: string[] = USER_ROLE_OPTIONS.map(r => r.value);

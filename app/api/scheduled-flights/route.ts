@@ -31,6 +31,7 @@ import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
 import { rosterRefusal } from '@/lib/roster-server';
 import { instructorLeftBefore } from '@/lib/staff-server';
 import { overdueBlockingItems, maintenanceBlockMessage, overrideReasonFrom } from '@/lib/maintenance-block';
+import { bookingFundsRefusal } from '@/lib/billing-server';
 
 // GET added 2026-09-18 (RLS remediation Step 3 — see
 // claude/rls-remediation-progress-2026-09-18.md): reads used to be direct
@@ -207,6 +208,12 @@ export async function POST(request: Request) {
   // B4 (13 Oct): only an Active student can be booked, by anyone (including self-booking); a grounded one after the grounding.
   if (studentId) {
     const refusal = await studentBookingRefusal(String(studentId), String(startTime));
+    if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+  }
+
+  // Billing B1 (operator, 21 Oct): with the booking block on, the student's balance plus credit must cover it.
+  if (studentId && sortieType !== 'MAINTENANCE') {
+    const refusal = await bookingFundsRefusal(String(studentId), String(aircraftId), String(startTime), String(endTime));
     if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
   }
 

@@ -135,6 +135,12 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
     // 2026-09-24 (B2 S3a): + the staff record the engineer belongs to.
     columns: ['name', 'license_no', 'is_active', 'staff_member_id'],
   },
+  // Billing B1 (21 Oct): school hourly rates per category. The three rows are seeded by billing-b1.sql;
+  // only the rate and GST % change here (no adds or deletes, refused below).
+  'billing-rates': {
+    dbTable: 'billing_rates',
+    columns: ['hourly_rate', 'gst_rate'],
+  },
   // Bases (multi-base M2, 2026-10-15; claude/multi-base-design-2026-10-15.md). Never deleted
   // (history points at them); deactivated instead. Base 1 stays in step with fto_settings below.
   bases: {
@@ -256,7 +262,7 @@ export async function POST(request: Request, context: RouteContext) {
   // Bulk insert (e.g. the Exercises tab's CSV import, or Holiday Calendar's
   // recurring-holiday bulk add) — body is an array of row objects.
   if (Array.isArray(body)) {
-    if (table === 'ames' || table === 'bases') return NextResponse.json({ error: 'Add these one at a time.' }, { status: 400 });
+    if (table === 'ames' || table === 'bases' || table === 'billing-rates') return NextResponse.json({ error: 'Add these one at a time.' }, { status: 400 });
     const rows = body.map((row) => pickAllowed(row as Record<string, unknown>, config.columns));
     const { data, error: dbError } = await supabaseAdmin.from(config.dbTable).insert(rows).select();
     if (dbError) {
@@ -266,6 +272,7 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ rows: data });
   }
 
+  if (table === 'billing-rates') return NextResponse.json({ error: 'The rate categories are fixed; change a rate instead.' }, { status: 400 });
   const insertBody = pickAllowed(body as Record<string, unknown>, config.columns);
   if (table === 'ames') {
     const ameError = await ameStaffError(insertBody);
@@ -367,6 +374,9 @@ export async function DELETE(request: Request, context: RouteContext) {
 
   if (table === 'bases') {
     return NextResponse.json({ error: 'Bases are never deleted (history points at them). Deactivate it instead.' }, { status: 400 });
+  }
+  if (table === 'billing-rates') {
+    return NextResponse.json({ error: 'The rate categories are fixed; set a rate to 0 to stop charging it.' }, { status: 400 });
   }
 
   const url = new URL(request.url);

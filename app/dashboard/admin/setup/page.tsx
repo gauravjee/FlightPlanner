@@ -27,10 +27,11 @@ import HolidaysTab from './HolidaysTab';
 import AircraftMaintenanceScheduleTab from './AircraftMaintenanceScheduleTab';
 import AMEsTab from './AMEsTab';
 import BasesTab from './BasesTab';
+import BillingTab from './BillingTab';
 import {
   BookOpen, Plane, Target, ClipboardList, CircleCheck,
   GraduationCap, Users, Settings, School, CalendarDays,
-  ChevronLeft, ChevronRight, BarChart3, Wrench, UserCheck, MapPin,
+  ChevronLeft, ChevronRight, BarChart3, Wrench, UserCheck, MapPin, IndianRupee,
 } from 'lucide-react';
 
 // ============================================================
@@ -68,6 +69,7 @@ const TABS = [
   { id: 'users', label: 'User Management', shortLabel: 'User', icon: Users, component: UserManagementTab },
   { id: 'groundschool', label: 'Ground School', shortLabel: 'Ground', icon: School, component: GroundSchoolTab },
   { id: 'holidays', label: 'Holiday Calendar', shortLabel: 'Holidays', icon: CalendarDays, component: HolidaysTab },
+  { id: 'billing', label: 'Billing', shortLabel: 'Billing', icon: IndianRupee, component: BillingTab }, // billing B1, 21 Oct
 ];
 
 export default function SetupWizardPage() {
