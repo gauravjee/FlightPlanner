@@ -42,10 +42,10 @@ export async function GET(_request: Request, context: RouteContext) {
     student: { id: student.id, name: student.name, enrollmentId: student.enrollment_id },
     balance: balanceOf(entries ?? []),
     creditLimit: Number(student.credit_limit ?? 0),
-    creditNote: student.credit_note ?? null,
+    creditNote: own ? null : student.credit_note ?? null, // staff-only note (operator, 21 Oct)
     rates,
-    // A student doesn't see which staff member made or voided an entry.
-    entries: (entries ?? []).map(e => (own ? { ...e, created_by: null, voided_by: null } : e)),
+    // A student sees only live entries, without who made them (operator, 21 Oct: void reasons are internal).
+    entries: own ? (entries ?? []).filter(e => !e.voided_at).map(e => ({ ...e, created_by: null })) : entries ?? [],
   });
 }
 
