@@ -15,6 +15,7 @@ interface Subject {
   is_mandatory: boolean;
   sort_order: number;
   is_active: boolean;
+  fee: number | null; // billing B3: charged once per student on first class enrolment
 }
 
 const FIELDS: ConfigField[] = [
@@ -22,6 +23,7 @@ const FIELDS: ConfigField[] = [
   { name: 'subject_code', type: 'text', default: '', placeholder: 'Subject Code', required: true, uppercase: true },
   { name: 'validity_years', type: 'number', default: null, placeholder: 'Validity (Years)', step: '0.5', nullable: true },
   { name: 'required_before_hours', type: 'number', default: null, placeholder: 'Required Before (Hours)', integer: true, nullable: true },
+  { name: 'fee', type: 'number', default: null, placeholder: 'Fee ₹ before GST (blank = free)', step: '0.01', nullable: true },
   // Never had form inputs — carried hidden so an edit round-trips the
   // stored values instead of resetting them to these defaults.
   { name: 'is_mandatory', type: 'checkbox', default: true, hidden: true },
@@ -33,6 +35,7 @@ const COLUMNS: ConfigColumn<Subject>[] = [
   { header: 'Code', render: s => <span className="badge badge-accent">{s.subject_code}</span> },
   { header: 'Validity', render: s => <span className="text-xs">{s.validity_years ? `${s.validity_years} yrs` : '—'}</span> },
   { header: 'Before Hours', render: s => <span className="text-xs">{s.required_before_hours ? `${s.required_before_hours}h` : '—'}</span> },
+  { header: 'Fee', render: s => <span className="text-xs">{s.fee ? `₹${Number(s.fee).toLocaleString('en-IN')} + GST` : '—'}</span> },
 ];
 
 export default function GroundSchoolTab() {

@@ -181,3 +181,56 @@ export async function bookingFundsRefusal(
     + `${otherCost ? ` (plus ${formatINR(otherCost)} for bookings not yet charged)` : ''}.`
     + ' Record a payment, or ask an admin to add credit.';
 }
+
+// ---- B3 (21 Oct): fees — ground-school subjects, no-show, late cancellation ----
+
+/** The fees GST % and, if asked, one fee from Admin Setup → Billing → Fees (0 / blank = no fee). */
+async function feeSetting(key?: 'billing_no_show_fee' | 'billing_late_cancel_fee') {
+  const { data } = await supabaseAdmin.from('fto_settings').select('setting_key, setting_value').in('setting_key', [key ?? '', 'billing_fee_gst_rate']);
+  const value = (k: string) => Number(data?.find(s => s.setting_key === k)?.setting_value ?? 0) || 0;
+  return { amount: key ? round2(value(key)) : 0, gstRate: data?.some(s => s.setting_key === 'billing_fee_gst_rate') ? value('billing_fee_gst_rate') : 18 };
+}
+
+async function insertFee(row: Record<string, unknown>, net: number, gstRate: number, what: string) {
+  const gst = round2((net * gstRate) / 100);
+  const { error } = await supabaseAdmin.from('ledger_entries').insert({
+    ...row, entry_date: todayIST(), kind: 'CHARGE', gst_rate: gstRate, gst_amount: gst, debit: round2(net + gst),
+  });
+  // 23505: already charged (unique on source + source_id) — nothing to do.
+  if (error && error.code !== '23505') console.error(`Billing: ${what} failed:`, error.code);
+}
+
+/** Subject fee + GST, once per student per subject, when they're added to a class of it. Never fails the enrolment. */
+export async function chargeSubjectFee(studentId: string, classId: number, by: string): Promise<void> {
+  try {
+    const { data: cls } = await supabaseAdmin.from('ground_school_classes').select('subject_id').eq('id', classId).maybeSingle();
+    if (!cls?.subject_id) return;
+    const { data: subject } = await supabaseAdmin.from('ground_school_subjects').select('id, subject_name, fee').eq('id', cls.subject_id).maybeSingle();
+    const fee = round2(Number(subject?.fee ?? 0));
+    if (!subject || !(fee > 0)) return;
+    const { gstRate } = await feeSetting();
+    await insertFee({
+      student_id: studentId, source: 'SUBJECT', source_id: `${studentId}:${subject.id}`,
+      description: `Ground school: ${subject.subject_name}`, created_by: by,
+    }, fee, gstRate, 'subject fee');
+  } catch (e) {
+    console.error('Billing: subject fee failed:', e);
+  }
+}
+
+/** No-show or (admin-approved) late-cancellation fee + GST for a cancelled booking, once per booking. */
+export async function chargeCancelFee(bookingId: string, kind: 'NO_SHOW' | 'LATE_CANCEL', by: string): Promise<void> {
+  try {
+    const { data: bk } = await supabaseAdmin.from('scheduled_flights').select('id, student_id, start_time').eq('id', bookingId).maybeSingle();
+    if (!bk?.student_id) return;
+    const { amount, gstRate } = await feeSetting(kind === 'NO_SHOW' ? 'billing_no_show_fee' : 'billing_late_cancel_fee');
+    if (!(amount > 0)) return;
+    const when = new Date(bk.start_time).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    await insertFee({
+      student_id: bk.student_id, source: 'CANCEL_FEE', source_id: String(bk.id), created_by: by,
+      description: `${kind === 'NO_SHOW' ? 'No-show fee' : 'Late-cancellation fee'}: booking #${bk.id} (${when})`,
+    }, amount, gstRate, 'cancellation fee');
+  } catch (e) {
+    console.error('Billing: cancellation fee failed:', e);
+  }
+}

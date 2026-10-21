@@ -22,7 +22,7 @@ import { useAircraft, getAircraftById } from '@/lib/hooks/useAircraft';
 import { useInstructors, getInstructorById } from '@/lib/hooks/useInstructors';
 import { useStudents, getStudentById } from '@/lib/hooks/useStudents';
 import { getLocationDisplay } from '@/lib/location';
-import { SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES } from '@/lib/permissions';
+import { SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES, BILLING_ADMIN_ROLES } from '@/lib/permissions';
 import { FlightSlot, CANCELLATION_REASONS, type CancellationReason } from '@/types';
 import { useState } from 'react';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
@@ -108,6 +108,9 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
 
   const [showCancelReason, setShowCancelReason] = useState(false); // Check Cancellation Reason modal visibility
   const [cancelNote, setCancelNote] = useState(''); // 2026-09-23: optional detail, required for OTHER
+  // Billing B3 (operator, 21 Oct): a late cancellation is charged only when an admin ticks this.
+  const [chargeLateFee, setChargeLateFee] = useState(false);
+  const canChargeLateFee = !!slot.studentId && BILLING_ADMIN_ROLES.includes(session?.user?.role ?? '');
   
 
   // Calculate flight duration in hours
@@ -136,7 +139,7 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
    * Maintenance vs. Other cancellations. Reloads schedule afterward.
    */
   const handleCancel = async (reason: CancellationReason) => {
-    await cancelFlight(slot.id, reason, cancelNote);
+    await cancelFlight(slot.id, reason, cancelNote, reason === 'LATE_CANCEL' && canChargeLateFee && chargeLateFee);
     onClose();
   };
 
@@ -713,6 +716,13 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
                 maxLength={200}
                 className="w-full surface-inner rounded-lg px-3 py-1.5 text-xs"
               />
+              {canChargeLateFee && (
+                <label className="w-full flex items-center gap-2 text-xs text-secondary">
+                  <input type="checkbox" checked={chargeLateFee} onChange={e => setChargeLateFee(e.target.checked)} />
+                  Charge the late-cancellation fee (only with &ldquo;Student late cancellation&rdquo;)
+                </label>
+              )}
+              {slot.studentId && <span className="w-full text-[11px] text-tertiary">&ldquo;Student no-show&rdquo; charges the student the no-show fee.</span>}
               <span className="text-xs text-tertiary">Cancel — reason?</span>
               {CANCELLATION_REASONS.filter(r => r.manual).map(r => {
                 const needsNote = r.code === 'OTHER' && !cancelNote.trim();
@@ -728,7 +738,7 @@ export default function FlightDetailModal({ slot, onClose, onEdit }: Props) {
                   </button>
                 );
               })}
-              <button onClick={() => { setShowCancelReason(false); setCancelNote(''); }} className="px-3 py-1.5 text-xs surface-inner rounded-lg hover:opacity-80 transition cursor-pointer">
+              <button onClick={() => { setShowCancelReason(false); setCancelNote(''); setChargeLateFee(false); }} className="px-3 py-1.5 text-xs surface-inner rounded-lg hover:opacity-80 transition cursor-pointer">
                 Never mind
               </button>
             </div>

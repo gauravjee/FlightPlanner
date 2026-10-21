@@ -86,7 +86,7 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
     dbTable: 'ground_school_subjects',
     columns: [
       'subject_name', 'subject_code', 'validity_years', 'required_before_hours',
-      'is_mandatory', 'sort_order', 'is_active',
+      'is_mandatory', 'sort_order', 'is_active', 'fee', // fee: billing B3
     ],
   },
   'requirement-templates': {

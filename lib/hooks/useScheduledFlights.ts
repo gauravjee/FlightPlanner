@@ -318,12 +318,12 @@ export async function resolveScheduledFlight(id: string, resolve: 'approve' | 'r
 
 // 2026-09-23: reason widened to every manual CancellationReason, plus an
 // optional note (see add-cancellation-reasons-and-note.sql).
-export async function cancelFlight(id: string, reason?: CancellationReason, note?: string): Promise<void> {
+export async function cancelFlight(id: string, reason?: CancellationReason, note?: string, chargeLateCancelFee = false): Promise<void> {
   const cancellationNote = note?.trim() || null;
   const res = await fetch(`/api/scheduled-flights/${id}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: 'CANCELLED', cancellationReason: reason ?? null, cancellationNote }),
+    body: JSON.stringify({ status: 'CANCELLED', cancellationReason: reason ?? null, cancellationNote, ...(chargeLateCancelFee ? { chargeLateCancelFee: true } : {}) }),
   });
   if (res.ok) {
     mutate<ScheduledFlight[]>(

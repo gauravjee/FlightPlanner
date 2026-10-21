@@ -112,7 +112,74 @@ export default function BillingTab() {
         </label>
         {!block && settings && <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>Setting missing — run billing-b1.sql.</p>}
       </div>
+      {settings && <FeesSection settings={settings} onSaved={() => { mutateSettings(); globalMutate(ftoSettingsKey); }} />}
       <div className="mt-6"><PackagesSection /></div>
+    </div>
+  );
+}
+
+// B3 (21 Oct): fees charged on top of flying. No-show is charged automatically; a late cancellation only when an
+// admin ticks it while cancelling. The subject fee itself is set per subject in Admin Setup → Ground School.
+const FEE_KEYS = [
+  { key: 'billing_no_show_fee', label: 'No-show fee (₹, before GST)' },
+  { key: 'billing_late_cancel_fee', label: 'Late-cancellation fee (₹, before GST)' },
+  { key: 'billing_fee_gst_rate', label: 'GST % on fees' },
+] as const;
+
+function FeesSection({ settings, onSaved }: { settings: SettingRow[]; onSaved: () => void }) {
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const rowOf = (key: string) => settings.find(s => s.setting_key === key);
+  const valueOf = (key: string) => draft[key] ?? rowOf(key)?.setting_value ?? '';
+  const missing = FEE_KEYS.some(f => !rowOf(f.key));
+
+  const save = async () => {
+    for (const f of FEE_KEYS) {
+      const n = Number(valueOf(f.key));
+      if (valueOf(f.key).trim() === '' || !(n >= 0) || (f.key === 'billing_fee_gst_rate' && n > 100)) {
+        notify(`${f.label}: enter a number of 0 or more${f.key === 'billing_fee_gst_rate' ? ' (up to 100)' : ''}.`);
+        return;
+      }
+    }
+    setSaving(true);
+    try {
+      for (const f of FEE_KEYS) {
+        const row = rowOf(f.key);
+        if (!row || valueOf(f.key) === row.setting_value) continue;
+        const res = await fetch('/api/admin/config/fto-settings', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: row.id, setting_value: String(Number(valueOf(f.key))) }),
+        });
+        if (!res.ok) { notify((await res.json().catch(() => ({}))).error || `Could not save ${f.label}.`); onSaved(); return; }
+      }
+      setDraft({});
+      onSaved();
+      notify('✅ Fees saved.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="surface-inner rounded-lg p-3 mt-4">
+      <p className="font-semibold mb-1">Fees</p>
+      <p className="text-xs text-tertiary mb-3">
+        A no-show is charged when a booking is cancelled as &ldquo;Student no-show&rdquo;. A late cancellation is charged only when an admin ticks the fee
+        while cancelling. Ground-school subject fees are set on each subject (Admin Setup → Ground School). 0 = no fee.
+      </p>
+      {missing ? <p className="text-xs" style={{ color: 'var(--danger)' }}>Fee settings missing — run billing-b3.sql.</p> : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {FEE_KEYS.map(f => (
+              <label key={f.key} className="text-xs text-tertiary">{f.label}
+                <input inputMode="decimal" className={inputClass} value={valueOf(f.key)} onChange={e => setDraft({ ...draft, [f.key]: e.target.value })} />
+              </label>
+            ))}
+          </div>
+          <button type="button" disabled={saving} onClick={save} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer mt-3"
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>{saving ? 'Saving...' : 'Save fees'}</button>
+        </>
+      )}
     </div>
   );
 }

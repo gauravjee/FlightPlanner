@@ -77,6 +77,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, requireSession, GROUND_SCHOOL_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { deriveExamResult, isValidExamScore } from '@/lib/dgca';
+import { chargeSubjectFee } from '@/lib/billing-server';
 
 export async function GET(request: Request) {
   const { session, error } = await requireSession();
@@ -155,7 +156,7 @@ function isUpdatableField(value: unknown): value is UpdatableField {
 
 /** Add a student to a ground school class. */
 export async function POST(request: Request) {
-  const { error } = await requireRole(GROUND_SCHOOL_WRITE_ROLES);
+  const { session, error } = await requireRole(GROUND_SCHOOL_WRITE_ROLES);
   if (error) return error;
 
   let body: Record<string, unknown>;
@@ -186,6 +187,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to add student to this class.' }, { status: 500 });
   }
 
+  // Billing B3 (operator, 21 Oct): the subject fee, once per student per subject, on first class enrolment.
+  await chargeSubjectFee(studentId, classId, session.user.email ?? 'unknown');
   return NextResponse.json({ success: true });
 }
 

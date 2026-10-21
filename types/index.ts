@@ -245,6 +245,7 @@ export const CANCELLATION_REASONS = [
   { code: 'WEATHER', label: 'Weather', manual: true },
   { code: 'MAINTENANCE', label: 'Maintenance', manual: true },
   { code: 'STUDENT_NO_SHOW', label: 'Student no-show', manual: true },
+  { code: 'LATE_CANCEL', label: 'Student late cancellation', manual: true }, // billing B3: fee only if an admin ticks it
   { code: 'INSTRUCTOR_UNAVAILABLE', label: 'Instructor unavailable', manual: true },
   { code: 'ATC_AIRSPACE', label: 'ATC / airspace', manual: true },
   { code: 'OTHER', label: 'Other', manual: true },

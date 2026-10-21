@@ -16,7 +16,7 @@
 // boundary.
 
 import { NextResponse } from 'next/server';
-import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES, ROSTER_OVERRIDE_ROLES, MAINTENANCE_OVERRIDE_ROLES } from '@/lib/api-auth';
+import { requireRole, SCHEDULE_MANAGE_ROLES, SCHEDULE_APPROVER_ROLES, ROSTER_OVERRIDE_ROLES, MAINTENANCE_OVERRIDE_ROLES, BILLING_ADMIN_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { studentBookingRefusal } from '@/lib/student-server';
 import { flightHoursFromTimes } from '@/lib/flight-classification';
@@ -26,6 +26,7 @@ import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
 import { rosterRefusal } from '@/lib/roster-server';
 import { instructorLeftBefore } from '@/lib/staff-server';
 import { overdueBlockingItems, maintenanceBlockMessage, overrideReasonFrom } from '@/lib/maintenance-block';
+import { chargeCancelFee } from '@/lib/billing-server';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -277,6 +278,15 @@ export async function PATCH(request: Request, context: RouteContext) {
     const { error: acError } = await supabaseAdmin.from('aircraft').update({ hobbs_time: advanceTo.end })
       .eq('id', advanceTo.aircraftId).lt('hobbs_time', advanceTo.end); // only ever forward
     if (acError) console.error('Error advancing aircraft Hobbs at checkout:', acError);
+  }
+
+  // Billing B3 (operator, 21 Oct): a no-show is charged; a late cancellation only when an admin ticks it.
+  if (dbUpdates.status === 'CANCELLED') {
+    const by = session.user.email ?? 'unknown';
+    if (dbUpdates.cancellation_reason === 'STUDENT_NO_SHOW') await chargeCancelFee(id, 'NO_SHOW', by);
+    if (dbUpdates.cancellation_reason === 'LATE_CANCEL' && body.chargeLateCancelFee === true && BILLING_ADMIN_ROLES.includes(session.user.role ?? '')) {
+      await chargeCancelFee(id, 'LATE_CANCEL', by);
+    }
   }
 
   return NextResponse.json({ success: true });
