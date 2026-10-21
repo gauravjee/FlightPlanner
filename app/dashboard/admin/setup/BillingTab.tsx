@@ -57,7 +57,7 @@ export default function BillingTab() {
       }
       await mutate();
       setDraft({});
-      notify('Rates saved.');
+      notify('✅ Rates saved.', 'success');
     } finally {
       setSaving(false);
     }

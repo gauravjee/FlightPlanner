@@ -6,7 +6,8 @@
 
 const COLORS = { error: 'var(--danger)', success: 'var(--success)', warning: '#b45309' } as const;
 
-export function notify(message: string, kind: keyof typeof COLORS = 'error'): void {
+// A message starting with ✅ is a success (green) even when the caller didn't say so (operator, 21 Oct).
+export function notify(message: string, kind: keyof typeof COLORS = message.startsWith('✅') ? 'success' : 'error'): void {
   let box = document.getElementById('fp-notify');
   if (!box) {
     box = document.createElement('div');
