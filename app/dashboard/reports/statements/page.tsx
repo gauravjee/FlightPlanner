@@ -103,7 +103,7 @@ export default function StatementsPage() {
                             ))}
                           </tbody>
                           <tfoot><tr className="border-t font-semibold">
-                            <td className="py-2 pr-3">{data.rows.length} students</td><td className="py-2 pr-3 text-right">{drCr(data.totals.opening)}</td>
+                            <td className="py-2 pr-3">{data.rows.length} student{data.rows.length === 1 ? '' : 's'}</td><td className="py-2 pr-3 text-right">{drCr(data.totals.opening)}</td>
                             <td className="py-2 pr-3 text-right">{formatINR(data.totals.charges)}</td><td className="py-2 pr-3 text-right">{formatINR(data.totals.credits)}</td>
                             <td className="py-2 text-right">{drCr(data.totals.closing)}</td>
                           </tr></tfoot>

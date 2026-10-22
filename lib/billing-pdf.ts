@@ -175,7 +175,7 @@ export function downloadConsolidated(c: ConsolidatedData, school: string, title:
   const doc = reportDoc(title, school, periodLabel(c.from, c.to));
   table(doc, 32, ['Student', 'Enrolment', 'Opening', 'Charges', 'Paid / credit', 'Closing'],
     c.rows.map(r => [r.name, r.enrollmentId ?? '', drCr(r.opening), rs(r.charges), rs(r.credits), drCr(r.closing)]), [2, 3, 4, 5],
-    [`${c.rows.length} students`, '', drCr(c.totals.opening), rs(c.totals.charges), rs(c.totals.credits), drCr(c.totals.closing)]);
+    [`${c.rows.length} student${c.rows.length === 1 ? '' : 's'}`, '', drCr(c.totals.opening), rs(c.totals.charges), rs(c.totals.credits), drCr(c.totals.closing)]);
   doc.save(fileName(`Consolidated_statement_${c.from}_${c.to}`));
 }
 

@@ -25,7 +25,7 @@ const fetchRecon = async (url: string): Promise<{ from: string; to: string; rows
 };
 const btn = 'px-3 py-1.5 rounded-lg text-sm cursor-pointer flex items-center gap-1 font-semibold';
 const on = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' };
-const statusColor = (s: ReconRow['status']) => (s === 'NOT_CHARGED' ? 'var(--danger)' : s === 'NO_STUDENT' ? 'var(--text-tertiary)' : 'var(--success)');
+const statusColor = (s: ReconRow['status']) => (s === 'NOT_CHARGED' ? 'var(--danger)' : s === 'NO_STUDENT' || s === 'BEFORE_BILLING' ? 'var(--text-tertiary)' : 'var(--success)');
 
 export default function ReconciliationPage() {
   useSetHeader({ title: 'Billing reconciliation', subtitle: 'Logbook flights beside their charges' });
@@ -44,6 +44,7 @@ export default function ReconciliationPage() {
   ];
   const notCharged = rows.filter(r => r.status === 'NOT_CHARGED').length;
   const voided = rows.filter(r => r.voidedCharges > 0).length;
+  const before = rows.filter(r => r.status === 'BEFORE_BILLING').length;
 
   const exportCsv = () => {
     const main = Papa.unparse(rows.map(r => ({
@@ -74,7 +75,7 @@ export default function ReconciliationPage() {
                       <p className="text-sm">
                         {rows.length} flights ·{' '}
                         <span style={{ color: notCharged ? 'var(--danger)' : 'var(--success)' }} data-testid="not-charged">{notCharged} not charged</span>
-                        {' · '}{voided} with a voided charge
+                        {' · '}{voided} with a voided charge{before ? ` · ${before} before billing started` : ''}
                       </p>
                       <div className="flex gap-2">
                         <button type="button" className={btn} style={on} disabled={!rows.length} onClick={exportCsv}><Download className="w-4 h-4" /> CSV</button>
@@ -122,7 +123,7 @@ export default function ReconciliationPage() {
                     </div>
                   </>
                 )}
-              <p className="text-[11px] text-tertiary mt-3">A logbook flight is charged when it is saved; package hours are used first. &ldquo;Not charged&rdquo; = a student flight with no live charge and no package hours (e.g. no rate set, or its charge was voided).</p>
+              <p className="text-[11px] text-tertiary mt-3">A logbook flight is charged when it is saved; package hours are used first. &ldquo;Not charged&rdquo; = a student flight with no live charge and no package hours (e.g. no rate set, or its charge was voided). &ldquo;Before billing&rdquo; = the same, dated before the billing start date in Admin Setup → Billing.</p>
             </section>
           </div>
         </main>

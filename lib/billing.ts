@@ -129,19 +129,26 @@ export function statementOf<T extends StatementEntry>(entries: T[], from: string
 
 export interface ReconFlight { id: string; flight_date: string; student_id: string | null; aircraft_id: string | number; total_hours: number | string }
 export interface ReconCharge { source_id: string | null; debit: number | string; hours: number | string | null; voided_at: string | null }
-export type ReconStatus = 'CHARGED' | 'PACKAGE' | 'PACKAGE_AND_CHARGED' | 'NOT_CHARGED' | 'NO_STUDENT';
+export type ReconStatus = 'CHARGED' | 'PACKAGE' | 'PACKAGE_AND_CHARGED' | 'NOT_CHARGED' | 'BEFORE_BILLING' | 'NO_STUDENT';
 export const RECON_LABEL: Record<ReconStatus, string> = {
-  CHARGED: 'Charged', PACKAGE: 'From package', PACKAGE_AND_CHARGED: 'Package + charged', NOT_CHARGED: 'Not charged', NO_STUDENT: 'No student',
+  CHARGED: 'Charged', PACKAGE: 'From package', PACKAGE_AND_CHARGED: 'Package + charged', NOT_CHARGED: 'Not charged',
+  BEFORE_BILLING: 'Before billing', NO_STUDENT: 'No student',
 };
 
-/** Each logbook flight beside its charge: live charge, package hours, voided charges, and a status. */
-export function reconcile<F extends ReconFlight>(flights: F[], charges: ReconCharge[], usage: { flight_record_id: string; hours: number | string }[]) {
+/**
+ * Each logbook flight beside its charge: live charge, package hours, voided charges, and a status. A flight with
+ * nothing charged dated before billingStart (Admin Setup → Billing; '' = none) is "Before billing", not "Not charged".
+ */
+export function reconcile<F extends ReconFlight>(
+  flights: F[], charges: ReconCharge[], usage: { flight_record_id: string; hours: number | string }[], billingStart = '',
+) {
   return flights.map(f => {
     const mine = charges.filter(c => c.source_id === String(f.id));
     const live = mine.find(c => !c.voided_at);
     const packageHours = round2(Number(usage.find(u => String(u.flight_record_id) === String(f.id))?.hours ?? 0));
     const status: ReconStatus = !f.student_id ? 'NO_STUDENT'
-      : live && packageHours ? 'PACKAGE_AND_CHARGED' : live ? 'CHARGED' : packageHours ? 'PACKAGE' : 'NOT_CHARGED';
+      : live && packageHours ? 'PACKAGE_AND_CHARGED' : live ? 'CHARGED' : packageHours ? 'PACKAGE'
+      : billingStart && f.flight_date < billingStart ? 'BEFORE_BILLING' : 'NOT_CHARGED';
     return {
       ...f, hours: round2(Number(f.total_hours)), packageHours, status,
       charged: live ? round2(Number(live.debit)) : 0, chargedHours: live ? round2(Number(live.hours ?? 0)) : 0,

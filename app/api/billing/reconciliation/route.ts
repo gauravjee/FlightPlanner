@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   const period = reportPeriod(new URL(request.url).searchParams);
   if (!period) return NextResponse.json({ error: 'Pick a valid period: From on or before To, at most 400 days.' }, { status: 400 });
   try {
-    const [flights, charges, usage, { data: students }, { data: aircraft }] = await Promise.all([
+    const [flights, charges, usage, { data: students }, { data: aircraft }, { data: start }] = await Promise.all([
       allRows(a => supabaseAdmin.from('flight_records').select('id, flight_date, student_id, aircraft_id, total_hours, flight_type')
         .gte('flight_date', period.from).lte('flight_date', period.to).order('flight_date').order('id').range(a, a + 999)),
       // A logbook charge is dated on its flight's date (chargeLogbookEntry), so the same period finds it.
@@ -24,13 +24,15 @@ export async function GET(request: Request) {
         .gte('flight_records.flight_date', period.from).lte('flight_records.flight_date', period.to).order('id').range(a, a + 999)),
       supabaseAdmin.from('students').select('id, name'),
       supabaseAdmin.from('aircraft').select('id, registration'),
+      supabaseAdmin.from('fto_settings').select('setting_value').eq('setting_key', 'billing_start_date').maybeSingle(),
     ]);
+    const billingStart = /^\d{4}-\d{2}-\d{2}$/.test(start?.setting_value ?? '') ? String(start?.setting_value) : '';
     const name = new Map((students ?? []).map(s => [String(s.id), s.name as string]));
     const reg = new Map((aircraft ?? []).map(a => [String(a.id), a.registration as string]));
-    const rows = reconcile(flights, charges, usage).map(r => ({
+    const rows = reconcile(flights, charges, usage, billingStart).map(r => ({
       ...r, student: r.student_id ? name.get(String(r.student_id)) ?? 'Unknown' : '', aircraft: reg.get(String(r.aircraft_id)) ?? 'Unknown',
     }));
-    return NextResponse.json({ ...period, rows });
+    return NextResponse.json({ ...period, billingStart, rows });
   } catch (e) {
     console.error('Billing reconciliation failed:', e);
     return NextResponse.json({ error: 'Failed to build the reconciliation report.' }, { status: 500 });

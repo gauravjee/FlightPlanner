@@ -114,6 +114,7 @@ export default function BillingTab() {
       </div>
       {settings && <FeesSection settings={settings} onSaved={() => { mutateSettings(); globalMutate(ftoSettingsKey); }} />}
       {settings && <GstSection settings={settings} onSaved={() => { mutateSettings(); globalMutate(ftoSettingsKey); }} />}
+      {settings && <StartDateSection settings={settings} onSaved={() => { mutateSettings(); globalMutate(ftoSettingsKey); }} />}
       <div className="mt-6"><PackagesSection /></div>
     </div>
   );
@@ -299,6 +300,37 @@ function GstSection({ settings, onSaved }: { settings: SettingRow[]; onSaved: ()
           <button type="button" disabled={saving} onClick={save} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer mt-3"
             style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>{saving ? 'Saving...' : 'Save GST details'}</button>
         </>
+      )}
+    </div>
+  );
+}
+
+// B4b (operator, 22 Oct: "add before billing"): flights logged before this date with nothing charged show as
+// "Before billing" in the reconciliation report instead of "Not charged". Blank = no start date.
+function StartDateSection({ settings, onSaved }: { settings: SettingRow[]; onSaved: () => void }) {
+  const row = settings.find(s => s.setting_key === 'billing_start_date');
+  const [draft, setDraft] = useState<string | null>(null);
+  const value = draft ?? row?.setting_value ?? '';
+  const save = async () => {
+    if (!row) return;
+    const res = await fetch('/api/admin/config/fto-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: row.id, setting_value: value }),
+    });
+    if (!res.ok) { notify((await res.json().catch(() => ({}))).error || 'Could not save the billing start date.'); return; }
+    setDraft(null);
+    onSaved();
+    notify('✅ Billing start date saved.');
+  };
+  return (
+    <div className="surface-inner rounded-lg p-3 mt-4">
+      <p className="font-semibold mb-1">Billing start date</p>
+      <p className="text-xs text-tertiary mb-2">Logbook flights before this date that were never charged show as &ldquo;Before billing&rdquo; in Reports → Billing Reconciliation. Leave blank if none.</p>
+      {!row ? <p className="text-xs" style={{ color: 'var(--danger)' }}>Setting missing — run billing-b4b.sql.</p> : (
+        <div className="flex flex-wrap items-end gap-2">
+          <input type="date" aria-label="Billing start date" className={`${inputClass} w-48`} value={value} onChange={e => setDraft(e.target.value)} />
+          <button type="button" onClick={save} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer"
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>Save date</button>
+        </div>
       )}
     </div>
   );

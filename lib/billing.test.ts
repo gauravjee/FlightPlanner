@@ -83,6 +83,8 @@ const rec = reconcile([
 ], [{ flight_record_id: 'b', hours: 1 }, { flight_record_id: 'e', hours: 2 }]);
 assert.deepEqual(rec.map(r => r.status), ['CHARGED', 'PACKAGE_AND_CHARGED', 'NOT_CHARGED', 'NO_STUDENT', 'PACKAGE']);
 assert.equal(rec[2].voidedCharges, 1, 'voided charge called out');
+assert.deepEqual(reconcile(rec.slice(0, 3), [], [{ flight_record_id: 'b', hours: 1 }], '2026-10-02').map(r => r.status),
+  ['BEFORE_BILLING', 'PACKAGE', 'NOT_CHARGED'], 'uncharged flights before the billing start date');
 assert.deepEqual(reconTotals(rec, i => rec[i].flight_date.slice(0, 7)),
   [{ key: '2026-10', flights: 4, hours: 4, packageHours: 1, charged: 19470 }, { key: '2026-11', flights: 1, hours: 2, packageHours: 2, charged: 0 }]);
 
