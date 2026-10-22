@@ -74,7 +74,9 @@ export async function GET(request: Request) {
   if (testTo !== null && !EMAIL_RE.test(testTo)) return NextResponse.json({ error: 'testTo is not a valid email address.' }, { status: 400 });
   const today = todayIST();
   const dashboardUrl = `${url.protocol}//${url.host}/dashboard`;
-  const stamp = new Date(`${today}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  // "23 Oct 2026" — the date format in every email (operator, 23 Oct).
+  const dayLabel = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const stamp = dayLabel(today);
   const mails: Mail[] = [];
   const sentKeys: string[] = []; // digest_sends rows to write once the emails have gone
   const result: Record<string, unknown> = { today, digest };
@@ -207,7 +209,7 @@ export async function GET(request: Request) {
         if (now.overdue) overdueRows.push([who, esc(formatINR(now.due))]);
         else for (const i of plan.filter(i => i.due_date >= today && i.due_date <= addDays(today, 7))) {
           const owed = dueNow(balance, plan, i.due_date).due;
-          if (owed > 0) { weekRows.push([who, esc(i.due_date), esc(formatINR(owed))]); break; }
+          if (owed > 0) { weekRows.push([who, esc(dayLabel(i.due_date)), esc(formatINR(owed))]); break; }
         }
         const r = instalmentReminder(balance, plan, today, lastSent.get(`billing-overdue|${p.student_id}`));
         const email = (s.email ?? '').trim();
@@ -218,10 +220,10 @@ export async function GET(request: Request) {
         reminders++;
         mails.push({
           to: [email],
-          subject: r.kind === 'OVERDUE' ? `Payment overdue: ${formatINR(r.amount)} on your FlightPro account` : `Reminder: ${formatINR(r.amount)} due on ${r.dueDate}`,
+          subject: r.kind === 'OVERDUE' ? `Payment overdue: ${formatINR(r.amount)} on your FlightPro account` : `Reminder: ${formatINR(r.amount)} due on ${dayLabel(r.dueDate)}`,
           html: wrapEmail(`Hello ${s.name}`, r.kind === 'OVERDUE'
             ? `${formatINR(r.amount)} of your ${p.name} payment plan is overdue. Please pay the accounts office, or contact them if you have already paid.`
-            : `${formatINR(r.amount)} of your ${p.name} payment plan falls due on ${r.dueDate}. Please pay by then, or contact the accounts office.`,
+            : `${formatINR(r.amount)} of your ${p.name} payment plan falls due on ${dayLabel(r.dueDate)}. Please pay by then, or contact the accounts office.`,
           '', `${url.protocol}//${url.host}/dashboard/my-account`),
         });
       }
