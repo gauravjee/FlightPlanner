@@ -12,7 +12,7 @@ import RoleGate from '@/components/ui/RoleGate';
 import PeriodPicker, { initialPeriod, rangeOf, type PeriodState } from '@/components/billing/PeriodPicker';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { BILLING_REPORT_ROLES } from '@/lib/permissions';
-import { RECON_LABEL, formatINR, reconTotals } from '@/lib/billing';
+import { RECON_LABEL, formatINR, reconTotals, csvSafe } from '@/lib/billing';
 import { downloadReconciliation, type ReconRow } from '@/lib/billing-pdf';
 import { todayIST } from '@/lib/ist';
 import { Download } from 'lucide-react';
@@ -25,8 +25,6 @@ const fetchRecon = async (url: string): Promise<{ from: string; to: string; rows
 };
 const btn = 'px-3 py-1.5 rounded-lg text-sm cursor-pointer flex items-center gap-1 font-semibold';
 const on = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' };
-// A cell starting with = + - @ would run as a formula when the CSV is opened in Excel; a leading ' keeps it text.
-const csvSafe = (v: string | number) => (typeof v === 'string' && /^[=+\-@]/.test(v) ? `'${v}` : v);
 const statusColor = (s: ReconRow['status']) => (s === 'NOT_CHARGED' ? 'var(--danger)' : s === 'NO_STUDENT' || s === 'BEFORE_BILLING' ? 'var(--text-tertiary)' : 'var(--success)');
 
 export default function ReconciliationPage() {

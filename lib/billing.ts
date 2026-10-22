@@ -188,3 +188,25 @@ export function reconTotals(rows: { hours: number; packageHours: number; charged
   return [...by.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
+// ---- B5 (22 Oct): amount in words, CSV safety ----
+const ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen',
+  'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+const TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+const upTo99 = (n: number) => (n < 20 ? ONES[n] : `${TENS[Math.floor(n / 10)]}${n % 10 ? ` ${ONES[n % 10]}` : ''}`);
+const upTo999 = (n: number) => (n >= 100 ? `${ONES[Math.floor(n / 100)]} Hundred${n % 100 ? ` ${upTo99(n % 100)}` : ''}` : upTo99(n));
+function wholeWords(n: number): string {
+  if (n === 0) return 'Zero';
+  const crore = Math.floor(n / 1e7), lakh = Math.floor((n % 1e7) / 1e5), thousand = Math.floor((n % 1e5) / 1000), rest = n % 1000;
+  return [crore && `${wholeWords(crore)} Crore`, lakh && `${upTo99(lakh)} Lakh`, thousand && `${upTo99(thousand)} Thousand`, rest && upTo999(rest)]
+    .filter(Boolean).join(' ');
+}
+/** An amount the Indian way, for invoices and receipts: "Rupees One Lakh Eighteen Thousand and Fifty Paise Only". */
+export function amountInWords(amount: number): string {
+  const paiseTotal = Math.round(Math.abs(amount) * 100);
+  const paise = paiseTotal % 100;
+  return `Rupees ${wholeWords(Math.floor(paiseTotal / 100))}${paise ? ` and ${upTo99(paise)} Paise` : ''} Only`;
+}
+
+/** A CSV cell starting with = + - @ would run as a formula in Excel; a leading ' keeps it text. */
+export const csvSafe = (v: string | number) => (typeof v === 'string' && /^[=+\-@]/.test(v) ? `'${v}` : v);
+

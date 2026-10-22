@@ -13,10 +13,10 @@ export interface EffectiveRate { category: BillingCategory; hourlyRate: number; 
 
 /** The rate per category for one student: their own override if set, else the school rate. */
 export async function ratesFor(studentId: string): Promise<EffectiveRate[]> {
-  const [{ data: school }, { data: own }, gstOn] = await Promise.all([
-    supabaseAdmin.from('billing_rates').select('category, hourly_rate, gst_rate'),
+  const [{ data: school }, { data: own }, gst] = await Promise.all([
+    supabaseAdmin.from('billing_rates').select('category, hourly_rate'),
     supabaseAdmin.from('student_rates').select('category, hourly_rate').eq('student_id', studentId),
-    gstRegistered(),
+    gstRateOn(todayIST()),
   ]);
   return BILLING_CATEGORIES.map(category => {
     const s = school?.find(r => r.category === category);
@@ -24,7 +24,7 @@ export async function ratesFor(studentId: string): Promise<EffectiveRate[]> {
     return {
       category,
       hourlyRate: Number(o?.hourly_rate ?? s?.hourly_rate ?? 0),
-      gstRate: gstOn ? Number(s?.gst_rate ?? 0) : 0, // no GST until the school saves a valid GSTIN
+      gstRate: gst, // B5: one school-wide GST rate (today's), 0 until a valid GSTIN is saved
       override: !!o,
     };
   });
@@ -90,7 +90,8 @@ export async function chargeLogbookEntry(recordId: string, by: string): Promise<
       console.warn(`Billing: no ${category} rate set — ${charged} h of logbook entry ${recordId} not charged.`);
       return;
     }
-    const { gst, total } = priceHours(charged, rate.hourlyRate, rate.gstRate);
+    const gstRate = await gstRateOn(rec.flight_date); // B5: the rate in force on the flight date
+    const { gst, total } = priceHours(charged, rate.hourlyRate, gstRate);
     const { error } = await supabaseAdmin.from('ledger_entries').insert({
       student_id: rec.student_id,
       entry_date: rec.flight_date,
@@ -100,7 +101,7 @@ export async function chargeLogbookEntry(recordId: string, by: string): Promise<
       description: `${ac.registration} ${rec.flight_type ?? ''} flight, ${hours} h${fromPackage ? ` (${fromPackage} h from package)` : ''}`.replace(/\s+/g, ' '),
       hours: charged,
       rate: rate.hourlyRate,
-      gst_rate: rate.gstRate,
+      gst_rate: gstRate,
       gst_amount: gst,
       debit: total,
       created_by: by,
@@ -187,13 +188,12 @@ export async function bookingFundsRefusal(
 
 /** The fees GST % and, if asked, one fee from Admin Setup → Billing → Fees (0 / blank = no fee). */
 async function feeSetting(key?: 'billing_no_show_fee' | 'billing_late_cancel_fee') {
-  const [{ data }, gstOn] = await Promise.all([
-    supabaseAdmin.from('fto_settings').select('setting_key, setting_value').in('setting_key', [key ?? '', 'billing_fee_gst_rate']),
-    gstRegistered(),
+  const [{ data }, gstRate] = await Promise.all([
+    supabaseAdmin.from('fto_settings').select('setting_key, setting_value').in('setting_key', [key ?? '']),
+    gstRateOn(todayIST()), // B5: fees are charged today, at today's school-wide rate
   ]);
   const value = (k: string) => Number(data?.find(s => s.setting_key === k)?.setting_value ?? 0) || 0;
-  const gstRate = data?.some(s => s.setting_key === 'billing_fee_gst_rate') ? value('billing_fee_gst_rate') : 18;
-  return { amount: key ? round2(value(key)) : 0, gstRate: gstOn ? gstRate : 0 };
+  return { amount: key ? round2(value(key)) : 0, gstRate };
 }
 
 async function insertFee(row: Record<string, unknown>, net: number, gstRate: number, what: string) {
@@ -291,5 +291,13 @@ export function reportPeriod(params: URLSearchParams): { from: string; to: strin
 export async function gstRegistered(): Promise<boolean> {
   const { data } = await supabaseAdmin.from('fto_settings').select('setting_value').eq('setting_key', 'billing_gstin').maybeSingle();
   return isGstin((data?.setting_value ?? '').trim().toUpperCase());
+}
+
+/** B5: the school's GST % on a date — 0 until a valid GSTIN is saved, else the latest rate effective on or before it. */
+export async function gstRateOn(date: string): Promise<number> {
+  if (!(await gstRegistered())) return 0;
+  const { data } = await supabaseAdmin.from('gst_rates').select('rate').lte('effective_from', date)
+    .order('effective_from', { ascending: false }).limit(1).maybeSingle();
+  return Number(data?.rate ?? 0);
 }
 

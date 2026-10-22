@@ -57,7 +57,8 @@ import { NextResponse } from 'next/server';
 import { requireRole, requireSession, ADMIN_SETUP_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { BASE1_ID, baseRowError, isBaseSettingKey, settingToBaseValue, baseToSettingValue } from '@/lib/bases';
-import { isGstin } from '@/lib/billing';
+import { isGstin, round2 } from '@/lib/billing';
+import { todayIST } from '@/lib/ist';
 
 // Maps the URL's `table` segment to { the real Postgres table, the columns
 // this route is allowed to write }. Adding a new Admin Setup config tab
@@ -146,6 +147,12 @@ const TABLES: Record<string, { dbTable: string; columns: string[] }> = {
   'billing-rates': {
     dbTable: 'billing_rates',
     columns: ['hourly_rate', 'gst_rate'],
+  },
+  // B5 (22 Oct): the school-wide GST rate history (billing-b5.sql). Added one at a time; never edited; only a rate that
+  // hasn't started yet can be deleted (checks below), so a charge's GST can always be traced to the rate of its date.
+  'gst-rates': {
+    dbTable: 'gst_rates',
+    columns: ['rate', 'effective_from'],
   },
   // Bases (multi-base M2, 2026-10-15; claude/multi-base-design-2026-10-15.md). Never deleted
   // (history points at them); deactivated instead. Base 1 stays in step with fto_settings below.
@@ -268,7 +275,7 @@ export async function POST(request: Request, context: RouteContext) {
   // Bulk insert (e.g. the Exercises tab's CSV import, or Holiday Calendar's
   // recurring-holiday bulk add) — body is an array of row objects.
   if (Array.isArray(body)) {
-    if (table === 'ames' || table === 'bases' || table === 'billing-rates') return NextResponse.json({ error: 'Add these one at a time.' }, { status: 400 });
+    if (table === 'ames' || table === 'bases' || table === 'billing-rates' || table === 'gst-rates') return NextResponse.json({ error: 'Add these one at a time.' }, { status: 400 });
     const rows = body.map((row) => pickAllowed(row as Record<string, unknown>, config.columns));
     const { data, error: dbError } = await supabaseAdmin.from(config.dbTable).insert(rows).select();
     if (dbError) {
@@ -288,6 +295,12 @@ export async function POST(request: Request, context: RouteContext) {
     const baseError = baseRowError(insertBody, true);
     if (baseError) return NextResponse.json({ error: baseError }, { status: 400 });
   }
+  if (table === 'gst-rates') {
+    const rate = Number(insertBody.rate), from = String(insertBody.effective_from ?? '');
+    if (!(rate >= 0 && rate <= 100) || round2(rate) !== rate || !/^\d{4}-\d{2}-\d{2}$/.test(from) || Number.isNaN(Date.parse(from))) {
+      return NextResponse.json({ error: 'Enter a GST % from 0 to 100 (at most 2 decimals) and a valid date.' }, { status: 400 });
+    }
+  }
   const { data, error: dbError } = await supabaseAdmin
     .from(config.dbTable)
     .insert(insertBody)
@@ -297,6 +310,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (dbError) {
     console.error(`Error inserting into ${config.dbTable}:`, dbError);
     if (table === 'bases' && dbError.code === '23505') return NextResponse.json({ error: 'Another base already has that name or code.' }, { status: 409 });
+    if (table === 'gst-rates' && dbError.code === '23505') return NextResponse.json({ error: 'A GST rate already starts on that date.' }, { status: 409 });
     return NextResponse.json({ error: 'Failed to save.' }, { status: 500 });
   }
 
@@ -326,6 +340,7 @@ export async function PATCH(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'id is required.' }, { status: 400 });
   }
 
+  if (table === 'gst-rates') return NextResponse.json({ error: 'GST rates are not edited; add a new rate with its effective date.' }, { status: 400 });
   const updates = pickAllowed(body, config.columns);
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 });
@@ -398,6 +413,10 @@ export async function DELETE(request: Request, context: RouteContext) {
   const id = url.searchParams.get('id');
   if (!id) {
     return NextResponse.json({ error: 'id is required.' }, { status: 400 });
+  }
+  if (table === 'gst-rates') {
+    const { data: gst } = await supabaseAdmin.from('gst_rates').select('effective_from').eq('id', id).maybeSingle();
+    if (gst && gst.effective_from <= todayIST()) return NextResponse.json({ error: 'A GST rate that has already started can\'t be deleted; add a new rate instead.' }, { status: 409 });
   }
 
   const { data: rows, error: dbError } = await supabaseAdmin.from(config.dbTable).delete().eq('id', id).select('id');

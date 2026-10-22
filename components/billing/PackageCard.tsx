@@ -16,7 +16,7 @@ export interface PackageInfo {
   instalments: { id: number; due_date: string; amount: number }[];
 }
 export interface DueInfo { notYetDue: number; due: number; overdue: boolean }
-interface CoursePackage { id: number; program_id: number; name: string; fee: number; gst_rate: number; is_active: boolean }
+interface CoursePackage { id: number; program_id: number; name: string; fee: number; is_active: boolean }
 type PlanRow = { due_date: string; amount: string };
 
 const inputClass = 'surface-inner rounded-lg px-3 py-2 text-sm w-full focus:outline-none';
@@ -28,8 +28,8 @@ const fetchPackages = async (url: string): Promise<CoursePackage[]> => {
 const toRows = (plan: { due_date: string; amount: number }[]): PlanRow[] => plan.map(p => ({ due_date: p.due_date, amount: String(p.amount) }));
 const sumOf = (rows: PlanRow[]) => round2(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
 
-export default function PackageCard({ pkg, due, canPackage, saving, post, gstOn }: {
-  pkg: PackageInfo | null; due: DueInfo; canPackage: boolean; saving: boolean; gstOn: boolean;
+export default function PackageCard({ pkg, due, canPackage, saving, post, gstRate }: {
+  pkg: PackageInfo | null; due: DueInfo; canPackage: boolean; saving: boolean; gstRate: number;
   post: (payload: Record<string, unknown>) => Promise<boolean>;
 }) {
   const [mode, setMode] = useState<'assign' | 'plan' | 'close' | null>(null);
@@ -43,8 +43,9 @@ export default function PackageCard({ pkg, due, canPackage, saving, post, gstOn 
 
   const chosen = packages.find(p => String(p.id) === pick);
   // Fee + GST, with GST rounded on the fee the same way the database charges it.
-  const totalFor = (fee: number, gst: number) => round2(fee + (gstOn ? round2((fee * gst) / 100) : 0)); // no GST without a valid GSTIN
-  const exactTotal = chosen ? totalFor(fee === '' ? Number(chosen.fee) : Number(fee) || 0, Number(chosen.gst_rate)) : 0;
+  // B5: today's school-wide GST % (0 without a valid GSTIN), the same rate the database charges the package at.
+  const totalFor = (fee: number) => round2(fee + round2((fee * gstRate) / 100));
+  const exactTotal = chosen ? totalFor(fee === '' ? Number(chosen.fee) : Number(fee) || 0) : 0;
   const planTotal = mode === 'plan' && pkg ? round2(pkg.instalments.reduce((s, i) => s + i.amount, 0)) : exactTotal;
 
   const split = (total: number) => setRows(toRows(monthlyPlan(total, Math.max(1, Math.min(60, parseInt(splitN, 10) || 1)), rows[0]?.due_date || today)));
@@ -94,10 +95,10 @@ export default function PackageCard({ pkg, due, canPackage, saving, post, gstOn 
                 <select value={pick} className={inputClass} onChange={e => {
                   setPick(e.target.value); setFee('');
                   const p = packages.find(x => String(x.id) === e.target.value);
-                  if (p) setRows(toRows(monthlyPlan(totalFor(Number(p.fee), Number(p.gst_rate)), 1, today)));
+                  if (p) setRows(toRows(monthlyPlan(totalFor(Number(p.fee)), 1, today)));
                 }}>
                   <option value="">— Pick a package —</option>
-                  {packages.map(p => <option key={p.id} value={p.id}>{p.name} · {formatINR(Number(p.fee))}{gstOn ? ` + ${Number(p.gst_rate)}% GST` : ''}</option>)}
+                  {packages.map(p => <option key={p.id} value={p.id}>{p.name} · {formatINR(Number(p.fee))}{gstRate ? ` + ${gstRate}% GST` : ''}</option>)}
                 </select>
               </label>
               <label className="text-xs text-tertiary">Agreed fee before GST (blank = list fee)

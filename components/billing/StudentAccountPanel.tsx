@@ -16,6 +16,7 @@ interface Entry {
   rate: number | null; gst_amount: number; debit: number; credit: number; method: string | null; reference: string | null;
   created_by: string | null; voided_at: string | null; void_reason: string | null;
   invoice_id: number | null; credit_note_id: number | null; // B4
+  bank_name: string | null; // B5: refund payouts
 }
 interface Account {
   student: { id: string; name: string; enrollmentId: string };
@@ -24,7 +25,7 @@ interface Account {
   entries: Entry[];
   package: PackageInfo | null; // B2
   due: DueInfo;
-  billingState: string | null; documents: BillingDocument[]; gstOn: boolean; // B4
+  billingState: string | null; documents: BillingDocument[]; gstRate: number; // B4 / B5
 }
 
 async function fetchAccount(url: string): Promise<Account> {
@@ -36,7 +37,7 @@ async function fetchAccount(url: string): Promise<Account> {
 
 const inputClass = 'surface-inner rounded-lg px-3 py-2 text-sm w-full focus:outline-none';
 const primaryBtn = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' };
-type Form = 'payment' | 'opening' | 'adjustment' | 'credit' | null;
+type Form = 'payment' | 'opening' | 'adjustment' | 'credit' | 'payout' | null;
 
 export default function StudentAccountPanel({ studentId, canRecord = false, canAdmin = false, canPackage = false, onChanged }: {
   studentId: string; canRecord?: boolean; canAdmin?: boolean; canPackage?: boolean; onChanged?: () => void;
@@ -44,7 +45,7 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
   const url = `/api/billing/students/${studentId}`;
   const { data, error, isLoading, mutate } = useSWR(url, fetchAccount);
   const [form, setForm] = useState<Form>(null);
-  const [f, setF] = useState({ amount: '', method: 'CASH', reference: '', date: '', note: '', owes: true, charge: true });
+  const [f, setF] = useState({ amount: '', method: 'CASH', reference: '', date: '', note: '', owes: true, charge: true, bankName: '' });
   const [voiding, setVoiding] = useState<{ id: number; reason: string } | null>(null);
   const [refunding, setRefunding] = useState<{ id: number; amount: string; reason: string } | null>(null);
   const [rateEdit, setRateEdit] = useState<{ category: BillingCategory; value: string } | null>(null);
@@ -66,13 +67,13 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
 
   const open = (next: Form) => {
     setForm(form === next ? null : next);
-    setF({ amount: next === 'credit' ? String(data?.creditLimit ?? '') : '', method: 'CASH', reference: '', date: '', note: next === 'credit' ? data?.creditNote ?? '' : '', owes: true, charge: true });
+    setF({ amount: next === 'credit' ? String(data?.creditLimit ?? '') : '', method: 'CASH', reference: '', date: '', note: next === 'credit' ? data?.creditNote ?? '' : '', owes: true, charge: true, bankName: '' });
   };
 
   const submit = async () => {
     const ok = form === 'credit'
       ? await post({ action: 'credit', creditLimit: f.amount.trim() || '0', note: f.note })
-      : await post({ action: form, amount: f.amount.trim(), method: f.method, reference: f.reference, date: f.date || undefined, note: f.note, owes: f.owes, charge: f.charge });
+      : await post({ action: form, amount: f.amount.trim(), method: f.method, reference: f.reference, date: f.date || undefined, note: f.note, owes: f.owes, charge: f.charge, bankName: f.bankName });
     if (ok) setForm(null);
   };
 
@@ -125,20 +126,21 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
         </div>
       </div>
 
-      <PackageCard pkg={data.package} due={data.due} canPackage={canPackage} saving={saving} post={post} gstOn={data.gstOn} />
+      <PackageCard pkg={data.package} due={data.due} canPackage={canPackage} saving={saving} post={post} gstRate={data.gstRate} />
 
       {(canRecord || canAdmin) && (
         <div className="flex flex-wrap gap-2 mb-3">
           {canRecord && <button type="button" className="px-3 py-1.5 rounded-lg text-sm font-semibold cursor-pointer" style={primaryBtn} onClick={() => open('payment')}>Record payment</button>}
           {canRecord && !hasOpening && <button type="button" className="px-3 py-1.5 rounded-lg text-sm surface-inner cursor-pointer" onClick={() => open('opening')}>Opening balance</button>}
           {canRecord && <button type="button" className="px-3 py-1.5 rounded-lg text-sm surface-inner cursor-pointer" onClick={() => open('adjustment')}>Adjustment</button>}
+          {canRecord && data.balance > 0 && <button type="button" className="px-3 py-1.5 rounded-lg text-sm surface-inner cursor-pointer" onClick={() => open('payout')}>Refund payout</button>}
           {canAdmin && <button type="button" className="px-3 py-1.5 rounded-lg text-sm surface-inner cursor-pointer" onClick={() => open('credit')}>Credit limit</button>}
         </div>
       )}
 
       {form && (
         <div className="surface-inner rounded-lg p-3 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-3" data-testid="account-form">
-          <label className="text-xs text-tertiary">{form === 'credit' ? 'Credit limit (₹, 0 = none)' : 'Amount (₹)'}
+          <label className="text-xs text-tertiary">{form === 'credit' ? 'Credit limit (₹, 0 = none)' : form === 'payout' ? `Amount paid out (₹, at most ${formatINR(data.balance)})` : 'Amount (₹)'}
             <input value={f.amount} onChange={e => setF({ ...f, amount: e.target.value })} inputMode="decimal" className={inputClass} />
           </label>
           {form === 'payment' && (
@@ -147,6 +149,16 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
                 {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
             </label>
+          )}
+          {form === 'payout' && (
+            <>
+              <label className="text-xs text-tertiary">UTR *
+                <input value={f.reference} onChange={e => setF({ ...f, reference: e.target.value })} maxLength={100} className={inputClass} />
+              </label>
+              <label className="text-xs text-tertiary">Bank name *
+                <input value={f.bankName} onChange={e => setF({ ...f, bankName: e.target.value })} maxLength={100} className={inputClass} />
+              </label>
+            </>
           )}
           {form === 'payment' && (
             <label className="text-xs text-tertiary">Reference (UTR, cheque no.)
@@ -201,7 +213,7 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
                   <td className="py-2 pr-3">
                     <span className={e.voided_at ? 'line-through' : ''}>{e.description}</span>
                     <span className="block text-xs text-tertiary">
-                      {e.kind.toLowerCase()}{e.method ? ` · ${e.method}` : ''}{e.reference ? ` · ${e.reference}` : ''}
+                      {e.kind.toLowerCase()}{e.method ? ` · ${e.method}` : ''}{e.reference ? ` · ${e.reference}` : ''}{e.bank_name ? ` · ${e.bank_name}` : ''}
                       {e.hours != null && e.rate != null ? ` · ${e.hours} h × ${formatINR(Number(e.rate))} + GST ${formatINR(Number(e.gst_amount))}` : ''}
                     </span>
                     {e.voided_at && <span className="block text-xs" style={{ color: 'var(--danger)' }}>Voided: {e.void_reason}</span>}

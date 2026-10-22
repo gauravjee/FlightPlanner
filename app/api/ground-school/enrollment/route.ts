@@ -173,8 +173,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'classId and studentId are required.' }, { status: 400 });
   }
 
-  // shortcut: check-then-insert, so two clicks in the same instant could still both land; a unique index on
-  // (class_id, student_id) closes that once existing rows are checked for duplicates.
+  // A friendly refusal before the insert; the unique index (billing-b5.sql) is the real guard.
   const { data: existing } = await supabaseAdmin.from('ground_school_enrollment')
     .select('id').eq('class_id', classId).eq('student_id', studentId).limit(1);
   if (existing?.length) return NextResponse.json({ error: 'This student is already in this class.' }, { status: 409 });
@@ -188,6 +187,8 @@ export async function POST(request: Request) {
     })
     .select('id');
 
+  // B5: the database also refuses a duplicate (unique class + student, billing-b5.sql) — two clicks at once.
+  if (dbError?.code === '23505') return NextResponse.json({ error: 'This student is already in this class.' }, { status: 409 });
   if (dbError || !inserted || inserted.length === 0) {
     console.error('Error enrolling student in ground school class:', dbError);
     return NextResponse.json({ error: 'Failed to add student to this class.' }, { status: 500 });

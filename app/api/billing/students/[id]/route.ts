@@ -14,13 +14,14 @@
 // B4 (22 Oct): a payment gets a numbered receipt, plus a GST invoice for all charges not yet invoiced once the school's
 // GST details are set; voiding an invoiced charge issues a credit note. state { state: '27' | null } = GST place of supply.
 //   refund { entryId, amount, reason }   admin / super admin: credit note for all or part (incl. GST) of an invoiced charge
+//   payout { amount, date?, reference, bankName, note? }  billing staff (B5): the refund paid out by bank — at most the credit on account
 
 import { NextResponse } from 'next/server';
 import { requireSession, requireRole } from '@/lib/api-auth';
 import { BILLING_VIEW_ROLES, BILLING_RECORD_ROLES, BILLING_ADMIN_ROLES, BILLING_PACKAGE_ROLES } from '@/lib/permissions';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { ratesFor, activePackage, documentParties, gstRegistered } from '@/lib/billing-server';
-import { BILLING_CATEGORIES, PAYMENT_METHODS, GST_STATES, balanceOf, parseAmount, round2, dueNow } from '@/lib/billing';
+import { ratesFor, activePackage, documentParties, gstRateOn, balances } from '@/lib/billing-server';
+import { BILLING_CATEGORIES, PAYMENT_METHODS, GST_STATES, balanceOf, parseAmount, round2, dueNow, formatINR } from '@/lib/billing';
 import { todayIST } from '@/lib/ist';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -35,14 +36,14 @@ export async function GET(_request: Request, context: RouteContext) {
   const own = role === 'student' && session.user.studentId === id;
   if (!own && !BILLING_VIEW_ROLES.includes(role)) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
 
-  const [{ data: student }, { data: entries, error: dbError }, rates, pkg, { data: docs }, gstOn] = await Promise.all([
+  const [{ data: student }, { data: entries, error: dbError }, rates, pkg, { data: docs }, gstRate] = await Promise.all([
     supabaseAdmin.from('students').select('id, name, enrollment_id, credit_limit, credit_note, billing_state').eq('id', id).maybeSingle(),
     supabaseAdmin.from('ledger_entries').select('*').eq('student_id', id).order('entry_date', { ascending: false }).order('id', { ascending: false }),
     ratesFor(id),
     activePackage(id),
     supabaseAdmin.from('billing_documents').select('*, lines:billing_document_lines(*)').eq('student_id', id)
       .order('doc_date', { ascending: false }).order('id', { ascending: false }),
-    gstRegistered(),
+    gstRateOn(todayIST()),
   ]);
   if (dbError) {
     console.error('Error loading ledger:', dbError.code);
@@ -62,7 +63,7 @@ export async function GET(_request: Request, context: RouteContext) {
     creditLimit: Number(student.credit_limit ?? 0),
     creditNote: own ? null : student.credit_note ?? null, // staff-only note (operator, 21 Oct)
     billingState: student.billing_state ?? null,
-    gstOn, // GST is charged only once the school has a valid GSTIN
+    gstRate, // today's school-wide GST %, 0 until the school has a valid GSTIN (packages are charged at this)
     documents,
     rates,
     // A student sees only live entries, without who made them (operator, 21 Oct: void reasons are internal).
@@ -177,6 +178,25 @@ export async function POST(request: Request, context: RouteContext) {
     if (dbError?.message?.startsWith('BILLING: ')) return NextResponse.json({ error: dbError.message.slice(9) }, { status: 400 });
     if (dbError) return done(dbError, 'refund');
     return NextResponse.json({ success: true, creditNote: refunded?.credit_note ?? null });
+  }
+
+  if (action === 'payout') {
+    // B5 (operator, 22 Oct): accounts record a refund once it is paid out — date, UTR and bank — up to the credit on account.
+    const amount = parseAmount(body.amount);
+    const reference = text(body.reference, 100), bankName = text(body.bankName, 100);
+    if (amount === null) return NextResponse.json({ error: 'Enter an amount above 0 with at most 2 decimals.' }, { status: 400 });
+    if (!reference || !bankName) return NextResponse.json({ error: 'Enter the UTR and the bank name.' }, { status: 400 });
+    // shortcut: check-then-insert, so two payouts saved in the same instant could both pass; fine for one accounts desk.
+    const onAccount = (await balances([id])).get(id) ?? 0;
+    if (amount > onAccount) {
+      return NextResponse.json({ error: onAccount > 0 ? `Only ${formatINR(onAccount)} is on account; a payout can't be more.` : 'There is no credit on account to pay out.' }, { status: 400 });
+    }
+    const date = typeof body.date === 'string' && DATE_RE.test(body.date) ? body.date : todayIST();
+    const { error: dbError } = await supabaseAdmin.from('ledger_entries').insert({
+      student_id: id, entry_date: date, kind: 'ADJUSTMENT', source: 'MANUAL', debit: amount, method: 'BANK', reference, bank_name: bankName,
+      description: text(body.note) || 'Refund paid to the student', created_by: by,
+    });
+    return done(dbError, 'payout');
   }
 
   if (action === 'state') {

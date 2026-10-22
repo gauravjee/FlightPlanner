@@ -2,7 +2,7 @@
 // Run: npx tsx lib/billing.test.ts
 import assert from 'node:assert/strict';
 import { categoryFor, priceHours, balanceOf, parseAmount, formatINR, splitHours, dueNow, monthlyPlan, isGstin, isInterState, gstinCheckChar,
-  periodRange, statementOf, reconcile, reconTotals } from './billing';
+  periodRange, statementOf, reconcile, reconTotals, amountInWords, csvSafe } from './billing';
 
 assert.equal(categoryFor({ is_simulator: true, type: 'Multi Engine' }), 'SIMULATOR', 'simulator flag wins');
 assert.equal(categoryFor({ type: 'Multi Engine' }), 'MULTI_ENGINE');
@@ -94,5 +94,15 @@ assert.deepEqual(reconcile(rec.slice(0, 3), [], [{ flight_record_id: 'b', hours:
   ['BEFORE_BILLING', 'PACKAGE', 'NOT_CHARGED'], 'uncharged flights before the billing start date');
 assert.deepEqual(reconTotals(rec, i => rec[i].flight_date.slice(0, 7)),
   [{ key: '2026-10', flights: 4, hours: 4, packageHours: 1, charged: 19470 }, { key: '2026-11', flights: 1, hours: 2, packageHours: 2, charged: 0 }]);
+
+// B5: amount in words; CSV formula guard.
+assert.equal(amountInWords(118000), 'Rupees One Lakh Eighteen Thousand Only');
+assert.equal(amountInWords(12980.5), 'Rupees Twelve Thousand Nine Hundred Eighty and Fifty Paise Only');
+assert.equal(amountInWords(0), 'Rupees Zero Only');
+assert.equal(amountInWords(0.07), 'Rupees Zero and Seven Paise Only');
+assert.equal(amountInWords(10000000), 'Rupees One Crore Only');
+assert.equal(amountInWords(1234567890.12), 'Rupees One Hundred Twenty Three Crore Forty Five Lakh Sixty Seven Thousand Eight Hundred Ninety and Twelve Paise Only');
+assert.equal(amountInWords(1180), 'Rupees One Thousand One Hundred Eighty Only');
+assert.deepEqual(['=SUM(A1)', '+1', '-2', '@x', 'VT-ABC', 5].map(csvSafe), ["'=SUM(A1)", "'+1", "'-2", "'@x", 'VT-ABC', 5]);
 
 console.log('billing tests passed');

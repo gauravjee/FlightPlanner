@@ -8,11 +8,12 @@ import { useState } from 'react';
 import useSWR, { mutate as globalMutate } from 'swr';
 import { ftoSettingsKey } from '@/lib/hooks/useFtoSettings';
 import { notify } from '@/lib/notify';
+import { todayIST } from '@/lib/ist';
 import { CATEGORY_LABEL, formatINR, isGstin, type BillingCategory } from '@/lib/billing';
 import { IndianRupee, Package } from 'lucide-react';
 import ConfigTable, { type ConfigField, type ConfigColumn } from '@/components/admin/ConfigTable';
 
-interface RateRow { id: number; category: BillingCategory; hourly_rate: number; gst_rate: number }
+interface RateRow { id: number; category: BillingCategory; hourly_rate: number }
 interface SettingRow { id: number; setting_key: string; setting_value: string }
 
 const rows = async <T,>(url: string): Promise<T[]> => {
@@ -27,8 +28,8 @@ export default function BillingTab() {
   const { data: rates, mutate } = useSWR('/api/admin/config/billing-rates?orderBy=id', rows<RateRow>);
   const { data: settings, mutate: mutateSettings } = useSWR('/api/admin/config/fto-settings', rows<SettingRow>);
   // Only the fields being edited; anything not in here shows the saved value.
-  const [draft, setDraft] = useState<Record<number, { hourly_rate?: string; gst_rate?: string }>>({});
-  const valueOf = (r: RateRow) => ({ hourly_rate: draft[r.id]?.hourly_rate ?? String(r.hourly_rate), gst_rate: draft[r.id]?.gst_rate ?? String(r.gst_rate) });
+  const [draft, setDraft] = useState<Record<number, { hourly_rate?: string }>>({});
+  const valueOf = (r: RateRow) => ({ hourly_rate: draft[r.id]?.hourly_rate ?? String(r.hourly_rate) });
   const [saving, setSaving] = useState(false);
   const block = settings?.find(s => s.setting_key === 'billing_booking_block');
 
@@ -38,9 +39,8 @@ export default function BillingTab() {
   const saveRates = async () => {
     for (const r of rates ?? []) {
       const d = valueOf(r);
-      const rate = Number(d.hourly_rate), gst = Number(d.gst_rate);
-      if (!(rate >= 0) || !(gst >= 0 && gst <= 100) || d.hourly_rate.trim() === '' || d.gst_rate.trim() === '') {
-        notify(`${CATEGORY_LABEL[r.category]}: enter a rate of 0 or more and a GST % from 0 to 100.`);
+      if (!(Number(d.hourly_rate) >= 0) || d.hourly_rate.trim() === '') {
+        notify(`${CATEGORY_LABEL[r.category]}: enter a rate of 0 or more.`);
         return;
       }
     }
@@ -48,8 +48,8 @@ export default function BillingTab() {
     try {
       for (const r of rates ?? []) {
         const d = valueOf(r);
-        if (Number(d.hourly_rate) === Number(r.hourly_rate) && Number(d.gst_rate) === Number(r.gst_rate)) continue;
-        const res = await patch('billing-rates', { id: r.id, hourly_rate: Number(d.hourly_rate), gst_rate: Number(d.gst_rate) });
+        if (Number(d.hourly_rate) === Number(r.hourly_rate)) continue;
+        const res = await patch('billing-rates', { id: r.id, hourly_rate: Number(d.hourly_rate) });
         if (!res.ok) {
           notify((await res.json().catch(() => ({}))).error || `Could not save the ${CATEGORY_LABEL[r.category]} rate.`);
           await mutate();
@@ -76,7 +76,8 @@ export default function BillingTab() {
     <div className="surface-card p-5">
       <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><IndianRupee className="w-4 h-4 text-secondary" /> Billing</h2>
       <p className="text-sm text-secondary mb-4">
-        Hourly rates per aircraft category; the rate covers the instructor. A logbook entry is charged at logbook flight time × rate + GST.
+        Hourly rates per aircraft category; the rate covers the instructor. A logbook entry is charged at logbook flight time × rate + GST
+        (the school GST rate below, in force on the flight date).
         A rate of 0 charges nothing. A different rate for one student is set on the Accounts page.
       </p>
       {!rates ? <p className="text-secondary py-4">Loading...</p> : (
@@ -87,10 +88,6 @@ export default function BillingTab() {
               <label className="text-xs text-tertiary">Rate per hour (₹)
                 <input inputMode="decimal" className={inputClass} value={valueOf(r).hourly_rate}
                   onChange={e => setDraft({ ...draft, [r.id]: { ...draft[r.id], hourly_rate: e.target.value } })} />
-              </label>
-              <label className="text-xs text-tertiary mt-2 block">GST %
-                <input inputMode="decimal" className={inputClass} value={valueOf(r).gst_rate}
-                  onChange={e => setDraft({ ...draft, [r.id]: { ...draft[r.id], gst_rate: e.target.value } })} />
               </label>
             </div>
           ))}
@@ -112,6 +109,7 @@ export default function BillingTab() {
         </label>
         {!block && settings && <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>Setting missing — run billing-b1.sql.</p>}
       </div>
+      <GstRatesSection />
       {settings && <FeesSection settings={settings} onSaved={() => { mutateSettings(); globalMutate(ftoSettingsKey); }} />}
       {settings && <GstSection settings={settings} onSaved={() => { mutateSettings(); globalMutate(ftoSettingsKey); }} />}
       {settings && <StartDateSection settings={settings} onSaved={() => { mutateSettings(); globalMutate(ftoSettingsKey); }} />}
@@ -125,8 +123,7 @@ export default function BillingTab() {
 const FEE_KEYS = [
   { key: 'billing_no_show_fee', label: 'No-show fee (₹, before GST)' },
   { key: 'billing_late_cancel_fee', label: 'Late-cancellation fee (₹, before GST)' },
-  { key: 'billing_fee_gst_rate', label: 'GST % on fees' },
-] as const;
+] as const; // B5: fees use the school GST rate (GST rates above); billing_fee_gst_rate is no longer read
 
 function FeesSection({ settings, onSaved }: { settings: SettingRow[]; onSaved: () => void }) {
   const [draft, setDraft] = useState<Record<string, string>>({});
@@ -138,8 +135,8 @@ function FeesSection({ settings, onSaved }: { settings: SettingRow[]; onSaved: (
   const save = async () => {
     for (const f of FEE_KEYS) {
       const n = Number(valueOf(f.key));
-      if (valueOf(f.key).trim() === '' || !(n >= 0) || (f.key === 'billing_fee_gst_rate' && n > 100)) {
-        notify(`${f.label}: enter a number of 0 or more${f.key === 'billing_fee_gst_rate' ? ' (up to 100)' : ''}.`);
+      if (valueOf(f.key).trim() === '' || !(n >= 0)) {
+        notify(`${f.label}: enter a number of 0 or more.`);
         return;
       }
     }
@@ -188,7 +185,7 @@ function FeesSection({ settings, onSaved }: { settings: SettingRow[]; onSaved: (
 
 // B2 (21 Oct): course packages per training program — a fee (+ GST) that includes hours. Assigned on the Accounts page;
 // a student's package keeps the fee and hours it was assigned with, so editing a package here changes only later ones.
-interface PackageRow { id: number; program_id: number; name: string; fee: number; gst_rate: number; se_hours: number; me_hours: number; sim_hours: number; is_active: boolean }
+interface PackageRow { id: number; program_id: number; name: string; fee: number; se_hours: number; me_hours: number; sim_hours: number; is_active: boolean }
 interface ProgramRow { id: number; program_code: string; program_name: string }
 
 function PackagesSection() {
@@ -200,7 +197,6 @@ function PackagesSection() {
       options: [{ label: '— Pick a program —', value: '' }, ...programs.map(p => ({ label: `${p.program_code} · ${p.program_name}`, value: String(p.id) }))] },
     { name: 'name', type: 'text', default: '', label: 'Package name', required: true, placeholder: 'e.g., PPL standard' },
     { name: 'fee', type: 'number', default: 0, label: 'Fee (₹, before GST)', step: '0.01' },
-    { name: 'gst_rate', type: 'number', default: 18, label: 'GST %', step: '0.01' },
     { name: 'se_hours', type: 'number', default: 0, label: 'Single-engine hours included', step: '0.1' },
     { name: 'me_hours', type: 'number', default: 0, label: 'Multi-engine hours included', step: '0.1' },
     { name: 'sim_hours', type: 'number', default: 0, label: 'Simulator hours included', step: '0.1' },
@@ -209,7 +205,7 @@ function PackagesSection() {
   const columns: ConfigColumn<PackageRow>[] = [
     { header: 'Package', render: p => p.name, primary: true },
     { header: 'Program', render: p => <span className="badge badge-accent">{programOf(p.program_id)}</span> },
-    { header: 'Fee', render: p => `${formatINR(Number(p.fee))} + ${Number(p.gst_rate)}% GST` },
+    { header: 'Fee', render: p => `${formatINR(Number(p.fee))} + GST` }, // B5: GST at the school rate on the day it is assigned
     { header: 'Hours included', render: p => [
       hours(p.se_hours) ? `SE ${hours(p.se_hours)} h` : null, hours(p.me_hours) ? `ME ${hours(p.me_hours)} h` : null, hours(p.sim_hours) ? `Sim ${hours(p.sim_hours)} h` : null,
     ].filter(Boolean).join(' · ') || '—' },
@@ -333,6 +329,61 @@ function StartDateSection({ settings, onSaved }: { settings: SettingRow[]; onSav
             style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>Save date</button>
         </div>
       )}
+    </div>
+  );
+}
+
+// B5 (operator, 22 Oct): one school-wide GST rate with an effective-from history; the date of each charge picks the
+// rate. Charged only once a valid GSTIN is saved. Past rates are locked; a future one can be deleted before it starts.
+interface GstRateRow { id: number; rate: number; effective_from: string }
+function GstRatesSection() {
+  const { data: list, mutate } = useSWR('/api/admin/config/gst-rates?orderBy=effective_from', rows<GstRateRow>);
+  const [rate, setRate] = useState('');
+  const [from, setFrom] = useState('');
+  const [busy, setBusy] = useState(false);
+  const today = todayIST();
+  const current = [...(list ?? [])].filter(r => r.effective_from <= today).pop();
+  const call = async (init: RequestInit, url = '/api/admin/config/gst-rates') => {
+    setBusy(true);
+    try {
+      const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...init });
+      if (!res.ok) { notify((await res.json().catch(() => ({}))).error || 'Could not save the GST rate.'); return false; }
+      await mutate();
+      return true;
+    } finally {
+      setBusy(false);
+    }
+  };
+  const add = async () => {
+    const n = Number(rate);
+    if (rate.trim() === '' || !(n >= 0 && n <= 100) || !/^\d{4}-\d{2}-\d{2}$/.test(from)) { notify('Enter a GST % from 0 to 100 and the date it takes effect.'); return; }
+    if (await call({ method: 'POST', body: JSON.stringify({ rate: n, effective_from: from }) })) { setRate(''); setFrom(''); notify('✅ GST rate added.'); }
+  };
+  return (
+    <div className="surface-inner rounded-lg p-3 mb-4" data-testid="gst-rates">
+      <p className="font-semibold mb-1">GST rate</p>
+      <p className="text-xs text-tertiary mb-2">
+        One rate for flights, simulator, fees and packages. Each charge uses the rate in force on its date (the flight date for a logbook flight).
+        No GST is charged until a valid GSTIN is saved below. Current: <span className="font-semibold">{current ? `${Number(current.rate)}% from ${current.effective_from}` : 'none set'}</span>.
+      </p>
+      <table className="text-sm mb-2">
+        <thead><tr className="text-left text-xs text-tertiary"><th className="pr-4">From</th><th className="pr-4 text-right">GST %</th><th /></tr></thead>
+        <tbody>
+          {(list ?? []).map(r => (
+            <tr key={r.id}><td className="pr-4">{r.effective_from}</td><td className="pr-4 text-right">{Number(r.rate)}%</td>
+              <td>{r.effective_from > today && (
+                <button type="button" disabled={busy} className="text-xs cursor-pointer" style={{ color: 'var(--danger)' }} aria-label={`Delete the GST rate from ${r.effective_from}`}
+                  onClick={() => call({ method: 'DELETE' }, `/api/admin/config/gst-rates?id=${r.id}`)}>Delete</button>
+              )}</td></tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-xs text-tertiary">New GST %<input inputMode="decimal" className={`${inputClass} w-28`} value={rate} onChange={e => setRate(e.target.value)} /></label>
+        <label className="text-xs text-tertiary">Effective from<input type="date" className={`${inputClass} w-44`} value={from} onChange={e => setFrom(e.target.value)} /></label>
+        <button type="button" disabled={busy} onClick={add} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer"
+          style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>Add rate</button>
+      </div>
     </div>
   );
 }

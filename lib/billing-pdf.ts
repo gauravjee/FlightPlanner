@@ -4,7 +4,7 @@
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { GST_STATES, RECON_LABEL, type ReconStatus } from '@/lib/billing';
+import { GST_STATES, RECON_LABEL, amountInWords, type ReconStatus } from '@/lib/billing';
 
 interface Party { name: string; address: string; gstin?: string; state: string; enrollmentId?: string }
 export interface BillingDocument {
@@ -64,6 +64,8 @@ export function downloadBillingDocument(d: BillingDocument, opts: { againstNumbe
     doc.text(doc.splitTextToSize(
       `Received with thanks ${rs(d.total)}${p?.method ? ` by ${p.method}` : ''}${p?.reference ? ` (ref. ${p.reference})` : ''}, towards fees.`, w - 28,
     ), 14, y + 4);
+    doc.setFontSize(9);
+    doc.text(amountInWords(Number(d.total)), 14, y + 16); // B5: amount in words
     if (d.cancelled) {
       doc.setTextColor(200, 30, 30);
       doc.setFont('helvetica', 'bold');
@@ -94,7 +96,10 @@ export function downloadBillingDocument(d: BillingDocument, opts: { againstNumbe
       doc.text(k, w - 70, y + i * 5.5);
       doc.text(v, w - 14, y + i * 5.5, { align: 'right' });
     });
-    y += totals.length * 5.5 + 6;
+    y += totals.length * 5.5 + 2;
+    doc.setFont('helvetica', 'normal');
+    doc.text(doc.splitTextToSize(`Amount in words: ${amountInWords(Number(d.total))}`, w - 28), 14, y); // B5
+    y += 10;
   }
 
   doc.setFont('helvetica', 'normal');
