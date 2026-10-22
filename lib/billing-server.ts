@@ -13,9 +13,10 @@ export interface EffectiveRate { category: BillingCategory; hourlyRate: number; 
 
 /** The rate per category for one student: their own override if set, else the school rate. */
 export async function ratesFor(studentId: string): Promise<EffectiveRate[]> {
-  const [{ data: school }, { data: own }] = await Promise.all([
+  const [{ data: school }, { data: own }, gstOn] = await Promise.all([
     supabaseAdmin.from('billing_rates').select('category, hourly_rate, gst_rate'),
     supabaseAdmin.from('student_rates').select('category, hourly_rate').eq('student_id', studentId),
+    gstRegistered(),
   ]);
   return BILLING_CATEGORIES.map(category => {
     const s = school?.find(r => r.category === category);
@@ -23,7 +24,7 @@ export async function ratesFor(studentId: string): Promise<EffectiveRate[]> {
     return {
       category,
       hourlyRate: Number(o?.hourly_rate ?? s?.hourly_rate ?? 0),
-      gstRate: Number(s?.gst_rate ?? 0),
+      gstRate: gstOn ? Number(s?.gst_rate ?? 0) : 0, // no GST until the school saves a valid GSTIN
       override: !!o,
     };
   });
@@ -186,9 +187,13 @@ export async function bookingFundsRefusal(
 
 /** The fees GST % and, if asked, one fee from Admin Setup → Billing → Fees (0 / blank = no fee). */
 async function feeSetting(key?: 'billing_no_show_fee' | 'billing_late_cancel_fee') {
-  const { data } = await supabaseAdmin.from('fto_settings').select('setting_key, setting_value').in('setting_key', [key ?? '', 'billing_fee_gst_rate']);
+  const [{ data }, gstOn] = await Promise.all([
+    supabaseAdmin.from('fto_settings').select('setting_key, setting_value').in('setting_key', [key ?? '', 'billing_fee_gst_rate']),
+    gstRegistered(),
+  ]);
   const value = (k: string) => Number(data?.find(s => s.setting_key === k)?.setting_value ?? 0) || 0;
-  return { amount: key ? round2(value(key)) : 0, gstRate: data?.some(s => s.setting_key === 'billing_fee_gst_rate') ? value('billing_fee_gst_rate') : 18 };
+  const gstRate = data?.some(s => s.setting_key === 'billing_fee_gst_rate') ? value('billing_fee_gst_rate') : 18;
+  return { amount: key ? round2(value(key)) : 0, gstRate: gstOn ? gstRate : 0 };
 }
 
 async function insertFee(row: Record<string, unknown>, net: number, gstRate: number, what: string) {
@@ -280,5 +285,11 @@ export function reportPeriod(params: URLSearchParams): { from: string; to: strin
   const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
   if (!ok(from) || !ok(to) || from > to || Date.parse(to) - Date.parse(from) > 400 * 86_400_000) return null;
   return { from, to };
+}
+
+/** GST is charged only once the school has saved a valid GSTIN (operator, 22 Oct). Packages check the same in SQL. */
+export async function gstRegistered(): Promise<boolean> {
+  const { data } = await supabaseAdmin.from('fto_settings').select('setting_value').eq('setting_key', 'billing_gstin').maybeSingle();
+  return isGstin((data?.setting_value ?? '').trim().toUpperCase());
 }
 

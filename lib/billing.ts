@@ -85,8 +85,19 @@ export const GST_STATES: Record<string, string> = {
   '37': 'Andhra Pradesh', '38': 'Ladakh', '97': 'Other Territory',
 };
 
-/** A well-formed GSTIN: state code, PAN, entity number, Z, check character. */
-export const isGstin = (v: string) => /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(v) && v.slice(0, 2) in GST_STATES;
+const GSTIN_CHARS = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+/** The GSTIN's 15th character, computed from the first 14 (GSTN's base-36 check digit). */
+export function gstinCheckChar(first14: string): string {
+  let sum = 0;
+  for (let i = 0; i < 14; i++) {
+    const p = GSTIN_CHARS.indexOf(first14[i]) * (i % 2 ? 2 : 1);
+    sum += Math.floor(p / 36) + (p % 36);
+  }
+  return GSTIN_CHARS[(36 - (sum % 36)) % 36];
+}
+
+/** A valid GSTIN: state code, PAN, entity number, Z, and a check character that matches (catches typos). */
+export const isGstin = (v: string) => /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(v) && v.slice(0, 2) in GST_STATES && gstinCheckChar(v) === v[14];
 
 /** IGST when the student's state is known and differs from the school's (the GSTIN's state); else CGST + SGST. */
 export const isInterState = (schoolGstin: string, studentState: string | null | undefined) => !!studentState && studentState !== schoolGstin.slice(0, 2);
@@ -111,14 +122,23 @@ export function periodRange(kind: PeriodKind, date: string): { from: string; to:
   return { from: `${fy}-04-01`, to: `${fy + 1}-03-31` };
 }
 
-export interface StatementEntry { id: number; entry_date: string; debit: number | string; credit: number | string; voided_at?: string | null }
+export interface StatementEntry { id: number; entry_date: string; debit: number | string; credit: number | string; voided_at?: string | null; description?: string }
+/** The IST calendar date of a timestamp. */
+const istDate = (ts: string) => new Date(Date.parse(ts) + 330 * 60_000).toISOString().slice(0, 10);
 
-/** Opening balance before `from`, the live entries from..to (oldest first) with a running balance, and the totals. */
+/**
+ * Opening balance before `from`, the period's lines (oldest first) with a running balance, and the totals.
+ * A voided entry stays on its own date and is reversed on the day it was voided (operator, 22 Oct), so a statement
+ * already issued for a past period never changes.
+ */
 export function statementOf<T extends StatementEntry>(entries: T[], from: string, to: string) {
-  const live = entries.filter(e => !e.voided_at).sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.id - b.id);
-  const opening = balanceOf(live.filter(e => e.entry_date < from));
+  const events = entries.flatMap(e => (e.voided_at
+    ? [e, { ...e, entry_date: istDate(e.voided_at), debit: e.credit, credit: e.debit, description: `Voided: ${e.description ?? ''}`, reversal: true }]
+    : [e]) as (T & { reversal?: boolean })[])
+    .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.id - b.id || Number(!!a.reversal) - Number(!!b.reversal));
+  const opening = round2(events.filter(e => e.entry_date < from).reduce((s, e) => s + Number(e.credit) - Number(e.debit), 0));
   let running = opening, charges = 0, credits = 0;
-  const lines = live.filter(e => e.entry_date >= from && e.entry_date <= to).map(e => {
+  const lines = events.filter(e => e.entry_date >= from && e.entry_date <= to).map(e => {
     charges += Number(e.debit);
     credits += Number(e.credit);
     running = round2(running + Number(e.credit) - Number(e.debit));

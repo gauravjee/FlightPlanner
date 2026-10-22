@@ -24,7 +24,7 @@ interface Account {
   entries: Entry[];
   package: PackageInfo | null; // B2
   due: DueInfo;
-  billingState: string | null; documents: BillingDocument[]; // B4
+  billingState: string | null; documents: BillingDocument[]; gstOn: boolean; // B4
 }
 
 async function fetchAccount(url: string): Promise<Account> {
@@ -125,7 +125,7 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
         </div>
       </div>
 
-      <PackageCard pkg={data.package} due={data.due} canPackage={canPackage} saving={saving} post={post} />
+      <PackageCard pkg={data.package} due={data.due} canPackage={canPackage} saving={saving} post={post} gstOn={data.gstOn} />
 
       {(canRecord || canAdmin) && (
         <div className="flex flex-wrap gap-2 mb-3">

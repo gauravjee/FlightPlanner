@@ -21,8 +21,9 @@ export async function GET(request: Request) {
 
   try {
     if (params.get('all') === '1' && !student) {
-      const entries = await allRows(a => supabaseAdmin.from('ledger_entries').select('id, student_id, entry_date, debit, credit')
-        .is('voided_at', null).lte('entry_date', period.to).order('id').range(a, a + 999));
+      // Voided entries too: statementOf reverses them on the day they were voided.
+      const entries = await allRows(a => supabaseAdmin.from('ledger_entries').select('id, student_id, entry_date, debit, credit, voided_at')
+        .lte('entry_date', period.to).order('id').range(a, a + 999));
       const { data: students } = await supabaseAdmin.from('students').select('id, name, enrollment_id, status').order('name');
       const rows = (students ?? []).map(s => {
         const st = statementOf(entries.filter(e => String(e.student_id) === String(s.id)), period.from, period.to);
@@ -38,7 +39,7 @@ export async function GET(request: Request) {
     if (!s) return NextResponse.json({ error: 'Student not found.' }, { status: 404 });
     const entries = await allRows(a => supabaseAdmin.from('ledger_entries')
       .select('id, entry_date, kind, description, method, reference, debit, credit, voided_at')
-      .eq('student_id', studentId).is('voided_at', null).lte('entry_date', period.to).order('id').range(a, a + 999));
+      .eq('student_id', studentId).lte('entry_date', period.to).order('id').range(a, a + 999));
     return NextResponse.json({ ...period, student: { id: s.id, name: s.name, enrollmentId: s.enrollment_id, address: s.address ?? '' }, ...statementOf(entries, period.from, period.to) });
   } catch (e) {
     console.error('Billing statement failed:', e);

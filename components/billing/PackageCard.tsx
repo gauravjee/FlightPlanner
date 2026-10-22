@@ -28,8 +28,8 @@ const fetchPackages = async (url: string): Promise<CoursePackage[]> => {
 const toRows = (plan: { due_date: string; amount: number }[]): PlanRow[] => plan.map(p => ({ due_date: p.due_date, amount: String(p.amount) }));
 const sumOf = (rows: PlanRow[]) => round2(rows.reduce((s, r) => s + (Number(r.amount) || 0), 0));
 
-export default function PackageCard({ pkg, due, canPackage, saving, post }: {
-  pkg: PackageInfo | null; due: DueInfo; canPackage: boolean; saving: boolean;
+export default function PackageCard({ pkg, due, canPackage, saving, post, gstOn }: {
+  pkg: PackageInfo | null; due: DueInfo; canPackage: boolean; saving: boolean; gstOn: boolean;
   post: (payload: Record<string, unknown>) => Promise<boolean>;
 }) {
   const [mode, setMode] = useState<'assign' | 'plan' | 'close' | null>(null);
@@ -43,7 +43,7 @@ export default function PackageCard({ pkg, due, canPackage, saving, post }: {
 
   const chosen = packages.find(p => String(p.id) === pick);
   // Fee + GST, with GST rounded on the fee the same way the database charges it.
-  const totalFor = (fee: number, gst: number) => round2(fee + round2((fee * gst) / 100));
+  const totalFor = (fee: number, gst: number) => round2(fee + (gstOn ? round2((fee * gst) / 100) : 0)); // no GST without a valid GSTIN
   const exactTotal = chosen ? totalFor(fee === '' ? Number(chosen.fee) : Number(fee) || 0, Number(chosen.gst_rate)) : 0;
   const planTotal = mode === 'plan' && pkg ? round2(pkg.instalments.reduce((s, i) => s + i.amount, 0)) : exactTotal;
 
@@ -97,7 +97,7 @@ export default function PackageCard({ pkg, due, canPackage, saving, post }: {
                   if (p) setRows(toRows(monthlyPlan(totalFor(Number(p.fee), Number(p.gst_rate)), 1, today)));
                 }}>
                   <option value="">— Pick a package —</option>
-                  {packages.map(p => <option key={p.id} value={p.id}>{p.name} · {formatINR(Number(p.fee))} + {Number(p.gst_rate)}% GST</option>)}
+                  {packages.map(p => <option key={p.id} value={p.id}>{p.name} · {formatINR(Number(p.fee))}{gstOn ? ` + ${Number(p.gst_rate)}% GST` : ''}</option>)}
                 </select>
               </label>
               <label className="text-xs text-tertiary">Agreed fee before GST (blank = list fee)

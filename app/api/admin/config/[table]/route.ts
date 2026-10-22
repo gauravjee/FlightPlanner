@@ -57,6 +57,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, requireSession, ADMIN_SETUP_WRITE_ROLES } from '@/lib/api-auth';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import { BASE1_ID, baseRowError, isBaseSettingKey, settingToBaseValue, baseToSettingValue } from '@/lib/bases';
+import { isGstin } from '@/lib/billing';
 
 // Maps the URL's `table` segment to { the real Postgres table, the columns
 // this route is allowed to write }. Adding a new Admin Setup config tab
@@ -332,6 +333,15 @@ export async function PATCH(request: Request, context: RouteContext) {
   if (table === 'ames' && 'staff_member_id' in updates) {
     const ameError = await ameStaffError(updates, id);
     if (ameError) return NextResponse.json({ error: ameError }, { status: 400 });
+  }
+  // Billing (operator, 22 Oct): a GSTIN is saved only if it is valid, check character included; blank clears it.
+  if (table === 'fto-settings' && typeof updates.setting_value === 'string') {
+    const { data: row } = await supabaseAdmin.from('fto_settings').select('setting_key').eq('id', id).maybeSingle();
+    const gstin = updates.setting_value.trim().toUpperCase();
+    if (row?.setting_key === 'billing_gstin') {
+      if (gstin && !isGstin(gstin)) return NextResponse.json({ error: 'That GSTIN is not valid: check each character (the last one is a check character).' }, { status: 400 });
+      updates.setting_value = gstin;
+    }
   }
   if (table === 'bases') {
     const baseError = baseRowError(updates, false);

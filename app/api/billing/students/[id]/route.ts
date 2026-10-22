@@ -19,7 +19,7 @@ import { NextResponse } from 'next/server';
 import { requireSession, requireRole } from '@/lib/api-auth';
 import { BILLING_VIEW_ROLES, BILLING_RECORD_ROLES, BILLING_ADMIN_ROLES, BILLING_PACKAGE_ROLES } from '@/lib/permissions';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { ratesFor, activePackage, documentParties } from '@/lib/billing-server';
+import { ratesFor, activePackage, documentParties, gstRegistered } from '@/lib/billing-server';
 import { BILLING_CATEGORIES, PAYMENT_METHODS, GST_STATES, balanceOf, parseAmount, round2, dueNow } from '@/lib/billing';
 import { todayIST } from '@/lib/ist';
 
@@ -35,13 +35,14 @@ export async function GET(_request: Request, context: RouteContext) {
   const own = role === 'student' && session.user.studentId === id;
   if (!own && !BILLING_VIEW_ROLES.includes(role)) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
 
-  const [{ data: student }, { data: entries, error: dbError }, rates, pkg, { data: docs }] = await Promise.all([
+  const [{ data: student }, { data: entries, error: dbError }, rates, pkg, { data: docs }, gstOn] = await Promise.all([
     supabaseAdmin.from('students').select('id, name, enrollment_id, credit_limit, credit_note, billing_state').eq('id', id).maybeSingle(),
     supabaseAdmin.from('ledger_entries').select('*').eq('student_id', id).order('entry_date', { ascending: false }).order('id', { ascending: false }),
     ratesFor(id),
     activePackage(id),
     supabaseAdmin.from('billing_documents').select('*, lines:billing_document_lines(*)').eq('student_id', id)
       .order('doc_date', { ascending: false }).order('id', { ascending: false }),
+    gstRegistered(),
   ]);
   if (dbError) {
     console.error('Error loading ledger:', dbError.code);
@@ -61,6 +62,7 @@ export async function GET(_request: Request, context: RouteContext) {
     creditLimit: Number(student.credit_limit ?? 0),
     creditNote: own ? null : student.credit_note ?? null, // staff-only note (operator, 21 Oct)
     billingState: student.billing_state ?? null,
+    gstOn, // GST is charged only once the school has a valid GSTIN
     documents,
     rates,
     // A student sees only live entries, without who made them (operator, 21 Oct: void reasons are internal).

@@ -255,7 +255,7 @@ function GstSection({ settings, onSaved }: { settings: SettingRow[]; onSaved: ()
   const invoicing = !!saved('billing_legal_name') && isGstin(saved('billing_gstin')) && !!saved('billing_address');
 
   const save = async () => {
-    if (clean('billing_gstin') && !isGstin(clean('billing_gstin'))) { notify('GSTIN: enter the 15-character GSTIN, e.g. 27ABCDE1234F1Z5.'); return; }
+    if (clean('billing_gstin') && !isGstin(clean('billing_gstin'))) { notify('GSTIN is not valid: check each of the 15 characters (the last one is a check character).'); return; }
     if (clean('billing_sac') && !/^[0-9]{4,8}$/.test(clean('billing_sac'))) { notify('SAC code: 4 to 8 digits.'); return; }
     if (GST_KEYS.some(f => f.key.endsWith('_prefix') && !/^[A-Z0-9-]{1,10}$/.test(clean(f.key)))) { notify('Prefixes: 1 to 10 letters, digits or dashes.'); return; }
     setSaving(true);
@@ -285,6 +285,7 @@ function GstSection({ settings, onSaved }: { settings: SettingRow[]; onSaved: ()
       </p>
       <p className="text-xs mb-3" style={{ color: invoicing ? 'var(--success)' : 'var(--danger)' }}>
         {invoicing ? 'Invoices: on.' : 'Invoices: off — receipts only until legal name, a valid GSTIN and address are saved.'}
+        {' '}{isGstin(saved('billing_gstin')) ? 'GST is charged.' : 'No GST is charged on flights, fees or packages until a valid GSTIN is saved.'}
       </p>
       {missing ? <p className="text-xs" style={{ color: 'var(--danger)' }}>GST settings missing — run billing-b4.sql.</p> : (
         <>

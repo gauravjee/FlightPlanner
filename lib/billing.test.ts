@@ -1,7 +1,7 @@
 // lib/billing.test.ts
 // Run: npx tsx lib/billing.test.ts
 import assert from 'node:assert/strict';
-import { categoryFor, priceHours, balanceOf, parseAmount, formatINR, splitHours, dueNow, monthlyPlan, isGstin, isInterState,
+import { categoryFor, priceHours, balanceOf, parseAmount, formatINR, splitHours, dueNow, monthlyPlan, isGstin, isInterState, gstinCheckChar,
   periodRange, statementOf, reconcile, reconTotals } from './billing';
 
 assert.equal(categoryFor({ is_simulator: true, type: 'Multi Engine' }), 'SIMULATOR', 'simulator flag wins');
@@ -46,7 +46,10 @@ assert.deepEqual(m.map(r => r.due_date), ['2026-10-21', '2026-11-21', '2026-12-2
 assert.deepEqual(m.map(r => r.amount), [137666.66, 137666.66, 137666.68]);
 
 // B4: GSTIN check and the GST split.
-assert.equal(isGstin('27ABCDE1234F1Z5'), true);
+assert.equal(isGstin('27AAACR5055K1Z7'), true, 'a real GSTIN');
+assert.equal(isGstin('27AAACR5055K1Z8'), false, 'wrong check character (a typo)');
+assert.equal(isGstin('27ABCDE1234F1Z5'), false, 'made-up number fails the check character');
+assert.equal(gstinCheckChar('27ABCDE1234F1Z'), '0');
 assert.equal(isGstin('27abcde1234f1z5'), false, 'upper case only');
 assert.equal(isGstin('28ABCDE1234F1Z5'), false, 'no such state code');
 assert.equal(isGstin('27ABCDE1234F1Z'), false, 'too short');
@@ -64,12 +67,16 @@ const st = statementOf([
   { id: 1, entry_date: '2026-09-30', debit: 1000, credit: 0 },
   { id: 4, entry_date: '2026-10-05', debit: 0, credit: 300 },
   { id: 3, entry_date: '2026-10-05', debit: 200, credit: 0 },
-  { id: 2, entry_date: '2026-10-02', debit: 999, credit: 0, voided_at: '2026-10-03T00:00:00Z' }, // voided: ignored
+  { id: 2, entry_date: '2026-10-02', debit: 999, credit: 0, voided_at: '2026-10-03T00:00:00Z', description: 'Wrong' }, // reversed on 3 Oct
   { id: 5, entry_date: '2026-11-01', debit: 50, credit: 0 }, // after the period
 ], '2026-10-01', '2026-10-31');
 assert.equal(st.opening, -1000);
-assert.deepEqual(st.lines.map(l => [l.id, l.balance]), [[3, -1200], [4, -900]], 'same day: by id');
-assert.deepEqual([st.charges, st.credits, st.closing], [200, 300, -900]);
+assert.deepEqual(st.lines.map(l => [l.id, l.description ?? '', l.balance]), [[2, 'Wrong', -1999], [2, 'Voided: Wrong', -1000], [3, '', -1200], [4, '', -900]], 'void reversed on its own day; same day by id');
+assert.deepEqual([st.charges, st.credits, st.closing], [1199, 1299, -900]);
+assert.equal(statementOf([{ id: 1, entry_date: '2026-09-01', debit: 500, credit: 0, voided_at: '2026-10-05T20:00:00Z' }], '2026-10-01', '2026-10-31').opening, -500,
+  'an entry voided later still counts in an earlier opening balance');
+assert.equal(statementOf([{ id: 1, entry_date: '2026-09-01', debit: 500, credit: 0, voided_at: '2026-10-05T20:00:00Z' }], '2026-10-01', '2026-10-31').lines[0].entry_date, '2026-10-06',
+  'void date is the IST date (20:00 UTC = next morning IST)');
 const rec = reconcile([
   { id: 'a', flight_date: '2026-10-01', student_id: 's', aircraft_id: 8, total_hours: '1.0' },
   { id: 'b', flight_date: '2026-10-02', student_id: 's', aircraft_id: 8, total_hours: 1.5 },

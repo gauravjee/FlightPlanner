@@ -146,7 +146,7 @@ export default function StatementsPage() {
                     </>
                   )}
               </div>
-              <p className="text-[11px] text-tertiary mt-3">Dr = owed to the school; Cr = money on account. Voided entries are left out.</p>
+              <p className="text-[11px] text-tertiary mt-3">Dr = owed to the school; Cr = money on account. A voided entry stays on its date and is reversed on the day it was voided.</p>
             </section>
           </div>
         </main>
