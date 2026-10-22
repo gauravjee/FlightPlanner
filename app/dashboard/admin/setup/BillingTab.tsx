@@ -8,7 +8,7 @@ import { useState } from 'react';
 import useSWR, { mutate as globalMutate } from 'swr';
 import { ftoSettingsKey } from '@/lib/hooks/useFtoSettings';
 import { notify } from '@/lib/notify';
-import { CATEGORY_LABEL, formatINR, type BillingCategory } from '@/lib/billing';
+import { CATEGORY_LABEL, formatINR, isGstin, type BillingCategory } from '@/lib/billing';
 import { IndianRupee, Package } from 'lucide-react';
 import ConfigTable, { type ConfigField, type ConfigColumn } from '@/components/admin/ConfigTable';
 
@@ -113,6 +113,7 @@ export default function BillingTab() {
         {!block && settings && <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>Setting missing — run billing-b1.sql.</p>}
       </div>
       {settings && <FeesSection settings={settings} onSaved={() => { mutateSettings(); globalMutate(ftoSettingsKey); }} />}
+      {settings && <GstSection settings={settings} onSaved={() => { mutateSettings(); globalMutate(ftoSettingsKey); }} />}
       <div className="mt-6"><PackagesSection /></div>
     </div>
   );
@@ -229,3 +230,77 @@ function PackagesSection() {
     />
   );
 }
+
+// B4 (22 Oct): GST details for receipts, invoices and credit notes. Invoices start once legal name, GSTIN and address
+// are set (operator: receipt only until then). Each issued document keeps its own copy, so edits here never change one.
+const GST_KEYS = [
+  { key: 'billing_legal_name', label: 'Legal name' },
+  { key: 'billing_gstin', label: 'GSTIN' },
+  { key: 'billing_sac', label: 'SAC code (confirm with your CA)' },
+  { key: 'billing_address', label: 'Registered address' },
+  { key: 'billing_invoice_prefix', label: 'Invoice prefix' },
+  { key: 'billing_receipt_prefix', label: 'Receipt prefix' },
+  { key: 'billing_credit_note_prefix', label: 'Credit note prefix' },
+] as const;
+
+function GstSection({ settings, onSaved }: { settings: SettingRow[]; onSaved: () => void }) {
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const rowOf = (key: string) => settings.find(s => s.setting_key === key);
+  const valueOf = (key: string) => draft[key] ?? rowOf(key)?.setting_value ?? '';
+  const clean = (key: string) => (key === 'billing_gstin' || key.endsWith('_prefix') ? valueOf(key).trim().toUpperCase() : valueOf(key).trim());
+  const missing = GST_KEYS.some(f => !rowOf(f.key));
+  const saved = (key: string) => (rowOf(key)?.setting_value ?? '').trim();
+  const invoicing = !!saved('billing_legal_name') && isGstin(saved('billing_gstin')) && !!saved('billing_address');
+
+  const save = async () => {
+    if (clean('billing_gstin') && !isGstin(clean('billing_gstin'))) { notify('GSTIN: enter the 15-character GSTIN, e.g. 27ABCDE1234F1Z5.'); return; }
+    if (clean('billing_sac') && !/^[0-9]{4,8}$/.test(clean('billing_sac'))) { notify('SAC code: 4 to 8 digits.'); return; }
+    if (GST_KEYS.some(f => f.key.endsWith('_prefix') && !/^[A-Z0-9-]{1,10}$/.test(clean(f.key)))) { notify('Prefixes: 1 to 10 letters, digits or dashes.'); return; }
+    setSaving(true);
+    try {
+      for (const f of GST_KEYS) {
+        const row = rowOf(f.key);
+        if (!row || clean(f.key) === row.setting_value) continue;
+        const res = await fetch('/api/admin/config/fto-settings', {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: row.id, setting_value: clean(f.key) }),
+        });
+        if (!res.ok) { notify((await res.json().catch(() => ({}))).error || `Could not save ${f.label}.`); onSaved(); return; }
+      }
+      setDraft({});
+      onSaved();
+      notify('✅ GST details saved.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="surface-inner rounded-lg p-3 mt-4">
+      <p className="font-semibold mb-1">GST, receipts and invoices</p>
+      <p className="text-xs text-tertiary mb-1">
+        Every payment gets a numbered receipt. Once legal name, GSTIN and address are set, a payment also gets a GST invoice for every charge not
+        yet invoiced; voiding an invoiced charge issues a credit note. Numbers run per financial year: INV/2026-27/0001.
+      </p>
+      <p className="text-xs mb-3" style={{ color: invoicing ? 'var(--success)' : 'var(--danger)' }}>
+        {invoicing ? 'Invoices: on.' : 'Invoices: off — receipts only until legal name, a valid GSTIN and address are saved.'}
+      </p>
+      {missing ? <p className="text-xs" style={{ color: 'var(--danger)' }}>GST settings missing — run billing-b4.sql.</p> : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {GST_KEYS.map(f => (
+              <label key={f.key} className={`text-xs text-tertiary ${f.key === 'billing_address' ? 'sm:col-span-3' : ''}`}>{f.label}
+                {f.key === 'billing_address'
+                  ? <textarea rows={2} maxLength={300} className={inputClass} value={valueOf(f.key)} onChange={e => setDraft({ ...draft, [f.key]: e.target.value })} />
+                  : <input maxLength={f.key === 'billing_legal_name' ? 150 : 20} className={inputClass} value={valueOf(f.key)} onChange={e => setDraft({ ...draft, [f.key]: e.target.value })} />}
+              </label>
+            ))}
+          </div>
+          <button type="button" disabled={saving} onClick={save} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer mt-3"
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>{saving ? 'Saving...' : 'Save GST details'}</button>
+        </>
+      )}
+    </div>
+  );
+}
+

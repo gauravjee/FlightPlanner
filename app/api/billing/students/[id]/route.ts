@@ -11,13 +11,15 @@
 //   assignPackage { packageId, agreedFee?, plan: [{ due_date, amount }], note? }  charges fee + GST; the plan must add up
 //   editPlan      { plan: [...] }                                   replaces the active package's plan (same total)
 //   closePackage  {}                                                stops it supplying hours; nothing automatic happens to money
+// B4 (22 Oct): a payment gets a numbered receipt, plus a GST invoice for all charges not yet invoiced once the school's
+// GST details are set; voiding an invoiced charge issues a credit note. state { state: '27' | null } = GST place of supply.
 
 import { NextResponse } from 'next/server';
 import { requireSession, requireRole } from '@/lib/api-auth';
 import { BILLING_VIEW_ROLES, BILLING_RECORD_ROLES, BILLING_ADMIN_ROLES, BILLING_PACKAGE_ROLES } from '@/lib/permissions';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { ratesFor, activePackage } from '@/lib/billing-server';
-import { BILLING_CATEGORIES, PAYMENT_METHODS, balanceOf, parseAmount, round2, dueNow } from '@/lib/billing';
+import { ratesFor, activePackage, documentParties } from '@/lib/billing-server';
+import { BILLING_CATEGORIES, PAYMENT_METHODS, GST_STATES, balanceOf, parseAmount, round2, dueNow } from '@/lib/billing';
 import { todayIST } from '@/lib/ist';
 
 type RouteContext = { params: Promise<{ id: string }> };
@@ -32,11 +34,13 @@ export async function GET(_request: Request, context: RouteContext) {
   const own = role === 'student' && session.user.studentId === id;
   if (!own && !BILLING_VIEW_ROLES.includes(role)) return NextResponse.json({ error: 'Not authorized.' }, { status: 403 });
 
-  const [{ data: student }, { data: entries, error: dbError }, rates, pkg] = await Promise.all([
-    supabaseAdmin.from('students').select('id, name, enrollment_id, credit_limit, credit_note').eq('id', id).maybeSingle(),
+  const [{ data: student }, { data: entries, error: dbError }, rates, pkg, { data: docs }] = await Promise.all([
+    supabaseAdmin.from('students').select('id, name, enrollment_id, credit_limit, credit_note, billing_state').eq('id', id).maybeSingle(),
     supabaseAdmin.from('ledger_entries').select('*').eq('student_id', id).order('entry_date', { ascending: false }).order('id', { ascending: false }),
     ratesFor(id),
     activePackage(id),
+    supabaseAdmin.from('billing_documents').select('*, lines:billing_document_lines(*)').eq('student_id', id)
+      .order('doc_date', { ascending: false }).order('id', { ascending: false }),
   ]);
   if (dbError) {
     console.error('Error loading ledger:', dbError.code);
@@ -44,6 +48,10 @@ export async function GET(_request: Request, context: RouteContext) {
   }
   if (!student) return NextResponse.json({ error: 'Student not found.' }, { status: 404 });
   const balance = balanceOf(entries ?? []);
+  // B4: a receipt whose payment was voided is cancelled; a student doesn't see cancelled receipts.
+  const voidedIds = new Set((entries ?? []).filter(e => e.voided_at).map(e => e.id));
+  const documents = (docs ?? []).map(d => ({ ...d, created_by: null, cancelled: d.doc_type === 'RECEIPT' && voidedIds.has(d.payment_entry_id) }))
+    .filter(d => !(own && d.cancelled));
   return NextResponse.json({
     student: { id: student.id, name: student.name, enrollmentId: student.enrollment_id },
     balance,
@@ -51,6 +59,8 @@ export async function GET(_request: Request, context: RouteContext) {
     due: dueNow(balance, pkg?.instalments ?? [], todayIST()),
     creditLimit: Number(student.credit_limit ?? 0),
     creditNote: own ? null : student.credit_note ?? null, // staff-only note (operator, 21 Oct)
+    billingState: student.billing_state ?? null,
+    documents,
     rates,
     // A student sees only live entries, without who made them (operator, 21 Oct: void reasons are internal).
     entries: own ? (entries ?? []).filter(e => !e.voided_at).map(e => ({ ...e, created_by: null })) : entries ?? [],
@@ -92,7 +102,15 @@ export async function POST(request: Request, context: RouteContext) {
     if (action === 'payment') {
       const method = String(body.method ?? '');
       if (!(PAYMENT_METHODS as readonly string[]).includes(method)) return NextResponse.json({ error: 'Pick a payment method.' }, { status: 400 });
-      row = { kind: 'PAYMENT', credit: amount, method, reference: text(body.reference, 100) || null, description: note || 'Payment received' };
+      // B4: the payment, its receipt and any invoice are saved together in one database transaction.
+      const p = await documentParties(id);
+      const { data: issued, error: dbError } = await supabaseAdmin.rpc('billing_record_payment', {
+        p_student: id, p_date: date, p_amount: amount, p_method: method, p_reference: text(body.reference, 100) || null,
+        p_description: note || 'Payment received', p_by: by, p_today: todayIST(), p_receipt_seller: p.receiptSeller,
+        p_seller: p.seller, p_buyer: p.buyer, p_igst: p.igst, p_sac: p.sac, p_prefixes: { receipt: p.prefixes.receipt, invoice: p.prefixes.invoice },
+      });
+      if (dbError) return done(dbError, 'payment');
+      return NextResponse.json({ success: true, receipt: issued?.receipt ?? null, invoice: issued?.invoice ?? null });
     } else if (action === 'opening') {
       const owes = body.owes === true;
       row = { kind: 'OPENING', [owes ? 'debit' : 'credit']: amount, description: note || (owes ? 'Opening balance (owed)' : 'Opening balance (in credit)') };
@@ -108,6 +126,7 @@ export async function POST(request: Request, context: RouteContext) {
   if (action === 'void') {
     const reason = text(body.reason);
     if (!reason) return NextResponse.json({ error: 'Give a reason for voiding.' }, { status: 400 });
+    if (!Number.isSafeInteger(Number(body.entryId))) return NextResponse.json({ error: 'Pick an entry to void.' }, { status: 400 });
     // B2: a package fee whose hours have been flown can't simply be voided — those flights were never charged hourly.
     const { data: target } = await supabaseAdmin.from('ledger_entries').select('source, source_id').eq('id', Number(body.entryId)).eq('student_id', id).maybeSingle();
     if (target?.source === 'PACKAGE') {
@@ -118,18 +137,27 @@ export async function POST(request: Request, context: RouteContext) {
         }, { status: 409 });
       }
     }
-    const { data: rows, error: dbError } = await supabaseAdmin.from('ledger_entries')
-      .update({ voided_at: new Date().toISOString(), voided_by: by, void_reason: reason })
-      .eq('id', Number(body.entryId)).eq('student_id', id).is('voided_at', null).select('id, source, source_id');
+    // B4: one transaction voids the entry and, if it was invoiced, issues a credit note against that invoice.
+    const { data: voided, error: dbError } = await supabaseAdmin.rpc('billing_void_entry', {
+      p_entry: Number(body.entryId), p_student: id, p_reason: reason, p_by: by, p_today: todayIST(),
+      p_prefix: (await documentParties(id)).prefixes.creditNote,
+    });
     if (dbError) return done(dbError, 'void');
-    if (!rows?.length) return NextResponse.json({ error: 'No live entry with that id for this student.' }, { status: 404 });
+    if (!voided) return NextResponse.json({ error: 'No live entry with that id for this student.' }, { status: 404 });
     // B2: voiding a package's fee closes that package too.
-    if (rows[0].source === 'PACKAGE') {
+    if (voided.source === 'PACKAGE') {
       const { error: closeError } = await supabaseAdmin.from('student_packages')
-        .update({ status: 'CLOSED', closed_by: by, closed_at: new Date().toISOString() }).eq('id', Number(rows[0].source_id)).eq('status', 'ACTIVE');
+        .update({ status: 'CLOSED', closed_by: by, closed_at: new Date().toISOString() }).eq('id', Number(voided.source_id)).eq('status', 'ACTIVE');
       if (closeError) console.error('Billing: closing the voided package failed:', closeError.code);
     }
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, creditNote: voided.credit_note ?? null });
+  }
+
+  if (action === 'state') {
+    const state = body.state === null || body.state === '' ? null : String(body.state);
+    if (state !== null && !(state in GST_STATES)) return NextResponse.json({ error: 'Pick a state from the list.' }, { status: 400 });
+    const { error: dbError } = await supabaseAdmin.from('students').update({ billing_state: state }).eq('id', id);
+    return done(dbError, 'state');
   }
 
   if (action === 'credit') {

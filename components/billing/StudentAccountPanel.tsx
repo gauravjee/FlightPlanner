@@ -7,7 +7,8 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { notify } from '@/lib/notify';
-import { CATEGORY_LABEL, PAYMENT_METHODS, formatINR, type BillingCategory } from '@/lib/billing';
+import { CATEGORY_LABEL, PAYMENT_METHODS, GST_STATES, formatINR, type BillingCategory } from '@/lib/billing';
+import { downloadBillingDocument, DOC_LABEL, type BillingDocument } from '@/lib/billing-pdf';
 import PackageCard, { type PackageInfo, type DueInfo } from '@/components/billing/PackageCard';
 
 interface Entry {
@@ -22,6 +23,7 @@ interface Account {
   entries: Entry[];
   package: PackageInfo | null; // B2
   due: DueInfo;
+  billingState: string | null; documents: BillingDocument[]; // B4
 }
 
 async function fetchAccount(url: string): Promise<Account> {
@@ -227,6 +229,43 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
           </table>
         </div>
       )}
+      <div className="mt-6" data-testid="billing-documents">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <p className="font-semibold">Receipts, invoices and credit notes</p>
+          {canRecord && (
+            <label className="text-xs text-tertiary flex items-center gap-2">GST state (place of supply)
+              <select value={data.billingState ?? ''} disabled={saving} className="surface-inner rounded px-2 py-1 text-sm"
+                onChange={e => post({ action: 'state', state: e.target.value || null })}>
+                <option value="">Same as the school</option>
+                {Object.entries(GST_STATES).map(([code, name]) => <option key={code} value={code}>{code} · {name}</option>)}
+              </select>
+            </label>
+          )}
+        </div>
+        {data.documents.length === 0 ? (
+          <p className="text-sm text-tertiary">None yet. Each payment gets a receipt, and an invoice once the school&apos;s GST details are set.</p>
+        ) : (
+          <ul className="text-sm">
+            {data.documents.map(d => (
+              <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 border-t py-1.5">
+                <span>
+                  {DOC_LABEL[d.doc_type]} <span className="font-semibold">{d.doc_number}</span> · {d.doc_date}
+                  {d.cancelled && <span className="badge badge-danger ml-1 text-[10px]">cancelled</span>}
+                </span>
+                <span className="flex items-center gap-3">
+                  <span>{formatINR(Number(d.total))}</span>
+                  <button type="button" className="text-xs font-semibold cursor-pointer" style={{ color: 'var(--accent)' }}
+                    aria-label={`Download ${DOC_LABEL[d.doc_type]} ${d.doc_number}`}
+                    onClick={() => downloadBillingDocument(d, {
+                      againstNumber: data.documents.find(x => x.id === d.against_document_id)?.doc_number,
+                      payment: data.entries.find(e => e.id === d.payment_entry_id),
+                    })}>PDF</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <p className="text-[11px] text-tertiary mt-3">
         Flights are charged when the logbook entry is saved: logbook flight time × hourly rate + GST. Entries are never deleted; a mistake is voided with a reason.
       </p>

@@ -5,7 +5,7 @@
 import { supabaseAdmin } from '@/lib/supabase-admin';
 import {
   BILLING_CATEGORIES, CATEGORY_HOURS_FIELD, categoryFor, priceHours, balanceOf, round2, formatINR, splitHours, dueNow,
-  type BillingCategory,
+  isGstin, isInterState, type BillingCategory,
 } from '@/lib/billing';
 import { todayIST } from '@/lib/ist';
 
@@ -234,3 +234,31 @@ export async function chargeCancelFee(bookingId: string, kind: 'NO_SHOW' | 'LATE
     console.error('Billing: cancellation fee failed:', e);
   }
 }
+
+// ---- B4 (22 Oct): receipts, GST invoices and credit notes ----
+const DOC_KEYS = ['school_name', 'billing_legal_name', 'billing_gstin', 'billing_address', 'billing_sac',
+  'billing_invoice_prefix', 'billing_receipt_prefix', 'billing_credit_note_prefix'];
+
+/**
+ * Seller and buyer details for a student's documents (each document stores its own copy). seller is null until the
+ * school's legal name, a valid GSTIN and the address are all set: until then a payment gets a receipt only.
+ */
+export async function documentParties(studentId: string) {
+  const [{ data: settings }, { data: student }] = await Promise.all([
+    supabaseAdmin.from('fto_settings').select('setting_key, setting_value').in('setting_key', DOC_KEYS),
+    supabaseAdmin.from('students').select('name, enrollment_id, address, billing_state').eq('id', studentId).maybeSingle(),
+  ]);
+  const s = (k: string) => (settings?.find(r => r.setting_key === k)?.setting_value ?? '').trim();
+  const gstin = s('billing_gstin').toUpperCase();
+  const complete = !!s('billing_legal_name') && isGstin(gstin) && !!s('billing_address');
+  const seller = { name: s('billing_legal_name') || s('school_name'), address: s('billing_address'), gstin: complete ? gstin : '', state: complete ? gstin.slice(0, 2) : '' };
+  return {
+    receiptSeller: seller,
+    seller: complete ? seller : null,
+    buyer: { name: student?.name ?? '', enrollmentId: student?.enrollment_id ?? '', address: student?.address ?? '', state: student?.billing_state ?? '' },
+    igst: complete && isInterState(gstin, student?.billing_state),
+    sac: s('billing_sac'),
+    prefixes: { receipt: s('billing_receipt_prefix'), invoice: s('billing_invoice_prefix'), creditNote: s('billing_credit_note_prefix') },
+  };
+}
+

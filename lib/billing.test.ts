@@ -1,7 +1,7 @@
 // lib/billing.test.ts
 // Run: npx tsx lib/billing.test.ts
 import assert from 'node:assert/strict';
-import { categoryFor, priceHours, balanceOf, parseAmount, formatINR, splitHours, dueNow, monthlyPlan } from './billing';
+import { categoryFor, priceHours, balanceOf, parseAmount, formatINR, splitHours, dueNow, monthlyPlan, isGstin, isInterState } from './billing';
 
 assert.equal(categoryFor({ is_simulator: true, type: 'Multi Engine' }), 'SIMULATOR', 'simulator flag wins');
 assert.equal(categoryFor({ type: 'Multi Engine' }), 'MULTI_ENGINE');
@@ -43,5 +43,14 @@ assert.deepEqual(dueNow(-500, [], '2026-10-22'), { notYetDue: 0, due: 500, overd
 const m = monthlyPlan(413000, 3, '2026-10-21');
 assert.deepEqual(m.map(r => r.due_date), ['2026-10-21', '2026-11-21', '2026-12-21']);
 assert.deepEqual(m.map(r => r.amount), [137666.66, 137666.66, 137666.68]);
+
+// B4: GSTIN check and the GST split.
+assert.equal(isGstin('27ABCDE1234F1Z5'), true);
+assert.equal(isGstin('27abcde1234f1z5'), false, 'upper case only');
+assert.equal(isGstin('28ABCDE1234F1Z5'), false, 'no such state code');
+assert.equal(isGstin('27ABCDE1234F1Z'), false, 'too short');
+assert.equal(isInterState('27ABCDE1234F1Z5', '27'), false, 'same state: CGST + SGST');
+assert.equal(isInterState('27ABCDE1234F1Z5', '33'), true, 'other state: IGST');
+assert.equal(isInterState('27ABCDE1234F1Z5', null), false, 'no state recorded: same state');
 
 console.log('billing tests passed');
