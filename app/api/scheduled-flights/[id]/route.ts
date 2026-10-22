@@ -26,7 +26,7 @@ import { MIN_FLIGHT_DURATION_MIN } from '@/lib/store';
 import { rosterRefusal } from '@/lib/roster-server';
 import { instructorLeftBefore } from '@/lib/staff-server';
 import { overdueBlockingItems, maintenanceBlockMessage, overrideReasonFrom } from '@/lib/maintenance-block';
-import { chargeCancelFee } from '@/lib/billing-server';
+import { chargeCancelFee, bookingFundsRefusal } from '@/lib/billing-server';
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -216,6 +216,14 @@ export async function PATCH(request: Request, context: RouteContext) {
         }
         // B4: only an Active student can be booked or moved.
         const refusal = next.student ? await studentBookingRefusal(next.student, next.start) : null;
+        if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
+      }
+      // B5 (operator, 22 Oct): a move (aircraft or times), a different student, or a cancelled booking coming back needs
+      // the same cover as a new booking — balance + credit limit (+ instalments not yet due) — with this booking's own
+      // old cost left out so it isn't counted twice. Only while the booking block is switched on.
+      if ((aircraftMoved || studentChanged) && next.student && next.status !== 'CANCELLED'
+        && String(dbUpdates.sortie_type ?? current.sortie_type) !== 'MAINTENANCE') {
+        const refusal = await bookingFundsRefusal(next.student, String(dbUpdates.aircraft_id ?? current.aircraft_id), next.start, next.end, id);
         if (refusal) return NextResponse.json({ error: refusal }, { status: 403 });
       }
       if ((addsHours || dbUpdates.base_id !== undefined) && next.instructor && next.status !== 'CANCELLED') {
