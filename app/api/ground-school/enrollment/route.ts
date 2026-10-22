@@ -173,6 +173,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'classId and studentId are required.' }, { status: 400 });
   }
 
+  // shortcut: check-then-insert, so two clicks in the same instant could still both land; a unique index on
+  // (class_id, student_id) closes that once existing rows are checked for duplicates.
+  const { data: existing } = await supabaseAdmin.from('ground_school_enrollment')
+    .select('id').eq('class_id', classId).eq('student_id', studentId).limit(1);
+  if (existing?.length) return NextResponse.json({ error: 'This student is already in this class.' }, { status: 409 });
+
   const { data: inserted, error: dbError } = await supabaseAdmin
     .from('ground_school_enrollment')
     .insert({

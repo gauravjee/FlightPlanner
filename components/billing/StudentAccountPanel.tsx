@@ -15,6 +15,7 @@ interface Entry {
   id: number; entry_date: string; kind: string; source: string; description: string; hours: number | null;
   rate: number | null; gst_amount: number; debit: number; credit: number; method: string | null; reference: string | null;
   created_by: string | null; voided_at: string | null; void_reason: string | null;
+  invoice_id: number | null; credit_note_id: number | null; // B4
 }
 interface Account {
   student: { id: string; name: string; enrollmentId: string };
@@ -45,6 +46,7 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
   const [form, setForm] = useState<Form>(null);
   const [f, setF] = useState({ amount: '', method: 'CASH', reference: '', date: '', note: '', owes: true, charge: true });
   const [voiding, setVoiding] = useState<{ id: number; reason: string } | null>(null);
+  const [refunding, setRefunding] = useState<{ id: number; amount: string; reason: string } | null>(null);
   const [rateEdit, setRateEdit] = useState<{ category: BillingCategory; value: string } | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -212,12 +214,27 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
                         <button type="button" className="text-xs cursor-pointer text-tertiary" onClick={() => setVoiding(null)}>Cancel</button>
                       </span>
                     )}
+                    {refunding?.id === e.id && (
+                      <span className="flex flex-wrap gap-2 mt-1">
+                        <input autoFocus aria-label="Refund amount including GST" placeholder="Amount incl. GST" inputMode="decimal" value={refunding.amount}
+                          onChange={ev => setRefunding({ ...refunding, amount: ev.target.value })} className="surface-inner rounded px-2 py-1 text-xs w-32" />
+                        <input aria-label="Reason for the refund" placeholder="Reason" value={refunding.reason}
+                          onChange={ev => setRefunding({ ...refunding, reason: ev.target.value })} className="surface-inner rounded px-2 py-1 text-xs flex-1" />
+                        <button type="button" disabled={saving} className="text-xs font-semibold cursor-pointer" style={{ color: 'var(--accent)' }}
+                          onClick={async () => { if (await post({ action: 'refund', entryId: e.id, amount: refunding.amount.trim(), reason: refunding.reason })) setRefunding(null); }}>Refund</button>
+                        <button type="button" className="text-xs cursor-pointer text-tertiary" onClick={() => setRefunding(null)}>Cancel</button>
+                      </span>
+                    )}
                   </td>
                   <td className="py-2 pr-3 text-right whitespace-nowrap">{Number(e.debit) ? formatINR(Number(e.debit)) : ''}</td>
                   <td className="py-2 pr-3 text-right whitespace-nowrap">{Number(e.credit) ? formatINR(Number(e.credit)) : ''}</td>
                   {canAdmin && (
                     <td className="py-2 text-right">
-                      {!e.voided_at && voiding?.id !== e.id && (
+                      {!e.voided_at && e.kind === 'CHARGE' && e.invoice_id && refunding?.id !== e.id && (
+                        <button type="button" className="text-xs cursor-pointer mr-2" style={{ color: 'var(--accent)' }}
+                          aria-label={`Refund ${e.description} with a credit note`} onClick={() => setRefunding({ id: e.id, amount: '', reason: '' })}>Refund</button>
+                      )}
+                      {!e.voided_at && !(e.kind === 'ADJUSTMENT' && e.credit_note_id) && voiding?.id !== e.id && (
                         <button type="button" className="text-xs cursor-pointer" style={{ color: 'var(--danger)' }}
                           aria-label={`Void ${e.description}`} onClick={() => setVoiding({ id: e.id, reason: '' })}>Void</button>
                       )}

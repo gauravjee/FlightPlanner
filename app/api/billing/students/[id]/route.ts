@@ -13,6 +13,7 @@
 //   closePackage  {}                                                stops it supplying hours; nothing automatic happens to money
 // B4 (22 Oct): a payment gets a numbered receipt, plus a GST invoice for all charges not yet invoiced once the school's
 // GST details are set; voiding an invoiced charge issues a credit note. state { state: '27' | null } = GST place of supply.
+//   refund { entryId, amount, reason }   admin / super admin: credit note for all or part (incl. GST) of an invoiced charge
 
 import { NextResponse } from 'next/server';
 import { requireSession, requireRole } from '@/lib/api-auth';
@@ -76,7 +77,7 @@ export async function POST(request: Request, context: RouteContext) {
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 });
   }
   const action = body.action;
-  const adminOnly = action === 'void' || action === 'credit' || action === 'rate';
+  const adminOnly = action === 'void' || action === 'credit' || action === 'rate' || action === 'refund';
   const packageAction = action === 'assignPackage' || action === 'editPlan' || action === 'closePackage';
   const { session, error } = await requireRole(adminOnly ? BILLING_ADMIN_ROLES : packageAction ? BILLING_PACKAGE_ROLES : BILLING_RECORD_ROLES);
   if (error) return error;
@@ -128,7 +129,16 @@ export async function POST(request: Request, context: RouteContext) {
     if (!reason) return NextResponse.json({ error: 'Give a reason for voiding.' }, { status: 400 });
     if (!Number.isSafeInteger(Number(body.entryId))) return NextResponse.json({ error: 'Pick an entry to void.' }, { status: 400 });
     // B2: a package fee whose hours have been flown can't simply be voided — those flights were never charged hourly.
-    const { data: target } = await supabaseAdmin.from('ledger_entries').select('source, source_id').eq('id', Number(body.entryId)).eq('student_id', id).maybeSingle();
+    const { data: target } = await supabaseAdmin.from('ledger_entries').select('kind, source, source_id, credit_note_id').eq('id', Number(body.entryId)).eq('student_id', id).maybeSingle();
+    // B4 refunds: voiding a refund, or a charge already partly refunded, would leave the credit notes and ledger out of step.
+    if (target?.kind === 'ADJUSTMENT' && target.credit_note_id) {
+      return NextResponse.json({ error: 'This refund has a credit note, so it can\'t be voided. Record a new charge if it was a mistake.' }, { status: 409 });
+    }
+    if (target?.kind === 'CHARGE') {
+      const { count } = await supabaseAdmin.from('billing_document_lines').select('id, billing_documents!inner(doc_type)', { count: 'exact', head: true })
+        .eq('ledger_entry_id', Number(body.entryId)).eq('billing_documents.doc_type', 'CREDIT_NOTE');
+      if (count) return NextResponse.json({ error: 'Part of this charge has already been refunded with a credit note. Refund the rest instead of voiding it.' }, { status: 409 });
+    }
     if (target?.source === 'PACKAGE') {
       const { count } = await supabaseAdmin.from('package_usage').select('id', { count: 'exact', head: true }).eq('student_package_id', Number(target.source_id));
       if (count) {
@@ -151,6 +161,20 @@ export async function POST(request: Request, context: RouteContext) {
       if (closeError) console.error('Billing: closing the voided package failed:', closeError.code);
     }
     return NextResponse.json({ success: true, creditNote: voided.credit_note ?? null });
+  }
+
+  if (action === 'refund') {
+    const reason = text(body.reason);
+    const amount = parseAmount(body.amount);
+    if (!reason) return NextResponse.json({ error: 'Give a reason for the refund.' }, { status: 400 });
+    if (amount === null || !Number.isSafeInteger(Number(body.entryId))) return NextResponse.json({ error: 'Enter an amount above 0 with at most 2 decimals.' }, { status: 400 });
+    const { data: refunded, error: dbError } = await supabaseAdmin.rpc('billing_refund_entry', {
+      p_entry: Number(body.entryId), p_student: id, p_amount: amount, p_reason: reason, p_by: by, p_today: todayIST(),
+      p_prefix: (await documentParties(id)).prefixes.creditNote,
+    });
+    if (dbError?.message?.startsWith('BILLING: ')) return NextResponse.json({ error: dbError.message.slice(9) }, { status: 400 });
+    if (dbError) return done(dbError, 'refund');
+    return NextResponse.json({ success: true, creditNote: refunded?.credit_note ?? null });
   }
 
   if (action === 'state') {
