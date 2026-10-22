@@ -13,8 +13,8 @@ import { useSession } from 'next-auth/react';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
-import { REPORTS_VIEW_ROLES, ROSTER_VIEW_ROLES } from '@/lib/permissions';
-import { ClipboardList, Wrench, Wind, TriangleAlert, ArrowRight, BookOpen, FolderDown, CalendarDays } from 'lucide-react';
+import { REPORTS_VIEW_ROLES, ROSTER_VIEW_ROLES, BILLING_REPORT_ROLES } from '@/lib/permissions';
+import { ClipboardList, Wrench, Wind, TriangleAlert, ArrowRight, BookOpen, FolderDown, CalendarDays, ReceiptText, Scale } from 'lucide-react';
 
 const REPORT_CARDS = [
   {
@@ -68,6 +68,23 @@ const REPORT_CARDS = [
     status: 'live' as const,
     roles: ROSTER_VIEW_ROLES,
   },
+  // Billing B4b (22 Oct): statements for students (own only), admin and accounts; reconciliation for admin and accounts.
+  {
+    href: '/dashboard/reports/statements',
+    icon: ReceiptText,
+    title: 'Statements',
+    description: 'Statement of account for a week, month, financial year or any dates, with PDF. Staff also get a consolidated statement: one row per student with opening, charges, payments and closing balance.',
+    status: 'live' as const,
+    roles: ['student', ...BILLING_REPORT_ROLES],
+  },
+  {
+    href: '/dashboard/reports/reconciliation',
+    icon: Scale,
+    title: 'Billing Reconciliation',
+    description: 'Every logbook flight beside its charge, with flights not charged and voided charges called out, and totals by month, student and aircraft. CSV and PDF.',
+    status: 'live' as const,
+    roles: BILLING_REPORT_ROLES,
+  },
   {
     icon: TriangleAlert,
     title: 'DGCA Incident Report',
@@ -86,11 +103,11 @@ export default function ReportsPage() {
 
   return (
     <ProtectedRoute>
-      <RoleGate allowedRoles={REPORTS_VIEW_ROLES}>
+      <RoleGate allowedRoles={[...REPORTS_VIEW_ROLES, 'student', 'accounts']}>
         <main className="min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
           <div className="max-w-5xl mx-auto px-4 py-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {REPORT_CARDS.filter(card => !card.roles || card.roles.includes(role)).map((card, i) => {
+              {REPORT_CARDS.filter(card => (card.roles ?? REPORTS_VIEW_ROLES).includes(role)).map((card, i) => {
                 const Icon = card.icon;
                 const body = (
                   <div className="surface-card p-5 h-full flex flex-col transition-all hover:opacity-90">

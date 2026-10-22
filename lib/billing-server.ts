@@ -262,3 +262,23 @@ export async function documentParties(studentId: string) {
   };
 }
 
+// ---- B4b (22 Oct): reports ----
+/** Every row of a query, 1000 at a time (Supabase returns at most 1000 rows per request). */
+export async function allRows<T>(page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { code?: string } | null }>): Promise<T[]> {
+  const rows: T[] = [];
+  for (let i = 0; ; i += 1000) {
+    const { data, error } = await page(i, i + 999);
+    if (error) throw new Error(`Billing report query failed: ${error.code}`);
+    rows.push(...(data ?? []));
+    if ((data?.length ?? 0) < 1000) return rows;
+  }
+}
+
+/** A from / to period from the query string: valid dates, from ≤ to, at most 400 days; else null. */
+export function reportPeriod(params: URLSearchParams): { from: string; to: string } | null {
+  const from = params.get('from') ?? '', to = params.get('to') ?? '';
+  const ok = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d));
+  if (!ok(from) || !ok(to) || from > to || Date.parse(to) - Date.parse(from) > 400 * 86_400_000) return null;
+  return { from, to };
+}
+

@@ -132,7 +132,8 @@ const NAV_ITEMS: NavItem[] = [
   // REPORTS_WRITE_ROLES, enforced in the Reports pages themselves).
   // safety_officer (2026-08-20) added so that role can reach the Breath
   // Analysis Report (see BA_TEST_WRITE_ROLES/BA_TEST_VIEW_ROLES).
-  { href: '/dashboard/reports', label: 'Reports', icon: ClipboardList, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
+  // Billing B4b (22 Oct): + student (own statement) and accounts (statements, reconciliation); the landing page shows each only its cards.
+  { href: '/dashboard/reports', label: 'Reports', icon: ClipboardList, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer', 'student', 'accounts'] },
   { href: '/dashboard/admin/setup', label: 'Admin Setup', icon: Settings, roles: ['super_admin'] },
 ];
 

@@ -91,3 +91,73 @@ export const isGstin = (v: string) => /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0
 /** IGST when the student's state is known and differs from the school's (the GSTIN's state); else CGST + SGST. */
 export const isInterState = (schoolGstin: string, studentState: string | null | undefined) => !!studentState && studentState !== schoolGstin.slice(0, 2);
 
+// ---- B4b (22 Oct): statements and the reconciliation report ----
+export type PeriodKind = 'weekly' | 'monthly' | 'annual';
+const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
+/** The week (Mon–Sun), month or financial year (Apr–Mar) containing a date, as YYYY-MM-DD from / to. */
+export function periodRange(kind: PeriodKind, date: string): { from: string; to: string } {
+  const d = new Date(date + 'T00:00:00Z');
+  const y = d.getUTCFullYear(), m = d.getUTCMonth();
+  if (kind === 'weekly') {
+    const from = new Date(d);
+    from.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+    const to = new Date(from);
+    to.setUTCDate(from.getUTCDate() + 6);
+    return { from: isoDay(from), to: isoDay(to) };
+  }
+  if (kind === 'monthly') return { from: isoDay(new Date(Date.UTC(y, m, 1))), to: isoDay(new Date(Date.UTC(y, m + 1, 0))) };
+  const fy = m < 3 ? y - 1 : y;
+  return { from: `${fy}-04-01`, to: `${fy + 1}-03-31` };
+}
+
+export interface StatementEntry { id: number; entry_date: string; debit: number | string; credit: number | string; voided_at?: string | null }
+
+/** Opening balance before `from`, the live entries from..to (oldest first) with a running balance, and the totals. */
+export function statementOf<T extends StatementEntry>(entries: T[], from: string, to: string) {
+  const live = entries.filter(e => !e.voided_at).sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.id - b.id);
+  const opening = balanceOf(live.filter(e => e.entry_date < from));
+  let running = opening, charges = 0, credits = 0;
+  const lines = live.filter(e => e.entry_date >= from && e.entry_date <= to).map(e => {
+    charges += Number(e.debit);
+    credits += Number(e.credit);
+    running = round2(running + Number(e.credit) - Number(e.debit));
+    return { ...e, balance: running };
+  });
+  return { opening, lines, charges: round2(charges), credits: round2(credits), closing: running };
+}
+
+export interface ReconFlight { id: string; flight_date: string; student_id: string | null; aircraft_id: string | number; total_hours: number | string }
+export interface ReconCharge { source_id: string | null; debit: number | string; hours: number | string | null; voided_at: string | null }
+export type ReconStatus = 'CHARGED' | 'PACKAGE' | 'PACKAGE_AND_CHARGED' | 'NOT_CHARGED' | 'NO_STUDENT';
+export const RECON_LABEL: Record<ReconStatus, string> = {
+  CHARGED: 'Charged', PACKAGE: 'From package', PACKAGE_AND_CHARGED: 'Package + charged', NOT_CHARGED: 'Not charged', NO_STUDENT: 'No student',
+};
+
+/** Each logbook flight beside its charge: live charge, package hours, voided charges, and a status. */
+export function reconcile<F extends ReconFlight>(flights: F[], charges: ReconCharge[], usage: { flight_record_id: string; hours: number | string }[]) {
+  return flights.map(f => {
+    const mine = charges.filter(c => c.source_id === String(f.id));
+    const live = mine.find(c => !c.voided_at);
+    const packageHours = round2(Number(usage.find(u => String(u.flight_record_id) === String(f.id))?.hours ?? 0));
+    const status: ReconStatus = !f.student_id ? 'NO_STUDENT'
+      : live && packageHours ? 'PACKAGE_AND_CHARGED' : live ? 'CHARGED' : packageHours ? 'PACKAGE' : 'NOT_CHARGED';
+    return {
+      ...f, hours: round2(Number(f.total_hours)), packageHours, status,
+      charged: live ? round2(Number(live.debit)) : 0, chargedHours: live ? round2(Number(live.hours ?? 0)) : 0,
+      voidedCharges: mine.filter(c => c.voided_at).length,
+    };
+  });
+}
+
+/** Totals of reconciled rows grouped by a key (month, student, aircraft), sorted by key. */
+export function reconTotals(rows: { hours: number; packageHours: number; charged: number }[], keyOf: (i: number) => string) {
+  const by = new Map<string, { key: string; flights: number; hours: number; packageHours: number; charged: number }>();
+  rows.forEach((r, i) => {
+    const k = keyOf(i);
+    const t = by.get(k) ?? { key: k, flights: 0, hours: 0, packageHours: 0, charged: 0 };
+    by.set(k, { key: k, flights: t.flights + 1, hours: round2(t.hours + r.hours), packageHours: round2(t.packageHours + r.packageHours), charged: round2(t.charged + r.charged) });
+  });
+  return [...by.values()].sort((a, b) => a.key.localeCompare(b.key));
+}
+

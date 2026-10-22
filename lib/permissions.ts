@@ -223,6 +223,8 @@ export const BILLING_RECORD_ROLES = BILLING_VIEW_ROLES;
 export const BILLING_ADMIN_ROLES = ['admin', 'super_admin'];
 // B2 (operator, 21 Oct): who assigns course packages, agrees a fee and edits or closes the plan. Operations only views.
 export const BILLING_PACKAGE_ROLES = ['admin', 'super_admin', 'accounts'];
+// B4b (operator, 22 Oct): consolidated statements and the reconciliation report — admin and accounts.
+export const BILLING_REPORT_ROLES = ['admin', 'super_admin', 'accounts'];
 
 // 2026-09-24: staff master (B2; claude/staff-master-design-2026-09-24.md).
 // Admin + super admin manage staff records, including the encrypted ID

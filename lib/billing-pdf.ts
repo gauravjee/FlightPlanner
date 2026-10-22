@@ -4,7 +4,7 @@
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { GST_STATES } from '@/lib/billing';
+import { GST_STATES, RECON_LABEL, type ReconStatus } from '@/lib/billing';
 
 interface Party { name: string; address: string; gstin?: string; state: string; enrollmentId?: string }
 export interface BillingDocument {
@@ -103,3 +103,103 @@ export function downloadBillingDocument(d: BillingDocument, opts: { againstNumbe
   doc.text('Computer-generated document; no signature required.', 14, Math.max(y, 120));
   doc.save(`${d.doc_number.replace(/[^A-Za-z0-9-]+/g, '_')}.pdf`);
 }
+
+// ---- B4b (22 Oct): statements and the reconciliation report ----
+/** A balance the accountant's way: Dr = the student owes, Cr = money on account. */
+export const drCr = (n: number) => (n === 0 ? rs(0) : `${rs(Math.abs(n))} ${n < 0 ? 'Dr' : 'Cr'}`);
+type Cell = string | number;
+
+function reportDoc(title: string, school: string, subtitle: string, orientation: 'portrait' | 'landscape' = 'portrait') {
+  const doc = new jsPDF({ orientation });
+  const w = doc.internal.pageSize.getWidth();
+  doc.setFillColor(30, 41, 59);
+  doc.rect(0, 0, w, 24, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.text(school || 'Flight Training School', 14, 11);
+  doc.text(title.toUpperCase(), w - 14, 11, { align: 'right' });
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.text(subtitle, w - 14, 18, { align: 'right' });
+  doc.setTextColor(0, 0, 0);
+  return doc;
+}
+
+function table(doc: jsPDF, startY: number, head: string[], body: Cell[][], right: number[], foot?: Cell[]) {
+  autoTable(doc, {
+    startY, head: [head], body: body.length ? body : [[{ content: 'Nothing in this period.', colSpan: head.length }] as unknown as Cell[]],
+    foot: foot ? [foot] : undefined, theme: 'grid',
+    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255], fontSize: 8 },
+    footStyles: { fillColor: [241, 245, 249], textColor: [0, 0, 0], fontSize: 8, fontStyle: 'bold' },
+    bodyStyles: { fontSize: 8, textColor: [0, 0, 0] },
+    columnStyles: Object.fromEntries(right.map(i => [i, { halign: 'right' as const }])),
+    margin: { left: 14, right: 14 },
+  });
+  return ((doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? startY) + 8;
+}
+
+const periodLabel = (from: string, to: string) => `${dateLabel(from)} to ${dateLabel(to)}`;
+const fileName = (s: string) => `${s.replace(/[^A-Za-z0-9-]+/g, '_')}.pdf`;
+
+export interface StatementData {
+  from: string; to: string; student: { name: string; enrollmentId: string; address: string };
+  opening: number; charges: number; credits: number; closing: number;
+  lines: { entry_date: string; kind: string; description: string; method: string | null; reference: string | null; debit: number | string; credit: number | string; balance: number }[];
+}
+
+/** One student's statement of account for a period. */
+export function downloadStatement(s: StatementData, school: string) {
+  const doc = reportDoc('Statement of account', school, periodLabel(s.from, s.to));
+  doc.setFontSize(9);
+  doc.text([`${s.student.name}${s.student.enrollmentId ? ` (${s.student.enrollmentId})` : ''}`, ...doc.splitTextToSize(s.student.address || '', 180).slice(0, 2)], 14, 32);
+  const y = table(doc, 44, ['Date', 'Particulars', 'Charges', 'Paid / credit', 'Balance'], [
+    [dateLabel(s.from), 'Opening balance', '', '', drCr(s.opening)],
+    ...s.lines.map(l => [dateLabel(l.entry_date), `${l.description}${l.method ? ` (${l.method}${l.reference ? ` ${l.reference}` : ''})` : ''}`,
+      Number(l.debit) ? rs(l.debit) : '', Number(l.credit) ? rs(l.credit) : '', drCr(l.balance)]),
+  ], [2, 3, 4], ['', 'Closing balance', rs(s.charges), rs(s.credits), drCr(s.closing)]);
+  doc.setFontSize(7);
+  doc.setTextColor(100, 100, 100);
+  doc.text('Dr = amount owed to the school; Cr = money on account. Computer-generated statement.', 14, y);
+  doc.save(fileName(`Statement_${s.student.enrollmentId || s.student.name}_${s.from}_${s.to}`));
+}
+
+export interface ConsolidatedData {
+  from: string; to: string;
+  rows: { name: string; enrollmentId: string; opening: number; charges: number; credits: number; closing: number }[];
+  totals: { opening: number; charges: number; credits: number; closing: number };
+}
+
+/** All students for a period: one row each, with school totals. */
+export function downloadConsolidated(c: ConsolidatedData, school: string, title: string) {
+  const doc = reportDoc(title, school, periodLabel(c.from, c.to));
+  table(doc, 32, ['Student', 'Enrolment', 'Opening', 'Charges', 'Paid / credit', 'Closing'],
+    c.rows.map(r => [r.name, r.enrollmentId ?? '', drCr(r.opening), rs(r.charges), rs(r.credits), drCr(r.closing)]), [2, 3, 4, 5],
+    [`${c.rows.length} students`, '', drCr(c.totals.opening), rs(c.totals.charges), rs(c.totals.credits), drCr(c.totals.closing)]);
+  doc.save(fileName(`Consolidated_statement_${c.from}_${c.to}`));
+}
+
+export interface ReconRow {
+  flight_date: string; student: string; aircraft: string; hours: number; packageHours: number; chargedHours: number;
+  charged: number; voidedCharges: number; status: ReconStatus;
+}
+export interface ReconTotal { key: string; flights: number; hours: number; packageHours: number; charged: number }
+
+/** The reconciliation report: every flight beside its charge, then totals by month, student and aircraft. */
+export function downloadReconciliation(r: { from: string; to: string; rows: ReconRow[]; totals: { title: string; rows: ReconTotal[] }[] }, school: string) {
+  const doc = reportDoc('Billing reconciliation', school, periodLabel(r.from, r.to), 'landscape');
+  let y = table(doc, 32, ['Date', 'Student', 'Aircraft', 'Hours', 'From package', 'Charged hours', 'Charged', 'Status', 'Voided charges'],
+    r.rows.map(x => [dateLabel(x.flight_date), x.student, x.aircraft, x.hours, x.packageHours || '', x.chargedHours || '', x.charged ? rs(x.charged) : '',
+      RECON_LABEL[x.status], x.voidedCharges || '']), [3, 4, 5, 6, 8]);
+  for (const t of r.totals) {
+    if (y > doc.internal.pageSize.getHeight() - 40) { doc.addPage(); y = 20; }
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text(t.title, 14, y);
+    doc.setFont('helvetica', 'normal');
+    y = table(doc, y + 3, [t.title.replace('Totals by ', '').replace(/^./, m => m.toUpperCase()), 'Flights', 'Hours', 'From package', 'Charged'],
+      t.rows.map(x => [x.key, x.flights, x.hours, x.packageHours, rs(x.charged)]), [1, 2, 3, 4]);
+  }
+  doc.save(fileName(`Billing_reconciliation_${r.from}_${r.to}`));
+}
+
