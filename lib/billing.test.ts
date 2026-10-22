@@ -2,7 +2,7 @@
 // Run: npx tsx lib/billing.test.ts
 import assert from 'node:assert/strict';
 import { categoryFor, priceHours, balanceOf, parseAmount, formatINR, splitHours, dueNow, monthlyPlan, isGstin, isInterState, gstinCheckChar,
-  periodRange, statementOf, reconcile, reconTotals, amountInWords, csvSafe } from './billing';
+  periodRange, statementOf, reconcile, reconTotals, amountInWords, csvSafe, instalmentReminder } from './billing';
 
 assert.equal(categoryFor({ is_simulator: true, type: 'Multi Engine' }), 'SIMULATOR', 'simulator flag wins');
 assert.equal(categoryFor({ type: 'Multi Engine' }), 'MULTI_ENGINE');
@@ -104,5 +104,18 @@ assert.equal(amountInWords(10000000), 'Rupees One Crore Only');
 assert.equal(amountInWords(1234567890.12), 'Rupees One Hundred Twenty Three Crore Forty Five Lakh Sixty Seven Thousand Eight Hundred Ninety and Twelve Paise Only');
 assert.equal(amountInWords(1180), 'Rupees One Thousand One Hundred Eighty Only');
 assert.deepEqual(['=SUM(A1)', '+1', '-2', '@x', 'VT-ABC', 5].map(csvSafe), ["'=SUM(A1)", "'+1", "'-2", "'@x", 'VT-ABC', 5]);
+
+// B5c: instalment reminders — 7 and 1 days before, then overdue on day one and weekly.
+const plan1 = [{ due_date: '2026-11-01', amount: 1000 }];
+assert.deepEqual(instalmentReminder(-1000, plan1, '2026-10-25'), { kind: 'UPCOMING', amount: 1000, dueDate: '2026-11-01', daysBefore: 7 });
+assert.deepEqual(instalmentReminder(-1000, plan1, '2026-10-31'), { kind: 'UPCOMING', amount: 1000, dueDate: '2026-11-01', daysBefore: 1 });
+assert.equal(instalmentReminder(-1000, plan1, '2026-10-28'), null, 'no reminder between the 7- and 1-day marks');
+assert.equal(instalmentReminder(0, plan1, '2026-10-25'), null, 'already paid: nothing to remind');
+assert.equal(instalmentReminder(-1000, plan1, '2026-11-01'), null, 'due today is not overdue yet');
+assert.deepEqual(instalmentReminder(-1000, plan1, '2026-11-02'), { kind: 'OVERDUE', amount: 1000 }, 'first day overdue');
+assert.equal(instalmentReminder(-1000, plan1, '2026-11-08', '2026-11-02'), null, 'sent 6 days ago: wait');
+assert.deepEqual(instalmentReminder(-1000, plan1, '2026-11-09', '2026-11-02'), { kind: 'OVERDUE', amount: 1000 }, 'weekly while unpaid');
+assert.deepEqual(instalmentReminder(-1000, [{ due_date: '2026-11-01', amount: 500 }, { due_date: '2026-12-01', amount: 500 }], '2026-10-25'),
+  { kind: 'UPCOMING', amount: 500, dueDate: '2026-11-01', daysBefore: 7 }, 'only the part due by then');
 
 console.log('billing tests passed');

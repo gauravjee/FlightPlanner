@@ -210,3 +210,27 @@ export function amountInWords(amount: number): string {
 /** A CSV cell starting with = + - @ would run as a formula in Excel; a leading ' keeps it text. */
 export const csvSafe = (v: string | number) => (typeof v === 'string' && /^[=+\-@]/.test(v) ? `'${v}` : v);
 
+// ---- B5c (22 Oct): instalment reminders ----
+const plusDays = (d: string, n: number) => {
+  const x = new Date(d + 'T00:00:00Z');
+  x.setUTCDate(x.getUTCDate() + n);
+  return x.toISOString().slice(0, 10);
+};
+
+/**
+ * The reminder a student on a payment plan gets today, if any (operator, 22 Oct): 7 and 1 days before an instalment
+ * falls due, when money will be owed that day; and while overdue, on the first day and then every 7 days.
+ */
+export function instalmentReminder(balance: number, plan: Instalment[], today: string, lastOverdueSent?: string):
+  { kind: 'OVERDUE'; amount: number } | { kind: 'UPCOMING'; amount: number; dueDate: string; daysBefore: number } | null {
+  const now = dueNow(balance, plan, today);
+  if (now.overdue) return lastOverdueSent && lastOverdueSent > plusDays(today, -7) ? null : { kind: 'OVERDUE', amount: now.due };
+  for (const daysBefore of [1, 7]) {
+    const dueDate = plusDays(today, daysBefore);
+    if (!plan.some(i => i.due_date === dueDate)) continue;
+    const owed = dueNow(balance, plan, dueDate).due; // what will be owed once that instalment is due
+    if (owed > 0) return { kind: 'UPCOMING', amount: owed, dueDate, daysBefore };
+  }
+  return null;
+}
+

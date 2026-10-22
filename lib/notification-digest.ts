@@ -110,7 +110,7 @@ export function esc(v: unknown): string {
   return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 }
 
-function table(headers: string[], rows: string[][]): string {
+export function table(headers: string[], rows: string[][]): string {
   const th = headers.map(h => `<th style="text-align:left;padding:6px 8px;font-size:12px;color:#475569;border-bottom:1px solid #e2e8f0">${esc(h)}</th>`).join('');
   const tr = rows.map(r => `<tr>${r.map(c => `<td style="padding:6px 8px;font-size:13px;color:#1e293b;border-bottom:1px solid #f1f5f9;vertical-align:top">${c}</td>`).join('')}</tr>`).join('');
   return `<table style="width:100%;border-collapse:collapse">${th ? `<tr>${th}</tr>` : ''}${tr}</table>`;

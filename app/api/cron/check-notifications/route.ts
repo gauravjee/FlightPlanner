@@ -18,7 +18,14 @@
 //    the next run (operator 7 Oct): what was sent, and when, is kept in
 //    digest_sends (add-digest-sends.sql) — see reminderDue().
 //
-// `?digest=maintenance|people` runs just one (for testing). Each email sent
+// 3. BILLING (B5c, operator 22 Oct): students on a course-package payment plan
+//    get their own email 7 and 1 days before an instalment falls due (when
+//    money will be owed that day) and, while overdue, on the first day and then
+//    weekly; admin, super admin and accounts get one list a day of overdue
+//    students and instalments due in the next 7 days (only when there is one).
+//    Uses digest_sends keys 'billing-digest', 'billing-due|…', 'billing-overdue|…'.
+//
+// `?digest=maintenance|people|billing` runs just one (for testing). Each email sent
 // is logged to notification_log.
 // Addresses ending in .test (the test logins) are skipped: that domain is
 // reserved and can never receive mail. For a live test, `?testTo=you@x.com`
@@ -33,9 +40,11 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { todayIST } from '@/lib/ist';
 import { hasLeft } from '@/lib/staff-id';
 import {
-  addDays, classifyMaintenance, reminderDue, expiryItem, splitExpiry, maintenanceHtml, expiryHtml, wrapEmail,
+  addDays, classifyMaintenance, reminderDue, expiryItem, splitExpiry, maintenanceHtml, expiryHtml, wrapEmail, esc, table,
   type MxRow, type ExpiryItem,
 } from '@/lib/notification-digest';
+import { balances } from '@/lib/billing-server';
+import { dueNow, formatINR, instalmentReminder, type Instalment } from '@/lib/billing';
 
 const FROM = 'FlightPro Manager <noreply@pushpak.mahesho.com>';
 const MX_COLUMNS = 'id, aircraft_id, maintenance_type, description, scheduled_date, completed_date, status, is_squawk, ticket_number, ame_name, assigned_ame_id';
@@ -171,6 +180,59 @@ export async function GET(request: Request) {
             subject: expired ? 'Action needed: your licence or medical has expired' : 'Reminder: your licence or medical expires soon',
             html: wrapEmail(`Hello ${own[0].person.replace(/ \([^)]*\)$/, '')}`, 'Please arrange renewal and send the updated certificate to the office.', expiryHtml(splitExpiry(own), false), dashboardUrl),
           });
+        }
+      }
+    }
+
+    if (digest === 'billing' || digest === 'both') {
+      const [pkgs, sends] = await Promise.all([
+        supabaseAdmin.from('student_packages')
+          .select('student_id, name, package_instalments(due_date, amount), students(name, enrollment_id, email, status)').eq('status', 'ACTIVE'),
+        supabaseAdmin.from('digest_sends').select('key, sent_on').like('key', 'billing%').gte('sent_on', addDays(today, -31)),
+      ]);
+      const failed = [pkgs, sends].find(r => r.error);
+      if (failed) throw failed.error;
+      const lastSent = new Map<string, string>();
+      if (!testTo) for (const r of sends.data ?? []) if ((lastSent.get(r.key) ?? '') < r.sent_on) lastSent.set(r.key, r.sent_on);
+      const bal = await balances((pkgs.data ?? []).map(p => String(p.student_id)));
+      const overdueRows: string[][] = [], weekRows: string[][] = [];
+      let reminders = 0;
+      for (const p of pkgs.data ?? []) {
+        const s = (Array.isArray(p.students) ? p.students[0] : p.students) as { name: string; enrollment_id: string | null; email: string | null; status: string } | null;
+        if (!s || !['ACTIVE', 'GROUNDED', 'SUSPENDED'].includes(s.status)) continue;
+        const plan = (p.package_instalments ?? []) as Instalment[];
+        const balance = bal.get(String(p.student_id)) ?? 0;
+        const now = dueNow(balance, plan, today);
+        const who = `${esc(s.name)}<br><span style="color:#64748b">${esc(s.enrollment_id ?? '')}</span>`;
+        if (now.overdue) overdueRows.push([who, esc(formatINR(now.due))]);
+        else for (const i of plan.filter(i => i.due_date >= today && i.due_date <= addDays(today, 7))) {
+          const owed = dueNow(balance, plan, i.due_date).due;
+          if (owed > 0) { weekRows.push([who, esc(i.due_date), esc(formatINR(owed))]); break; }
+        }
+        const r = instalmentReminder(balance, plan, today, lastSent.get(`billing-overdue|${p.student_id}`));
+        const email = (s.email ?? '').trim();
+        if (!r || !EMAIL_RE.test(email)) continue;
+        const key = r.kind === 'OVERDUE' ? `billing-overdue|${p.student_id}` : `billing-due|${p.student_id}|${r.dueDate}|${r.daysBefore}`;
+        if (r.kind === 'UPCOMING' && lastSent.has(key)) continue; // the 18:00 run after a 06:00 send
+        sentKeys.push(key);
+        reminders++;
+        mails.push({
+          to: [email],
+          subject: r.kind === 'OVERDUE' ? `Payment overdue: ${formatINR(r.amount)} on your FlightPro account` : `Reminder: ${formatINR(r.amount)} due on ${r.dueDate}`,
+          html: wrapEmail(`Hello ${s.name}`, r.kind === 'OVERDUE'
+            ? `${formatINR(r.amount)} of your ${p.name} payment plan is overdue. Please pay the accounts office, or contact them if you have already paid.`
+            : `${formatINR(r.amount)} of your ${p.name} payment plan falls due on ${r.dueDate}. Please pay by then, or contact the accounts office.`,
+          '', `${url.protocol}//${url.host}/dashboard/my-account`),
+        });
+      }
+      result.billing = { overdue: overdueRows.length, dueThisWeek: weekRows.length, studentReminders: reminders };
+      if ((overdueRows.length || weekRows.length) && lastSent.get('billing-digest') !== today) {
+        const to = await recipients(['admin', 'super_admin', 'accounts']);
+        const body = `<h3 style="font-size:15px;color:#dc2626;margin:14px 0 6px">Overdue (${overdueRows.length})</h3>${overdueRows.length ? table(['Student', 'Due now'], overdueRows) : '<p style="font-size:13px;color:#64748b">None.</p>'}`
+          + `<h3 style="font-size:15px;color:#d97706;margin:14px 0 6px">Instalments due in the next 7 days (${weekRows.length})</h3>${weekRows.length ? table(['Student', 'Due on', 'Amount'], weekRows) : '<p style="font-size:13px;color:#64748b">None.</p>'}`;
+        if (to.length) {
+          mails.push({ to, subject: `FlightPro Fees: ${overdueRows.length} overdue · ${weekRows.length} due in 7 days (${stamp})`, html: wrapEmail('Student fees', `As of ${stamp}.`, body, `${url.protocol}//${url.host}/dashboard/accounts`) });
+          sentKeys.push('billing-digest');
         }
       }
     }
