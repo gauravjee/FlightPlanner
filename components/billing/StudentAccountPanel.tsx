@@ -237,7 +237,7 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
               <select value={data.billingState ?? ''} disabled={saving} className="surface-inner rounded px-2 py-1 text-sm"
                 onChange={e => post({ action: 'state', state: e.target.value || null })}>
                 <option value="">Same as the school</option>
-                {Object.entries(GST_STATES).map(([code, name]) => <option key={code} value={code}>{code} · {name}</option>)}
+                {Object.entries(GST_STATES).sort(([a], [b]) => a.localeCompare(b)).map(([code, name]) => <option key={code} value={code}>{code} · {name}</option>)}
               </select>
             </label>
           )}
