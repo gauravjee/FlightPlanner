@@ -42,7 +42,7 @@ const pct = (v: number | null) => (v === null ? '—' : `${v}%`);
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const btn = 'px-3 py-1.5 rounded-lg text-sm transition cursor-pointer';
 const muted = { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' };
-const active = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' };
+const active = { backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' };
 const KIND_COLOR = { duty: 'var(--text-primary)', off: 'var(--text-tertiary)', leave: 'var(--warning-text)', closed: 'var(--text-tertiary)' };
 const cellStyle = (c: RosterCell) => ({
   color: c.changed ? 'var(--accent)' : KIND_COLOR[c.kind],

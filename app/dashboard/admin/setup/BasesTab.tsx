@@ -23,7 +23,7 @@ const ORDINALS = ['1st', '2nd', '3rd', '4th', '5th'];
 const input = 'w-full surface-inner rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[var(--accent)]';
 const label = 'block text-xs text-secondary mb-1';
 const primaryBtn = 'px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50';
-const primaryStyle = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' };
+const primaryStyle = { backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' };
 const secondaryBtn = 'px-4 py-2 rounded-lg text-sm flex items-center gap-1.5 cursor-pointer surface-inner';
 
 /** Lenient read of the partial rule while editing: a day may be picked before any week is ticked. */

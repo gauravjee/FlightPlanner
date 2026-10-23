@@ -94,7 +94,7 @@ export default function BillingTab() {
         </div>
       )}
       <button type="button" disabled={saving || !rates} onClick={saveRates} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer mb-6"
-        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>{saving ? 'Saving...' : 'Save rates'}</button>
+        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}>{saving ? 'Saving...' : 'Save rates'}</button>
 
       <div className="surface-inner rounded-lg p-3">
         <label className="flex items-start gap-2 text-sm cursor-pointer">
@@ -176,7 +176,7 @@ function FeesSection({ settings, onSaved }: { settings: SettingRow[]; onSaved: (
             ))}
           </div>
           <button type="button" disabled={saving} onClick={save} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer mt-3"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>{saving ? 'Saving...' : 'Save fees'}</button>
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}>{saving ? 'Saving...' : 'Save fees'}</button>
         </>
       )}
     </div>
@@ -295,7 +295,7 @@ function GstSection({ settings, onSaved }: { settings: SettingRow[]; onSaved: ()
             ))}
           </div>
           <button type="button" disabled={saving} onClick={save} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer mt-3"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>{saving ? 'Saving...' : 'Save GST details'}</button>
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}>{saving ? 'Saving...' : 'Save GST details'}</button>
         </>
       )}
     </div>
@@ -326,7 +326,7 @@ function StartDateSection({ settings, onSaved }: { settings: SettingRow[]; onSav
         <div className="flex flex-wrap items-end gap-2">
           <input type="date" aria-label="Billing start date" className={`${inputClass} w-48`} value={value} onChange={e => setDraft(e.target.value)} />
           <button type="button" onClick={save} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>Save date</button>
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}>Save date</button>
         </div>
       )}
     </div>
@@ -382,7 +382,7 @@ function GstRatesSection() {
         <label className="text-xs text-tertiary">New GST %<input inputMode="decimal" className={`${inputClass} w-28`} value={rate} onChange={e => setRate(e.target.value)} /></label>
         <label className="text-xs text-tertiary">Effective from<input type="date" className={`${inputClass} w-44`} value={from} onChange={e => setFrom(e.target.value)} /></label>
         <button type="button" disabled={busy} onClick={add} className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer"
-          style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>Add rate</button>
+          style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}>Add rate</button>
       </div>
     </div>
   );

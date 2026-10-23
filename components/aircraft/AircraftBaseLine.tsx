@@ -51,7 +51,7 @@ export default function AircraftBaseLine({ aircraft }: { aircraft: Aircraft }) {
           <input aria-label="Note (optional)" placeholder="Note, e.g. ferry flight (optional)" className={`${field} flex-1 min-w-32`} value={note}
             onChange={e => setNote(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }} />
           <button type="button" disabled={!to || busy} onClick={submit} className="px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer disabled:opacity-50"
-            style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }}>{busy ? 'Moving…' : 'Move'}</button>
+            style={{ backgroundColor: 'var(--accent-fill)', color: 'var(--on-accent)' }}>{busy ? 'Moving…' : 'Move'}</button>
           <button type="button" onClick={() => setMoving(false)} className="text-xs cursor-pointer text-secondary">Cancel</button>
         </div>
       )}

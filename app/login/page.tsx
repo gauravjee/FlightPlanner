@@ -258,7 +258,7 @@ export default function LoginPage() {
               type="submit"
               disabled={loading}
               className="w-full py-3 rounded-lg transition font-bold disabled:opacity-50 flex items-center justify-center gap-2"
-              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-strong), var(--accent))', color: '#ffffff' }}
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill-strong), var(--accent-fill))', color: 'var(--on-accent)' }}
             >
               {loading ? 'Signing in...' : (<>Sign In <ArrowRight className="w-4 h-4" /></>)}
             </button>
@@ -295,7 +295,7 @@ export default function LoginPage() {
               type="submit"
               disabled={resetLoading}
               className="w-full py-3 rounded-lg transition font-bold disabled:opacity-50 flex items-center justify-center gap-2"
-              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-strong), var(--accent))', color: '#ffffff' }}
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill-strong), var(--accent-fill))', color: 'var(--on-accent)' }}
             >
               {resetLoading ? 'Sending...' : (<>Send Reset Link <Send className="w-4 h-4" /></>)}
             </button>

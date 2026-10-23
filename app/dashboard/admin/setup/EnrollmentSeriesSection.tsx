@@ -88,7 +88,7 @@ export default function EnrollmentSeriesSection() {
         <div className="flex items-center gap-3 mt-3">
           <button type="button" onClick={save} disabled={saving || !preview}
             className="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}>
             <Save className="w-4 h-4" /> {saving ? 'Saving…' : 'Save Enrollment Numbers'}
           </button>
           {message && <span className="text-xs" style={{ color: message.ok ? 'var(--success)' : 'var(--danger)' }}>{message.text}</span>}

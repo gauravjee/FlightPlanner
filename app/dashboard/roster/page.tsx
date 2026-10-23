@@ -48,7 +48,7 @@ function monthGrid(month: string): string[] {
 }
 
 const btn = 'px-3 py-1.5 rounded-lg text-sm transition cursor-pointer disabled:opacity-50';
-const primary = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' };
+const primary = { backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' };
 const muted = { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' };
 
 export default function RosterPage() {

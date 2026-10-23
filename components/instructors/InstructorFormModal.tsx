@@ -336,7 +336,7 @@ export default function InstructorFormModal({ instructor, onSave, onClose }: Pro
             </button>
             <button type="submit"
               className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5"
-              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}>
               {isEditing ? <Save className="w-4 h-4" /> : <GraduationCap className="w-4 h-4" />}
               {isEditing ? 'Save Changes' : 'Add Instructor'}
             </button>

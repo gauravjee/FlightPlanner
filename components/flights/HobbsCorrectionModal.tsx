@@ -72,7 +72,7 @@ export default function HobbsCorrectionModal({ record, onClose }: { record: Flig
               </button>
             ) : (
               <button type="button" disabled={busy || !reason.trim() || !hobbsEnd} onClick={() => run(true)}
-                className="flex-1 px-4 py-2 rounded-lg font-bold cursor-pointer disabled:opacity-60" style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }}>
+                className="flex-1 px-4 py-2 rounded-lg font-bold cursor-pointer disabled:opacity-60" style={{ backgroundColor: 'var(--accent-fill)', color: 'var(--on-accent)' }}>
                 Preview
               </button>
             )}

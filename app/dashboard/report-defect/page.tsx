@@ -104,7 +104,7 @@ export default function ReportDefectPage() {
               {successMsg && <p className="text-xs" style={{ color: 'var(--success)' }}>{successMsg}</p>}
               <button type="submit" disabled={saving}
                 className="px-4 py-2 rounded-lg font-semibold text-sm cursor-pointer disabled:opacity-50"
-                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>
+                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}>
                 {saving ? 'Submitting…' : 'Report Defect'}
               </button>
             </form>

@@ -264,7 +264,7 @@ export default function ConfigTable<T extends { id: number }>({
             onClick={async () => { if (saving) return; setSaving(true); try { await handleSave(); } finally { setSaving(false); } }}
             disabled={saving}
             className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold disabled:opacity-60"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}
           >
             {editing
               ? <><Save className="w-3.5 h-3.5" /> Update {singular}</>

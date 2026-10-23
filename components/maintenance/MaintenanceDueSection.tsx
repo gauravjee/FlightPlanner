@@ -181,7 +181,7 @@ function LogMaintenanceItemModal({ item, aircraftReg, currentHobbs, mode, onClos
             onClick={handleSave}
             disabled={saving}
             className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold disabled:opacity-50"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}
           >
             {saving ? 'Saving…' : mode === 'baseline' ? 'Save Baseline' : 'Create Maintenance Record'}
           </button>

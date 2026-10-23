@@ -953,7 +953,7 @@ export default function ScheduleBoard() {
                   setShowBookingForm(true);
                 }}
                 className="px-4 py-2 rounded-lg text-sm font-semibold transition cursor-pointer flex items-center gap-1.5"
-                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-strong), var(--accent))', color: '#ffffff' }}
+                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill-strong), var(--accent-fill))', color: 'var(--on-accent)' }}
               >
                 <Plus className="w-3.5 h-3.5" /> Book Slot
               </button>
@@ -991,7 +991,7 @@ export default function ScheduleBoard() {
           <button
             onClick={goToToday}
             className="px-3 py-1 rounded text-sm font-medium transition"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-strong), var(--accent))', color: '#ffffff' }}
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill-strong), var(--accent-fill))', color: 'var(--on-accent)' }}
           >
             Today
           </button>

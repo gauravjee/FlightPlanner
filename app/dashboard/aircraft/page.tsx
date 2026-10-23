@@ -96,7 +96,7 @@ export default function AircraftPage() {
       <button
         onClick={handleAdd}
         className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
-        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
+        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}
       >
         <Plus className="w-4 h-4" /> Add Aircraft
       </button>

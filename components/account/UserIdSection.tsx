@@ -87,7 +87,7 @@ export default function UserIdSection() {
                   <div className="flex gap-2">
                     <button type="button" onClick={change} disabled={busy}
                       className="flex-1 py-2 rounded-lg font-bold cursor-pointer disabled:opacity-50"
-                      style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>
+                      style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}>
                       Yes, change it
                     </button>
                     <button type="button" onClick={() => setConfirming(false)} disabled={busy}
@@ -99,7 +99,7 @@ export default function UserIdSection() {
               ) : (
                 <button type="button" onClick={() => setConfirming(true)} disabled={busy || !check?.ok}
                   className="w-full mt-4 py-3 rounded-lg font-bold flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>
+                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}>
                   <Check className="w-4 h-4" /> Change user ID
                 </button>
               )}

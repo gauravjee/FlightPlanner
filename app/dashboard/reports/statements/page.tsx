@@ -27,7 +27,7 @@ const fetchJson = async <T,>(url: string): Promise<T> => {
 const drCr = (n: number) => (n === 0 ? formatINR(0) : `${formatINR(Math.abs(n))} ${n < 0 ? 'Dr' : 'Cr'}`);
 const KIND_TITLE = { weekly: 'Consolidated weekly statement', monthly: 'Consolidated monthly statement', annual: 'Consolidated annual statement', custom: 'Consolidated statement' } as const;
 const btn = 'px-3 py-1.5 rounded-lg text-sm cursor-pointer';
-const on = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' };
+const on = { backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' };
 const off = { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' };
 
 export default function StatementsPage() {

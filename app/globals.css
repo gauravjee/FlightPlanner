@@ -3,10 +3,10 @@
 /* ============================================================
    DESIGN TOKENS — light "Sectional Chart" / dark "Night Ops"
    ------------------------------------------------------------
-   23 Oct 2026 (UI plan Step 3, operator: "B by day and C by night"):
-   light is direction B (chart paper, navy ink, chart blue for
-   actions, airspace magenta for "active"); dark is the same layout
-   with direction C's graphite + champagne palette. Mockups: design
+   23 Oct 2026 (UI plan Step 3): light is direction B (chart paper,
+   navy ink, magenta for "active") with gold buttons; dark is
+   direction C's graphite with blue (operator, after seeing it live:
+   "champagne for day and blue for night"). Mockups: design
    canvas "FlightPro UI Improvement Mockups", artboard R-DayNight.
    Tertiary text passes 4.5:1 on cards in both themes (was 3.3:1 /
    2.6:1). --on-accent is the text colour on an accent fill.
@@ -28,9 +28,13 @@
     --text-secondary: #c9c3b8;
     --text-tertiary: #9b958b;
 
-    --accent: #d8b36a;         /* champagne */
-    --accent-strong: #b8934a;
-    --accent-soft: rgba(216, 179, 106, 0.16);
+    /* Operator 23 Oct: gold by day, blue by night. --accent is for text, links and icons;
+       --accent-fill(-strong) is for filled buttons and the selected menu item, with --on-accent text. */
+    --accent: #6fa2ff;         /* blue, brightened for graphite */
+    --accent-strong: #4c86f0;
+    --accent-soft: rgba(111, 162, 255, 0.16);
+    --accent-fill: #6fa2ff;
+    --accent-fill-strong: #4c86f0;
     --on-accent: #121110;
     --magenta: #e389bd;        /* "active / airborne" */
     --magenta-soft: rgba(227, 137, 189, 0.16);
@@ -59,10 +63,12 @@
     --text-secondary: #33425a;
     --text-tertiary: #5c6a80;
 
-    --accent: #1f5fae;         /* chart blue */
+    --accent: #1f5fae;         /* chart blue: links and icons stay readable on paper */
     --accent-strong: #174a8a;
-    --accent-soft: #e4edf8;
-    --on-accent: #ffffff;
+    --accent-soft: #f5ecd6;    /* gold tint for hovers and icon tiles */
+    --accent-fill: #d8b36a;    /* gold buttons and selected item, navy text on them */
+    --accent-fill-strong: #c49a4c;
+    --on-accent: #15243d;
     --magenta: #a3266f;        /* airspace magenta */
     --magenta-soft: #f7e7f0;
 
@@ -174,7 +180,7 @@
     color: var(--accent);
   }
   .brand-mark {
-    background-image: linear-gradient(135deg, var(--accent), var(--accent-strong));
+    background-image: linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong));
   }
 }
 

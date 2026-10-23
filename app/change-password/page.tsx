@@ -207,7 +207,7 @@ export default function ChangePasswordPage() {
                 type="submit"
                 disabled={loading}
                 className="w-full py-3 rounded-lg transition font-bold disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
+                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}
               >
                 <Lock className="w-4 h-4" /> {loading ? 'Changing Password...' : 'Change Password'}
               </button>

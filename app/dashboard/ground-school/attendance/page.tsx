@@ -451,7 +451,7 @@ export default function AttendancePage() {
                       onClick={addStudentToClass}
                       disabled={!selectedStudentId}
                       className="px-4 py-2 rounded-lg text-sm transition disabled:opacity-50 font-semibold"
-                      style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
+                      style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}
                     >
                       Add
                     </button>

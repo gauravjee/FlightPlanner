@@ -608,8 +608,8 @@ export default function SettingsTab() {
                     disabled={uploading}
                     className="w-full text-sm text-tertiary
                       file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0
-                      file:text-sm file:font-medium file:bg-[var(--accent)] file:text-[var(--on-accent)]
-                      hover:file:bg-[var(--accent-strong)] file:cursor-pointer
+                      file:text-sm file:font-medium file:bg-[var(--accent-fill)] file:text-[var(--on-accent)]
+                      hover:file:bg-[var(--accent-fill-strong)] file:cursor-pointer
                       disabled:opacity-50 disabled:cursor-not-allowed"
                   />
 
@@ -951,7 +951,7 @@ export default function SettingsTab() {
               onClick={handleSave}
               disabled={saving}
               className="px-6 py-2 rounded-lg transition cursor-pointer font-medium disabled:opacity-50 flex items-center gap-1.5"
-              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}
             >
               <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save All Settings'}
             </button>

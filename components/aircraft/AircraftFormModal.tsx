@@ -486,7 +486,7 @@ const handleChange = (field: keyof Aircraft, value: string | number) => {
               disabled={useCustomModel && modelOptions.length > 0}
               title={useCustomModel && modelOptions.length > 0 ? 'Add this model to Aircraft Maintenance Schedule first, then pick it from the dropdown.' : undefined}
               className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}
             >
               {isEditing ? <Save className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
               {isEditing ? 'Save Changes' : 'Add Aircraft'}

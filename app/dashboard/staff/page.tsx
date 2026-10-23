@@ -75,7 +75,7 @@ export default function StaffPage() {
                 </div>
                 <button type="button" onClick={() => setEditing('new')}
                   className="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 cursor-pointer"
-                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>
+                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}>
                   <Plus className="w-4 h-4" /> Add staff
                 </button>
               </div>

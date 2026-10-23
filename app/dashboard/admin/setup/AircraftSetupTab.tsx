@@ -522,7 +522,7 @@ export default function AircraftSetupTab() {
             disabled={useCustomModel && modelOptions.length > 0}
             title={useCustomModel && modelOptions.length > 0 ? 'Add this model to Aircraft Maintenance Schedule first, then pick it from the dropdown.' : undefined}
             className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}
           >
             {editing ? <><Save className="w-3.5 h-3.5" /> Update Aircraft</> : <><Plus className="w-3.5 h-3.5" /> Add Aircraft</>}
           </button>

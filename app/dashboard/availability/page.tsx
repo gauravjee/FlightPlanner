@@ -182,7 +182,7 @@ export default function AvailabilityPage() {
       <button
         onClick={handleAdd}
         className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
-        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
+        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}
       >
         <Palmtree className="w-4 h-4" /> Add Leave
       </button>
@@ -215,7 +215,7 @@ export default function AvailabilityPage() {
               onClick={() => setFilterType('ALL')}
               className="px-4 py-2 rounded-lg text-sm transition"
               style={filterType === 'ALL'
-                ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }
+                ? { backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }
                 : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' }}
             >
               All
@@ -224,7 +224,7 @@ export default function AvailabilityPage() {
               onClick={() => setFilterType('instructor')}
               className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5"
               style={filterType === 'instructor'
-                ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }
+                ? { backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }
                 : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' }}
             >
               <GraduationCap className="w-3.5 h-3.5" /> Instructors
@@ -233,7 +233,7 @@ export default function AvailabilityPage() {
               onClick={() => setFilterType('student')}
               className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5"
               style={filterType === 'student'
-                ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }
+                ? { backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }
                 : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' }}
             >
               <Plane className="w-3.5 h-3.5" /> Students

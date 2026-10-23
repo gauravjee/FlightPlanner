@@ -142,7 +142,7 @@ function useActiveHref(groups: NavGroup[]): string | null {
   return best?.href ?? null;
 }
 
-const activeStyle = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' };
+const activeStyle = { backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' };
 // Hover uses the accent tint: --surface-muted was almost the same as the menu background (operator, 23 Oct).
 const rowClass = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--accent-soft)]';
 

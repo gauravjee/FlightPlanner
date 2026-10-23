@@ -676,7 +676,7 @@ export default function GroundSchoolCalendar() {
           <button
             onClick={goToday}
             className="px-3 py-1 rounded text-sm transition font-semibold"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}
           >
             Today
           </button>
@@ -699,7 +699,7 @@ export default function GroundSchoolCalendar() {
             onClick={() => setView('week')}
             className="px-3 py-1 rounded text-sm transition"
             style={view === 'week'
-              ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }
+              ? { backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }
               : { color: 'var(--text-secondary)' }}
           >
             Week
@@ -708,7 +708,7 @@ export default function GroundSchoolCalendar() {
             onClick={() => setView('month')}
             className="px-3 py-1 rounded text-sm transition"
             style={view === 'month'
-              ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }
+              ? { backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }
               : { color: 'var(--text-secondary)' }}
           >
             Month
@@ -1072,7 +1072,7 @@ export default function GroundSchoolCalendar() {
               <button
                 onClick={handleSave}
                 className="px-4 py-2 rounded text-sm transition flex items-center gap-1.5 font-semibold"
-                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
+                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent-fill), var(--accent-fill-strong))', color: 'var(--on-accent)' }}
               >
                 <Save className="w-3.5 h-3.5" /> Save
               </button>
