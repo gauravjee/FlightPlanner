@@ -142,7 +142,6 @@ function useActiveHref(groups: NavGroup[]): string | null {
   return best?.href ?? null;
 }
 
-const OPEN_KEY = 'fp-nav-open';
 const activeStyle = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' };
 // Hover uses the accent tint: --surface-muted was almost the same as the menu background (operator, 23 Oct).
 const rowClass = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--accent-soft)]';
@@ -152,21 +151,15 @@ export function NavTree({ groups, onNavigate }: { groups: NavGroup[]; onNavigate
   const pathname = usePathname() ?? '';
   const activeHref = useActiveHref(groups);
   const activeGroup = groups.find(g => g.items.some(i => i.href === activeHref))?.label;
-  // Groups the user opened, remembered in this browser; plus the active group unless closed on this page.
-  const [opened, setOpened] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem(OPEN_KEY) ?? '[]'); } catch { return []; }
+  // One group open at a time (operator, 23 Oct): the current page's group, or the one clicked on this page ('' = none).
+  // Changing page resets it, so the menu stays short.
+  const [picked, setPicked] = useState({ path: '', label: '' });
+  const openGroup = picked.path === pathname ? picked.label : activeGroup;
+  const isOpen = (label: string) => label === openGroup;
+  const toggle = (label: string) => setPicked(p => {
+    const cur = p.path === pathname ? p.label : activeGroup; // functional: quick clicks must not undo each other
+    return { path: pathname, label: cur === label ? '' : label };
   });
-  const [closedOn, setClosedOn] = useState<Record<string, string>>({});
-  const isOpen = (label: string) => (label === activeGroup ? closedOn[label] !== pathname : opened.includes(label));
-  const toggle = (label: string) => {
-    if (label === activeGroup) { setClosedOn(c => ({ ...c, [label]: c[label] !== pathname ? pathname : '' })); return; }
-    // Functional update: two quick clicks in one render must not undo each other (found in live test, 23 Oct).
-    setOpened(prev => {
-      const next = prev.includes(label) ? prev.filter(l => l !== label) : [...prev, label];
-      try { localStorage.setItem(OPEN_KEY, JSON.stringify(next)); } catch { /* private mode: not remembered */ }
-      return next;
-    });
-  };
 
   return (
     <div className="space-y-0.5">
