@@ -28,5 +28,5 @@ export function useSelectedBase() {
     mutate(String(value), { revalidate: false });
   };
   const selectedBase = selected === ALL_BASES ? null : activeBases.find(b => b.id === selected) ?? null;
-  return { selected, setSelected, selectedBase, activeBases, multiBase };
+  return { selected, setSelected, selectedBase, activeBases, multiBase, homeBaseId: home };
 }

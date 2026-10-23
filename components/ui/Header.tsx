@@ -13,7 +13,8 @@ import { getLocationDisplay } from '@/lib/location';
 import ThemeToggle from './ThemeToggle';
 import BaseSwitcher from './BaseSwitcher';
 import { useHeaderConfig } from './HeaderContext';
-import { useVisibleNavItems, type NavItem } from './Sidebar';
+import { useVisibleNavGroups, NavTree, type NavGroup } from './Sidebar';
+import HelpButton from './HelpDrawer';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 // ============================================================
@@ -123,13 +124,13 @@ function MobileNavLinks({ role }: { role?: string }) {
 // Safety, Duty Hours, Reports etc. were simply unreachable on phone/tablet
 // except by guessing a URL. This reuses Sidebar's own role-filtered item
 // list (useVisibleNavItems) so it can never drift from what the desktop
-// rail shows.
+// rail shows. 2026-10-23: now the same grouped tree (NavTree) as the desktop menu.
 // ============================================================
 function MobileNavDrawer() {
   const [open, setOpen] = useState(false);
-  const items = useVisibleNavItems();
+  const groups = useVisibleNavGroups();
 
-  if (items.length === 0) return null;
+  if (groups.length === 0) return null;
 
   return (
     <>
@@ -143,7 +144,7 @@ function MobileNavDrawer() {
       {/* Mounted only while open, like every other modal in this app — so
           useEscapeToClose (below) registers/unregisters with the drawer's
           own open/close lifecycle instead of this always-mounted parent's. */}
-      {open && <MobileNavPanel items={items} onClose={() => setOpen(false)} />}
+      {open && <MobileNavPanel groups={groups} onClose={() => setOpen(false)} />}
     </>
   );
 }
@@ -155,7 +156,7 @@ function MobileNavDrawer() {
 // it for that component's whole (always-mounted) lifetime, letting an
 // Escape press it shouldn't own take priority over whatever modal a page is
 // actually showing.
-function MobileNavPanel({ items, onClose }: { items: NavItem[]; onClose: () => void }) {
+function MobileNavPanel({ groups, onClose }: { groups: NavGroup[]; onClose: () => void }) {
   useEscapeToClose(onClose);
 
   if (typeof document === 'undefined') return null;
@@ -184,21 +185,7 @@ function MobileNavPanel({ items, onClose }: { items: NavItem[]; onClose: () => v
             <X className="w-5 h-5" />
           </button>
         </div>
-        {items.map((item) => {
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              <Icon className="w-4 h-4 shrink-0" />
-              {item.label}
-            </Link>
-          );
-        })}
+        <NavTree groups={groups} onNavigate={onClose} />
       </nav>
     </div>,
     document.body
@@ -379,6 +366,7 @@ export default function Header(props: HeaderProps = {}) {
           <div className="flex items-center gap-3 flex-shrink-0">
             {action && action}
             <BaseSwitcher />
+            <HelpButton />
             <ThemeToggle />
             <UserMenu />
             {/* 2026-09-23 UI audit finding #5: this used to show from md

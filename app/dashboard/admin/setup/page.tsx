@@ -11,6 +11,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { useSetHeader } from '@/components/ui/HeaderContext';
@@ -73,17 +74,20 @@ const TABS = [
 ];
 
 export default function SetupWizardPage() {
-  const [activeTab, setActiveTab] = useState('settings');
+  // 2026-10-23 (UI plan Phase 1): the tab lives in the address (?tab=billing), so the menu and links can open one directly.
+  const router = useRouter();
+  const tabParam = useSearchParams()?.get('tab');
+  const activeTab = TABS.some(t => t.id === tabParam) ? tabParam! : 'settings';
 
   // Track which tabs have been visited (completed). 'settings' starts
   // completed since it's the initial tab — previously an effect reacting
   // to activeTab marked it completed after mount; now selectTab below does
   // the marking directly, at the moment a tab is actually visited, so no
   // effect is needed at all.
-  const [completedTabs, setCompletedTabs] = useState<string[]>(['settings']);
+  const [completedTabs, setCompletedTabs] = useState<string[]>([activeTab]);
 
   const selectTab = (id: string) => {
-    setActiveTab(id);
+    router.replace(`/dashboard/admin/setup?tab=${id}`, { scroll: false });
     setCompletedTabs(prev => prev.includes(id) ? prev : [...prev, id]);
   };
 

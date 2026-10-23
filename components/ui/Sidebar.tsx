@@ -13,215 +13,269 @@
 // this sidebar covers the same navigation — this is the only navigation
 // surface for jumping between modules going forward.
 //
-// Why this exists: the app had no persistent navigation at all before this
-// — app/dashboard/layout.tsx rendered nothing but {children}, so getting
-// from one section to another meant going back to the dashboard home and
-// clicking a tile. Modeled on the sidebar pattern from the Pushpak/
-// FlightPlanner UI mockups reviewed 2026-08-17, but built entirely from
-// this app's own existing design tokens (var(--surface), var(--border),
-// var(--accent), etc.) rather than the mockup's separate color system, so
-// it respects the dark/light theme toggle already shipped here instead of
-// introducing a second, fixed-color visual language.
-//
-// Responsive behavior: hidden below the `lg` breakpoint (1024px) — mobile
-// layouts are unaffected on purpose, since they were already deliberately
-// tuned in the earlier redesign pass and this shouldn't eat into that
-// screen space. Between `lg` and `xl` it's an icon-only rail (mirrors the
-// mockup's tablet behavior); at `xl`+ it shows full labels.
+// 2026-10-23 (UI plan Phase 1, claude/ui-improvement-plan-2026-10-23.md): the
+// flat list became groups with submenus (operator: "menu and submenu"). A
+// group with one visible item shows as a plain link. Widths: below lg the
+// mobile drawer (Header.tsx) shows the same tree; lg–xl is an icon rail whose
+// group icons open a fly-out; xl+ is the full tree. Who sees what is unchanged:
+// every item keeps the roles of its page's RoleGate.
 // ---------------------------------------------------------------------------
 
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
-  LayoutDashboard, Calendar, Plane, Users, Fuel, FileText, Wrench,
-  GraduationCap, UserRound, Umbrella, ChartColumnIncreasing, BookOpen,
-  Settings, ClipboardList, Wind, ShieldAlert, TriangleAlert, Hourglass, CalendarDays, IdCard, Wallet,
+  LayoutDashboard, Calendar, Users, Wrench, GraduationCap, ClipboardList, Settings,
+  ShieldAlert, Wallet, CircleHelp, ChevronDown, ChevronRight, type LucideIcon,
 } from 'lucide-react';
-import { canViewModule, type ModuleKey } from '@/lib/permissions';
+import {
+  canViewModule, type ModuleKey, REPORTS_VIEW_ROLES, BA_TEST_VIEW_ROLES, BILLING_REPORT_ROLES,
+} from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 
 export interface NavItem {
   href: string;
   label: string;
-  icon: React.ComponentType<{ className?: string }>;
   // Kept in sync with each destination page's own RoleGate allowedRoles —
   // this list is a convenience filter, not the access control itself.
   roles: string[];
-  // Optional — for the six modules that support a per-user permission
-  // override (2026-08-17, second round), a user whose role isn't in
-  // `roles` above still sees this item if they've been granted an
-  // override for this module (see lib/permissions.ts's canViewModule).
+  // A user whose role isn't in `roles` still sees the item if granted a
+  // per-user override for this module (lib/permissions.ts's canViewModule).
   moduleKey?: ModuleKey;
+  // Admin Setup sections: the ?tab= values this item stands for (first = the one it opens).
+  tabs?: string[];
 }
+export interface NavGroup { label: string; icon: LucideIcon; items: NavItem[] }
 
-// Kept as literal arrays (not imported from lib/api-auth.ts) deliberately —
-// that module pulls in supabaseAdmin, a server-only client that throws if it
-// ever ends up in client-side code, and this file is 'use client'. These are
-// hand-synced to the matching *_VIEW_ROLES constants there; see the
-// 2026-08-17 role/tab matrix for the source of truth these mirror.
-const NAV_ITEMS: NavItem[] = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
-  { href: '/dashboard/student', label: 'My Dashboard', icon: LayoutDashboard, roles: ['student'] },
-  { href: '/dashboard/schedule', label: 'Schedule', icon: Calendar, roles: ['admin', 'instructor', 'super_admin', 'operations', 'student'] },
-  { href: '/dashboard/flights', label: 'Flight Records', icon: FileText, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'accounts'], moduleKey: 'flightRecords' },
-  { href: '/dashboard/fuel', label: 'Fuel', icon: Fuel, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'fuel' },
-  { href: '/dashboard/maintenance', label: 'Maintenance', icon: Wrench, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'maintenance' },
-  { href: '/dashboard/aircraft', label: 'Aircraft', icon: Plane, roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'aircraft' },
-  { href: '/dashboard/students', label: 'Students', icon: Users, roles: ['admin', 'instructor', 'super_admin', 'operations'], moduleKey: 'students' },
-  { href: '/dashboard/instructors', label: 'Instructors', icon: GraduationCap, roles: ['admin', 'super_admin', 'operations', 'instructor'], moduleKey: 'instructors' },
-  // 2026-09-24: staff master (B2) — roles hand-synced to lib/permissions.ts's STAFF_ROLES.
-  { href: '/dashboard/staff', label: 'Staff', icon: IdCard, roles: ['admin', 'super_admin'] },
-  // Billing B1 (21 Oct) — roles hand-synced to lib/permissions.ts's BILLING_VIEW_ROLES.
-  { href: '/dashboard/accounts', label: 'Accounts', icon: Wallet, roles: ['admin', 'super_admin', 'operations', 'accounts'] },
-  { href: '/dashboard/my-account', label: 'My Account', icon: Wallet, roles: ['student'] },
-  // 2026-08-25: per explicit user request, scoped to 'instructor' only —
-  // this is a personalized "my assigned students" view (see the page's own
-  // instructorId-scoped filtering), not a general roster; admin/super_admin
-  // already have the full roster via "Instructors" and "Students" above.
-  { href: '/dashboard/instructor', label: 'My Students', icon: UserRound, roles: ['instructor'] },
-  // 2026-09-23: 'student' added — students can now self-serve their own
-  // vacation/leave requests here too (see AVAILABILITY_VIEW_ROLES in
-  // lib/permissions.ts and app/dashboard/availability/page.tsx, which
-  // scopes what a student actually sees/can do once on the page).
-  { href: '/dashboard/availability', label: 'Availability', icon: Umbrella, roles: ['admin', 'instructor', 'super_admin', 'operations', 'student'] },
-  { href: '/dashboard/progress', label: 'Progress', icon: ChartColumnIncreasing, roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
-  { href: '/dashboard/ground-school', label: 'Ground School', icon: BookOpen, roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
-  // BA Test Register (2026-08-20, session 3) — was previously reachable
-  // only via a card on the Reports landing page; the user asked for a
-  // direct top-level link too, since it's a form staff fill in daily, not
-  // just a report to browse. Placed directly ABOVE "Reports" per explicit
-  // user request (session 4) — was originally added below it. Roles
-  // hand-synced to lib/permissions.ts's BA_TEST_VIEW_ROLES (=
-  // REPORTS_VIEW_ROLES) — the page's own RoleGate is still the real access
-  // control, same convention as every other nav item.
-  //
-  // 2026-08-29: this href nests under '/dashboard/reports' at the URL
-  // level, so the plain prefix-match below used to also highlight
-  // "Reports" whenever this page was open. An earlier session's comment
-  // here called that "intentional structure, not a bug" — the user
-  // corrected that: BA Test Register was deliberately promoted to its own
-  // equal-weight top-level item (placed *above* Reports, per their own
-  // request), not a child of it, so it shouldn't double-highlight the
-  // Reports item. See NAV_ACTIVE_EXCLUDED_CHILD_PREFIXES below for the fix —
-  // sibling sub-pages that still only live under the Reports landing page
-  // (breath-analysis, daily-flying — no nav item of their own) are
-  // deliberately unaffected and still light up "Reports" as before.
-  { href: '/dashboard/reports/breath-analyser', label: 'BA Test Register', icon: Wind, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
-  // Safety Management workflow (2026-08-31) — view roles hand-synced to
-  // lib/permissions.ts's INCIDENT_REPORT_ROLES (= REPORTS_VIEW_ROLES);
-  // triage actions inside the page are further gated to
-  // INCIDENT_MANAGE_ROLES, enforced server-side.
-  { href: '/dashboard/safety', label: 'Safety', icon: ShieldAlert, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
-  // Pilot-facing squawk reporting (2026-08-31) — roles hand-synced to
-  // lib/permissions.ts's SQUAWK_REPORT_ROLES. Deliberately separate from
-  // "Maintenance" above, which students can't see at all.
-  { href: '/dashboard/report-defect', label: 'Report a Defect', icon: TriangleAlert, roles: ['instructor', 'student'] },
-  // Lightweight, non-regulatory instructor duty-hours view (2026-08-31) —
-  // see that page's own header comment for why this isn't a DGCA
-  // compliance claim. Roles hand-synced to that page's own VIEW_ROLES.
-  { href: '/dashboard/duty-hours', label: 'Duty Hours', icon: Hourglass, roles: ['admin', 'super_admin', 'operations', 'instructor'] },
-  // 2026-09-23: instructor duty roster — roles hand-synced to
-  // lib/permissions.ts's ROSTER_VIEW_ROLES.
-  { href: '/dashboard/roster', label: 'Duty Roster', icon: CalendarDays, roles: ['admin', 'super_admin', 'operations', 'instructor'] },
-  // roles here hand-synced to lib/permissions.ts's REPORTS_VIEW_ROLES —
-  // instructor/maintenance can see a generated report but only
-  // admin/super_admin/operations can generate/save one (see
-  // REPORTS_WRITE_ROLES, enforced in the Reports pages themselves).
-  // safety_officer (2026-08-20) added so that role can reach the Breath
-  // Analysis Report (see BA_TEST_WRITE_ROLES/BA_TEST_VIEW_ROLES).
-  // Billing B4b (22 Oct): + student (own statement) and accounts (statements, reconciliation); the landing page shows each only its cards.
-  { href: '/dashboard/reports', label: 'Reports', icon: ClipboardList, roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer', 'student', 'accounts'] },
-  { href: '/dashboard/admin/setup', label: 'Admin Setup', icon: Settings, roles: ['super_admin'] },
+const STAFF_HOME = ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'];
+const ALL_ROLES = [...STAFF_HOME, 'student', 'accounts'];
+const setup = (label: string, tabs: string[]): NavItem => ({ href: `/dashboard/admin/setup?tab=${tabs[0]}`, label, roles: ['super_admin'], tabs });
+
+// Roles hand-synced to each page's RoleGate (see lib/permissions.ts).
+const NAV_GROUPS: NavGroup[] = [
+  { label: 'Dashboard', icon: LayoutDashboard, items: [
+    { href: '/dashboard', label: 'Dashboard', roles: STAFF_HOME },
+    { href: '/dashboard/student', label: 'My Dashboard', roles: ['student'] },
+  ] },
+  { label: 'Flying', icon: Calendar, items: [
+    { href: '/dashboard/schedule', label: 'Schedule', roles: ['admin', 'instructor', 'super_admin', 'operations', 'student'] },
+    { href: '/dashboard/flights', label: 'Flight Records', roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'accounts'], moduleKey: 'flightRecords' },
+    { href: '/dashboard/availability', label: 'Availability & Leave', roles: ['admin', 'instructor', 'super_admin', 'operations', 'student'] },
+    { href: '/dashboard/roster', label: 'Duty Roster', roles: ['admin', 'super_admin', 'operations', 'instructor'] },
+    { href: '/dashboard/duty-hours', label: 'Duty Hours', roles: ['admin', 'super_admin', 'operations', 'instructor'] },
+  ] },
+  { label: 'Training', icon: GraduationCap, items: [
+    { href: '/dashboard/students', label: 'Students', roles: ['admin', 'instructor', 'super_admin', 'operations'], moduleKey: 'students' },
+    { href: '/dashboard/instructor', label: 'My Students', roles: ['instructor'] },
+    { href: '/dashboard/progress', label: 'Progress', roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
+    { href: '/dashboard/ground-school', label: 'Ground School', roles: ['admin', 'instructor', 'super_admin', 'student', 'operations'] },
+  ] },
+  { label: 'Fleet & Engineering', icon: Wrench, items: [
+    { href: '/dashboard/aircraft', label: 'Aircraft', roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'aircraft' },
+    { href: '/dashboard/maintenance', label: 'Maintenance', roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'maintenance' },
+    { href: '/dashboard/fuel', label: 'Fuel', roles: ['admin', 'instructor', 'super_admin', 'maintenance', 'operations'], moduleKey: 'fuel' },
+    { href: '/dashboard/report-defect', label: 'Report a Defect', roles: ['instructor', 'student'] },
+  ] },
+  { label: 'Safety & Compliance', icon: ShieldAlert, items: [
+    { href: '/dashboard/safety', label: 'Safety Incidents', roles: ['admin', 'instructor', 'super_admin', 'operations', 'maintenance', 'safety_officer'] },
+    { href: '/dashboard/reports/breath-analyser', label: 'BA Test Register', roles: BA_TEST_VIEW_ROLES },
+    { href: '/dashboard/reports/daily-flying', label: 'Daily Flying Report', roles: REPORTS_VIEW_ROLES },
+    { href: '/dashboard/reports/audit-pack', label: 'DGCA Audit Pack', roles: REPORTS_VIEW_ROLES },
+    { href: '/dashboard/reports/maintenance-log', label: 'Maintenance Log', roles: REPORTS_VIEW_ROLES },
+    { href: '/dashboard/reports/breath-analysis', label: 'Breath Analysis Report', roles: BA_TEST_VIEW_ROLES },
+  ] },
+  { label: 'Finance', icon: Wallet, items: [
+    { href: '/dashboard/accounts', label: 'Accounts', roles: ['admin', 'super_admin', 'operations', 'accounts'] },
+    { href: '/dashboard/my-account', label: 'My Account', roles: ['student'] },
+    { href: '/dashboard/reports/statements', label: 'Statements', roles: ['student', ...BILLING_REPORT_ROLES] },
+    { href: '/dashboard/reports/reconciliation', label: 'Billing Reconciliation', roles: BILLING_REPORT_ROLES },
+  ] },
+  { label: 'People', icon: Users, items: [
+    { href: '/dashboard/instructors', label: 'Instructors', roles: ['admin', 'super_admin', 'operations', 'instructor'], moduleKey: 'instructors' },
+    { href: '/dashboard/staff', label: 'Staff', roles: ['admin', 'super_admin'] },
+  ] },
+  { label: 'Reports', icon: ClipboardList, items: [
+    { href: '/dashboard/reports', label: 'Reports', roles: ALL_ROLES },
+  ] },
+  { label: 'Admin Setup', icon: Settings, items: [
+    setup('School setup', ['settings', 'bases', 'holidays']),
+    setup('Fleet setup', ['aircraft', 'maintenance-schedule', 'ames']),
+    setup('Training setup', ['programs', 'sorties', 'exercises', 'requirements', 'groundschool', 'roles']),
+    setup('Users', ['users']),
+    setup('Billing setup', ['billing']),
+  ] },
+  { label: 'Help', icon: CircleHelp, items: [
+    { href: '/dashboard/help', label: 'Help', roles: ALL_ROLES },
+  ] },
 ];
 
-// 2026-08-29: sub-paths that have been promoted to their own top-level nav
-// item (see that item's own comment above for why) even though they still
-// nest under a *different* item's href at the URL level — those sub-paths
-// should light up only their own promoted item, not double-highlight the
-// item they happen to nest under. Keyed by the parent item's href; each
-// value is a list of child path prefixes to exclude from that parent's own
-// prefix-match below. Currently just the one case (BA Test Register vs.
-// Reports); add here rather than hand-rolling another one-off exception if
-// a future nav item needs the same treatment.
-const NAV_ACTIVE_EXCLUDED_CHILD_PREFIXES: Record<string, string[]> = {
-  '/dashboard/reports': ['/dashboard/reports/breath-analyser'],
-};
-
-// Extracted so the 2026-09-23 mobile nav drawer (Header.tsx) can show the
-// exact same role-filtered link set as the desktop rail below, instead of
-// re-deriving (and risking drift from) the same filter a second time.
-export function useVisibleNavItems(): NavItem[] {
+// Shared by the desktop rail/tree and the mobile drawer (Header.tsx), so they can't drift.
+export function useVisibleNavGroups(): NavGroup[] {
   const { data: session, status } = useSession();
-  // Called unconditionally, before the early return below, per rules of
-  // hooks — harmless no-op fetch for roles that can never have an
-  // override (the hook still only fires the request once per session).
+  // Called before the early return, per rules of hooks.
   const overrides = useMyPermissionOverrides();
-
-  // Nothing to show until we actually know who's logged in — avoids a
-  // flash of an empty nav while the session is still resolving (same
-  // "render nothing until ready" behavior ProtectedRoute already uses).
+  // Nothing until we know who's logged in — avoids a flash of an empty nav.
   if (status !== 'authenticated' || !session?.user) return [];
+  const role = (session.user as { role?: string }).role ?? '';
+  return NAV_GROUPS
+    .map(g => ({ ...g, items: g.items.filter(i => i.roles.includes(role) || (i.moduleKey ? canViewModule(role, overrides, i.moduleKey) : false)) }))
+    .filter(g => g.items.length > 0);
+}
 
-  const role = (session.user as { role?: string }).role;
-  return NAV_ITEMS.filter((item) =>
-    !!role && (item.roles.includes(role) || (item.moduleKey ? canViewModule(role, overrides, item.moduleKey) : false))
+const pathOf = (href: string) => href.split('?')[0];
+
+/** The one item to highlight: the longest href matching the URL (so BA Test Register under /reports wins over Reports). */
+function useActiveHref(groups: NavGroup[]): string | null {
+  const pathname = usePathname() ?? '';
+  const tab = useSearchParams()?.get('tab') ?? 'settings';
+  let best: NavItem | null = null;
+  for (const item of groups.flatMap(g => g.items)) {
+    const p = pathOf(item.href);
+    const isHome = p === '/dashboard' || p === '/dashboard/student';
+    const hit = isHome ? pathname === p : pathname === p || pathname.startsWith(p + '/');
+    if (!hit || (item.tabs && !item.tabs.includes(tab))) continue;
+    if (!best || p.length > pathOf(best.href).length) best = item;
+  }
+  return best?.href ?? null;
+}
+
+const OPEN_KEY = 'fp-nav-open';
+const activeStyle = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' };
+const rowClass = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]';
+
+/** The grouped menu: a plain link for one-item groups, a collapsible group otherwise. The active page's group opens itself. */
+export function NavTree({ groups, onNavigate }: { groups: NavGroup[]; onNavigate?: () => void }) {
+  const pathname = usePathname() ?? '';
+  const activeHref = useActiveHref(groups);
+  const activeGroup = groups.find(g => g.items.some(i => i.href === activeHref))?.label;
+  // Groups the user opened, remembered in this browser; plus the active group unless closed on this page.
+  const [opened, setOpened] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem(OPEN_KEY) ?? '[]'); } catch { return []; }
+  });
+  const [closedOn, setClosedOn] = useState<Record<string, string>>({});
+  const isOpen = (label: string) => (label === activeGroup ? closedOn[label] !== pathname : opened.includes(label));
+  const toggle = (label: string) => {
+    if (label === activeGroup) { setClosedOn(c => ({ ...c, [label]: isOpen(label) ? pathname : '' })); return; }
+    const next = opened.includes(label) ? opened.filter(l => l !== label) : [...opened, label];
+    setOpened(next);
+    try { localStorage.setItem(OPEN_KEY, JSON.stringify(next)); } catch { /* private mode: not remembered */ }
+  };
+
+  return (
+    <div className="space-y-0.5">
+      {groups.map(g => {
+        const Icon = g.icon;
+        if (g.items.length === 1) {
+          const item = g.items[0];
+          const active = item.href === activeHref;
+          return (
+            <Link key={g.label} href={item.href} onClick={onNavigate} aria-current={active ? 'page' : undefined}
+              className={rowClass} style={active ? activeStyle : { color: 'var(--text-secondary)' }}>
+              <Icon className="w-4 h-4 shrink-0" />{item.label}
+            </Link>
+          );
+        }
+        const open = isOpen(g.label);
+        const Chevron = open ? ChevronDown : ChevronRight;
+        return (
+          <div key={g.label}>
+            <button type="button" onClick={() => toggle(g.label)} aria-expanded={open}
+              className={`${rowClass} w-full cursor-pointer`}
+              style={{ color: g.label === activeGroup ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+              <Icon className="w-4 h-4 shrink-0" style={g.label === activeGroup ? { color: 'var(--accent)' } : undefined} />
+              <span className="flex-1 text-left">{g.label}</span>
+              <Chevron className="w-3.5 h-3.5 shrink-0 text-tertiary" />
+            </button>
+            {open && (
+              <div className="mt-0.5 mb-1 space-y-0.5">
+                {g.items.map(item => {
+                  const active = item.href === activeHref;
+                  return (
+                    <Link key={item.href} href={item.href} onClick={onNavigate} aria-current={active ? 'page' : undefined}
+                      className="block rounded-lg pl-10 pr-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-muted)]"
+                      style={active ? { ...activeStyle, fontWeight: 600 } : { color: 'var(--text-secondary)' }}>
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** lg–xl: one icon per group; clicking or hovering opens a fly-out listing the group's pages by name. */
+function NavRail({ groups }: { groups: NavGroup[] }) {
+  const activeHref = useActiveHref(groups);
+  const [flyout, setFlyout] = useState<string | null>(null);
+  return (
+    <div className="space-y-1">
+      {groups.map(g => {
+        const Icon = g.icon;
+        const active = g.items.some(i => i.href === activeHref);
+        const style = active ? activeStyle : { color: 'var(--text-secondary)' };
+        if (g.items.length === 1) {
+          return (
+            <Link key={g.label} href={g.items[0].href} title={g.items[0].label} aria-label={g.items[0].label}
+              aria-current={active ? 'page' : undefined}
+              className="flex items-center justify-center rounded-lg h-10 w-10 mx-auto transition-colors hover:bg-[var(--surface-muted)]" style={style}>
+              <Icon className="w-4 h-4" />
+            </Link>
+          );
+        }
+        const open = flyout === g.label;
+        return (
+          <div key={g.label} className="relative" onMouseEnter={() => setFlyout(g.label)} onMouseLeave={() => setFlyout(null)}
+            onKeyDown={e => { if (e.key === 'Escape') setFlyout(null); }}
+            onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFlyout(null); }}>
+            {/* Click only opens: hover has usually opened it already, and a toggle would close it on the same click. */}
+            <button type="button" aria-label={g.label} aria-expanded={open} onClick={() => setFlyout(g.label)}
+              className="flex items-center justify-center rounded-lg h-10 w-10 mx-auto cursor-pointer transition-colors hover:bg-[var(--surface-muted)]" style={style}>
+              <Icon className="w-4 h-4" />
+            </button>
+            {open && (
+              // pl-2 bridges the gap to the rail so the pointer can travel into the fly-out without closing it.
+              <div className="absolute left-full top-0 z-40 pl-2">
+                <div className="w-56 rounded-lg shadow-lg py-1.5" style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
+                  <p className="px-3 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-tertiary">{g.label}</p>
+                  {g.items.map(item => {
+                    const on = item.href === activeHref;
+                    return (
+                      <Link key={item.href} href={item.href} onClick={() => setFlyout(null)} aria-current={on ? 'page' : undefined}
+                        className="block mx-1.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-[var(--surface-muted)]"
+                        style={on ? { ...activeStyle, fontWeight: 600 } : { color: 'var(--text-secondary)' }}>
+                        {item.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
 export default function Sidebar() {
-  const pathname = usePathname();
-  const items = useVisibleNavItems();
-
-  if (items.length === 0) return null;
-
+  const groups = useVisibleNavGroups();
+  if (groups.length === 0) return null;
   return (
     <aside
-      className="hidden lg:flex lg:flex-col lg:w-16 xl:w-56 shrink-0 h-screen sticky top-0 overflow-y-auto"
+      aria-label="Main menu"
+      className="hidden lg:flex lg:flex-col lg:w-16 xl:w-60 shrink-0 h-screen sticky top-0 lg:overflow-visible xl:overflow-y-auto z-[45]"
       style={{ borderRight: '1px solid var(--border)', backgroundColor: 'var(--surface)' }}
     >
-      <nav className="flex-1 py-4 px-2 xl:px-3 space-y-1">
-        {items.map((item) => {
-          // '/dashboard' would otherwise prefix-match every nested route
-          // (including itself as a substring of '/dashboard/schedule' etc.)
-          // — exact match for the two dashboard-home entries, prefix match
-          // for everything else so a sub-page still highlights its section.
-          //
-          // Plain startsWith() on its own is also wrong for two sibling
-          // routes whose paths share a prefix at the segment level, not
-          // just textually — '/dashboard/instructors' (Instructors roster)
-          // starts with the string '/dashboard/instructor' (My Students),
-          // so visiting the roster page lit up both nav items. Matching
-          // against the href plus a trailing '/' (or an exact match) keeps
-          // '/dashboard/instructor/123' correctly under "My Students"
-          // while no longer bleeding into "Instructors".
-          const isHome = item.href === '/dashboard' || item.href === '/dashboard/student';
-          const excludedChildPrefixes = NAV_ACTIVE_EXCLUDED_CHILD_PREFIXES[item.href];
-          const isExcludedChild = !!excludedChildPrefixes && !!pathname &&
-            excludedChildPrefixes.some(prefix => pathname === prefix || pathname.startsWith(prefix + '/'));
-          const active = isHome
-            ? pathname === item.href
-            : !isExcludedChild && (pathname === item.href || !!pathname?.startsWith(item.href + '/'));
-          const Icon = item.icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={item.label}
-              className="flex items-center gap-3 rounded-lg px-2.5 xl:px-3 py-2.5 text-sm font-medium transition-colors justify-center xl:justify-start hover:bg-[var(--surface-muted)]"
-              style={
-                active
-                  ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }
-                  : { color: 'var(--text-secondary)' }
-              }
-            >
-              <Icon className="w-4 h-4 shrink-0" />
-              <span className="hidden xl:inline truncate">{item.label}</span>
-            </Link>
-          );
-        })}
+      <nav className="flex-1 py-4 px-2 xl:px-3">
+        <div className="xl:hidden"><NavRail groups={groups} /></div>
+        <div className="hidden xl:block"><NavTree groups={groups} /></div>
       </nav>
     </aside>
   );
