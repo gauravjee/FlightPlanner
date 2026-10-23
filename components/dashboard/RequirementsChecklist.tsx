@@ -26,6 +26,7 @@ import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { ClipboardList, Lock, TriangleAlert, ChevronDown, ChevronRight, GraduationCap, IdCard, X, Check, Eye, Clock } from 'lucide-react';
 import { REQUIREMENTS_WRITE_ROLES } from '@/lib/permissions';
 import { TrainingRequirement } from '@/types';
+import { formatDate } from '@/lib/ist';
 
 // 2026-09-23 redesign (see claude/ui-audit-2026-09-23.md): validityYears is
 // real structured data on the requirement (set in Admin Setup ->
@@ -42,7 +43,7 @@ function getExpiryInfo(req: TrainingRequirement): ExpiryInfo | null {
   const expiry = new Date(completed);
   expiry.setFullYear(expiry.getFullYear() + req.validityYears);
   const daysLeft = Math.ceil((expiry.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-  const expiryLabel = expiry.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  const expiryLabel = formatDate(expiry);
   if (daysLeft < 0) return { expired: true, expiringSoon: false, label: `Expired ${expiryLabel}` };
   if (daysLeft <= EXPIRY_WARNING_DAYS) return { expired: false, expiringSoon: true, label: `Expires in ${daysLeft}d (${expiryLabel})` };
   return { expired: false, expiringSoon: false, label: `Valid until ${expiryLabel}` };

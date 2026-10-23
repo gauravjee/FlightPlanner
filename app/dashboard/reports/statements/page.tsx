@@ -15,7 +15,7 @@ import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { BILLING_REPORT_ROLES } from '@/lib/permissions';
 import { formatINR } from '@/lib/billing';
 import { downloadStatement, downloadConsolidated, type StatementData, type ConsolidatedData } from '@/lib/billing-pdf';
-import { todayIST } from '@/lib/ist';
+import { todayIST, formatDate } from '@/lib/ist';
 import { Download } from 'lucide-react';
 
 const fetchJson = async <T,>(url: string): Promise<T> => {
@@ -128,7 +128,7 @@ export default function StatementsPage() {
                               <td className="py-2 text-right whitespace-nowrap">{drCr(data.opening)}</td></tr>
                             {data.lines.map((l, i) => (
                               <tr key={i} className="border-t">
-                                <td className="py-2 pr-3 whitespace-nowrap">{l.entry_date}</td>
+                                <td className="py-2 pr-3 whitespace-nowrap">{formatDate(l.entry_date)}</td>
                                 <td className="py-2 pr-3">{l.description}{l.method ? <span className="block text-xs text-tertiary">{l.method}{l.reference ? ` · ${l.reference}` : ''}</span> : null}</td>
                                 <td className="py-2 pr-3 text-right whitespace-nowrap">{Number(l.debit) ? formatINR(Number(l.debit)) : ''}</td>
                                 <td className="py-2 pr-3 text-right whitespace-nowrap">{Number(l.credit) ? formatINR(Number(l.credit)) : ''}</td>

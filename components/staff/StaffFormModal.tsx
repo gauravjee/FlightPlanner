@@ -16,6 +16,7 @@ import PhoneInput from '@/components/ui/PhoneInput';
 import HomeBaseSelect from '@/components/ui/HomeBaseSelect';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
 import { newRecordBaseId } from '@/lib/bases';
+import { formatDateTime } from '@/lib/ist';
 
 type Docs = { pan: string; aadhaar: string; passportNumber: string; passportIssueDate: string; passportIssuePlace: string };
 const EMPTY_DOCS: Docs = { pan: '', aadhaar: '', passportNumber: '', passportIssueDate: '', passportIssuePlace: '' };
@@ -98,7 +99,7 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
     // B2 S3b: bookings after the last working day aren't cancelled — say which ones to move.
     const later = (body.bookingsAfterLastDay ?? []) as { id: number; start: string }[];
     if (later.length) {
-      const when = later.map(f => new Date(f.start).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short' }));
+      const when = later.map(f => formatDateTime(f.start));
       notify(`Saved. ${form.name} still has ${later.length} booking${later.length === 1 ? '' : 's'} after 17:00 on their last working day. Move or cancel ${later.length === 1 ? 'it' : 'them'} on the Schedule:\n\n${when.join('\n')}`, 'warning');
     }
     onSaved();

@@ -6,10 +6,11 @@
 
 import { useEffect, useState } from 'react';
 import { AtSign, Lock, Check } from 'lucide-react';
+import { formatDate } from '@/lib/ist';
 
 type Mine = { userId: string | null; changedAt: string | null };
 
-const fmt = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata' });
+const fmt = formatDate;
 
 export default function UserIdSection() {
   const [mine, setMine] = useState<Mine | null>(null);

@@ -5,6 +5,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { GST_STATES, RECON_LABEL, amountInWords, type ReconStatus } from '@/lib/billing';
+import { formatDate } from '@/lib/ist';
 
 interface Party { name: string; address: string; gstin?: string; state: string; enrollmentId?: string }
 export interface BillingDocument {
@@ -19,7 +20,7 @@ export interface PaymentInfo { method: string | null; reference: string | null; 
 export const DOC_LABEL = { RECEIPT: 'Receipt', INVOICE: 'Tax invoice', CREDIT_NOTE: 'Credit note' } as const;
 const rs = (n: number | string) => `Rs. ${Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const stateLabel = (code: string) => (code ? `${code} - ${GST_STATES[code] ?? ''}` : '');
-const dateLabel = (d: string) => new Date(d + 'T00:00:00Z').toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const dateLabel = (d: string) => formatDate(d);
 
 /** Download one document. againstNumber: the invoice a credit note corrects; payment: the payment behind a receipt. */
 export function downloadBillingDocument(d: BillingDocument, opts: { againstNumber?: string; payment?: PaymentInfo } = {}) {

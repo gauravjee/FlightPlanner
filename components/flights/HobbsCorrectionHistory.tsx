@@ -4,10 +4,9 @@
 
 import type { HobbsCorrection } from '@/lib/hooks/useFlightRecords';
 import { History } from 'lucide-react';
+import { formatDateTime } from '@/lib/ist';
 
-const when = (iso: string) => new Date(iso).toLocaleString('en-IN', {
-  timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: '2-digit', hour: '2-digit', minute: '2-digit',
-});
+const when = formatDateTime;
 const signed = (n: number) => `${n > 0 ? '+' : ''}${n}`;
 
 export default function HobbsCorrectionHistory({ corrections }: { corrections: HobbsCorrection[] }) {

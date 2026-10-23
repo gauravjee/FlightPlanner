@@ -15,6 +15,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RoleGate from '@/components/ui/RoleGate';
 import { AVAILABILITY_VIEW_ROLES, AVAILABILITY_APPROVER_ROLES } from '@/lib/permissions';
 import { Palmtree, GraduationCap, Plane, ClipboardList, Pencil, Trash2, Check, X } from 'lucide-react';
+import { formatDate } from '@/lib/ist';
 
 // ============================================================
 // COLOR MAPS for leave types — mapped onto design tokens so the
@@ -288,9 +289,9 @@ export default function AvailabilityPage() {
                           </span>
                         </td>
                         <td className="py-3 text-xs">
-                          {new Date(record.startDate).toLocaleDateString('en-IN')}
+                          {formatDate(record.startDate)}
                           {record.startDate !== record.endDate && (
-                            <> → {new Date(record.endDate).toLocaleDateString('en-IN')}</>
+                            <> → {formatDate(record.endDate)}</>
                           )}
                           {record.startTime && (
                             <span className="block text-tertiary">{record.startTime} - {record.endTime || 'EOD'}</span>

@@ -8,7 +8,7 @@ import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
 import { Calendar, ClipboardList, ChartColumn } from 'lucide-react';
-import { todayIST } from '@/lib/ist';
+import { todayIST, formatDate } from '@/lib/ist';
 
 interface Subject { id: number; subject_name: string; subject_code: string; }
 interface Enrollment { id: number; class_id: number; student_id: string; attendance_status: string; exam_score: number | null; exam_result: string | null; }
@@ -145,7 +145,7 @@ export default function GroundSchoolPage() {
                     <div key={cls.id} className="surface-inner p-3 flex justify-between">
                       <div>
                         <p className="text-sm">{cls.ground_school_subjects?.subject_name || 'N/A'}</p>
-                        <p className="text-xs text-tertiary">{cls.class_date} {cls.start_time} | {cls.topic || 'No topic'}</p>
+                        <p className="text-xs text-tertiary">{formatDate(cls.class_date)} {cls.start_time} | {cls.topic || 'No topic'}</p>
                       </div>
                       <span className="badge badge-accent">{cls.status}</span>
                     </div>

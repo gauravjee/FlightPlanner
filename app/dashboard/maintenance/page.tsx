@@ -20,7 +20,7 @@ import RoleGate from '@/components/ui/RoleGate';
 import { MAINTENANCE_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Wrench, Check, Pencil, Trash2, TriangleAlert, Hourglass, Eye } from 'lucide-react';
-import { todayIST } from '@/lib/ist';
+import { todayIST, formatDate } from '@/lib/ist';
 
 export default function MaintenancePage() {
   const { data: session } = useSession();
@@ -220,7 +220,7 @@ export default function MaintenancePage() {
                       <td className="py-3 font-medium" style={{ color: 'var(--text-primary)' }}>{record.aircraftReg}</td>
                       <td className="py-3 text-xs">{record.maintenanceType}</td>
                       <td className="py-3 text-xs">
-                        {new Date(record.scheduledDate).toLocaleDateString('en-IN')}
+                        {formatDate(record.scheduledDate)}
                         {/* Precise window, when set — shows the actual blocked span instead of
                             just the scheduled day, so it's clear at a glance whether this is a
                             whole-day block or just a few hours. */}

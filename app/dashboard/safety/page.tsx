@@ -20,6 +20,7 @@ import RoleGate from '@/components/ui/RoleGate';
 import { INCIDENT_REPORT_ROLES, INCIDENT_MANAGE_ROLES, INCIDENT_RESOLVE_ROLES, SAFETY_INCIDENT_CATEGORIES } from '@/lib/permissions';
 import type { SafetyIncident } from '@/types';
 import { ShieldAlert, ChevronDown, ChevronUp } from 'lucide-react';
+import { formatDate } from '@/lib/ist';
 
 const STATUS_OPTIONS: SafetyIncident['status'][] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
 
@@ -223,7 +224,7 @@ export default function SafetyManagementPage() {
                         <div>
                           <p className="text-sm">{inc.incidentNumber ? `${inc.incidentNumber} · ` : ''}{inc.description}</p>
                           <p className="text-xs text-tertiary mt-1">
-                            {inc.incidentDate}{inc.incidentTime ? ` · ${inc.incidentTime}` : ''} · {categoryLabel(inc.category)} · Reported by {inc.reportedBy || 'Unknown'}
+                            {formatDate(inc.incidentDate)}{inc.incidentTime ? ` · ${inc.incidentTime}` : ''} · {categoryLabel(inc.category)} · Reported by {inc.reportedBy || 'Unknown'}
                             {inc.assignedTo ? ` · Assigned to ${inc.assignedTo}` : ''}
                           </p>
                         </div>
@@ -282,10 +283,10 @@ export default function SafetyManagementPage() {
                                 {saving ? 'Saving…' : 'Save'}
                               </button>
                               {inc.resolvedBy && (
-                                <p className="text-xs text-tertiary">Resolved by {inc.resolvedBy}{inc.resolvedAt ? ` on ${new Date(inc.resolvedAt).toLocaleDateString('en-IN')}` : ''}</p>
+                                <p className="text-xs text-tertiary">Resolved by {inc.resolvedBy}{inc.resolvedAt ? ` on ${formatDate(inc.resolvedAt)}` : ''}</p>
                               )}
                               {inc.closedBy && (
-                                <p className="text-xs text-tertiary">Closed by {inc.closedBy}{inc.closedAt ? ` on ${new Date(inc.closedAt).toLocaleDateString('en-IN')}` : ''}</p>
+                                <p className="text-xs text-tertiary">Closed by {inc.closedBy}{inc.closedAt ? ` on ${formatDate(inc.closedAt)}` : ''}</p>
                               )}
                             </>
                           ) : canResolve && (inc.status === 'OPEN' || inc.status === 'IN_PROGRESS') ? (
@@ -315,10 +316,10 @@ export default function SafetyManagementPage() {
                               {inc.assignedTo && <p className="text-xs text-tertiary">Assigned to {inc.assignedTo}</p>}
                               {inc.resolutionNote && <p className="text-xs text-secondary">Resolution note: {inc.resolutionNote}</p>}
                               {inc.resolvedBy && (
-                                <p className="text-xs text-tertiary">Resolved by {inc.resolvedBy}{inc.resolvedAt ? ` on ${new Date(inc.resolvedAt).toLocaleDateString('en-IN')}` : ''}</p>
+                                <p className="text-xs text-tertiary">Resolved by {inc.resolvedBy}{inc.resolvedAt ? ` on ${formatDate(inc.resolvedAt)}` : ''}</p>
                               )}
                               {inc.closedBy ? (
-                                <p className="text-xs text-tertiary">Closed by {inc.closedBy}{inc.closedAt ? ` on ${new Date(inc.closedAt).toLocaleDateString('en-IN')}` : ''}</p>
+                                <p className="text-xs text-tertiary">Closed by {inc.closedBy}{inc.closedAt ? ` on ${formatDate(inc.closedAt)}` : ''}</p>
                               ) : !!myName && inc.reportedBy === myName && (
                                 <button
                                   onClick={() => handleClose(inc.id)}

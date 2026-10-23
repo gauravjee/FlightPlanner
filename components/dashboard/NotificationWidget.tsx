@@ -25,6 +25,7 @@ import { useStudents } from '@/lib/hooks/useStudents';
 import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useMaintenanceRecords, withMaintenanceRecordNames } from '@/lib/hooks/useMaintenanceRecords';
 import { STUDENT_ROSTER_VIEW_ROLES } from '@/lib/permissions';
+import { formatDate } from '@/lib/ist';
 
 interface Alert {
   id: string;
@@ -82,11 +83,11 @@ export default function NotificationWidget() {
       if (m.status !== 'SCHEDULED' && m.status !== 'IN_PROGRESS') continue;
       const reg = m.aircraftReg || 'Unknown';
       if (m.isOverdue) {
-        out.push({ id: `mx-overdue-${m.id}`, level: 'critical', message: `${reg}: ${m.maintenanceType} OVERDUE (was due ${new Date(m.scheduledDate).toLocaleDateString('en-IN')})` });
+        out.push({ id: `mx-overdue-${m.id}`, level: 'critical', message: `${reg}: ${m.maintenanceType} OVERDUE (was due ${formatDate(m.scheduledDate)})` });
       } else {
         const due = new Date(m.scheduledDate);
         if (due >= today && due <= sevenDaysFromNow) {
-          out.push({ id: `mx-due-${m.id}`, level: 'warning', message: `${reg}: ${m.maintenanceType} due on ${due.toLocaleDateString('en-IN')}` });
+          out.push({ id: `mx-due-${m.id}`, level: 'warning', message: `${reg}: ${m.maintenanceType} due on ${formatDate(due)}` });
         }
       }
     }

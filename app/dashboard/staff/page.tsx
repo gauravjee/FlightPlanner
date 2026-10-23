@@ -18,6 +18,7 @@ import { hasLeft, type StaffMember } from '@/lib/staff-id';
 import { Plus } from 'lucide-react';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
 import { inSelectedBase } from '@/lib/bases';
+import { formatDate } from '@/lib/ist';
 
 type Filter = 'active' | 'left' | 'all';
 
@@ -29,7 +30,7 @@ async function fetchStaff(url: string): Promise<StaffMember[]> {
 }
 
 const roleLabel = (role: string) => (USER_ROLE_OPTIONS.find(r => r.value === role)?.label ?? role).replace(/^\P{L}+/u, '');
-const fmt = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+const fmt = formatDate;
 
 export default function StaffPage() {
   useSetHeader({ title: 'Staff', subtitle: 'Staff records and staff IDs' });

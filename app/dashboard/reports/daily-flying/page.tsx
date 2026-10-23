@@ -23,6 +23,7 @@ import { generateDailyFlyingReport } from '@/lib/pdf';
 import type { DailyFlyingReport, SafetyIncident } from '@/types';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
 import { ALL_BASES, viewBaseId } from '@/lib/bases';
+import { formatDate, formatDateTime } from '@/lib/ist';
 import {
   FileDown, FileSpreadsheet, RefreshCw, TriangleAlert, Plus, X,
   ClipboardList, CalendarDays,
@@ -250,7 +251,7 @@ export default function DailyFlyingReportPage() {
 
               {report && (
                 <span className="text-xs text-tertiary ml-auto">
-                  Last generated {new Date(report.generatedAt).toLocaleString('en-IN')} by {report.generatedBy || 'Unknown'}
+                  Last generated {formatDateTime(report.generatedAt)} by {report.generatedBy || 'Unknown'}
                 </span>
               )}
             </div>
@@ -266,7 +267,7 @@ export default function DailyFlyingReportPage() {
             ) : !report ? (
               <div className="surface-card p-8 text-center">
                 <ClipboardList className="w-8 h-8 mx-auto mb-2 text-tertiary" />
-                <p className="text-sm text-secondary">No report generated for {date} yet.</p>
+                <p className="text-sm text-secondary">No report generated for {formatDate(date)} yet.</p>
                 {canWrite ? (
                   <p className="text-xs text-tertiary mt-1">Click &ldquo;Generate Report&rdquo; above to compile it from that day&apos;s flight records.</p>
                 ) : (
@@ -279,7 +280,7 @@ export default function DailyFlyingReportPage() {
                 <div className="surface-card overflow-x-auto">
                   <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
                     <h3 className="font-bold">FTO Daily Flying Report</h3>
-                    <p className="text-xs text-tertiary">Date: {report.reportDate} &middot; Airport: {report.airportCode || 'N/A'}</p>
+                    <p className="text-xs text-tertiary">Date: {formatDate(report.reportDate)} &middot; Airport: {report.airportCode || 'N/A'}</p>
                   </div>
                   <table className="w-full text-sm">
                     <thead>
@@ -357,7 +358,7 @@ export default function DailyFlyingReportPage() {
             <div className="surface-card p-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-bold flex items-center gap-1.5">
-                  <TriangleAlert className="w-4 h-4" style={{ color: 'var(--warning-text)' }} /> Safety Incidents — {date}
+                  <TriangleAlert className="w-4 h-4" style={{ color: 'var(--warning-text)' }} /> Safety Incidents — {formatDate(date)}
                 </h3>
                 {canReportIncident && !showIncidentForm && (
                   <button

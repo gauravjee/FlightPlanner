@@ -23,6 +23,7 @@ import { Trash2, Plus, CircleCheck, X } from 'lucide-react';
 import { GROUND_SCHOOL_WRITE_ROLES } from '@/lib/permissions';
 import { syncRequirementsFromGroundSchoolPass } from '@/lib/ground-school-sync';
 import { DGCA_PASS_MARK } from '@/lib/dgca';
+import { formatDate } from '@/lib/ist';
 
 interface Student {
   id: string; // UUID
@@ -300,7 +301,7 @@ export default function AttendancePage() {
                 <option value="">Choose...</option>
                 {classes.map(c => (
                   <option key={c.id} value={c.id}>
-                    {c.class_date} - {c.ground_school_subjects?.subject_name} ({c.start_time?.slice(0,5)}-{c.end_time?.slice(0,5)})
+                    {formatDate(c.class_date)} - {c.ground_school_subjects?.subject_name} ({c.start_time?.slice(0,5)}-{c.end_time?.slice(0,5)})
                   </option>
                 ))}
               </select>

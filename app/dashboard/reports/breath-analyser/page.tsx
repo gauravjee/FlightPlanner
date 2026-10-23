@@ -32,6 +32,7 @@ import { useStudents } from '@/lib/hooks/useStudents';
 import type { BATest } from '@/types';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
 import { ALL_BASES, viewBaseId } from '@/lib/bases';
+import { formatDate } from '@/lib/ist';
 import {
   Wind, CalendarDays, Plus, X, Pencil, Trash2, FileSpreadsheet, Save,
 } from 'lucide-react';
@@ -323,7 +324,7 @@ export default function BreathAnalyserRegisterPage() {
                 <div className="flex items-center justify-between">
                   <h3 className="font-bold flex items-center gap-1.5">
                     <Wind className="w-4 h-4" style={{ color: 'var(--accent)' }} />
-                    {editingId ? 'Edit BA Test Entry' : 'Add BA Test Entry'} — {date}
+                    {editingId ? 'Edit BA Test Entry' : 'Add BA Test Entry'} — {formatDate(date)}
                   </h3>
                   <button type="button" onClick={resetForm} className="p-1.5 rounded-lg cursor-pointer hover:opacity-80">
                     <X className="w-4 h-4 text-tertiary" />
@@ -421,7 +422,7 @@ export default function BreathAnalyserRegisterPage() {
             <div className="surface-card overflow-x-auto">
               <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>
                 <h3 className="font-bold flex items-center gap-1.5">
-                  <Wind className="w-4 h-4" style={{ color: 'var(--accent)' }} /> Breath Analyser Test — {date}
+                  <Wind className="w-4 h-4" style={{ color: 'var(--accent)' }} /> Breath Analyser Test — {formatDate(date)}
                 </h3>
               </div>
               <table className="w-full text-sm">
@@ -443,7 +444,7 @@ export default function BreathAnalyserRegisterPage() {
                   {loading ? (
                     <tr><td colSpan={canWrite ? 10 : 9} className="px-3 py-6 text-center text-tertiary">Loading…</td></tr>
                   ) : tests.length === 0 ? (
-                    <tr><td colSpan={canWrite ? 10 : 9} className="px-3 py-6 text-center text-tertiary">No BA tests logged for {date} yet.</td></tr>
+                    <tr><td colSpan={canWrite ? 10 : 9} className="px-3 py-6 text-center text-tertiary">No BA tests logged for {formatDate(date)} yet.</td></tr>
                   ) : (
                     tests.map(t => (
                       <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }}>

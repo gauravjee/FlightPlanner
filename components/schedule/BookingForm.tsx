@@ -53,6 +53,7 @@ import { isSPLRequirement } from '@/lib/spl';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
 import { ALL_BASES, BASE1_ID, overlayBaseSettings, holidaysAt } from '@/lib/bases';
+import { formatDate } from '@/lib/ist';
 
 // ============================================================
 // PROPS
@@ -487,7 +488,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
       offDutyDate: instr?.offDutyDate, openStart: ftoSettings['time_slot_start'], openEnd: ftoSettings['time_slot_end'], baseId: formBaseId,
     });
     return flightFitsDuty(r.window, startIso, endIso) ? ''
-      : `⛔ ${instr?.name ?? 'The instructor'} isn't on duty then — duty hours on ${form.date}: ${describeWindow(r.window)}${dutySourceNote(r.source)}.`;
+      : `⛔ ${instr?.name ?? 'The instructor'} isn't on duty then — duty hours on ${formatDate(form.date)}: ${describeWindow(r.window)}${dutySourceNote(r.source)}.`;
   }, [isSolo, form.instructorId, form.date, form.startTime, form.endTime, existingFlight, instructors, ftoSettings, rosterWeekly, rosterExceptions, formBaseId]);
 
   // SWR migration, Stage 8 (2026-09-02): keyed per-studentId (null while
@@ -586,7 +587,7 @@ export default function BookingForm({ onClose, onSuccess, existingFlight, prefil
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (medicalDate < today) {
-      return `❌ ${student.name}'s medical expired on ${student.medicalExpiry}. Cannot book flight.`;
+      return `❌ ${student.name}'s medical expired on ${formatDate(student.medicalExpiry)}. Cannot book flight.`;
     }
     return '';
   };

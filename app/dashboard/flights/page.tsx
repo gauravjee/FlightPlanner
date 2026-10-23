@@ -24,6 +24,7 @@ import { FLIGHT_RECORDS_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { FileText, NotebookPen, ClipboardList, PartyPopper, Star, ClipboardCheck, Eye, Pencil } from 'lucide-react';
 import { ScheduledFlight, FlightRecord } from '@/types';
+import { formatDate } from '@/lib/ist';
 
 export default function FlightsPage() {
   const { data: session } = useSession();
@@ -236,7 +237,7 @@ export default function FlightsPage() {
                   {filteredRecords.map(record => (
                     <tr key={record.id} className="border-b transition" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
                       <td className="py-3 text-xs" style={{ color: 'var(--text-primary)' }}>
-                        {new Date(record.flightDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })}
+                        {formatDate(record.flightDate)}
                       </td>
                       <td className="py-3 text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{record.studentName}</td>
                       <td className="py-3 text-xs">{record.aircraftReg}</td>

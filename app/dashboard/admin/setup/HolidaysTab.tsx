@@ -21,6 +21,7 @@ import { useHolidays, addHoliday, addHolidaysBulk, removeHoliday } from '@/lib/h
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { CalendarDays, Plus, Trash2, Upload, Download, LoaderCircle, RefreshCw } from 'lucide-react';
 import { useBases } from '@/lib/hooks/useBases';
+import { formatDate } from '@/lib/ist';
 
 interface CsvImportResult {
   added: number;
@@ -310,7 +311,7 @@ export default function HolidaysTab() {
             <tbody className="text-secondary">
               {sortedHolidays.map(h => (
                 <tr key={h.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
-                  <td className="py-3" style={{ color: 'var(--text-primary)' }}>{h.date}</td>
+                  <td className="py-3" style={{ color: 'var(--text-primary)' }}>{formatDate(h.date)}</td>
                   <td className="py-3" style={{ color: 'var(--text-primary)' }}>{h.holidayName}</td>
                   <td className="py-3">
                     <span className={`badge ${h.isRecurring ? 'badge-success' : ''}`}>

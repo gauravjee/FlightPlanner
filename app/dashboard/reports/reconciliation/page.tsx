@@ -14,7 +14,7 @@ import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { BILLING_REPORT_ROLES } from '@/lib/permissions';
 import { RECON_LABEL, formatINR, reconTotals, csvSafe } from '@/lib/billing';
 import { downloadReconciliation, type ReconRow } from '@/lib/billing-pdf';
-import { todayIST } from '@/lib/ist';
+import { todayIST, formatDate } from '@/lib/ist';
 import { Download } from 'lucide-react';
 
 const fetchRecon = async (url: string): Promise<{ from: string; to: string; rows: ReconRow[] }> => {
@@ -93,7 +93,7 @@ export default function ReconciliationPage() {
                           {rows.length === 0 && <tr><td colSpan={7} className="py-6 text-center text-secondary">No logbook flights in this period.</td></tr>}
                           {rows.map((r, i) => (
                             <tr key={i} className="border-t">
-                              <td className="py-2 pr-3 whitespace-nowrap">{r.flight_date}</td><td className="py-2 pr-3">{r.student || '—'}</td>
+                              <td className="py-2 pr-3 whitespace-nowrap">{formatDate(r.flight_date)}</td><td className="py-2 pr-3">{r.student || '—'}</td>
                               <td className="py-2 pr-3">{r.aircraft}</td><td className="py-2 pr-3 text-right">{r.hours}</td>
                               <td className="py-2 pr-3 text-right">{r.packageHours ? `${r.packageHours} h` : ''}</td>
                               <td className="py-2 pr-3 text-right whitespace-nowrap">{r.charged ? `${formatINR(r.charged)} (${r.chargedHours} h)` : ''}</td>

@@ -10,6 +10,7 @@ import { notify } from '@/lib/notify';
 import { CATEGORY_LABEL, PAYMENT_METHODS, GST_STATES, formatINR, type BillingCategory } from '@/lib/billing';
 import { downloadBillingDocument, DOC_LABEL, type BillingDocument } from '@/lib/billing-pdf';
 import PackageCard, { type PackageInfo, type DueInfo } from '@/components/billing/PackageCard';
+import { formatDate } from '@/lib/ist';
 
 interface Entry {
   id: number; entry_date: string; kind: string; source: string; description: string; hours: number | null;
@@ -209,7 +210,7 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
             <tbody>
               {data.entries.map(e => (
                 <tr key={e.id} className="border-t align-top" style={e.voided_at ? { opacity: 0.55 } : undefined}>
-                  <td className="py-2 pr-3 whitespace-nowrap">{e.entry_date}</td>
+                  <td className="py-2 pr-3 whitespace-nowrap">{formatDate(e.entry_date)}</td>
                   <td className="py-2 pr-3">
                     <span className={e.voided_at ? 'line-through' : ''}>{e.description}</span>
                     <span className="block text-xs text-tertiary">
@@ -278,7 +279,7 @@ export default function StudentAccountPanel({ studentId, canRecord = false, canA
             {data.documents.map(d => (
               <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 border-t py-1.5">
                 <span>
-                  {DOC_LABEL[d.doc_type]} <span className="font-semibold">{d.doc_number}</span> · {d.doc_date}
+                  {DOC_LABEL[d.doc_type]} <span className="font-semibold">{d.doc_number}</span> · {formatDate(d.doc_date)}
                   {d.cancelled && <span className="badge badge-danger ml-1 text-[10px]">cancelled</span>}
                 </span>
                 <span className="flex items-center gap-3">

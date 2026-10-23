@@ -15,6 +15,7 @@ import { useSetHeader } from '@/components/ui/HeaderContext';
 import RoleGate from '@/components/ui/RoleGate';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RequirementsChecklist from '@/components/dashboard/RequirementsChecklist';
+import { formatDate, formatDayDate } from '@/lib/ist';
 import {
   HeartPulse, TriangleAlert, CircleCheck, PartyPopper, Plane,
   TrendingUp, Calendar, NotebookPen, ClipboardList, Star,
@@ -200,7 +201,7 @@ export default function StudentDashboardPage() {
                               : 'var(--success)',
                         }}
                       >
-                        <HeartPulse className="w-3.5 h-3.5" /> Medical: {student.medicalExpiry}
+                        <HeartPulse className="w-3.5 h-3.5" /> Medical: {formatDate(student.medicalExpiry)}
                       </p>
                       {daysUntilMedical !== null && daysUntilMedical < 0 && (
                         <p className="text-xs mt-1 flex items-center gap-1 justify-center" style={{ color: 'var(--danger)' }}><TriangleAlert className="w-3 h-3" /> EXPIRED - Grounded until renewed!</p>
@@ -246,12 +247,7 @@ export default function StudentDashboardPage() {
                 <p className="text-sm mt-2" style={{ color: 'var(--warning-text)' }}>
                   A major milestone achieved on{' '}
                   <span className="font-bold">
-                    {new Date(student.firstSoloDate).toLocaleDateString('en-IN', {
-                      weekday: 'long',
-                      day: 'numeric',
-                      month: 'long',
-                      year: 'numeric'
-                    })}
+                    {formatDayDate(student.firstSoloDate)}
                   </span>
                 </p>
                 <p className="text-xs mt-2 flex items-center gap-1 justify-center" style={{ color: 'var(--warning-text)', opacity: 0.7 }}>
@@ -330,7 +326,7 @@ export default function StudentDashboardPage() {
                       <div key={flight.id} className="surface-inner p-3 flex justify-between items-center">
                         <div>
                           <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                            {new Date(flight.startTime).toLocaleDateString('en-IN')}{' '}
+                            {formatDate(flight.startTime)}{' '}
                             {new Date(flight.startTime).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                           </p>
                           <p className="text-tertiary text-xs">
@@ -429,7 +425,7 @@ export default function StudentDashboardPage() {
                     <tbody className="text-secondary">
                       {(showAllLogbook ? myLogbook : myLogbook.slice(0, 5)).map(record => (
                         <tr key={record.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
-                          <td className="py-2" style={{ color: 'var(--text-primary)' }}>{new Date(record.flightDate).toLocaleDateString('en-IN')}</td>
+                          <td className="py-2" style={{ color: 'var(--text-primary)' }}>{formatDate(record.flightDate)}</td>
                           <td className="py-2">{record.sortieType?.replace(/_/g, ' ')}</td>
                           <td className="py-2">{record.aircraftReg}</td>
                           <td className="py-2">

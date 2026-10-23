@@ -27,7 +27,7 @@ import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useMaintenanceRecords } from '@/lib/hooks/useMaintenanceRecords';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { generateAuditPack } from '@/lib/pdf';
-import { todayIST, daysFromTodayIST } from '@/lib/ist';
+import { todayIST, daysFromTodayIST, formatDate } from '@/lib/ist';
 import type { BATest, DailyFlyingReport } from '@/types';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
 import { ALL_BASES, viewBaseId } from '@/lib/bases';
@@ -51,7 +51,7 @@ function dateRange(from: string, to: string): string[] {
 }
 
 function prettyDate(iso: string): string {
-  return new Date(iso + 'T00:00:00').toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  return formatDate(iso);
 }
 
 export default function AuditPackPage() {

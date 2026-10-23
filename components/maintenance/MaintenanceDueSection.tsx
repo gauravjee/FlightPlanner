@@ -27,6 +27,7 @@ import { useAMEs } from '@/lib/hooks/useAMEs';
 import { MaintenanceDueItem } from '@/types';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { TriangleAlert, Clock, CircleAlert, Wrench, X } from 'lucide-react';
+import { formatDate } from '@/lib/ist';
 
 interface LogModalProps {
   item: MaintenanceDueItem;
@@ -250,7 +251,7 @@ export default function MaintenanceDueSection({ canWrite }: { canWrite: boolean 
                   </span>
                 )}
                 {item.status === 'OVERDUE' && item.template.intervalType === 'CALENDAR_MONTHS' && item.dueAtDate && (
-                  <span className="text-xs text-tertiary">due {new Date(item.dueAtDate).toLocaleDateString('en-IN')}</span>
+                  <span className="text-xs text-tertiary">due {formatDate(item.dueAtDate)}</span>
                 )}
               </div>
               {canWrite && ac && (

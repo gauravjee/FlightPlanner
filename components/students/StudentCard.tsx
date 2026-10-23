@@ -6,6 +6,7 @@ import { StudentRecord } from '@/types';
 import { canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Pencil, Trash2, PartyPopper, TriangleAlert, CircleAlert, CircleCheck, GraduationCap, Eye } from 'lucide-react';
+import { formatDate, formatDayDate } from '@/lib/ist';
 
 interface Props {
   student: StudentRecord;
@@ -154,12 +155,7 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
           <PartyPopper className="w-4 h-4 mx-auto mb-1" style={{ color: 'var(--warning-text)' }} />
           <p className="text-sm font-bold" style={{ color: 'var(--warning-text)' }}>First Solo!</p>
           <p className="text-xs mt-1" style={{ color: 'var(--warning-text)', opacity: 0.8 }}>
-            {new Date(student.firstSoloDate).toLocaleDateString('en-IN', {
-              weekday: 'short',
-              day: 'numeric',
-              month: 'short',
-              year: 'numeric'
-            })}
+            {formatDayDate(student.firstSoloDate, 'short')}
           </p>
         </div>
       )}
@@ -181,13 +177,13 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
             </p>
           ) : medicalStatus === 'ok' ? (
             <p className="text-sm font-medium flex items-center gap-1" style={{ color: 'var(--success)' }}>
-              <CircleCheck className="w-3.5 h-3.5" /> {student.medicalExpiry}
+              <CircleCheck className="w-3.5 h-3.5" /> {formatDate(student.medicalExpiry)}
             </p>
           ) : (
             <p className="text-sm text-tertiary">N/A</p>
           )}
           {medicalExpiry && medicalStatus !== 'expired' && (
-            <p className="text-xs text-tertiary mt-1">{student.medicalExpiry}</p>
+            <p className="text-xs text-tertiary mt-1">{formatDate(student.medicalExpiry)}</p>
           )}
         </div>
 
@@ -208,13 +204,13 @@ export default function StudentCard({ student, onEdit, onDelete }: Props) {
             </p>
           ) : splStatus === 'ok' ? (
             <p className="text-sm font-medium flex items-center gap-1" style={{ color: 'var(--success)' }}>
-              <CircleCheck className="w-3.5 h-3.5" /> {student.splExpiryDate}
+              <CircleCheck className="w-3.5 h-3.5" /> {formatDate(student.splExpiryDate)}
             </p>
           ) : (
             <p className="text-sm text-tertiary">N/A</p>
           )}
           {splExpiry && splStatus !== 'expired' && (
-            <p className="text-xs text-tertiary mt-1">{student.splExpiryDate}</p>
+            <p className="text-xs text-tertiary mt-1">{formatDate(student.splExpiryDate)}</p>
           )}
         </div>
             {/* Assigned Instructor */}

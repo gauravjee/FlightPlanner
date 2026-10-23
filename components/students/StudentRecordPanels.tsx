@@ -13,14 +13,14 @@ import {
   fetchStudentDocuments, saveStudentDocuments, type StudentIdDocuments,
 } from '@/lib/hooks/useStudents';
 import { notify } from '@/lib/notify';
-import { todayIST } from '@/lib/ist';
+import { todayIST, formatDateTime, formatDate } from '@/lib/ist';
 
 const field = 'w-full surface-inner rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-[var(--accent)]';
 const noEnter = (e: React.KeyboardEvent) => { if (e.key === 'Enter') e.preventDefault(); };
 const ADMIN_ROLES = ['admin', 'super_admin'];
 const OUTCOME_LABEL = { IN_PROGRESS: 'In progress', COMPLETED: 'Completed', DISCONTINUED: 'Discontinued' } as const;
 export const STATUS_LABEL: Record<string, string> = { ACTIVE: 'Active', GROUNDED: 'Grounded', SUSPENDED: 'Suspended', GRADUATED: 'Graduated', LEFT: 'Left' };
-const fmt = (iso: string) => new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+const fmt = formatDateTime;
 
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
@@ -89,7 +89,7 @@ function CoursesSection({ student }: { student: StudentRecord }) {
             ) : (
               <tr key={c.id}>
                 <td className="py-1" title={c.programName}>{c.programCode}</td>
-                <td className="py-1">{c.startDate}</td>
+                <td className="py-1">{formatDate(c.startDate)}</td>
                 <td className="py-1">{c.endDate ?? '—'}</td>
                 <td className="py-1">{OUTCOME_LABEL[c.outcome]}</td>
                 {isAdmin && <td className="py-1"><button type="button" onClick={() => setEditing({ id: c.id, startDate: c.startDate, endDate: c.endDate ?? '', outcome: c.outcome })} className="underline cursor-pointer" style={{ color: 'var(--accent)' }}>Edit</button></td>}

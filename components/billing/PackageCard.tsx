@@ -7,7 +7,7 @@
 import { useState } from 'react';
 import useSWR from 'swr';
 import { BILLING_CATEGORIES, CATEGORY_LABEL, formatINR, monthlyPlan, round2, type BillingCategory } from '@/lib/billing';
-import { todayIST } from '@/lib/ist';
+import { todayIST, formatDate } from '@/lib/ist';
 
 type ByCategory = Record<BillingCategory, number>;
 export interface PackageInfo {
@@ -154,7 +154,7 @@ export default function PackageCard({ pkg, due, canPackage, saving, post, gstRat
       <ul className="text-sm">
         {pkg.instalments.map(i => (
           <li key={i.id} className="flex justify-between gap-2">
-            <span>{i.due_date}{i.due_date < today ? <span className="text-xs text-tertiary"> (past)</span> : ''}</span><span>{formatINR(i.amount)}</span>
+            <span>{formatDate(i.due_date)}{i.due_date < today ? <span className="text-xs text-tertiary"> (past)</span> : ''}</span><span>{formatINR(i.amount)}</span>
           </li>
         ))}
       </ul>

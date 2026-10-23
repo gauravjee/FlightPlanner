@@ -38,7 +38,7 @@ import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useMaintenanceRecords } from '@/lib/hooks/useMaintenanceRecords';
 import { useFtoSettings, getFtoSetting } from '@/lib/hooks/useFtoSettings';
 import { generateMaintenanceLogReport, formatLogDate } from '@/lib/pdf';
-import { todayIST, daysFromTodayIST } from '@/lib/ist';
+import { todayIST, daysFromTodayIST, formatDate } from '@/lib/ist';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
 import { inSelectedBase } from '@/lib/bases';
 import { Wrench, FileDown, FileSpreadsheet, TriangleAlert } from 'lucide-react';
@@ -332,7 +332,7 @@ export default function MaintenanceLogPage() {
                         const certified = Boolean(r.ameLicenseNo || r.crsReference);
                         return (
                           <tr key={r.id} className="border-b align-top" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
-                            <td className="py-3 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{r.completedDate}</td>
+                            <td className="py-3 whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>{formatDate(r.completedDate)}</td>
                             <td className="py-3 whitespace-nowrap">
                               {r.ticketNumber ? <span className="badge badge-accent">{r.ticketNumber}</span> : '—'}
                             </td>

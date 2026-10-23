@@ -32,6 +32,7 @@ import type { BATest } from '@/types';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
 import { ALL_BASES } from '@/lib/bases';
 import { Wind, CalendarDays, FileSpreadsheet, FileDown } from 'lucide-react';
+import { formatDate } from '@/lib/ist';
 
 type Period = 'Daily' | 'Weekly' | 'Monthly';
 
@@ -91,7 +92,7 @@ export default function BreathAnalysisReportPage() {
   // recomputed whenever the period type or its own picker value changes.
   const range = useMemo(() => {
     if (period === 'Daily') {
-      return { from: date, to: date, label: new Date(date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) };
+      return { from: date, to: date, label: formatDate(date) };
     }
     if (period === 'Weekly') {
       return weekRange(weekAnchor);
@@ -269,7 +270,7 @@ export default function BreathAnalysisReportPage() {
                   ) : (
                     tests.map(t => (
                       <tr key={t.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                        <td className="px-3 py-2">{new Date(t.testDate).toLocaleDateString('en-IN')}</td>
+                        <td className="px-3 py-2">{formatDate(t.testDate)}</td>
                         <td className="px-3 py-2">{t.aircraftReg || '—'}</td>
                         <td className="px-3 py-2">{t.safetyOfficerName}</td>
                         <td className="px-3 py-2">{t.personType === 'STUDENT' ? 'Student' : 'Instructor'}</td>

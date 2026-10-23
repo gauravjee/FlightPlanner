@@ -19,6 +19,7 @@ import { useAircraft } from '@/lib/hooks/useAircraft';
 import { useMaintenanceRecords, withMaintenanceRecordNames, addMaintenanceRecord } from '@/lib/hooks/useMaintenanceRecords';
 import { SQUAWK_REPORT_ROLES } from '@/lib/permissions';
 import { TriangleAlert } from 'lucide-react';
+import { formatDate } from '@/lib/ist';
 
 export default function ReportDefectPage() {
   const { data: session } = useSession();
@@ -126,7 +127,7 @@ export default function ReportDefectPage() {
                           )}
                           {r.aircraftReg} — {r.description || 'No description'}
                         </p>
-                        <p className="text-xs text-tertiary mt-1">Reported {r.scheduledDate}</p>
+                        <p className="text-xs text-tertiary mt-1">Reported {formatDate(r.scheduledDate)}</p>
                       </div>
                       <span className={`badge ${statusBadgeClass(r.status)}`}>{r.status.replace('_', ' ')}</span>
                     </div>

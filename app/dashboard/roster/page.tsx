@@ -27,6 +27,7 @@ import { ChevronLeft, ChevronRight, TriangleAlert } from 'lucide-react';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
 import { ALL_BASES, BASE1_ID, overlayBaseSettings } from '@/lib/bases';
 import { rowBase } from '@/lib/roster';
+import { formatDate } from '@/lib/ist';
 
 const DAY_ORDER = [1, 2, 3, 4, 5, 6, 0]; // Monday first
 type DayDraft = { on: boolean; start: string; end: string };
@@ -365,7 +366,7 @@ export default function RosterPage() {
                         const s = toIST(f.startTime), e = toIST(f.endTime);
                         return (
                           <tr key={f.id} className="border-b" style={{ borderColor: 'var(--border)' }}>
-                            <td className="py-2">{s.date}</td>
+                            <td className="py-2">{formatDate(s.date)}</td>
                             <td className="py-2">{s.time}–{e.time}</td>
                             <td className="py-2">{nameOf(String(f.instructorId))} ({initialsOf(String(f.instructorId))})</td>
                             <td className="py-2">{describeWindow(w)}</td>

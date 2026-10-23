@@ -8,6 +8,7 @@ import type { FlightRecord } from '@/types';
 import { correctHobbsEnd, type HobbsCorrectionResult } from '@/lib/hooks/useFlightRecords';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 import { notify } from '@/lib/notify';
+import { formatDate } from '@/lib/ist';
 
 const fieldClass = 'w-full surface-inner rounded-lg px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent)]';
 
@@ -43,7 +44,7 @@ export default function HobbsCorrectionModal({ record, onClose }: { record: Flig
         </div>
         <div className="p-4 space-y-3 text-sm">
           <p className="text-secondary">
-            {record.aircraftReg} · {record.studentName} · {new Date(record.flightDate).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: '2-digit' })} · Hobbs {record.hobbsStart} → {record.hobbsEnd}
+            {record.aircraftReg} · {record.studentName} · {formatDate(record.flightDate)} · Hobbs {record.hobbsStart} → {record.hobbsEnd}
           </p>
           <div>
             <label className="block text-xs text-tertiary mb-1" htmlFor="hc-end">Correct Hobbs End *</label>

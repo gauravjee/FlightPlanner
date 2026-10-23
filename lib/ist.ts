@@ -52,3 +52,39 @@ export function daysFromTodayIST(days: number): string {
   d.setDate(d.getDate() + days);
   return d.toLocaleDateString('en-CA', { timeZone: IST_TIMEZONE });
 }
+
+// ---- Display (UI plan Step 3b, 23 Oct; operator: "23 Oct 2026" everywhere) ----
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+type DateInput = string | Date | null | undefined;
+
+// The IST calendar day as 'YYYY-MM-DD'. A plain 'YYYY-MM-DD' string is already a calendar day and is kept as is
+// (reading it as a Date would be UTC midnight). null for empty or unreadable input.
+function istDay(v: DateInput): string | null {
+  if (!v) return null;
+  if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const d = v instanceof Date ? v : new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString('en-CA', { timeZone: IST_TIMEZONE });
+}
+
+// "23 Oct 2026". Built by hand: en-GB now prints "Sept". Unreadable text is shown unchanged; empty gives ''.
+export function formatDate(v: DateInput): string {
+  const day = istDay(v);
+  if (!day) return typeof v === 'string' ? v : '';
+  const [y, m, d] = day.split('-');
+  return `${Number(d)} ${MONTHS[Number(m) - 1]} ${y}`;
+}
+
+// "Friday, 23 Oct 2026" (or "Fri, 23 Oct 2026") for headings.
+export function formatDayDate(v: DateInput, weekday: 'long' | 'short' = 'long'): string {
+  const day = istDay(v);
+  if (!day) return typeof v === 'string' ? v : '';
+  return `${new Date(`${day}T00:00:00Z`).toLocaleDateString('en-GB', { weekday, timeZone: 'UTC' })}, ${formatDate(day)}`;
+}
+
+// "23 Oct 2026, 09:30 IST" for a timestamp.
+export function formatDateTime(v: DateInput): string {
+  const d = v instanceof Date ? v : v ? new Date(v) : null;
+  if (!d || Number.isNaN(d.getTime())) return typeof v === 'string' ? v : '';
+  const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: IST_TIMEZONE });
+  return `${formatDate(d)}, ${time} IST`;
+}

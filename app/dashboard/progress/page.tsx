@@ -19,6 +19,7 @@ import { isCrossCountrySortie, isInstrumentSortie, isNightSortie, isMultiEngineF
 import { matchTrainingProgram, requirementPercent } from '@/lib/training-programs';
 import { totalPicHours, totalSoloHours } from '@/lib/flight-hours';
 import { paceFor, paceLabel, planFor, planLabel } from '@/lib/training-pace';
+import { formatDate } from '@/lib/ist';
 
 // ============================================================
 // TRAINING STAGE REQUIREMENTS — built-in fallback defaults (DGCA/CAA
@@ -617,7 +618,7 @@ export default function ProgressPage() {
                         {recentFlights.map(flight => (
                           <tr key={flight.id} className="border-b" style={{ borderColor: 'color-mix(in srgb, var(--border) 60%, transparent)' }}>
                             <td className="py-3" style={{ color: 'var(--text-primary)' }}>
-                              {new Date(flight.flightDate).toLocaleDateString('en-IN')}
+                              {formatDate(flight.flightDate)}
                             </td>
                             <td className="py-3">{flight.aircraftReg}</td>
                             <td className="py-3">{flight.sortieType?.replace(/_/g, ' ')}</td>

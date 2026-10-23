@@ -37,7 +37,7 @@
 import { NextResponse } from 'next/server';
 import { Resend } from 'resend';
 import { supabaseAdmin } from '@/lib/supabase-admin';
-import { todayIST } from '@/lib/ist';
+import { todayIST, formatDate } from '@/lib/ist';
 import { hasLeft } from '@/lib/staff-id';
 import {
   addDays, classifyMaintenance, reminderDue, expiryItem, splitExpiry, maintenanceHtml, expiryHtml, wrapEmail, esc, table,
@@ -75,7 +75,7 @@ export async function GET(request: Request) {
   const today = todayIST();
   const dashboardUrl = `${url.protocol}//${url.host}/dashboard`;
   // "23 Oct 2026" — the date format in every email (operator, 23 Oct).
-  const dayLabel = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const dayLabel = (d: string) => formatDate(d);
   const stamp = dayLabel(today);
   const mails: Mail[] = [];
   const sentKeys: string[] = []; // digest_sends rows to write once the emails have gone
