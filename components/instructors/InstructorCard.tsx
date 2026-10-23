@@ -9,6 +9,7 @@ import { canWriteModule, INSTRUCTOR_OFF_DUTY_ROLES } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { STATUS_LABELS, type ComputedStatus } from '@/lib/instructor-status';
 import { setOffDutyToday } from '@/lib/hooks/useInstructors';
+import { formatDate } from '@/lib/ist';
 import { Pencil, Trash2, Eye, CalendarCheck, TriangleAlert, CircleAlert, CircleCheck, Moon, Sun } from 'lucide-react';
 
 interface Props {
@@ -154,7 +155,7 @@ export default function InstructorCard({ instructor, onEdit, onDelete, computedS
             </p>
           ) : cplStatus === 'ok' ? (
             <p className="text-sm font-medium flex items-center gap-1" style={{ color: 'var(--success)' }}>
-              <CircleCheck className="w-3.5 h-3.5" /> {instructor.licenseExpiryDate}
+              <CircleCheck className="w-3.5 h-3.5" /> {formatDate(instructor.licenseExpiryDate)}
             </p>
           ) : (
             <p className="text-sm text-tertiary">N/A</p>

@@ -7,6 +7,7 @@ import { canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Pencil, Trash2, Eye } from 'lucide-react';
 import AircraftBaseLine from '@/components/aircraft/AircraftBaseLine';
+import { formatDate } from '@/lib/ist';
 
 interface Props {
   aircraft: Aircraft;
@@ -71,7 +72,7 @@ export default function AircraftCard({ aircraft, onEdit, onDelete }: Props) {
         <div className="surface-inner p-3">
           <p className="text-xs text-tertiary">Next Maintenance</p>
           <p className="text-sm font-medium" style={{ color: mxColor }}>
-            {aircraft.nextMaintenance}
+            {formatDate(aircraft.nextMaintenance)}
             {daysUntilMx < 7 && <span className="text-xs ml-1">({daysUntilMx}d)</span>}
           </p>
         </div>

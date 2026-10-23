@@ -69,10 +69,10 @@ export default function NotificationWidget() {
       if (s.status !== 'ACTIVE' || !s.medicalExpiry) continue;
       const exp = new Date(s.medicalExpiry);
       if (exp < today) {
-        out.push({ id: `med-expired-${s.id}`, level: 'critical', message: `${s.name}: Medical EXPIRED (${s.medicalExpiry})` });
+        out.push({ id: `med-expired-${s.id}`, level: 'critical', message: `${s.name}: Medical EXPIRED (${formatDate(s.medicalExpiry)})` });
       } else if (exp <= thirtyDaysFromNow) {
         const daysLeft = Math.ceil((exp.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        out.push({ id: `med-due-${s.id}`, level: 'warning', message: `${s.name}: Medical expiring in ${daysLeft} day${daysLeft === 1 ? '' : 's'} (${s.medicalExpiry})` });
+        out.push({ id: `med-due-${s.id}`, level: 'warning', message: `${s.name}: Medical expiring in ${daysLeft} day${daysLeft === 1 ? '' : 's'} (${formatDate(s.medicalExpiry)})` });
       }
     }
 
