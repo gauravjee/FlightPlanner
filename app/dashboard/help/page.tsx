@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
 import { Search } from 'lucide-react';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import { useSetHeader } from '@/components/ui/HeaderContext';
@@ -11,8 +12,14 @@ import { HELP_TOPICS, searchHelp } from '@/lib/help';
 
 export default function HelpPage() {
   useSetHeader({ title: 'Help', subtitle: 'How to use FlightPro' });
+  // ?q= comes from a Help result in the Ctrl K search; the key restarts the search box when it changes.
+  const q = useSearchParams()?.get('q') ?? '';
+  return <HelpBody key={q} initialQuery={q} />;
+}
+
+function HelpBody({ initialQuery }: { initialQuery: string }) {
   const { data: session } = useSession();
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const articles = searchHelp(query, session?.user?.role ?? '');
 
   return (

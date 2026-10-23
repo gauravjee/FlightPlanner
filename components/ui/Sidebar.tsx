@@ -159,10 +159,13 @@ export function NavTree({ groups, onNavigate }: { groups: NavGroup[]; onNavigate
   const [closedOn, setClosedOn] = useState<Record<string, string>>({});
   const isOpen = (label: string) => (label === activeGroup ? closedOn[label] !== pathname : opened.includes(label));
   const toggle = (label: string) => {
-    if (label === activeGroup) { setClosedOn(c => ({ ...c, [label]: isOpen(label) ? pathname : '' })); return; }
-    const next = opened.includes(label) ? opened.filter(l => l !== label) : [...opened, label];
-    setOpened(next);
-    try { localStorage.setItem(OPEN_KEY, JSON.stringify(next)); } catch { /* private mode: not remembered */ }
+    if (label === activeGroup) { setClosedOn(c => ({ ...c, [label]: c[label] !== pathname ? pathname : '' })); return; }
+    // Functional update: two quick clicks in one render must not undo each other (found in live test, 23 Oct).
+    setOpened(prev => {
+      const next = prev.includes(label) ? prev.filter(l => l !== label) : [...prev, label];
+      try { localStorage.setItem(OPEN_KEY, JSON.stringify(next)); } catch { /* private mode: not remembered */ }
+      return next;
+    });
   };
 
   return (

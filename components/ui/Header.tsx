@@ -15,6 +15,7 @@ import BaseSwitcher from './BaseSwitcher';
 import { useHeaderConfig } from './HeaderContext';
 import { useVisibleNavGroups, NavTree, type NavGroup } from './Sidebar';
 import HelpButton from './HelpDrawer';
+import SearchButton from './CommandPalette';
 import { useEscapeToClose } from '@/lib/useEscapeToClose';
 
 // ============================================================
@@ -365,6 +366,7 @@ export default function Header(props: HeaderProps = {}) {
           {/* Right section */}
           <div className="flex items-center gap-3 flex-shrink-0">
             {action && action}
+            <SearchButton />
             <BaseSwitcher />
             <HelpButton />
             <ThemeToggle />
