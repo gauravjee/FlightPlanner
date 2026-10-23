@@ -14,6 +14,7 @@ import StudentCard from '@/components/students/StudentCard';
 import StudentFormModal from '@/components/students/StudentFormModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RoleGate from '@/components/ui/RoleGate';
+import { useUrlSearch } from '@/lib/hooks/useUrlSearch';
 import { Plus, Search, GraduationCap } from 'lucide-react';
 import { STATUS_LABEL } from '@/components/students/StudentRecordPanels';
 import { useSelectedBase } from '@/lib/hooks/useSelectedBase';
@@ -43,7 +44,7 @@ export default function StudentsPage() {
   );
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<StudentRecord | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useUrlSearch();
   const [stageFilter, setStageFilter] = useState('ALL');
   // B4 (13 Oct): status tabs; Active is the default view.
   const [statusTab, setStatusTab] = useState('ACTIVE');

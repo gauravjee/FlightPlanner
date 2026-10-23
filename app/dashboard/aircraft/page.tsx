@@ -10,6 +10,7 @@ import AircraftCard from '@/components/aircraft/AircraftCard';
 import AircraftFormModal from '@/components/aircraft/AircraftFormModal';
 import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import RoleGate from '@/components/ui/RoleGate';
+import { useUrlSearch } from '@/lib/hooks/useUrlSearch';
 import { AIRCRAFT_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { Plus, Search, Plane } from 'lucide-react';
@@ -32,7 +33,7 @@ export default function AircraftPage() {
   const aircraft = useMemo(() => allAircraft.filter(a => inSelectedBase(selectedBase, a.currentBaseId)), [allAircraft, selectedBase]);
   const [showForm, setShowForm] = useState(false);
   const [editingAircraft, setEditingAircraft] = useState<Aircraft | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useUrlSearch();
   const [statusFilter, setStatusFilter] = useState<string>('ALL');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 

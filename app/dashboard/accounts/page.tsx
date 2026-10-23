@@ -9,6 +9,7 @@ import { useSession } from 'next-auth/react';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
+import { useUrlSearch } from '@/lib/hooks/useUrlSearch';
 import StudentAccountPanel from '@/components/billing/StudentAccountPanel';
 import { BILLING_VIEW_ROLES, BILLING_RECORD_ROLES, BILLING_ADMIN_ROLES, BILLING_PACKAGE_ROLES } from '@/lib/permissions';
 import { formatINR } from '@/lib/billing';
@@ -30,7 +31,7 @@ export default function AccountsPage() {
   const { data: session } = useSession();
   const role = session?.user?.role ?? '';
   const { data: rows, error, isLoading, mutate } = useSWR('/api/billing/accounts', fetchAccounts);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useUrlSearch();
   const [owingOnly, setOwingOnly] = useState(false);
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);

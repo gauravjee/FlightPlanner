@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { searchEntries, SEARCH_TASKS, SETUP_TABS, type SearchEntry } from './search';
+import { searchEntries, cleanRecordQuery, SEARCH_TASKS, SETUP_TABS, type SearchEntry } from './search';
 
 const E: SearchEntry[] = [
   { kind: 'Pages', label: 'Statements', href: '/s', hint: 'Finance', keywords: 'statement ledger pdf' },
@@ -8,6 +8,7 @@ const E: SearchEntry[] = [
   { kind: 'Tasks', label: 'Record a payment', href: '/a', hint: 'Accounts › Record payment', keywords: 'pay receipt' },
   { kind: 'Pages', label: 'Accounts', href: '/a2', hint: 'Finance', keywords: 'payment money' },
   { kind: 'Help', label: 'How charges and GST work', href: '/h', hint: 'Billing' },
+  { kind: 'Pages', label: 'Flight Records', href: '/f', hint: 'Flying', keywords: 'logbook log hobbs' },
 ];
 
 test('matches name, menu group and extra words; all words must match', () => {
@@ -27,4 +28,18 @@ test('ranks a label that starts with the query first, tasks before pages on a ti
 test('task and setup lists are well formed', () => {
   for (const t of SEARCH_TASKS) assert.ok(t.href.startsWith('/') && t.roles.length > 0, t.label);
   assert.equal(new Set(SETUP_TABS.map(t => t[0])).size, SETUP_TABS.length);
+});
+
+test('words must start a word: "book" does not find "logbook"', () => {
+  assert.deepEqual(searchEntries(E, 'book'), []);
+  assert.deepEqual(searchEntries(E, 'logb').map(e => e.href), ['/f']);
+});
+
+test('record query keeps names, IDs and registrations; drops filter syntax', () => {
+  assert.equal(cleanRecordQuery('  VT-VVV '), 'VT-VVV');
+  assert.equal(cleanRecordQuery("O'Brien"), "O'Brien");
+  assert.equal(cleanRecordQuery('a%,b)(c"_'), 'a b c');
+  assert.equal(cleanRecordQuery('x'), '');
+  assert.equal(cleanRecordQuery('%%'), '');
+  assert.equal(cleanRecordQuery('a'.repeat(60)).length, 40);
 });

@@ -16,6 +16,7 @@ import ConfirmDialog from '@/components/ui/ConfirmDialog';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
+import { useUrlSearch } from '@/lib/hooks/useUrlSearch';
 import { INSTRUCTORS_VIEW_ROLES, canWriteModule } from '@/lib/permissions';
 import { useMyPermissionOverrides } from '@/lib/useMyPermissionOverrides';
 import { computeInstructorStatus, dayHours, effectiveDailyLimit, STATUS_LABELS, type ComputedStatus } from '@/lib/instructor-status';
@@ -47,7 +48,7 @@ export default function InstructorsPage() {
   const { weekly, exceptions } = useRoster(ROSTER_VIEW_ROLES.includes(session?.user?.role ?? ''));
   const [showForm, setShowForm] = useState(false);
   const [editingInstructor, setEditingInstructor] = useState<Instructor | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useUrlSearch();
   const [statusFilter, setStatusFilter] = useState<'ALL' | ComputedStatus>('ALL');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   // 2026-09-23: Inactive (left/retired) instructors are hidden unless asked for.

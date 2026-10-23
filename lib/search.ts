@@ -8,7 +8,7 @@ import {
   STUDENT_CREATION_ROLES, GROUND_SCHOOL_WRITE_ROLES, ROSTER_EDIT_ROLES, ADMIN_SETUP_WRITE_ROLES,
 } from '@/lib/permissions';
 
-export type SearchKind = 'Pages' | 'Tasks' | 'Help';
+export type SearchKind = 'Pages' | 'Tasks' | 'Records' | 'Help';
 export interface SearchEntry { kind: SearchKind; label: string; href: string; hint: string; keywords?: string }
 export interface SearchTask { label: string; href: string; hint: string; roles: string[]; moduleKey?: ModuleKey; keywords?: string }
 
@@ -26,7 +26,7 @@ export const PAGE_KEYWORDS: Record<string, string> = {
   '/dashboard/progress': 'requirements solo release checklist targets',
   '/dashboard/ground-school': 'classes exams attendance theory subjects',
   '/dashboard/aircraft': 'fleet plane registration vt hobbs',
-  '/dashboard/maintenance': 'snag ame crs inspection overhaul due overdue',
+  '/dashboard/maintenance': 'snag squawk defect ame crs inspection overhaul due overdue',
   '/dashboard/fuel': 'refuel refuelling avgas litres',
   '/dashboard/report-defect': 'squawk snag defect fault',
   '/dashboard/safety': 'incident occurrence risk sms',
@@ -82,20 +82,28 @@ export const SEARCH_TASKS: SearchTask[] = [
   { label: 'Set flying rates and GST', href: SETUP('billing'), hint: 'Admin Setup › Billing', roles: ADMIN_SETUP_WRITE_ROLES, keywords: 'rates gst gstin price' },
 ];
 
-const ORDER: SearchKind[] = ['Tasks', 'Pages', 'Help'];
+const ORDER: SearchKind[] = ['Tasks', 'Pages', 'Records', 'Help'];
 
-/** Entries matching every word of `query` (any order), best first: label starts with the query, then a label word does, then anywhere. */
+/** Entries where every word of `query` starts a word of the label, hint or extra words (any order; "book" no longer
+ *  finds "logbook"), best first: label starts with the query, then a label word does, then anywhere. */
 export function searchEntries(entries: SearchEntry[], query: string, limit = 12): SearchEntry[] {
   const q = query.trim().toLowerCase();
-  const words = q.split(/\s+/).filter(Boolean);
+  const words = q.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
   if (!words.length) return [];
   const scored = entries.flatMap(e => {
     const label = e.label.toLowerCase();
-    const text = `${label} ${e.hint} ${e.keywords ?? ''}`.toLowerCase();
-    if (!words.every(w => text.includes(w))) return [];
+    const tokens = `${label} ${e.hint} ${e.keywords ?? ''}`.toLowerCase().split(/[^\p{L}\p{N}]+/u);
+    if (!words.every(w => tokens.some(t => t.startsWith(w)))) return [];
     const score = label.startsWith(q) ? 3 : label.split(/[\s›&/-]+/).some(t => t.startsWith(words[0])) ? 2 : 1;
     return [{ e, score }];
   });
   scored.sort((a, b) => b.score - a.score || ORDER.indexOf(a.e.kind) - ORDER.indexOf(b.e.kind));
   return scored.slice(0, limit).map(s => s.e);
+}
+
+/** The record-search text made safe for a PostgREST ilike filter: letters, digits, space and - . / ' only (no % _ , ( ) "),
+ *  at most 40 characters. '' when fewer than 2 characters are left (the server then searches nothing). */
+export function cleanRecordQuery(q: string): string {
+  const c = q.replace(/[^\p{L}\p{N} \-./']+/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, 40);
+  return c.length >= 2 ? c : '';
 }

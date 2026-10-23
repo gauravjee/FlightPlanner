@@ -64,11 +64,12 @@ function Palette({ onClose }: { onClose: () => void }) {
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
+  const records = useRecordSearch(query);
 
   const help: SearchEntry[] = query.trim()
     ? searchHelp(query, role).slice(0, 3).map(a => ({ kind: 'Help' as const, label: a.title, href: `/dashboard/help?q=${encodeURIComponent(a.title)}`, hint: a.topic }))
     : [];
-  const found = query.trim() ? [...searchEntries(entries, query), ...help] : [];
+  const found = query.trim() ? [...searchEntries(entries, query), ...records, ...help] : [];
   // Last row opens the full Help centre search (operator, 23 Oct), so Enter always goes somewhere when nothing matches.
   const allHelp: SearchEntry = { kind: 'Help', label: `Search all help for “${query.trim()}”`, href: `/dashboard/help?q=${encodeURIComponent(query.trim())}`, hint: 'Help centre' };
   // With nothing typed, offer this role's tasks as a starting point.
@@ -91,9 +92,9 @@ function Palette({ onClose }: { onClose: () => void }) {
         style={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)' }}>
         <label className="flex items-center gap-3 px-4 py-3 border-b divider">
           <Search className="w-5 h-5 text-secondary" aria-hidden="true" />
-          <span className="sr-only">Search pages, tasks and help</span>
+          <span className="sr-only">Search pages, tasks, records and help</span>
           <input ref={inputRef} value={query} onChange={e => { setQuery(e.target.value); setActive(0); }} onKeyDown={onKeyDown}
-            placeholder="Search pages, tasks and help — e.g. pay, squawk, leave, GST"
+            placeholder="Search pages, tasks, records and help — e.g. pay, leave, VT-, a student's name"
             role="combobox" aria-expanded="true" aria-controls="search-results" aria-activedescendant={results[current] ? `sr-${current}` : undefined}
             className="flex-1 bg-transparent outline-none text-base" />
           <kbd className="text-[10px] text-tertiary font-sans">Esc</kbd>
@@ -108,7 +109,7 @@ function Palette({ onClose }: { onClose: () => void }) {
               onMouseEnter={() => setActive(i)} onClick={() => go(r)}
               className="flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer"
               style={i === current ? { backgroundColor: 'var(--accent-soft)' } : undefined}>
-              <span className="badge badge-neutral shrink-0 w-12 justify-center">{r.kind === 'Pages' ? 'Page' : r.kind === 'Tasks' ? 'Task' : 'Help'}</span>
+              <span className="badge badge-neutral shrink-0 w-12 justify-center">{r.kind === 'Pages' ? 'Page' : r.kind === 'Tasks' ? 'Task' : r.kind === 'Records' ? 'Record' : 'Help'}</span>
               <span className="flex-1 min-w-0 truncate text-sm font-medium">{r.label}</span>
               <span className="text-xs text-tertiary truncate max-w-[45%]">{r.hint}</span>
             </li>
@@ -121,4 +122,24 @@ function Palette({ onClose }: { onClose: () => void }) {
     </div>,
     document.body,
   );
+}
+
+/** Students, aircraft, staff and billing documents from /api/search (the server decides what this role may find).
+ *  Waits 250 ms after typing stops; an answer for older text is dropped. */
+function useRecordSearch(query: string): SearchEntry[] {
+  const q = query.trim();
+  const [got, setGot] = useState<{ q: string; items: SearchEntry[] }>({ q: '', items: [] });
+  useEffect(() => {
+    if (q.length < 2) return;
+    const ctrl = new AbortController();
+    const t = setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
+        .then(r => (r.ok ? r.json() : { results: [] }))
+        .then((d: { results: { label: string; hint: string; href: string }[] }) =>
+          setGot({ q, items: d.results.map(x => ({ kind: 'Records' as const, ...x })) }))
+        .catch(() => { /* aborted or offline: pages, tasks and help still show */ });
+    }, 250);
+    return () => { clearTimeout(t); ctrl.abort(); };
+  }, [q]);
+  return got.q === q ? got.items : [];
 }

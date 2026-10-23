@@ -11,6 +11,7 @@ import useSWR from 'swr';
 import { useSetHeader } from '@/components/ui/HeaderContext';
 import ProtectedRoute from '@/components/ui/ProtectedRoute';
 import RoleGate from '@/components/ui/RoleGate';
+import { useUrlSearch } from '@/lib/hooks/useUrlSearch';
 import StaffFormModal from '@/components/staff/StaffFormModal';
 import { STAFF_ROLES, USER_ROLE_OPTIONS } from '@/lib/permissions';
 import { hasLeft, type StaffMember } from '@/lib/staff-id';
@@ -34,7 +35,7 @@ export default function StaffPage() {
   useSetHeader({ title: 'Staff', subtitle: 'Staff records and staff IDs' });
   const { data: staff, error, isLoading, mutate } = useSWR('/api/staff', fetchStaff);
   const [filter, setFilter] = useState<Filter>('active');
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useUrlSearch();
   const [editing, setEditing] = useState<StaffMember | 'new' | null>(null);
   const [nowMs] = useState(() => Date.now()); // fixed at load (no clock reads in render)
 
