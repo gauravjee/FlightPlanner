@@ -68,8 +68,11 @@ function Palette({ onClose }: { onClose: () => void }) {
   const help: SearchEntry[] = query.trim()
     ? searchHelp(query, role).slice(0, 3).map(a => ({ kind: 'Help' as const, label: a.title, href: `/dashboard/help?q=${encodeURIComponent(a.title)}`, hint: a.topic }))
     : [];
+  const found = query.trim() ? [...searchEntries(entries, query), ...help] : [];
+  // Last row opens the full Help centre search (operator, 23 Oct), so Enter always goes somewhere when nothing matches.
+  const allHelp: SearchEntry = { kind: 'Help', label: `Search all help for “${query.trim()}”`, href: `/dashboard/help?q=${encodeURIComponent(query.trim())}`, hint: 'Help centre' };
   // With nothing typed, offer this role's tasks as a starting point.
-  const results = query.trim() ? [...searchEntries(entries, query), ...help] : entries.filter(e => e.kind === 'Tasks').slice(0, 6);
+  const results = query.trim() ? [...found, allHelp] : entries.filter(e => e.kind === 'Tasks').slice(0, 6);
   const current = Math.min(active, Math.max(results.length - 1, 0));
 
   const go = (e: SearchEntry) => { onClose(); router.push(e.href); };
@@ -97,8 +100,8 @@ function Palette({ onClose }: { onClose: () => void }) {
         </label>
         <ul id="search-results" role="listbox" className="max-h-[60vh] overflow-y-auto p-2">
           {!query.trim() && <li className="px-3 pt-1 pb-2 text-xs font-semibold uppercase tracking-wider text-tertiary">Suggested tasks</li>}
-          {query.trim() && results.length === 0 && (
-            <li className="px-3 py-6 text-sm text-secondary">Nothing found for “{query}”. Try a page or task name, such as “book”, “payment” or “leave”.</li>
+          {query.trim() && found.length === 0 && (
+            <li className="px-3 py-6 text-sm text-secondary">Nothing found for “{query}”. Try a page or task name, such as “book”, “payment” or “leave”, or search all help below.</li>
           )}
           {results.map((r, i) => (
             <li key={r.kind + r.href + r.label} id={`sr-${i}`} role="option" aria-selected={i === current}
