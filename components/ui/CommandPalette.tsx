@@ -64,7 +64,7 @@ function Palette({ onClose }: { onClose: () => void }) {
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => { inputRef.current?.focus(); }, []);
-  const records = useRecordSearch(query);
+  const { items: records, loading, whenReady } = useRecordSearch(query);
 
   const help: SearchEntry[] = query.trim()
     ? searchHelp(query, role).slice(0, 3).map(a => ({ kind: 'Help' as const, label: a.title, href: `/dashboard/help?q=${encodeURIComponent(a.title)}`, hint: a.topic }))
@@ -80,7 +80,12 @@ function Palette({ onClose }: { onClose: () => void }) {
   const onKeyDown = (ev: React.KeyboardEvent) => {
     if (ev.key === 'ArrowDown') { ev.preventDefault(); setActive((current + 1) % Math.max(results.length, 1)); }
     else if (ev.key === 'ArrowUp') { ev.preventDefault(); setActive((current - 1 + results.length) % Math.max(results.length, 1)); }
-    else if (ev.key === 'Enter' && results[current]) { ev.preventDefault(); go(results[current]); }
+    else if (ev.key === 'Enter' && results[current]) {
+      ev.preventDefault();
+      // Records still on their way and only "Search all help" showing: wait for them, then open the first one (live test, 23 Oct).
+      if (loading && results[current] === allHelp) whenReady(items => go(items[0] ?? allHelp));
+      else go(results[current]);
+    }
   };
 
   if (typeof document === 'undefined') return null;
@@ -102,7 +107,7 @@ function Palette({ onClose }: { onClose: () => void }) {
         <ul id="search-results" role="listbox" className="max-h-[60vh] overflow-y-auto p-2">
           {!query.trim() && <li className="px-3 pt-1 pb-2 text-xs font-semibold uppercase tracking-wider text-tertiary">Suggested tasks</li>}
           {query.trim() && found.length === 0 && (
-            <li className="px-3 py-6 text-sm text-secondary">Nothing found for “{query}”. Try a page or task name, such as “book”, “payment” or “leave”, or search all help below.</li>
+            <li className="px-3 py-6 text-sm text-secondary">{loading ? 'Searching records…' : <>Nothing found for “{query}”. Try a page or task name, such as “book”, “payment” or “leave”, or search all help below.</>}</li>
           )}
           {results.map((r, i) => (
             <li key={r.kind + r.href + r.label} id={`sr-${i}`} role="option" aria-selected={i === current}
@@ -125,21 +130,27 @@ function Palette({ onClose }: { onClose: () => void }) {
 }
 
 /** Students, aircraft, staff and billing documents from /api/search (the server decides what this role may find).
- *  Waits 250 ms after typing stops; an answer for older text is dropped. */
-function useRecordSearch(query: string): SearchEntry[] {
+ *  Waits 250 ms after typing stops; an answer for older text is dropped. whenReady(fn) runs fn once the next answer
+ *  arrives (an empty list if the request fails). */
+function useRecordSearch(query: string) {
   const q = query.trim();
   const [got, setGot] = useState<{ q: string; items: SearchEntry[] }>({ q: '', items: [] });
+  const waiter = useRef<((items: SearchEntry[]) => void) | null>(null);
   useEffect(() => {
     if (q.length < 2) return;
     const ctrl = new AbortController();
+    const done = (items: SearchEntry[]) => { setGot({ q, items }); waiter.current?.(items); waiter.current = null; };
     const t = setTimeout(() => {
       fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
         .then(r => (r.ok ? r.json() : { results: [] }))
-        .then((d: { results: { label: string; hint: string; href: string }[] }) =>
-          setGot({ q, items: d.results.map(x => ({ kind: 'Records' as const, ...x })) }))
-        .catch(() => { /* aborted or offline: pages, tasks and help still show */ });
+        .then((d: { results: { label: string; hint: string; href: string }[] }) => done(d.results.map(x => ({ kind: 'Records' as const, ...x }))))
+        .catch(() => { if (!ctrl.signal.aborted) done([]); }); // offline: pages, tasks and help still show
     }, 250);
     return () => { clearTimeout(t); ctrl.abort(); };
   }, [q]);
-  return got.q === q ? got.items : [];
+  return {
+    items: got.q === q ? got.items : [],
+    loading: q.length >= 2 && got.q !== q,
+    whenReady: (fn: (items: SearchEntry[]) => void) => { waiter.current = fn; },
+  };
 }
