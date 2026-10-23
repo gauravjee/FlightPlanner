@@ -126,7 +126,7 @@ export default function FlightsPage() {
           <button
             onClick={() => { setResolvingFlight(null); setShowForm(true); }}
             className="px-4 py-2 rounded-lg transition cursor-pointer font-bold flex items-center gap-1.5"
-            style={{ backgroundColor: 'var(--success)', color: '#04141a' }}
+            style={{ backgroundColor: 'var(--success)', color: 'var(--on-accent)' }}
           >
             <NotebookPen className="w-3.5 h-3.5" /> Log Flight
           </button>
@@ -170,7 +170,7 @@ export default function FlightsPage() {
                   <button
                     onClick={() => { setResolvingFlight(flight); setShowForm(true); }}
                     className="px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer"
-                    style={{ backgroundColor: 'var(--warning)', color: '#04141a' }}
+                    style={{ backgroundColor: 'var(--warning)', color: 'var(--on-accent)' }}
                   >
                     Complete Entry
                   </button>

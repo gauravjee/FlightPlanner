@@ -7,14 +7,15 @@
 // ============================================================
 
 import type { Metadata } from 'next';
-import { Inter } from 'next/font/google';
+import { Archivo, Public_Sans } from 'next/font/google';
 import Script from 'next/script';
 import './globals.css';  // Import global CSS styles
 import AuthProvider from '@/components/ui/AuthProvider';
 
 // ----- Font Configuration -----
-// Load Inter font with Latin subset for performance
-const inter = Inter({ subsets: ['latin'] });
+// UI plan Step 3 (23 Oct): Public Sans for text, Archivo (width axis, for the expanded headings) for display.
+const publicSans = Public_Sans({ subsets: ['latin'], variable: '--font-public-sans' });
+const archivo = Archivo({ subsets: ['latin'], axes: ['wdth'], variable: '--font-archivo' });
 
 // ----- Page Metadata (SEO) -----
 export const metadata: Metadata = {
@@ -41,23 +42,23 @@ export default function RootLayout({
     // the client legitimately differs from what the server rendered. This
     // does NOT suppress hydration warnings for anything else — the prop
     // only affects this one element's own attributes, not its children.
-    <html lang="en" suppressHydrationWarning>
+    // The font variables sit on <html> so the :root tokens in globals.css (--font-body / --font-display) can read them.
+    <html lang="en" suppressHydrationWarning className={`${publicSans.variable} ${archivo.variable}`}>
       <head>
         {/* Sets data-theme on <html> before first paint, so the page never
             flashes the wrong theme. Reads the same 'fp-theme' localStorage
-            key that lib/store.ts's setTheme() writes to; falls back to
-            dark (the default theme) if nothing's stored yet or storage
-            isn't available. Uses next/script's beforeInteractive strategy —
+            key that ThemeToggle writes to; with nothing stored it follows
+            the device (light by day, dark at night if the device switches),
+            and falls back to dark if storage isn't available. Uses next/script's beforeInteractive strategy —
             Next.js's sanctioned way to inject a render-blocking inline
             script from a Server Component (a raw <script> tag here logs a
             "scripts inside React components are never executed" warning
             and isn't guaranteed to survive re-renders the way this is). */}
         <Script id="theme-init" strategy="beforeInteractive">
-          {`(function(){try{var t=localStorage.getItem('fp-theme');if(t!=='light'&&t!=='dark'){t='dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`}
+          {`(function(){try{var t=localStorage.getItem('fp-theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();`}
         </Script>
       </head>
-      {/* Apply Inter font to entire body */}
-      <body className={inter.className}>
+      <body>
           <AuthProvider>
             {children}
           </AuthProvider>

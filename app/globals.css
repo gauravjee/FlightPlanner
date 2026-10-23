@@ -1,76 +1,80 @@
 @import "tailwindcss";
 
 /* ============================================================
-   DESIGN TOKENS — dark/light theme pair
+   DESIGN TOKENS — light "Sectional Chart" / dark "Night Ops"
    ------------------------------------------------------------
-   Retuned 2026-08-17 to the blue/navy identity from the Pushpak/
-   FlightPlanner UI mockups reviewed that day (see
-   PushpakDesignSystemReference.md) — light theme uses that
-   reference's values close to verbatim (#2f6fed accent, #12213a/
-   #5b6b85 ink pair, and its VFR/MVFR/IFR/LIFR-derived status
-   colors), since that palette was already designed and tested
-   there. The mockups only ever specified a single light theme;
-   dark is a derived counterpart in the same blue hue rather than
-   a straight port, following this app's own established pattern
-   of "dark gets the brighter/more saturated shade of a color,
-   light gets the deeper one" (see the accent pair below) so the
-   two themes still read as one app changing lighting, not two
-   different apps. This replaces the previous cyan/amber pairing.
+   23 Oct 2026 (UI plan Step 3, operator: "B by day and C by night"):
+   light is direction B (chart paper, navy ink, chart blue for
+   actions, airspace magenta for "active"); dark is the same layout
+   with direction C's graphite + champagne palette. Mockups: design
+   canvas "FlightPro UI Improvement Mockups", artboard R-DayNight.
+   Tertiary text passes 4.5:1 on cards in both themes (was 3.3:1 /
+   2.6:1). --on-accent is the text colour on an accent fill.
 
    Toggled via [data-theme="light"] on <html> (see ThemeToggle +
-   the inline anti-flash script in app/layout.tsx). Defaults to
-   dark when no attribute is present.
+   the inline anti-flash script in app/layout.tsx).
    ============================================================ */
 @layer base {
   :root {
     color-scheme: dark; /* native date/time pickers match the theme (icon was black on dark) */
-    --background: 222 47% 11%;
-    --foreground: 210 40% 98%;
+    --background: 30 6% 7%;
+    --foreground: 40 33% 93%;
 
-    --bg: #0b111e;
-    --surface: #131b2c;
-    --surface-muted: #0e1523;
-    --border: #232e44;
-    --text-primary: #e8ecf5;
-    --text-secondary: #92a0bd;
-    --text-tertiary: #5f6d8c;
+    --bg: #121110;
+    --surface: #1b1a18;
+    --surface-muted: #24221f;
+    --border: #34302b;
+    --text-primary: #f3efe7;
+    --text-secondary: #c9c3b8;
+    --text-tertiary: #9b958b;
 
-    --accent: #5b8dff;         /* brightened for legibility on dark surfaces */
-    --accent-strong: #2f6fed;  /* the mockup's base blue, used as the deeper/gradient-end shade here */
-    --accent-soft: rgba(91, 141, 255, 0.14);
+    --accent: #d8b36a;         /* champagne */
+    --accent-strong: #b8934a;
+    --accent-soft: rgba(216, 179, 106, 0.16);
+    --on-accent: #121110;
+    --magenta: #e389bd;        /* "active / airborne" */
+    --magenta-soft: rgba(227, 137, 189, 0.16);
 
-    --success: #22c55e;
-    --success-soft: rgba(34, 197, 94, 0.16);
-    --warning: #f2b418;
-    --warning-soft: rgba(242, 180, 24, 0.16);
-    --warning-text: #f2b418;
-    --danger: #f2564c;
-    --danger-soft: rgba(242, 86, 76, 0.16);
+    --success: #7bc79a;
+    --success-soft: rgba(123, 199, 154, 0.16);
+    --warning: #e8a64a;
+    --warning-soft: rgba(232, 166, 74, 0.16);
+    --warning-text: #e8a64a;
+    --danger: #ef7a6b;
+    --danger-soft: rgba(239, 122, 107, 0.16);
 
-    --radius-card: 14px;
+    --scrollbar-thumb: #4a443c;
+    --radius-card: 8px;
+    --font-body: var(--font-public-sans), system-ui, sans-serif;
+    --font-display: var(--font-archivo), var(--font-public-sans), system-ui, sans-serif;
   }
 
   [data-theme="light"] {
     color-scheme: light;
-    --bg: #eef1f6;
+    --bg: #f7f5ef;             /* chart paper */
     --surface: #ffffff;
-    --surface-muted: #f3f5f9;
-    --border: #e3e8f0;
-    --text-primary: #12213a;
-    --text-secondary: #5b6b85;
-    --text-tertiary: #94a0b8;
+    --surface-muted: #efebe0;
+    --border: #d9d2c0;
+    --text-primary: #15243d;   /* navy ink */
+    --text-secondary: #33425a;
+    --text-tertiary: #5c6a80;
 
-    --accent: #2f6fed;         /* mockup's primary blue, used verbatim */
-    --accent-strong: #1d54c4;  /* deeper, for gradients/hover — dark theme uses the inverse relationship */
-    --accent-soft: #e8effe;
+    --accent: #1f5fae;         /* chart blue */
+    --accent-strong: #174a8a;
+    --accent-soft: #e4edf8;
+    --on-accent: #ffffff;
+    --magenta: #a3266f;        /* airspace magenta */
+    --magenta-soft: #f7e7f0;
 
-    --success: #1f9d55;
-    --success-soft: #e6f7ec;
-    --warning: #c98a11;
-    --warning-soft: #fbf1de;
-    --warning-text: #7a5307;
-    --danger: #e0473f;
-    --danger-soft: #fdeceb;
+    --success: #2a7246;
+    --success-soft: #e7f2ea;
+    --warning: #9a5c08;
+    --warning-soft: #f6ecdc;
+    --warning-text: #7f4b06;
+    --danger: #b8322a;
+    --danger-soft: #f8e3e1;
+
+    --scrollbar-thumb: #c5bca6;
   }
 
   * {
@@ -80,7 +84,20 @@
   body {
     background-color: var(--bg);
     color: var(--text-primary);
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: var(--font-body);
+  }
+
+  /* Headings in Archivo, slightly expanded (the chart look). */
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+    font-stretch: 112%;
+    letter-spacing: -0.005em;
+  }
+
+  /* One visible keyboard focus ring everywhere (there was none). */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
   }
 }
 
@@ -144,6 +161,10 @@
     background-color: var(--danger-soft);
     color: var(--danger);
   }
+  .badge-magenta {
+    background-color: var(--magenta-soft);
+    color: var(--magenta);
+  }
   .badge-neutral {
     background-color: var(--surface-muted);
     color: var(--text-secondary);
@@ -158,21 +179,26 @@
 }
 
 @layer utilities {
+  /* Times, Hobbs, fuel and money line up in columns. */
+  .num {
+    font-variant-numeric: tabular-nums;
+  }
+
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: #475569 #1e293b;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar-track {
-    background: #1e293b;
+    background: transparent;
   }
-  
+
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: #475569;
+    background-color: var(--scrollbar-thumb);
     border-radius: 3px;
   }
 }

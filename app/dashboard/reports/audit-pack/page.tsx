@@ -264,7 +264,7 @@ export default function AuditPackPage() {
               onClick={handleExport}
               disabled={building || rangeInvalid || rangeTooLong || dataLoading}
               className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
             >
               <FileDown className="w-4 h-4" /> {building ? 'Building pack…' : dataLoading ? 'Loading data…' : 'Export Audit Pack (PDF)'}
             </button>

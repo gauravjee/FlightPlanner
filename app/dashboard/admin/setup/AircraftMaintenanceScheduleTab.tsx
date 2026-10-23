@@ -455,7 +455,7 @@ export default function AircraftMaintenanceScheduleTab() {
               className="px-4 py-2 rounded-lg text-sm transition"
               style={
                 selectedModel === model
-                  ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a', fontWeight: 500 }
+                  ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)', fontWeight: 500 }
                   : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' }
               }
             >
@@ -585,7 +585,7 @@ export default function AircraftMaintenanceScheduleTab() {
           <button
             onClick={handleSave}
             className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
           >
             {editing ? <><Save className="w-3.5 h-3.5" /> Update Item</> : <><Plus className="w-3.5 h-3.5" /> Add Item</>}
           </button>

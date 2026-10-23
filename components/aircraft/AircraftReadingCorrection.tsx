@@ -55,7 +55,7 @@ export default function AircraftReadingCorrection({ aircraftId, current, onCorre
       <div className="flex gap-2">
         <button type="button" onClick={() => { setOpen(false); setError(''); }} className="flex-1 px-2 py-1 surface-inner rounded-lg text-xs cursor-pointer">Cancel</button>
         <button type="button" disabled={busy || !reason.trim() || reading === ''} onClick={apply}
-          className="flex-1 px-2 py-1 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-60" style={{ backgroundColor: 'var(--warning)', color: '#04141a' }}>
+          className="flex-1 px-2 py-1 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-60" style={{ backgroundColor: 'var(--warning)', color: 'var(--on-accent)' }}>
           Apply correction
         </button>
       </div>

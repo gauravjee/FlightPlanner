@@ -130,7 +130,7 @@ export default function StudentsPage() {
       <button
         onClick={handleAdd}
         className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
-        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
       >
         <Plus className="w-4 h-4" /> Add Student
       </button>
@@ -170,7 +170,7 @@ export default function StudentsPage() {
               {[...Object.keys(STATUS_LABEL), 'ALL'].map(s => (
                 <button key={s} type="button" role="tab" aria-selected={statusTab === s} onClick={() => setStatusTab(s)}
                   className="px-3 py-1.5 rounded-full text-sm cursor-pointer"
-                  style={statusTab === s ? { backgroundColor: 'var(--accent)', color: '#04141a' } : { border: '1px solid var(--border)' }}>
+                  style={statusTab === s ? { backgroundColor: 'var(--accent)', color: 'var(--on-accent)' } : { border: '1px solid var(--border)' }}>
                   {STATUS_LABEL[s] ?? 'All'} ({statusCounts(s)})
                 </button>
               ))}

@@ -101,7 +101,7 @@ function CoursesSection({ student }: { student: StudentRecord }) {
 
       {!next ? (
         <button type="button" onClick={() => setNext({ endDate: todayIST(), outcome: 'COMPLETED', programId: '', startDate: todayIST() })}
-          className="text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer" style={{ backgroundColor: 'var(--accent)', color: '#04141a' }}>
+          className="text-xs font-semibold px-3 py-1.5 rounded-lg cursor-pointer" style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }}>
           {current ? 'Complete current course & start next' : 'Start a course'}
         </button>
       ) : (
@@ -128,7 +128,7 @@ function CoursesSection({ student }: { student: StudentRecord }) {
           <div className="flex gap-2">
             <button type="button" onClick={() => setNext(null)} className="flex-1 px-2 py-1.5 rounded-lg text-xs surface-inner cursor-pointer" style={{ border: '1px solid var(--border)' }}>Cancel</button>
             <button type="button" disabled={busy || !next.programId || !next.startDate} onClick={submitNext}
-              className="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-60" style={{ backgroundColor: 'var(--accent)', color: '#04141a' }}>
+              className="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-60" style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }}>
               {current ? 'Complete & start next' : 'Start course'}
             </button>
           </div>
@@ -177,7 +177,7 @@ function StatusSection({ student }: { student: StudentRecord }) {
         {Object.entries(STATUS_LABEL).map(([v, l]) => (
           <button key={v} type="button" role="radio" aria-checked={status === v} onClick={() => setStatus(v)}
             className="px-3 py-1 rounded-full text-xs cursor-pointer"
-            style={status === v ? { backgroundColor: 'var(--accent)', color: '#04141a' } : { border: '1px solid var(--border)' }}>
+            style={status === v ? { backgroundColor: 'var(--accent)', color: 'var(--on-accent)' } : { border: '1px solid var(--border)' }}>
             {l}
           </button>
         ))}
@@ -199,7 +199,7 @@ function StatusSection({ student }: { student: StudentRecord }) {
             </label>
           )}
           <button type="button" disabled={busy || (needsReason && !reason.trim()) || (status === 'GROUNDED' && !until)} onClick={apply}
-            className="text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer disabled:opacity-60" style={{ backgroundColor: 'var(--warning)', color: '#04141a' }}>
+            className="text-xs font-bold px-3 py-1.5 rounded-lg cursor-pointer disabled:opacity-60" style={{ backgroundColor: 'var(--warning)', color: 'var(--on-accent)' }}>
             {status === 'GROUNDED' && saved === 'GROUNDED' ? 'Change grounding' : `Change status to ${STATUS_LABEL[status]}`}
           </button>
         </>
@@ -256,7 +256,7 @@ function DocumentsSection({ student }: { student: StudentRecord }) {
           ))}
           <div className="col-span-2 flex gap-2">
             <button type="button" onClick={() => setDocs(null)} className="flex-1 px-2 py-1.5 rounded-lg text-xs surface-inner cursor-pointer" style={{ border: '1px solid var(--border)' }}>Close</button>
-            <button type="button" disabled={busy} onClick={save} className="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-60" style={{ backgroundColor: 'var(--accent)', color: '#04141a' }}>Save ID documents</button>
+            <button type="button" disabled={busy} onClick={save} className="flex-1 px-2 py-1.5 rounded-lg text-xs font-bold cursor-pointer disabled:opacity-60" style={{ backgroundColor: 'var(--accent)', color: 'var(--on-accent)' }}>Save ID documents</button>
           </div>
         </div>
       )}

@@ -12,7 +12,7 @@ const KINDS: { kind: PeriodState['kind']; label: string }[] = [
 ];
 const input = 'surface-inner rounded-lg px-3 py-1.5 text-sm';
 const btn = 'px-3 py-1.5 rounded-lg text-sm cursor-pointer';
-const on = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' };
+const on = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' };
 const off = { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' };
 
 export default function PeriodPicker({ value, onChange }: { value: PeriodState; onChange: (p: PeriodState) => void }) {

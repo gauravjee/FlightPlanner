@@ -226,7 +226,7 @@ export default function DailyFlyingReportPage() {
                   onClick={handleGenerate}
                   disabled={generating || loading}
                   className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5 disabled:opacity-50"
-                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
                 >
                   <RefreshCw className={`w-4 h-4 ${generating ? 'animate-spin' : ''}`} />
                   {report ? 'Regenerate' : 'Generate Report'}
@@ -399,7 +399,7 @@ export default function DailyFlyingReportPage() {
                       onClick={handleReportIncident}
                       disabled={savingIncident || !incidentDesc.trim()}
                       className="px-3 py-1.5 text-xs rounded-lg font-semibold cursor-pointer disabled:opacity-50"
-                      style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+                      style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
                     >
                       {savingIncident ? 'Saving…' : 'Submit'}
                     </button>

@@ -88,7 +88,7 @@ export default function StaffIdSection() {
             <div className="flex items-center gap-3 mt-3">
               <button type="button" onClick={save} disabled={saving || !valid || p === settings.prefix}
                 className="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>
+                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>
                 <Save className="w-4 h-4" /> {saving ? 'Saving…' : 'Save Staff ID Prefix'}
               </button>
             </div>

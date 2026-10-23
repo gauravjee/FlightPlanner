@@ -141,7 +141,7 @@ export default function InstructorsPage() {
       <button
         onClick={handleAdd}
         className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
-        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
       >
         <GraduationCap className="w-4 h-4" /> Add Instructor
       </button>

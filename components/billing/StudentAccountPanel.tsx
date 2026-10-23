@@ -36,7 +36,7 @@ async function fetchAccount(url: string): Promise<Account> {
 }
 
 const inputClass = 'surface-inner rounded-lg px-3 py-2 text-sm w-full focus:outline-none';
-const primaryBtn = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' };
+const primaryBtn = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' };
 type Form = 'payment' | 'opening' | 'adjustment' | 'credit' | 'payout' | null;
 
 export default function StudentAccountPanel({ studentId, canRecord = false, canAdmin = false, canPackage = false, onChanged }: {

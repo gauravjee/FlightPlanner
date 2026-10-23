@@ -37,7 +37,7 @@ export default function FuelPage() {
       <button
         onClick={() => setShowForm(true)}
         className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
-        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+        style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
       >
         <Fuel className="w-4 h-4" /> Log Refueling
       </button>

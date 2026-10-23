@@ -276,7 +276,7 @@ export default function AvailabilityForm({ record, onSave, onClose, lockedInstru
             <button
               type="submit"
               className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5"
-              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
             >
               {isEditing ? <><Save className="w-4 h-4" /> Save Changes</> : <><Palmtree className="w-4 h-4" /> Add Leave</>}
             </button>

@@ -296,7 +296,7 @@ export default function BreathAnalyserRegisterPage() {
                 <button
                   onClick={() => { setForm(EMPTY_FORM); setEditingId(null); setShowForm(true); }}
                   className="px-4 py-2 rounded-lg transition cursor-pointer font-semibold text-sm flex items-center gap-1.5"
-                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
                 >
                   <Plus className="w-4 h-4" /> Add BA Test Entry
                 </button>
@@ -407,7 +407,7 @@ export default function BreathAnalyserRegisterPage() {
                 <div className="flex items-center gap-2 pt-2">
                   <button type="submit" disabled={saving}
                     className="px-4 py-2 rounded-lg text-sm font-semibold cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
-                    style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>
+                    style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>
                     <Save className="w-4 h-4" /> {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Entry'}
                   </button>
                   <button type="button" onClick={resetForm} className="px-4 py-2 surface-inner rounded-lg text-sm cursor-pointer hover:opacity-80">

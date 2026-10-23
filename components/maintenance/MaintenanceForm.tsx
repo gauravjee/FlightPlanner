@@ -525,7 +525,7 @@ export default function MaintenanceForm({ record, onSave, onClose }: Props) {
             </button>
             <button type="submit" disabled={submitting}
               className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold flex items-center justify-center gap-1.5 disabled:opacity-60"
-              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>
+              style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>
               {isEditing ? <Pencil className="w-4 h-4" /> : <Wrench className="w-4 h-4" />}
               {isEditing ? 'Save Changes' : 'Log Maintenance'}
             </button>

@@ -193,7 +193,7 @@ export default function SafetyManagementPage() {
                     onClick={() => setFilterStatus(s)}
                     className={`px-3 py-1.5 text-xs rounded-lg cursor-pointer ${filterStatus === s ? 'font-semibold' : ''}`}
                     style={filterStatus === s
-                      ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }
+                      ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }
                       : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)' }}
                   >
                     {s === 'ALL' ? 'All' : s.replace('_', ' ')}
@@ -277,7 +277,7 @@ export default function SafetyManagementPage() {
                                 onClick={() => handleSave(inc.id)}
                                 disabled={saving}
                                 className="px-3 py-1.5 text-xs rounded-lg font-semibold cursor-pointer disabled:opacity-50"
-                                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+                                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
                               >
                                 {saving ? 'Saving…' : 'Save'}
                               </button>
@@ -302,7 +302,7 @@ export default function SafetyManagementPage() {
                                 onClick={() => handleResolve(inc.id)}
                                 disabled={saving}
                                 className="px-3 py-1.5 text-xs rounded-lg font-semibold cursor-pointer disabled:opacity-50"
-                                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+                                style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
                               >
                                 {saving ? 'Saving…' : 'Mark Resolved'}
                               </button>

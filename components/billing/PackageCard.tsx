@@ -20,7 +20,7 @@ interface CoursePackage { id: number; program_id: number; name: string; fee: num
 type PlanRow = { due_date: string; amount: string };
 
 const inputClass = 'surface-inner rounded-lg px-3 py-2 text-sm w-full focus:outline-none';
-const primaryBtn = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' };
+const primaryBtn = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' };
 const fetchPackages = async (url: string): Promise<CoursePackage[]> => {
   const res = await fetch(url);
   return res.ok ? (await res.json()).rows ?? [] : [];

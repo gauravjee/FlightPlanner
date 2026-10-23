@@ -174,7 +174,7 @@ export default function SetupWizardPage() {
                         className="flex items-center space-x-1 px-3 py-1.5 rounded-full text-xs font-medium transition"
                         style={
                           isActive
-                            ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }
+                            ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }
                             : isCompleted
                             ? { backgroundColor: 'var(--success-soft)', color: 'var(--success)' }
                             : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-tertiary)' }
@@ -210,7 +210,7 @@ export default function SetupWizardPage() {
                     className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5"
                     style={
                       activeTab === tab.id
-                        ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a', fontWeight: 500 }
+                        ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)', fontWeight: 500 }
                         : completedTabs.includes(tab.id)
                         ? { backgroundColor: 'var(--success-soft)', color: 'var(--success)', border: '1px solid color-mix(in srgb, var(--success) 30%, transparent)' }
                         : { backgroundColor: 'var(--surface-muted)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }
@@ -266,7 +266,7 @@ export default function SetupWizardPage() {
                 <button
                   onClick={goToNextTab}
                   className="flex items-center space-x-2 px-5 py-2.5 rounded-lg text-sm font-medium transition"
-                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+                  style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
                 >
                   <span>Next: {TABS[currentIndex + 1]?.label}</span>
                   <ChevronRight className="w-4 h-4" />

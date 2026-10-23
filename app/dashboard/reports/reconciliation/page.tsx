@@ -24,7 +24,7 @@ const fetchRecon = async (url: string): Promise<{ from: string; to: string; rows
   return body;
 };
 const btn = 'px-3 py-1.5 rounded-lg text-sm cursor-pointer flex items-center gap-1 font-semibold';
-const on = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' };
+const on = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' };
 const statusColor = (s: ReconRow['status']) => (s === 'NOT_CHARGED' ? 'var(--danger)' : s === 'NO_STUDENT' || s === 'BEFORE_BILLING' ? 'var(--text-tertiary)' : 'var(--success)');
 
 export default function ReconciliationPage() {

@@ -54,7 +54,7 @@ export default function ConfirmDialog({ title, message, confirmLabel = 'Confirm'
             className="flex-1 px-4 py-2 rounded-lg transition cursor-pointer font-semibold"
             style={danger
               ? { backgroundColor: 'var(--danger)', color: '#fff' }
-              : { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+              : { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
           >
             {confirmLabel}
           </button>

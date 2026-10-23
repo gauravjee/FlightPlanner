@@ -211,7 +211,7 @@ export default function StaffFormModal({ member, onClose, onSaved }: Props) {
           <button type="button" onClick={onClose} className="px-4 py-2 rounded-lg text-sm cursor-pointer" style={{ backgroundColor: 'var(--surface-muted)' }}>Cancel</button>
           <button type="submit" disabled={saving}
             className="px-4 py-2 rounded-lg text-sm font-semibold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}>
+            style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}>
             <Save className="w-4 h-4" /> {saving ? 'Saving…' : isNew ? 'Add staff member' : 'Save changes'}
           </button>
         </div>

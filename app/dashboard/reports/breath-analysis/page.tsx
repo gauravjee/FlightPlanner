@@ -175,7 +175,7 @@ export default function BreathAnalysisReportPage() {
                     key={p}
                     onClick={() => { setPeriod(p); setLoading(true); }}
                     className={periodButtonClass(p)}
-                    style={period === p ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' } : { color: 'var(--text-secondary)' }}
+                    style={period === p ? { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' } : { color: 'var(--text-secondary)' }}
                   >
                     {p}
                   </button>

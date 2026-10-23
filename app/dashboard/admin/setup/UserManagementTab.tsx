@@ -389,7 +389,7 @@ export default function UserManagementTab() {
           onClick={handleCreateUser}
           disabled={sending}
           className="px-4 py-2 rounded-lg text-sm transition flex items-center gap-1.5 font-semibold disabled:opacity-50"
-          style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' }}
+          style={{ backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: 'var(--on-accent)' }}
         >
           <UserPlus className="w-3.5 h-3.5" /> {sending ? 'Creating & Sending...' : 'Create User & Send Email'}
         </button>
