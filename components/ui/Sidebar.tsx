@@ -144,7 +144,8 @@ function useActiveHref(groups: NavGroup[]): string | null {
 
 const OPEN_KEY = 'fp-nav-open';
 const activeStyle = { backgroundImage: 'linear-gradient(135deg, var(--accent), var(--accent-strong))', color: '#04141a' };
-const rowClass = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--surface-muted)]';
+// Hover uses the accent tint: --surface-muted was almost the same as the menu background (operator, 23 Oct).
+const rowClass = 'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-[var(--accent-soft)]';
 
 /** The grouped menu: a plain link for one-item groups, a collapsible group otherwise. The active page's group opens itself. */
 export function NavTree({ groups, onNavigate }: { groups: NavGroup[]; onNavigate?: () => void }) {
@@ -195,7 +196,7 @@ export function NavTree({ groups, onNavigate }: { groups: NavGroup[]; onNavigate
                   const active = item.href === activeHref;
                   return (
                     <Link key={item.href} href={item.href} onClick={onNavigate} aria-current={active ? 'page' : undefined}
-                      className="block rounded-lg pl-10 pr-3 py-1.5 text-sm transition-colors hover:bg-[var(--surface-muted)]"
+                      className="block rounded-lg pl-10 pr-3 py-1.5 text-sm transition-colors hover:bg-[var(--accent-soft)]"
                       style={active ? { ...activeStyle, fontWeight: 600 } : { color: 'var(--text-secondary)' }}>
                       {item.label}
                     </Link>
@@ -224,7 +225,7 @@ function NavRail({ groups }: { groups: NavGroup[] }) {
           return (
             <Link key={g.label} href={g.items[0].href} title={g.items[0].label} aria-label={g.items[0].label}
               aria-current={active ? 'page' : undefined}
-              className="flex items-center justify-center rounded-lg h-10 w-10 mx-auto transition-colors hover:bg-[var(--surface-muted)]" style={style}>
+              className="flex items-center justify-center rounded-lg h-10 w-10 mx-auto transition-colors hover:bg-[var(--accent-soft)]" style={style}>
               <Icon className="w-4 h-4" />
             </Link>
           );
@@ -236,7 +237,7 @@ function NavRail({ groups }: { groups: NavGroup[] }) {
             onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFlyout(null); }}>
             {/* Click only opens: hover has usually opened it already, and a toggle would close it on the same click. */}
             <button type="button" aria-label={g.label} aria-expanded={open} onClick={() => setFlyout(g.label)}
-              className="flex items-center justify-center rounded-lg h-10 w-10 mx-auto cursor-pointer transition-colors hover:bg-[var(--surface-muted)]" style={style}>
+              className="flex items-center justify-center rounded-lg h-10 w-10 mx-auto cursor-pointer transition-colors hover:bg-[var(--accent-soft)]" style={style}>
               <Icon className="w-4 h-4" />
             </button>
             {open && (
@@ -248,7 +249,7 @@ function NavRail({ groups }: { groups: NavGroup[] }) {
                     const on = item.href === activeHref;
                     return (
                       <Link key={item.href} href={item.href} onClick={() => setFlyout(null)} aria-current={on ? 'page' : undefined}
-                        className="block mx-1.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-[var(--surface-muted)]"
+                        className="block mx-1.5 rounded-md px-2.5 py-2 text-sm transition-colors hover:bg-[var(--accent-soft)]"
                         style={on ? { ...activeStyle, fontWeight: 600 } : { color: 'var(--text-secondary)' }}>
                         {item.label}
                       </Link>
